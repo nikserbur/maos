@@ -3,12 +3,7 @@ import * as THREE from 'three'
 import { Line } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { FLOWS, STAGE_BY_ID } from './layout'
-import type { FlowKind } from './types'
-
-const FLOW_COLOR: Record<FlowKind, string> = {
-  material: '#2d72d2',
-  energy: '#c87619',
-}
+import { FLOW_META } from './types'
 
 interface FlowLineProps {
   from: [number, number]
@@ -48,7 +43,7 @@ function FlowLine({ from, to, color, speed }: FlowLineProps) {
   )
 }
 
-/** Все потоки схемы (материальные и энергетические). */
+/** Все потоки схемы (материальные, энергетические, газовые). */
 export function FlowLinks() {
   return (
     <group>
@@ -61,7 +56,7 @@ export function FlowLinks() {
             key={`${flow.from}-${flow.to}`}
             from={from.position}
             to={to.position}
-            color={FLOW_COLOR[flow.kind]}
+            color={FLOW_META[flow.kind].color}
             speed={0.18 + (index % 3) * 0.04}
           />
         )

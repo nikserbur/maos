@@ -2,7 +2,7 @@ import { useModel, preloadModel, type GroupProps } from './gltf'
 
 const URL = '/models/finecleaning.glb'
 
-/** Участок тонкой очистки. */
+/** Узел схемы — 3D-модель finecleaning.glb. */
 export function Finecleaning(props: GroupProps) {
   const { nodes, materials } = useModel(URL)
   return (

@@ -5,7 +5,8 @@ import { SceneEnvironment } from './SceneEnvironment'
 import { PlantLayout } from './PlantLayout'
 import { Inspector } from './Inspector'
 import { STAGE_BY_ID } from './layout'
-import { STATUS_META } from './types'
+import { FLOW_META, STATUS_META } from './types'
+
 import './scene.css'
 
 /** Легенда статусов и типов потоков. */
@@ -23,22 +24,20 @@ function Legend() {
       </div>
       <div className="legend__group">
         <div className="legend__title">Поток</div>
-        <div className="legend__row">
-          <span className="legend__dot" style={{ background: '#2d72d2' }} />
-          Материальный
-        </div>
-        <div className="legend__row">
-          <span className="legend__dot" style={{ background: '#c87619' }} />
-          Энергетический
-        </div>
+        {Object.values(FLOW_META).map((meta) => (
+          <div className="legend__row" key={meta.label}>
+            <span className="legend__dot" style={{ background: meta.color }} />
+            {meta.label}
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
 /**
- * 3D-схема предприятия («цифровой двойник»). Вертикальный срез фазы
- * визуализации: интерактивный граф узлов, потоки, инспектор показателей.
+ * 3D-схема предприятия. Вертикальный срез фазы визуализации:
+ * интерактивный граф узлов, потоки, инспектор показателей.
  */
 export default function PlantScene() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -46,17 +45,6 @@ export default function PlantScene() {
 
   return (
     <div className="scene">
-      <header className="scene__topbar">
-        <div className="scene__brand">
-          <span className="scene__logo">MAOS</span>
-          <span className="scene__divider" />
-          <span className="scene__screen">Схема предприятия · 3D</span>
-        </div>
-        <div className="scene__hint mono">
-          ЛКМ — орбита и выбор узла · колесо — зум · ПКМ — панорама
-        </div>
-      </header>
-
       <div className="scene__canvas">
         <Canvas
           shadows
@@ -72,6 +60,9 @@ export default function PlantScene() {
 
         <Loader />
         <Legend />
+        <div className="scene__hint mono">
+          ЛКМ — орбита и выбор · колесо — зум · ПКМ — панорама
+        </div>
         {selected && <Inspector stage={selected} onClose={() => setSelectedId(null)} />}
       </div>
     </div>

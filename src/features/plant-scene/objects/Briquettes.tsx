@@ -2,7 +2,7 @@ import { useModel, preloadModel, type GroupProps } from './gltf'
 
 const URL = '/models/briquettes.glb'
 
-/** Участок брикетизации. */
+/** Узел схемы — 3D-модель briquettes.glb. */
 export function Briquettes(props: GroupProps) {
   const { nodes, materials } = useModel(URL)
   return (

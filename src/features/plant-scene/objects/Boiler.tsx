@@ -2,7 +2,7 @@ import { useModel, preloadModel, type GroupProps } from './gltf'
 
 const URL = '/models/boiler.glb'
 
-/** Котельная — источник тепла для участка сушки. */
+/** Узел схемы — 3D-модель boiler.glb. */
 export function Boiler(props: GroupProps) {
   const { nodes, materials } = useModel(URL)
   return (

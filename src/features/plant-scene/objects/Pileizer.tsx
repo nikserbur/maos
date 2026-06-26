@@ -2,7 +2,7 @@ import { useModel, preloadModel, type GroupProps } from './gltf'
 
 const URL = '/models/pileizer.glb'
 
-/** Участок пеллетизации. */
+/** Узел схемы — 3D-модель pileizer.glb. */
 export function Pileizer(props: GroupProps) {
   const { nodes, materials } = useModel(URL)
   return (

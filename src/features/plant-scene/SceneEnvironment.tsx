@@ -1,8 +1,8 @@
 import { ContactShadows, Grid, OrbitControls } from '@react-three/drei'
 
 /**
- * Освещение, фон и «пол» сцены в духе цифрового двойника Palantir:
- * тёмный фон, синяя сетка-блюпринт, мягкие контактные тени.
+ * Освещение, фон и «пол» сцены: тёмный фон, синяя сетка-блюпринт
+ * и мягкие контактные тени под объектами.
  */
 export function SceneEnvironment() {
   return (

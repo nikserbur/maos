@@ -2,7 +2,7 @@ import { useModel, preloadModel, type GroupProps } from './gltf'
 
 const URL = '/models/feedstock.glb'
 
-/** Добыча и подвоз сырья (лигнин). */
+/** Узел схемы — 3D-модель feedstock.glb. */
 export function Feedstock(props: GroupProps) {
   const { nodes, materials } = useModel(URL)
   return (

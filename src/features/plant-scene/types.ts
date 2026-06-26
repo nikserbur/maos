@@ -40,12 +40,25 @@ export interface PlantStage {
   kpis: StageKpi[]
 }
 
-export type FlowKind = 'material' | 'energy'
+/** Типы связей между узлами схемы. */
+export type FlowKind = 'material' | 'energy' | 'gas'
 
 export interface FlowLink {
   from: string
   to: string
   kind: FlowKind
+}
+
+export interface FlowMeta {
+  label: string
+  color: string
+}
+
+/** Подписи и цвета типов потоков (единый источник для сцены и легенды). */
+export const FLOW_META: Record<FlowKind, FlowMeta> = {
+  material: { label: 'Материальный', color: '#2d72d2' },
+  energy: { label: 'Энергетический', color: '#c87619' },
+  gas: { label: 'Газовый', color: '#2bb3a3' },
 }
 
 export interface StatusMeta {

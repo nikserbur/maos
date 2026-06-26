@@ -2,7 +2,7 @@ import { useModel, preloadModel, type GroupProps } from './gltf'
 
 const URL = '/models/cleaningarea.glb'
 
-/** Приём и грубая очистка сырья. */
+/** Узел схемы — 3D-модель cleaningarea.glb. */
 export function Cleaningarea(props: GroupProps) {
   const { nodes, materials } = useModel(URL)
   return (
