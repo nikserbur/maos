@@ -1,0 +1,210 @@
+.scene {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+/* Top bar */
+.scene__topbar {
+  height: var(--topbar-h);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.scene__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.scene__logo {
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text);
+}
+.scene__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-strong);
+}
+.scene__screen {
+  color: var(--text-secondary);
+}
+.scene__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Canvas region */
+.scene__canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.scene__canvas canvas {
+  display: block;
+}
+
+/* Floating 3D label */
+.stage-tag-wrap {
+  pointer-events: none;
+}
+.stage-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  background: rgba(28, 33, 39, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.stage-tag__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Legend */
+.legend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  gap: 22px;
+  padding: 12px 16px;
+  background: rgba(28, 33, 39, 0.86);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.legend__title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.legend__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.legend__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* Inspector */
+.inspector {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: var(--inspector-w);
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.inspector__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.inspector__eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.inspector__title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.inspector__subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.inspector__close {
+  flex: 0 0 auto;
+  width: var(--control-compact);
+  height: var(--control-compact);
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.inspector__close:hover {
+  color: var(--text);
+  background: var(--bg-input);
+}
+.inspector__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text);
+}
+.inspector__status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.inspector__section-label {
+  padding: 4px 16px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.inspector__kpis {
+  margin: 0;
+  padding: 4px 8px 8px;
+}
+.kpi {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px;
+  border-radius: var(--radius);
+}
+.kpi:nth-child(odd) {
+  background: var(--bg-card);
+}
+.kpi__label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.kpi__value {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+.inspector__hint {
+  padding: 12px 16px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
