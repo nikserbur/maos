@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS work_center_types (
   name            TEXT NOT NULL,
   group_name      TEXT,
   kind            TEXT NOT NULL DEFAULT '',  -- ObjectKind: 3D-вид на схеме
+  characteristics TEXT,                      -- JSON [{label,value}] фикс. характеристики типа
   description     TEXT,
   interchangeable INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -26,7 +27,22 @@ CREATE TABLE IF NOT EXISTS machines (
   year_made   INTEGER,
   schedule    TEXT,
   status      TEXT NOT NULL DEFAULT 'active',  -- active | maintenance | decommissioned
+  -- Раскладка на 3D-схеме (справочник оборудования и схема — единая сущность):
+  subtitle          TEXT,
+  pos_x             REAL NOT NULL DEFAULT 0,
+  pos_z             REAL NOT NULL DEFAULT 0,
+  rotation_y        REAL NOT NULL DEFAULT 0,
+  parent_machine_id TEXT REFERENCES machines(id) ON DELETE CASCADE,  -- drill-down
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── Физические связи на схеме (конвейеры, трубопроводы, кабели) ────────────
+CREATE TABLE IF NOT EXISTS flows (
+  id         TEXT PRIMARY KEY,
+  from_id    TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  to_id      TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  parent_id  TEXT,   -- уровень иерархии (NULL = верхний)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- ── Изделия / материалы (BOM-узлы) ───────────────────────────────────────

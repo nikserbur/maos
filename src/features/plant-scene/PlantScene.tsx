@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useReducer, useState } from 'react'
+import { Suspense, useEffect, useReducer, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Loader } from '@react-three/drei'
 import { SceneEnvironment } from './SceneEnvironment'
@@ -7,33 +7,9 @@ import { EditorPanel } from './EditorPanel'
 import { Breadcrumbs } from './Breadcrumbs'
 import { STATUS_META, type ObjectKind } from './types'
 import { graphReducer, initialGraphState } from './graph/graphReducer'
-import { PALETTE, hasChildren, type SceneGraph, type SceneNode } from './graph/sceneModel'
-import { api, type Machine, type WorkCenterType, type Operation } from '../../lib/api'
+import { buildGraphFromDb, hasChildren } from './graph/sceneModel'
+import { api, type Machine, type WorkCenterType, type Operation, type Flow } from '../../lib/api'
 import './scene.css'
-
-// v2: схема приводится в соответствие с НСИ (авто-линковка узел↔оборудование).
-// Бамп ключа сбрасывает устаревший локальный граф из прежних сессий.
-const STORAGE_KEY = 'maos-scene-graph-v2'
-
-function loadSavedGraph(): SceneGraph | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as SceneGraph
-  } catch {
-    return null
-  }
-}
-
-/** Резолвим kind из реестра: wcType.kind → если валидный ObjectKind, берём его, иначе node.kind */
-function resolveKind(node: SceneNode, machines: Machine[], wcTypes: WorkCenterType[]): ObjectKind {
-  if (!node.linkedMachineId) return node.kind
-  const machine = machines.find((m) => m.id === node.linkedMachineId)
-  if (!machine?.wc_type_id) return node.kind
-  const wcType = wcTypes.find((t) => t.id === machine.wc_type_id)
-  const k = wcType?.kind
-  return k && (PALETTE as string[]).includes(k) ? (k as ObjectKind) : node.kind
-}
 
 function Legend() {
   return (
@@ -50,76 +26,94 @@ function Legend() {
 }
 
 export default function PlantScene() {
-  const [state, dispatch] = useReducer(graphReducer, undefined, () => {
-    const saved = loadSavedGraph()
-    return saved ? { ...initialGraphState, graph: saved } : initialGraphState
-  })
+  const [state, dispatch] = useReducer(graphReducer, initialGraphState)
 
   const [machines, setMachines]     = useState<Machine[]>([])
   const [wcTypes, setWcTypes]       = useState<WorkCenterType[]>([])
   const [operations, setOperations] = useState<Operation[]>([])
+  const [loading, setLoading]       = useState(true)
 
-  const refreshAll = () => Promise.all([
-    api.machines.list().then(setMachines).catch(() => {}),
-    api.workCenterTypes.list().then(setWcTypes).catch(() => {}),
-    api.operations.list().then(setOperations).catch(() => {}),
-  ])
+  // Дебаунс PUT-ов раскладки (перемещение/переименование тянут запросы пачками).
+  const persistTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
-  useEffect(() => { refreshAll() }, [])
+  // Схема строится из реестров НСИ — единый источник истины (БД).
+  const loadGraph = async () => {
+    const [m, t, f, ops] = await Promise.all([
+      api.machines.list().catch(() => [] as Machine[]),
+      api.workCenterTypes.list().catch(() => [] as WorkCenterType[]),
+      api.flows.list().catch(() => [] as Flow[]),
+      api.operations.list().catch(() => [] as Operation[]),
+    ])
+    setMachines(m)
+    setWcTypes(t)
+    setOperations(ops)
+    dispatch({ type: 'LOAD_GRAPH', graph: buildGraphFromDb(m, t, f) })
+    setLoading(false)
+  }
 
-  // Авто-линковка: узел сцены ↔ запись «Оборудование» по детерминированному id
-  // (mach-{nodeId}). Реестры и схема — единая сущность через БД, привязка
-  // восстанавливается автоматически без ручных действий.
-  useEffect(() => {
-    if (machines.length === 0) return
-    for (const node of state.graph.nodes) {
-      if (node.parentId !== null || node.linkedMachineId) continue
-      const machineId = `mach-${node.id}`
-      if (machines.some((m) => m.id === machineId)) {
-        dispatch({ type: 'LINK_MACHINE', id: node.id, machineId })
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machines])
+  useEffect(() => { loadGraph() }, [])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.graph))
-    } catch { /* localStorage недоступен */ }
-  }, [state.graph])
-
-  const rawNodes = state.graph.nodes.filter((n) => n.parentId === state.currentParentId)
+  const nodes    = state.graph.nodes.filter((n) => n.parentId === state.currentParentId)
   const edges    = state.graph.edges.filter((e) => e.parentId === state.currentParentId)
-
-  // Подменяем kind на основе wcType.kind из реестра
-  const nodes = rawNodes.map((n) => ({
-    ...n,
-    kind: resolveKind(n, machines, wcTypes),
-  }))
-
-  const selected = nodes.find((n) => n.id === state.selectedId) ?? null
+  const selected = state.graph.nodes.find((n) => n.id === state.selectedId) ?? null
   const editing  = state.mode === 'edit'
 
-  const refreshMachines = () => api.machines.list().then(setMachines).catch(() => {})
+  /** Дебаунс-обёртка для частых PUT (позиция, имя). */
+  const persistDebounced = (key: string, fn: () => Promise<unknown>) => {
+    clearTimeout(persistTimers.current[key])
+    persistTimers.current[key] = setTimeout(() => { fn().catch(() => {}) }, 400)
+  }
 
+  // ── Мутации: локальный диспатч (мгновенный отклик) + запись в БД ───────────
+
+  const handleMove = (id: string, position: [number, number]) => {
+    dispatch({ type: 'MOVE_NODE', id, position })
+    persistDebounced(`pos-${id}`, () =>
+      api.machines.update(id, { pos_x: String(position[0]), pos_z: String(position[1]) }))
+  }
+
+  const handleRename = (id: string, title: string) => {
+    dispatch({ type: 'RENAME_NODE', id, title })
+    persistDebounced(`name-${id}`, () => api.machines.update(id, { name: title }))
+  }
+
+  const handleDelete = async (id: string) => {
+    dispatch({ type: 'DELETE_NODE', id })
+    await api.machines.delete(id).catch(() => {})
+    await loadGraph()
+  }
+
+  /** Завершение прокладки связи: персистим flow до локального диспатча edge. */
+  const handleSelect = (id: string) => {
+    if (state.connecting && state.connectFrom && state.connectFrom !== id) {
+      api.flows.create({
+        from_id: state.connectFrom,
+        to_id: id,
+        parent_id: state.currentParentId ?? '',
+      }).catch(() => {})
+    }
+    dispatch({ type: 'NODE_CLICK', id })
+  }
+
+  /** Регистрация оборудования прямо со схемы: тип + позиция узла → новая машина. */
   const handleCreateMachine = async (
     nodeId: string,
     data: { name: string; wcTypeId: string; orgUnit: string; status: string; kind: ObjectKind },
   ) => {
-    const machine = await api.machines.create({
+    const node = state.graph.nodes.find((n) => n.id === nodeId)
+    await api.machines.create({
       name: data.name,
       wc_type_id: data.wcTypeId,
       org_unit: data.orgUnit,
       status: data.status,
+      subtitle: '',
+      pos_x: String(node?.position[0] ?? 0),
+      pos_z: String(node?.position[1] ?? 0),
+      parent_machine_id: state.currentParentId ?? '',
     })
-    dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId: machine.id })
-    // kind теперь берётся из wcType.kind — но диспатч оставляем как fallback
-    dispatch({ type: 'CHANGE_KIND', id: nodeId, kind: data.kind })
-    await refreshMachines()
-  }
-
-  const handleChangeKind = (nodeId: string, kind: ObjectKind) => {
-    dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })
+    // Удаляем временный локальный узел и перестраиваем граф из БД.
+    dispatch({ type: 'DELETE_NODE', id: nodeId })
+    await loadGraph()
   }
 
   return (
@@ -140,9 +134,9 @@ export default function PlantScene() {
               connectFrom={state.connectFrom}
               connecting={state.connecting}
               editing={editing}
-              onSelect={(id) => dispatch({ type: 'NODE_CLICK', id })}
+              onSelect={handleSelect}
               onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-              onMove={(id, position) => dispatch({ type: 'MOVE_NODE', id, position })}
+              onMove={handleMove}
               onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
             />
           </Suspense>
@@ -155,6 +149,12 @@ export default function PlantScene() {
           onNavigate={(index) => dispatch({ type: 'GO_TO_LEVEL', index })}
         />
         <Legend />
+
+        {loading && (
+          <div className="scene__hint mono" style={{ top: 16, bottom: 'auto' }}>
+            Загрузка схемы из НСИ…
+          </div>
+        )}
 
         <div className="scene__hint mono">
           {state.connecting
@@ -173,15 +173,15 @@ export default function PlantScene() {
         operations={operations}
         onToggleMode={() => dispatch({ type: 'SET_MODE', mode: editing ? 'view' : 'edit' })}
         onAddNode={(kind) => dispatch({ type: 'ADD_NODE', kind })}
-        onRename={(id, title) => dispatch({ type: 'RENAME_NODE', id, title })}
-        onDelete={(id) => dispatch({ type: 'DELETE_NODE', id })}
+        onRename={handleRename}
+        onDelete={handleDelete}
         onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
         onClose={() => dispatch({ type: 'CLEAR_SELECTION' })}
         onLinkMachine={(nodeId, machineId) =>
           dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId })
         }
         onCreateMachine={handleCreateMachine}
-        onChangeKind={handleChangeKind}
+        onChangeKind={(nodeId, kind) => dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })}
       />
     </div>
   )

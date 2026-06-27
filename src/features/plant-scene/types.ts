@@ -1,7 +1,7 @@
 /**
  * Доменные типы 3D-схемы предприятия.
- * Данные наполняются из НСИ и планировщика (фазы 3–5); сейчас используются
- * как статичный демо-слой (layout.ts).
+ * Граф строится из реестров НСИ (machines + work_center_types + flows)
+ * функцией buildGraphFromDb — статичного хардкода больше нет.
  */
 
 export type ObjectKind =
@@ -22,25 +22,6 @@ export type StageStatus = 'running' | 'setup' | 'idle' | 'down'
 export interface StageKpi {
   label: string
   value: string
-}
-
-export interface PlantStage {
-  id: string
-  kind: ObjectKind
-  title: string
-  subtitle: string
-  /** Положение центра: [x, z]. */
-  position: [number, number]
-  rotationY?: number
-  scale: number
-  status: StageStatus
-  kpis: StageKpi[]
-}
-
-/** Физическая связь между узлами схемы (конвейер, трубопровод и т.п.). */
-export interface FlowLink {
-  from: string
-  to: string
 }
 
 export interface StatusMeta {

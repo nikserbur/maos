@@ -5,7 +5,7 @@
  * C++-ядром через Action layer.
  */
 import type { ObjectKind, StageKpi, StageStatus } from '../types'
-import { FLOWS, STAGES } from '../layout'
+import type { Machine, WorkCenterType, Flow } from '../../../lib/api'
 
 export interface SceneNode {
   id: string
@@ -71,71 +71,72 @@ export const PALETTE: ObjectKind[] = [
   'marketing',
 ]
 
-const topNodes: SceneNode[] = STAGES.map((s) => ({
-  id: s.id,
-  parentId: null,
-  kind: s.kind,
-  title: s.title,
-  subtitle: s.subtitle,
-  position: s.position,
-  rotationY: s.rotationY,
-  scale: s.scale,
-  status: s.status,
-  kpis: s.kpis,
-}))
+/** Пустой граф — схема всегда строится из БД (источник истины — НСИ). */
+export const INITIAL_GRAPH: SceneGraph = { nodes: [], edges: [] }
 
-const topEdges: SceneEdge[] = FLOWS.map((f, i) => ({
-  id: `top-${i}`,
-  parentId: null,
-  from: f.from,
-  to: f.to,
-}))
+/** Операционный статус машины (НСИ) → статус узла на схеме. */
+function mapStatus(machineStatus: string): StageStatus {
+  switch (machineStatus) {
+    case 'maintenance':    return 'down'
+    case 'decommissioned': return 'idle'
+    default:               return 'running'
+  }
+}
 
-// Демо-иерархия: внутренняя подсхема узла «converter» (drill-down).
-const converterChildren: SceneNode[] = [
-  {
-    id: 'conv-charge',
-    parentId: 'converter',
-    kind: 'feedstock',
-    title: 'Завалка',
-    subtitle: 'Лом и чугун',
-    position: [-8, 0],
-    scale: 1 / 6,
-    status: 'running',
-    kpis: [{ label: 'Завалка', value: '120 т/пл' }],
-  },
-  {
-    id: 'conv-vessel',
-    parentId: 'converter',
-    kind: 'finecleaning',
-    title: 'Конвертер',
-    subtitle: 'Кислородная продувка',
-    position: [0, 0],
-    scale: 1 / 11,
-    status: 'setup',
-    kpis: [{ label: 'Продувка', value: '18 мин' }],
-  },
-  {
-    id: 'conv-cast',
-    parentId: 'converter',
-    kind: 'pileizer',
-    title: 'Разливка',
-    subtitle: 'Ковш / МНЛЗ',
-    position: [8, 0],
-    scale: 1 / 6,
-    status: 'running',
-    kpis: [{ label: 'Серия', value: '6 плавок' }],
-  },
-]
+/** Безопасный парс JSON-характеристик типа в массив KPI. */
+function parseCharacteristics(raw: string): StageKpi[] {
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr
+      .filter((x) => x && typeof x.label === 'string')
+      .map((x) => ({ label: String(x.label), value: String(x.value ?? '') }))
+  } catch {
+    return []
+  }
+}
 
-const converterEdges: SceneEdge[] = [
-  { id: 'conv-e0', parentId: 'converter', from: 'conv-charge', to: 'conv-vessel' },
-  { id: 'conv-e1', parentId: 'converter', from: 'conv-vessel', to: 'conv-cast' },
-]
+/**
+ * Сборка сцены-графа из реестров НСИ. Узел сцены = единица оборудования;
+ * 3D-вид, масштаб и характеристики наследуются от типа оборудования.
+ */
+export function buildGraphFromDb(
+  machines: Machine[],
+  wcTypes: WorkCenterType[],
+  flows: Flow[],
+): SceneGraph {
+  const typeById = new Map(wcTypes.map((t) => [t.id, t]))
 
-export const INITIAL_GRAPH: SceneGraph = {
-  nodes: [...topNodes, ...converterChildren],
-  edges: [...topEdges, ...converterEdges],
+  const nodes: SceneNode[] = machines.map((m) => {
+    const type = m.wc_type_id ? typeById.get(m.wc_type_id) : undefined
+    const kind = (type && (PALETTE as string[]).includes(type.kind)
+      ? type.kind
+      : 'marketing') as ObjectKind
+    const meta = KIND_META[kind]
+    return {
+      id: m.id,
+      parentId: m.parent_machine_id || null,
+      kind,
+      title: m.name,
+      subtitle: m.subtitle || type?.name || '',
+      position: [Number(m.pos_x) || 0, Number(m.pos_z) || 0],
+      rotationY: Number(m.rotation_y) || meta.rotationY || 0,
+      scale: meta.scale,
+      status: mapStatus(m.status),
+      kpis: parseCharacteristics(type?.characteristics ?? ''),
+      linkedMachineId: m.id,
+    }
+  })
+
+  const edges: SceneEdge[] = flows.map((f) => ({
+    id: f.id,
+    parentId: f.parent_id || null,
+    from: f.from_id,
+    to: f.to_id,
+  }))
+
+  return { nodes, edges }
 }
 
 /** Есть ли у узла вложенная подсхема (для drill-down). */

@@ -30,13 +30,21 @@ const del  = <T>(path: string)               => request<T>('DELETE', path)
 /* ── NSI entities ────────────────────────────────────────────────────────── */
 export interface WorkCenterType {
   id: string; name: string; group_name: string
-  kind: string           // ObjectKind: определяет 3D-вид на схеме
+  kind: string                // ObjectKind: определяет 3D-вид на схеме
+  characteristics: string     // JSON [{label,value}] — фикс. характеристики типа
   description: string; interchangeable: string; created_at: string
 }
 export interface Machine {
   id: string; name: string; wc_type_id: string; org_unit: string
   inv_no: string; serial_no: string; year_made: string
-  schedule: string; status: string; created_at: string
+  schedule: string; status: string
+  // Раскладка на 3D-схеме (схема = справочник оборудования):
+  subtitle: string; pos_x: string; pos_z: string; rotation_y: string
+  parent_machine_id: string
+  created_at: string
+}
+export interface Flow {
+  id: string; from_id: string; to_id: string; parent_id: string; created_at: string
 }
 export interface Product {
   id: string; code: string; name: string; unit: string
@@ -118,6 +126,12 @@ export const api = {
     create: (d: Partial<Operation>)        => post<Operation>('/operations', d),
     update: (id: string, d: Partial<Operation>) => put<Operation>(`/operations/${id}`, d),
     delete: (id: string)                   => del<object>(`/operations/${id}`),
+  },
+
+  flows: {
+    list:   ()                         => get<Flow[]>('/flows'),
+    create: (d: Partial<Flow>)         => post<Flow>('/flows', d),
+    delete: (id: string)               => del<object>(`/flows/${id}`),
   },
 
   workers: {

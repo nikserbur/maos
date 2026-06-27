@@ -329,55 +329,125 @@ static void register_operation_routes(httplib::Server& svr, Database& db) {
 // Маппинг узел сцены → запись «Оборудование». Узлы сцены имеют детерминированные
 // id (oreyard, converter…), машины создаются как mach-{nodeId} — фронт линкует
 // узлы автоматически по этому правилу.
-struct MachDef { std::string nodeId, machId, name, wctId, orgUnit; };
+struct MachDef {
+  std::string nodeId, machId, name, wctId, orgUnit, subtitle, parentId;
+  double posX, posZ, rotY;
+};
+
+// PI / -PI/2 для совпадения с прежней раскладкой схемы.
+static constexpr double R_PI   = 3.14159265;
+static constexpr double R_NEG  = -1.5707963;
 
 static const std::vector<MachDef>& seed_machines() {
   static const std::vector<MachDef> machs = {
-    {"scrapyard",    "mach-scrapyard",    "Скрапный двор",                 "wct-feedstock",    "Сырьевой цех"},
-    {"oreyard",      "mach-oreyard",      "Рудный двор",                   "wct-feedstock",    "Сырьевой цех"},
-    {"cokeyard",     "mach-cokeyard",     "Коксовый двор",                 "wct-feedstock",    "Сырьевой цех"},
-    {"crushing",     "mach-crushing",     "Дробильно-обогатительный цех",  "wct-cleaning",     "ДОЦ"},
-    {"screening",    "mach-screening",    "Отделение грохочения",          "wct-cleaning",     "ДОЦ"},
-    {"sinter",       "mach-sinter",       "Аглофабрика №1",                "wct-dryer",        "Аглоцех"},
-    {"chp",          "mach-chp",          "ТЭЦ — энергоблок",              "wct-boiler",       "Энергоцех"},
-    {"gasclean",     "mach-gasclean",     "Газоочистка доменного цеха",    "wct-finecleaning", "Доменный цех"},
-    {"blastfurnace", "mach-blastfurnace", "Доменная печь №1",              "wct-finecleaning", "Доменный цех"},
-    {"hotblast",     "mach-hotblast",     "Воздухонагреватели (дутьё)",    "wct-boiler",       "Доменный цех"},
-    {"converter",    "mach-converter",    "Кислородный конвертер №1",      "wct-briquettes",   "ККЦ"},
-    {"eaf",          "mach-eaf",          "Электродуговая печь ЭДП-100",   "wct-briquettes",   "ЭСПЦ"},
-    {"ladle",        "mach-ladle",        "Установка ковш-печь УКП-1",     "wct-finecleaning", "ККЦ"},
-    {"ccm",          "mach-ccm",          "МНЛЗ №1 (слябовая)",            "wct-pileizer",     "ССЦ"},
-    {"rolling",      "mach-rolling",      "Прокатный стан 2000 (горячий)", "wct-pileizer",     "ПЦ"},
-    {"coldrolling",  "mach-coldrolling",  "Прокатный стан 1700 (холодный)","wct-cleaning",     "ПЦ"},
-    {"heattreat",    "mach-heattreat",    "Термическое отделение",         "wct-finecleaning", "ПЦ"},
-    {"substation",   "mach-substation",   "Главная подстанция 110 кВ",     "wct-transformer",  "Энергоцех"},
-    {"substation2",  "mach-substation2",  "Подстанция ПС-2 (35 кВ)",       "wct-transformer",  "Энергоцех"},
-    {"warehouse",    "mach-warehouse",    "Склад готовой продукции",       "wct-wirehouse",    "Склад"},
-    {"slabyard",     "mach-slabyard",     "Склад слябов и заготовок",      "wct-wirehouse",    "ССЦ"},
-    {"maintenance",  "mach-maintenance",  "Ремонтно-механический цех",     "wct-marketing",    "РМЦ"},
-    {"lab",          "mach-lab",          "Центральная лаборатория (ОТК)", "wct-marketing",    "ОТК"},
-    {"shipping",     "mach-shipping",     "Отгрузка — железная дорога",    "wct-sale",         "Отгрузка"},
-    {"shipping2",    "mach-shipping2",    "Отгрузка — автотранспорт",      "wct-sale",         "Отгрузка"},
-    {"sales",        "mach-sales",        "Служба сбыта и маркетинга",     "wct-marketing",    "Сбыт"},
+    //  node          machId               name                              wctId               orgUnit         subtitle                       parent  posX  posZ  rotY
+    {"scrapyard",    "mach-scrapyard",    "Скрапный двор",                 "wct-feedstock",    "Сырьевой цех", "Металлолом и скрап",          "", -24, -8,  0},
+    {"oreyard",      "mach-oreyard",      "Рудный двор",                   "wct-feedstock",    "Сырьевой цех", "Приём руды, кокса, флюсов",   "", -21,  0,  0},
+    {"cokeyard",     "mach-cokeyard",     "Коксовый двор",                 "wct-feedstock",    "Сырьевой цех", "Хранение и подготовка кокса", "", -24,  8,  0},
+    {"crushing",     "mach-crushing",     "Дробильно-обогатительный цех",  "wct-cleaning",     "ДОЦ",          "Подготовка шихты",            "", -14,  0,  R_NEG},
+    {"screening",    "mach-screening",    "Отделение грохочения",          "wct-cleaning",     "ДОЦ",          "Сортировка по фракциям",      "", -14, -8,  R_NEG},
+    {"sinter",       "mach-sinter",       "Аглофабрика №1",                "wct-dryer",        "Аглоцех",      "Производство агломерата",     "",  -7,  0,  R_PI},
+    {"chp",          "mach-chp",          "ТЭЦ — энергоблок",              "wct-boiler",       "Энергоцех",    "Пар и электроэнергия",        "",  -7, 10,  R_PI},
+    {"gasclean",     "mach-gasclean",     "Газоочистка доменного цеха",    "wct-finecleaning", "Доменный цех", "Доменный газ и пыль",         "",  -7,-10,  R_PI},
+    {"blastfurnace", "mach-blastfurnace", "Доменная печь №1",              "wct-finecleaning", "Доменный цех", "Выплавка чугуна",             "",   0,  0,  0},
+    {"hotblast",     "mach-hotblast",     "Воздухонагреватели (дутьё)",    "wct-boiler",       "Доменный цех", "Горячее дутьё",               "",   0,-10,  0},
+    {"converter",    "mach-converter",    "Кислородный конвертер №1",      "wct-briquettes",   "ККЦ",          "Выплавка стали",              "",   8, -5,  0},
+    {"eaf",          "mach-eaf",          "Электродуговая печь ЭДП-100",   "wct-briquettes",   "ЭСПЦ",         "Выплавка из лома",            "",   8,  5,  0},
+    {"ladle",        "mach-ladle",        "Установка ковш-печь УКП-1",     "wct-finecleaning", "ККЦ",          "Внепечная обработка",         "",   8,-14,  0},
+    {"ccm",          "mach-ccm",          "МНЛЗ №1 (слябовая)",            "wct-pileizer",     "ССЦ",          "Непрерывная разливка",        "",  16, -8,  0},
+    {"rolling",      "mach-rolling",      "Прокатный стан 2000 (горячий)", "wct-pileizer",     "ПЦ",           "Горячий прокат",              "",  16,  4,  0},
+    {"coldrolling",  "mach-coldrolling",  "Прокатный стан 1700 (холодный)","wct-cleaning",     "ПЦ",           "Тонкий лист",                 "",  16, 14,  0},
+    {"heattreat",    "mach-heattreat",    "Термическое отделение",         "wct-finecleaning", "ПЦ",           "Нормализация и отпуск",       "",  16,-18,  0},
+    {"substation",   "mach-substation",   "Главная подстанция 110 кВ",     "wct-transformer",  "Энергоцех",    "Электроснабжение 110 кВ",     "",   1, 12,  0},
+    {"substation2",  "mach-substation2",  "Подстанция ПС-2 (35 кВ)",       "wct-transformer",  "Энергоцех",    "Питание сталеплавильного",    "",   8,-22,  0},
+    {"warehouse",    "mach-warehouse",    "Склад готовой продукции",       "wct-wirehouse",    "Склад",        "Готовая продукция",           "",  24,  4,  0},
+    {"slabyard",     "mach-slabyard",     "Склад слябов и заготовок",      "wct-wirehouse",    "ССЦ",          "Промежуточный склад",         "",  24, -6,  0},
+    {"maintenance",  "mach-maintenance",  "Ремонтно-механический цех",     "wct-marketing",    "РМЦ",          "Обслуживание и ремонт",       "",   0,-22,  0},
+    {"lab",          "mach-lab",          "Центральная лаборатория (ОТК)", "wct-marketing",    "ОТК",          "Анализы и сертификация",      "", -14,-18,  0},
+    {"shipping",     "mach-shipping",     "Отгрузка — железная дорога",    "wct-sale",         "Отгрузка",     "Выполнение заказов",          "",  31, -5,  R_NEG},
+    {"shipping2",    "mach-shipping2",    "Отгрузка — автотранспорт",      "wct-sale",         "Отгрузка",     "Мелкие партии",               "",  31,  6,  R_NEG},
+    {"sales",        "mach-sales",        "Служба сбыта и маркетинга",     "wct-marketing",    "Сбыт",         "Спрос и план продаж",         "",  31, 16,  R_NEG},
+
+    // Drill-down: внутренняя подсхема конвертера (parent = mach-converter)
+    {"conv-charge",  "mach-conv-charge",  "Завалка",                       "wct-feedstock",    "ККЦ",          "Лом и чугун",     "mach-converter", -8, 0, 0},
+    {"conv-vessel",  "mach-conv-vessel",  "Конвертер",                     "wct-finecleaning", "ККЦ",          "Кислородная продувка", "mach-converter", 0, 0, 0},
+    {"conv-cast",    "mach-conv-cast",    "Разливка",                      "wct-pileizer",     "ККЦ",          "Ковш / МНЛЗ",     "mach-converter",  8, 0, 0},
   };
   return machs;
 }
 
+// Связи схемы: верхний уровень + подсхема конвертера. parentId — уровень иерархии.
+struct FlowDef { std::string from, to, parent; };
+static const std::vector<FlowDef>& seed_flows() {
+  static const std::vector<FlowDef> flows = {
+    {"mach-scrapyard",    "mach-eaf",          ""},
+    {"mach-oreyard",      "mach-crushing",     ""},
+    {"mach-cokeyard",     "mach-sinter",       ""},
+    {"mach-crushing",     "mach-sinter",       ""},
+    {"mach-crushing",     "mach-screening",    ""},
+    {"mach-screening",    "mach-sinter",       ""},
+    {"mach-sinter",       "mach-blastfurnace", ""},
+    {"mach-chp",          "mach-sinter",       ""},
+    {"mach-chp",          "mach-blastfurnace", ""},
+    {"mach-gasclean",     "mach-chp",          ""},
+    {"mach-hotblast",     "mach-blastfurnace", ""},
+    {"mach-blastfurnace", "mach-gasclean",     ""},
+    {"mach-blastfurnace", "mach-hotblast",     ""},
+    {"mach-blastfurnace", "mach-converter",    ""},
+    {"mach-blastfurnace", "mach-eaf",          ""},
+    {"mach-converter",    "mach-ladle",        ""},
+    {"mach-eaf",          "mach-ladle",        ""},
+    {"mach-ladle",        "mach-ccm",          ""},
+    {"mach-ccm",          "mach-rolling",      ""},
+    {"mach-ccm",          "mach-heattreat",    ""},
+    {"mach-heattreat",    "mach-rolling",      ""},
+    {"mach-rolling",      "mach-coldrolling",  ""},
+    {"mach-rolling",      "mach-warehouse",    ""},
+    {"mach-coldrolling",  "mach-warehouse",    ""},
+    {"mach-ccm",          "mach-slabyard",     ""},
+    {"mach-slabyard",     "mach-rolling",      ""},
+    {"mach-warehouse",    "mach-shipping",     ""},
+    {"mach-warehouse",    "mach-shipping2",    ""},
+    {"mach-substation",   "mach-converter",    ""},
+    {"mach-substation",   "mach-sinter",       ""},
+    {"mach-substation2",  "mach-eaf",          ""},
+    {"mach-substation2",  "mach-ladle",        ""},
+    {"mach-shipping",     "mach-sales",        ""},
+    {"mach-shipping2",    "mach-sales",        ""},
+    // Подсхема конвертера
+    {"mach-conv-charge",  "mach-conv-vessel",  "mach-converter"},
+    {"mach-conv-vessel",  "mach-conv-cast",    "mach-converter"},
+  };
+  return flows;
+}
+
 // Идемпотентный посев всех реестров (INSERT OR IGNORE по детерминированным id).
 static void seed_demo(Database& db) {
-  struct WctDef { std::string id, name, group, kind; };
+  // Фиксированные характеристики типа (JSON [{label,value}]) — выводятся на схеме.
+  struct WctDef { std::string id, name, group, kind, characteristics; };
   const std::vector<WctDef> wcts = {
-    {"wct-feedstock",    "Сырьевой двор",           "Сырьё",       "feedstock"},
-    {"wct-cleaning",     "Обогащение и подготовка", "Переработка", "cleaningarea"},
-    {"wct-dryer",        "Аглофабрика / Сушка",     "Термическое", "dryer"},
-    {"wct-boiler",       "Энергетика и дутьё",      "Энергетика",  "boiler"},
-    {"wct-finecleaning", "Плавильные агрегаты",     "Плавка",      "finecleaning"},
-    {"wct-briquettes",   "Сталеплавильное",         "Плавка",      "briquettes"},
-    {"wct-pileizer",     "Прокатное производство",  "Прокат",      "pileizer"},
-    {"wct-transformer",  "Электроснабжение",        "Энергетика",  "transformer"},
-    {"wct-wirehouse",    "Складское хозяйство",     "Хранение",    "wirehouse"},
-    {"wct-sale",         "Отгрузка",                "Логистика",   "sale"},
-    {"wct-marketing",    "Вспомогательные службы",  "Сервис",      "marketing"},
+    {"wct-feedstock",    "Сырьевой двор",           "Сырьё",       "feedstock",
+      R"([{"label":"Ёмкость хранения","value":"12 000 т"},{"label":"Подача","value":"120 т/ч"}])"},
+    {"wct-cleaning",     "Обогащение и подготовка", "Переработка", "cleaningarea",
+      R"([{"label":"Производительность","value":"95 т/ч"},{"label":"КПД","value":"92%"}])"},
+    {"wct-dryer",        "Аглофабрика / Сушка",     "Термическое", "dryer",
+      R"([{"label":"Выпуск","value":"80 т/ч"},{"label":"Температура","value":"1300 °C"}])"},
+    {"wct-boiler",       "Энергетика и дутьё",      "Энергетика",  "boiler",
+      R"([{"label":"Мощность","value":"18 МВт"},{"label":"КПД","value":"41%"}])"},
+    {"wct-finecleaning", "Плавильные агрегаты",     "Плавка",      "finecleaning",
+      R"([{"label":"Выпуск","value":"65 т/ч"},{"label":"Температура","value":"1500 °C"}])"},
+    {"wct-briquettes",   "Сталеплавильное",         "Плавка",      "briquettes",
+      R"([{"label":"Производительность","value":"55 т/ч"},{"label":"Цикл плавки","value":"40 мин"}])"},
+    {"wct-pileizer",     "Прокатное производство",  "Прокат",      "pileizer",
+      R"([{"label":"Производительность","value":"48 т/ч"},{"label":"Загрузка","value":"79%"}])"},
+    {"wct-transformer",  "Электроснабжение",        "Энергетика",  "transformer",
+      R"([{"label":"Нагрузка","value":"16 МВт"},{"label":"Резерв","value":"4 МВт"}])"},
+    {"wct-wirehouse",    "Складское хозяйство",     "Хранение",    "wirehouse",
+      R"([{"label":"Заполнение","value":"61%"},{"label":"Остаток","value":"5 200 т"}])"},
+    {"wct-sale",         "Отгрузка",                "Логистика",   "sale",
+      R"([{"label":"Отгрузка","value":"1 150 т/сут"},{"label":"Заказов","value":"9"}])"},
+    {"wct-marketing",    "Вспомогательные службы",  "Сервис",      "marketing",
+      R"([{"label":"Загрузка","value":"55%"}])"},
   };
 
   // Изделия / материалы (BOM): purchased=1 — покупное сырьё.
@@ -430,12 +500,24 @@ static void seed_demo(Database& db) {
   db.exec("BEGIN");
 
   for (auto& w : wcts)
-    db.exec("INSERT OR IGNORE INTO work_center_types(id,name,group_name,kind) VALUES(?,?,?,?)",
-            {w.id, w.name, w.group, w.kind});
+    db.exec("INSERT OR IGNORE INTO work_center_types(id,name,group_name,kind,characteristics) "
+            "VALUES(?,?,?,?,?)",
+            {w.id, w.name, w.group, w.kind, w.characteristics});
 
+  // Машины (= узлы схемы): сначала без parent, затем проставляем parent_machine_id.
   for (auto& m : seed_machines())
-    db.exec("INSERT OR IGNORE INTO machines(id,name,wc_type_id,org_unit,status) VALUES(?,?,?,?,?)",
-            {m.machId, m.name, m.wctId, m.orgUnit, "active"});
+    db.exec("INSERT OR IGNORE INTO machines(id,name,wc_type_id,org_unit,status,"
+            "subtitle,pos_x,pos_z,rotation_y) VALUES(?,?,?,?,?,?,?,?,?)",
+            {m.machId, m.name, m.wctId, m.orgUnit, "active", m.subtitle,
+             std::to_string(m.posX), std::to_string(m.posZ), std::to_string(m.rotY)});
+  for (auto& m : seed_machines())
+    if (!m.parentId.empty())
+      db.exec("UPDATE machines SET parent_machine_id=? WHERE id=?", {m.parentId, m.machId});
+
+  // Связи схемы (flows).
+  for (auto& f : seed_flows())
+    db.exec("INSERT OR IGNORE INTO flows(id,from_id,to_id,parent_id) VALUES(?,?,?,?)",
+            {"flow-" + f.from + "-" + f.to, f.from, f.to, f.parent});
 
   // Изделия: сначала без parent (избегаем FK-порядка), потом проставляем parent_id.
   for (auto& p : prods)
@@ -544,13 +626,19 @@ int main(int argc, char* argv[]) {
   // NSI registries (simple CRUD)
   register_crud(svr, db, {
     "work_center_types", "work_center_type",
-    { "name", "group_name", "kind", "description", "interchangeable" }
+    { "name", "group_name", "kind", "characteristics", "description", "interchangeable" }
   });
 
   register_crud(svr, db, {
     "machines", "machine",
     { "name", "wc_type_id", "org_unit", "inv_no", "serial_no",
-      "year_made", "schedule", "status" }
+      "year_made", "schedule", "status",
+      "subtitle", "pos_x", "pos_z", "rotation_y", "parent_machine_id" }
+  });
+
+  register_crud(svr, db, {
+    "flows", "flow",
+    { "from_id", "to_id", "parent_id" }
   });
 
   register_crud(svr, db, {
