@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/nburakov/Codes/maos/backend/build/_deps/httplib-subbuild/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
