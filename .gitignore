@@ -12,6 +12,9 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 
+# C++ backend build
+backend/build/
+
 # Logs
 *.log
 npm-debug.log*
