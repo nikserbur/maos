@@ -1,0 +1,14 @@
+# Target labels
+ nlohmann_json-populate
+# Source files and their labels
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/CMakeFiles/nlohmann_json-populate
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/CMakeFiles/nlohmann_json-populate.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/CMakeFiles/nlohmann_json-populate-complete.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-build.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-configure.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-download.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-install.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-mkdir.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-patch.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-test.rule
+/Users/nburakov/Codes/maos/backend/build/_deps/nlohmann_json-subbuild/nlohmann_json-populate-prefix/src/nlohmann_json-populate-stamp/nlohmann_json-populate-update.rule

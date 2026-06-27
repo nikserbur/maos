@@ -1,23 +1,48 @@
 import { FlowLinks } from './FlowLinks'
 import { StageObject } from './StageObject'
-import { STAGES } from './layout'
+import type { SceneEdge, SceneNode } from './graph/sceneModel'
 
 interface PlantLayoutProps {
+  nodes: SceneNode[]
+  edges: SceneEdge[]
   selectedId: string | null
+  connectFrom: string | null
+  connecting: boolean
+  editing: boolean
   onSelect: (id: string) => void
+  onEnter: (id: string) => void
+  onMove: (id: string, position: [number, number]) => void
+  onConnectFrom: (id: string) => void
 }
 
-/** Полная раскладка предприятия: потоки + узлы. */
-export function PlantLayout({ selectedId, onSelect }: PlantLayoutProps) {
+/** Раскладка текущего уровня схемы: связи + узлы. */
+export function PlantLayout({
+  nodes,
+  edges,
+  selectedId,
+  connectFrom,
+  connecting,
+  editing,
+  onSelect,
+  onEnter,
+  onMove,
+  onConnectFrom,
+}: PlantLayoutProps) {
   return (
     <group>
-      <FlowLinks />
-      {STAGES.map((stage) => (
+      <FlowLinks nodes={nodes} edges={edges} />
+      {nodes.map((node) => (
         <StageObject
-          key={stage.id}
-          stage={stage}
-          selected={stage.id === selectedId}
+          key={node.id}
+          node={node}
+          selected={node.id === selectedId}
+          connectSource={node.id === connectFrom}
+          connecting={connecting}
+          editing={editing}
           onSelect={onSelect}
+          onEnter={onEnter}
+          onMove={onMove}
+          onConnectFrom={onConnectFrom}
         />
       ))}
     </group>

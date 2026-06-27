@@ -1,0 +1,158 @@
+import { useState } from 'react'
+import { api } from '../../../lib/api'
+import { useWorkCenterTypes } from '../useNsi'
+
+interface Props {
+  onSuccess: () => void
+}
+
+export function OperationForm({ onSuccess }: Props) {
+  const wcTypes = useWorkCenterTypes()
+
+  const [code, setCode]       = useState('')
+  const [name, setName]       = useState('')
+  const [opType, setOpType]   = useState('')
+  const [wcTypeSel, setWcTypeSel] = useState<string[]>([])
+  const [order, setOrder]     = useState('10')
+  const [setup, setSetup]     = useState(false)
+  const [tNorm, setTNorm]     = useState('')
+  const [tOpt, setTOpt]       = useState('')
+  const [tPess, setTPess]     = useState('')
+  const [cost, setCost]       = useState('')
+  const [risk, setRisk]       = useState('0.05')
+  const [inputs, setInputs]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  // Храним имена типов (не ID) — EditorPanel фильтрует по имени
+  const toggleWcType = (name: string) => {
+    setWcTypeSel((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name],
+    )
+  }
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { setError('Укажите наименование операции'); return }
+    setLoading(true)
+    setError(null)
+    try {
+      await api.operations.create({
+        code, name, op_type: opType,
+        wc_types: wcTypeSel.join(','),
+        order_no: order,
+        setup_required: setup ? '1' : '0',
+        t_norm: tNorm, t_opt: tOpt, t_pess: tPess,
+        cost, risk_coef: risk,
+        inputs,
+        controls: '', mechanisms: '', outputs: '',
+      })
+      onSuccess()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка сохранения')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="form">
+      {error && <div className="form__error">{error}</div>}
+
+      <div className="form__section">Идентификация</div>
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">Код операции</label>
+          <input className="form__input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="OP-020" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Тип операции</label>
+          <select className="form__select" value={opType} onChange={(e) => setOpType(e.target.value)}>
+            <option value="">— выберите —</option>
+            <option value="machining">Механообработка</option>
+            <option value="welding">Сварка</option>
+            <option value="assembly">Сборка</option>
+            <option value="coating">Покрытие</option>
+            <option value="heat">Термообработка</option>
+            <option value="control">Контроль качества</option>
+            <option value="transport">Транспортировка</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="form__field">
+        <label className="form__label">Наименование операции *</label>
+        <input className="form__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Токарная обработка вала" />
+      </div>
+
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">Допустимые типы оборудования</label>
+          {wcTypes.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
+              {wcTypes.map((t) => (
+                <label key={t.id} className="form__check" style={{ margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={wcTypeSel.includes(t.name)}
+                    onChange={() => toggleWcType(t.name)}
+                  />
+                  {t.name}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <span className="form__hint">Нет типов оборудования — создайте их в реестре.</span>
+          )}
+        </div>
+        <div className="form__field">
+          <label className="form__label">Порядок в маршруте (шаг)</label>
+          <input className="form__input" type="number" min="1" step="10" value={order} onChange={(e) => setOrder(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="form__section">Нормирование (PERT)</div>
+      <div className="form__row form__row--3">
+        <div className="form__field">
+          <label className="form__label">Норм. время, мин</label>
+          <input className="form__input" type="number" min="0" value={tNorm} onChange={(e) => setTNorm(e.target.value)} placeholder="60" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Опт. время, мин</label>
+          <input className="form__input" type="number" min="0" value={tOpt} onChange={(e) => setTOpt(e.target.value)} placeholder="45" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Пессим. время, мин</label>
+          <input className="form__input" type="number" min="0" value={tPess} onChange={(e) => setTPess(e.target.value)} placeholder="90" />
+        </div>
+      </div>
+
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">Стоимость, ₽</label>
+          <input className="form__input" type="number" min="0" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="1200" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Коэф. риска (0–1)</label>
+          <input className="form__input" type="number" min="0" max="1" step="0.01" value={risk} onChange={(e) => setRisk(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="form__field">
+        <label className="form__label">Входные изделия (артикулы через запятую)</label>
+        <input className="form__input" value={inputs} onChange={(e) => setInputs(e.target.value)} placeholder="STL-001, FLUX-002" />
+        <span className="form__hint">Изделия, потребляемые при выполнении операции.</span>
+      </div>
+
+      <label className="form__check">
+        <input type="checkbox" checked={setup} onChange={(e) => setSetup(e.target.checked)} />
+        Требует наладки оборудования перед выполнением
+      </label>
+
+      <div className="form__actions">
+        <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>
+          {loading ? 'Сохраняем…' : 'Создать'}
+        </button>
+      </div>
+    </div>
+  )
+}

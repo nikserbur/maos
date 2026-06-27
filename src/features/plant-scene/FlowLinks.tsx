@@ -2,18 +2,19 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { Line } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { FLOWS, STAGE_BY_ID } from './layout'
-import { FLOW_META } from './types'
+import type { SceneEdge, SceneNode } from './graph/sceneModel'
+
+const LINK_COLOR = '#4a9eff'
+const LINK_WIDTH = 3.5
 
 interface FlowLineProps {
   from: [number, number]
   to: [number, number]
-  color: string
   speed: number
 }
 
-/** Линия связи + бегущий «пакет», показывающий направление потока. */
-function FlowLine({ from, to, color, speed }: FlowLineProps) {
+/** Линия физической связи + бегущий «пакет», показывающий направление. */
+function FlowLine({ from, to, speed }: FlowLineProps) {
   const packet = useRef<THREE.Mesh>(null)
 
   const [start, end, linePoints] = useMemo(() => {
@@ -34,29 +35,44 @@ function FlowLine({ from, to, color, speed }: FlowLineProps) {
 
   return (
     <group>
-      <Line points={linePoints} color={color} lineWidth={1.4} transparent opacity={0.35} />
+      <Line points={linePoints} color={LINK_COLOR} lineWidth={LINK_WIDTH} transparent opacity={0.55} />
       <mesh ref={packet}>
         <sphereGeometry args={[0.26, 16, 16]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5} toneMapped={false} />
+        <meshStandardMaterial
+          color={LINK_COLOR}
+          emissive={LINK_COLOR}
+          emissiveIntensity={1.5}
+          toneMapped={false}
+        />
       </mesh>
     </group>
   )
 }
 
-/** Все потоки схемы (материальные, энергетические, газовые). */
-export function FlowLinks() {
+interface FlowLinksProps {
+  nodes: SceneNode[]
+  edges: SceneEdge[]
+}
+
+/** Связи текущего уровня схемы. */
+export function FlowLinks({ nodes, edges }: FlowLinksProps) {
+  const positions = useMemo(() => {
+    const map: Record<string, [number, number]> = {}
+    for (const n of nodes) map[n.id] = n.position
+    return map
+  }, [nodes])
+
   return (
     <group>
-      {FLOWS.map((flow, index) => {
-        const from = STAGE_BY_ID[flow.from]
-        const to = STAGE_BY_ID[flow.to]
+      {edges.map((edge, index) => {
+        const from = positions[edge.from]
+        const to = positions[edge.to]
         if (!from || !to) return null
         return (
           <FlowLine
-            key={`${flow.from}-${flow.to}`}
-            from={from.position}
-            to={to.position}
-            color={FLOW_META[flow.kind].color}
+            key={edge.id}
+            from={from}
+            to={to}
             speed={0.18 + (index % 3) * 0.04}
           />
         )

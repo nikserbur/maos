@@ -1,9 +1,9 @@
+import { useState } from 'react'
 import AppShell from './shell/AppShell'
+import { LoginScreen } from './features/auth/LoginScreen'
 
-/**
- * Корневой экран MAOS — оболочка приложения (рельса навигации, верхняя
- * панель, статус-бар). Активный экран по умолчанию — 3D-схема предприятия.
- */
 export default function App() {
+  const [authed, setAuthed] = useState(false)
+  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />
   return <AppShell />
 }

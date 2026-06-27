@@ -1,0 +1,125 @@
+.nsi {
+  height: 100%;
+  display: flex;
+  min-height: 0;
+}
+
+/* Registry list */
+.nsi__list {
+  width: 232px;
+  flex: 0 0 auto;
+  padding: 12px 8px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+.nsi__list-title {
+  padding: 4px 8px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.nsi__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+}
+.nsi__item:hover {
+  color: var(--text);
+  background: var(--bg-input);
+}
+.nsi__item--active {
+  color: var(--text);
+  background: var(--bg-card);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Registry panel */
+.nsi__panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  overflow: hidden;
+}
+.nsi__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.nsi__title {
+  font-size: 20px;
+  font-weight: 600;
+}
+.nsi__desc {
+  margin-top: 4px;
+  max-width: 640px;
+  color: var(--text-secondary);
+}
+.nsi__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+.nsi__search {
+  flex: 0 0 300px;
+  height: var(--control-compact);
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+.nsi__count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.nsi__table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.nsi__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.nsi__table th {
+  position: sticky;
+  top: 0;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.nsi__table td {
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.nsi__empty td {
+  padding: 32px 12px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.nsi .btn:disabled,
+.nsi__search:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

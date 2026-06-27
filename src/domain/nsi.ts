@@ -42,6 +42,8 @@ export interface Operation {
   requiresWorkerSkills: Id[]
   setupRequired: boolean
   splittable: boolean
+  /** Входные изделия, нужные для выполнения операции (если есть). */
+  inputs?: Array<{ productId: Id; quantity: number }>
 }
 
 export interface Routing {

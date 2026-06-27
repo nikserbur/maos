@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import PlantScene from '../features/plant-scene'
+import { NsiScreen } from '../features/nsi/NsiScreen'
 import { Placeholder } from './Placeholder'
 
 export interface ScreenDef {
@@ -9,20 +10,11 @@ export interface ScreenDef {
   Component: ComponentType
 }
 
-function MonitoringScreen() {
-  return (
-    <Placeholder
-      title="Мониторинг"
-      caption="Состояние оборудования и линий, узкие места и отклонения в реальном времени."
-    />
-  )
-}
-
 function PlanScreen() {
   return (
     <Placeholder
-      title="План производства"
-      caption="Гантт, загрузка ресурсов и критический путь по результатам планировщика."
+      title="Производственный план"
+      caption="Выбор изделий и даты выпуска (производственная программа) → построение плана-графика."
     />
   )
 }
@@ -31,7 +23,7 @@ function OptimizationScreen() {
   return (
     <Placeholder
       title="Оптимизация"
-      caption="Поиск порядка операций по целевой функции время/стоимость/риск, сравнение прогонов."
+      caption="Оптимальная загрузка оборудования и рабочих ради пропускной способности; критерий время/стоимость/риск."
     />
   )
 }
@@ -54,10 +46,13 @@ function AdminScreen() {
   )
 }
 
-/** Реестр экранов приложения для рельсы навигации. */
+/**
+ * Реестр экранов. Разбивка следует фундаментальной модели (docs/CONCEPT.md §8):
+ * Схема → Справочники → План → Оптимизация → Сценарии → Администрирование.
+ */
 export const SCREENS: ScreenDef[] = [
   { id: 'scheme', label: 'Схема предприятия', icon: 'scheme', Component: PlantScene },
-  { id: 'monitoring', label: 'Мониторинг', icon: 'monitoring', Component: MonitoringScreen },
+  { id: 'nsi', label: 'Справочники', icon: 'nsi', Component: NsiScreen },
   { id: 'plan', label: 'План', icon: 'plan', Component: PlanScreen },
   { id: 'optimization', label: 'Оптимизация', icon: 'optimization', Component: OptimizationScreen },
   { id: 'scenarios', label: 'Сценарии', icon: 'scenarios', Component: ScenariosScreen },
