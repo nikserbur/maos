@@ -11,7 +11,9 @@ import { PALETTE, hasChildren, type SceneGraph, type SceneNode } from './graph/s
 import { api, type Machine, type WorkCenterType, type Operation } from '../../lib/api'
 import './scene.css'
 
-const STORAGE_KEY = 'maos-scene-graph'
+// v2: схема приводится в соответствие с НСИ (авто-линковка узел↔оборудование).
+// Бамп ключа сбрасывает устаревший локальный граф из прежних сессий.
+const STORAGE_KEY = 'maos-scene-graph-v2'
 
 function loadSavedGraph(): SceneGraph | null {
   try {
@@ -56,7 +58,6 @@ export default function PlantScene() {
   const [machines, setMachines]     = useState<Machine[]>([])
   const [wcTypes, setWcTypes]       = useState<WorkCenterType[]>([])
   const [operations, setOperations] = useState<Operation[]>([])
-  const [seeding, setSeeding]       = useState(false)
 
   const refreshAll = () => Promise.all([
     api.machines.list().then(setMachines).catch(() => {}),
@@ -66,31 +67,26 @@ export default function PlantScene() {
 
   useEffect(() => { refreshAll() }, [])
 
+  // Авто-линковка: узел сцены ↔ запись «Оборудование» по детерминированному id
+  // (mach-{nodeId}). Реестры и схема — единая сущность через БД, привязка
+  // восстанавливается автоматически без ручных действий.
+  useEffect(() => {
+    if (machines.length === 0) return
+    for (const node of state.graph.nodes) {
+      if (node.parentId !== null || node.linkedMachineId) continue
+      const machineId = `mach-${node.id}`
+      if (machines.some((m) => m.id === machineId)) {
+        dispatch({ type: 'LINK_MACHINE', id: node.id, machineId })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machines])
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.graph))
     } catch { /* localStorage недоступен */ }
   }, [state.graph])
-
-  /** POST /api/demo/seed → создаёт типы и машины, затем линкует узлы сцены */
-  const handleSeedDemo = async () => {
-    setSeeding(true)
-    try {
-      const mapping = await api.demo.seed()
-      // Линкуем каждый узел верхнего уровня (parentId=null) по его id
-      for (const { nodeId, machineId } of mapping) {
-        const node = state.graph.nodes.find((n) => n.id === nodeId && n.parentId === null)
-        if (node) {
-          dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId })
-        }
-      }
-      await refreshAll()
-    } catch (e) {
-      console.error('seed failed', e)
-    } finally {
-      setSeeding(false)
-    }
-  }
 
   const rawNodes = state.graph.nodes.filter((n) => n.parentId === state.currentParentId)
   const edges    = state.graph.edges.filter((e) => e.parentId === state.currentParentId)
@@ -126,8 +122,6 @@ export default function PlantScene() {
     dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })
   }
 
-  const allSeeded = machines.length > 0 && nodes.every((n) => n.linkedMachineId)
-
   return (
     <div className="scene">
       <div className="scene__canvas">
@@ -161,21 +155,6 @@ export default function PlantScene() {
           onNavigate={(index) => dispatch({ type: 'GO_TO_LEVEL', index })}
         />
         <Legend />
-
-        {/* Кнопка посева демо-данных — пока не все узлы привязаны */}
-        {!allSeeded && (
-          <button
-            className="btn btn--primary"
-            style={{
-              position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)',
-              zIndex: 10, fontSize: 12, opacity: 0.9,
-            }}
-            onClick={handleSeedDemo}
-            disabled={seeding}
-          >
-            {seeding ? 'Создаём записи в НСИ…' : '⚙ Заполнить НСИ демо-данными'}
-          </button>
-        )}
 
         <div className="scene__hint mono">
           {state.connecting

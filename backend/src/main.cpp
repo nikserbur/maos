@@ -326,79 +326,177 @@ static void register_operation_routes(httplib::Server& svr, Database& db) {
 
 /* ── Demo seed ───────────────────────────────────────────────────────────── */
 
+// Маппинг узел сцены → запись «Оборудование». Узлы сцены имеют детерминированные
+// id (oreyard, converter…), машины создаются как mach-{nodeId} — фронт линкует
+// узлы автоматически по этому правилу.
+struct MachDef { std::string nodeId, machId, name, wctId, orgUnit; };
+
+static const std::vector<MachDef>& seed_machines() {
+  static const std::vector<MachDef> machs = {
+    {"scrapyard",    "mach-scrapyard",    "Скрапный двор",                 "wct-feedstock",    "Сырьевой цех"},
+    {"oreyard",      "mach-oreyard",      "Рудный двор",                   "wct-feedstock",    "Сырьевой цех"},
+    {"cokeyard",     "mach-cokeyard",     "Коксовый двор",                 "wct-feedstock",    "Сырьевой цех"},
+    {"crushing",     "mach-crushing",     "Дробильно-обогатительный цех",  "wct-cleaning",     "ДОЦ"},
+    {"screening",    "mach-screening",    "Отделение грохочения",          "wct-cleaning",     "ДОЦ"},
+    {"sinter",       "mach-sinter",       "Аглофабрика №1",                "wct-dryer",        "Аглоцех"},
+    {"chp",          "mach-chp",          "ТЭЦ — энергоблок",              "wct-boiler",       "Энергоцех"},
+    {"gasclean",     "mach-gasclean",     "Газоочистка доменного цеха",    "wct-finecleaning", "Доменный цех"},
+    {"blastfurnace", "mach-blastfurnace", "Доменная печь №1",              "wct-finecleaning", "Доменный цех"},
+    {"hotblast",     "mach-hotblast",     "Воздухонагреватели (дутьё)",    "wct-boiler",       "Доменный цех"},
+    {"converter",    "mach-converter",    "Кислородный конвертер №1",      "wct-briquettes",   "ККЦ"},
+    {"eaf",          "mach-eaf",          "Электродуговая печь ЭДП-100",   "wct-briquettes",   "ЭСПЦ"},
+    {"ladle",        "mach-ladle",        "Установка ковш-печь УКП-1",     "wct-finecleaning", "ККЦ"},
+    {"ccm",          "mach-ccm",          "МНЛЗ №1 (слябовая)",            "wct-pileizer",     "ССЦ"},
+    {"rolling",      "mach-rolling",      "Прокатный стан 2000 (горячий)", "wct-pileizer",     "ПЦ"},
+    {"coldrolling",  "mach-coldrolling",  "Прокатный стан 1700 (холодный)","wct-cleaning",     "ПЦ"},
+    {"heattreat",    "mach-heattreat",    "Термическое отделение",         "wct-finecleaning", "ПЦ"},
+    {"substation",   "mach-substation",   "Главная подстанция 110 кВ",     "wct-transformer",  "Энергоцех"},
+    {"substation2",  "mach-substation2",  "Подстанция ПС-2 (35 кВ)",       "wct-transformer",  "Энергоцех"},
+    {"warehouse",    "mach-warehouse",    "Склад готовой продукции",       "wct-wirehouse",    "Склад"},
+    {"slabyard",     "mach-slabyard",     "Склад слябов и заготовок",      "wct-wirehouse",    "ССЦ"},
+    {"maintenance",  "mach-maintenance",  "Ремонтно-механический цех",     "wct-marketing",    "РМЦ"},
+    {"lab",          "mach-lab",          "Центральная лаборатория (ОТК)", "wct-marketing",    "ОТК"},
+    {"shipping",     "mach-shipping",     "Отгрузка — железная дорога",    "wct-sale",         "Отгрузка"},
+    {"shipping2",    "mach-shipping2",    "Отгрузка — автотранспорт",      "wct-sale",         "Отгрузка"},
+    {"sales",        "mach-sales",        "Служба сбыта и маркетинга",     "wct-marketing",    "Сбыт"},
+  };
+  return machs;
+}
+
+// Идемпотентный посев всех реестров (INSERT OR IGNORE по детерминированным id).
+static void seed_demo(Database& db) {
+  struct WctDef { std::string id, name, group, kind; };
+  const std::vector<WctDef> wcts = {
+    {"wct-feedstock",    "Сырьевой двор",           "Сырьё",       "feedstock"},
+    {"wct-cleaning",     "Обогащение и подготовка", "Переработка", "cleaningarea"},
+    {"wct-dryer",        "Аглофабрика / Сушка",     "Термическое", "dryer"},
+    {"wct-boiler",       "Энергетика и дутьё",      "Энергетика",  "boiler"},
+    {"wct-finecleaning", "Плавильные агрегаты",     "Плавка",      "finecleaning"},
+    {"wct-briquettes",   "Сталеплавильное",         "Плавка",      "briquettes"},
+    {"wct-pileizer",     "Прокатное производство",  "Прокат",      "pileizer"},
+    {"wct-transformer",  "Электроснабжение",        "Энергетика",  "transformer"},
+    {"wct-wirehouse",    "Складское хозяйство",     "Хранение",    "wirehouse"},
+    {"wct-sale",         "Отгрузка",                "Логистика",   "sale"},
+    {"wct-marketing",    "Вспомогательные службы",  "Сервис",      "marketing"},
+  };
+
+  // Изделия / материалы (BOM): purchased=1 — покупное сырьё.
+  struct ProdDef {
+    std::string id, code, name, unit, parentId; double qtyInParent; int purchased;
+  };
+  const std::vector<ProdDef> prods = {
+    {"prod-ore",    "RAW-001", "Железная руда",          "т", "",          0,   1},
+    {"prod-coke",   "RAW-002", "Кокс",                   "т", "",          0,   1},
+    {"prod-flux",   "RAW-003", "Флюс (известняк)",       "т", "",          0,   1},
+    {"prod-scrap",  "RAW-004", "Металлолом",             "т", "",          0,   1},
+    {"prod-sinter", "SF-001",  "Агломерат",              "т", "prod-iron", 1.6, 0},
+    {"prod-iron",   "SF-002",  "Чугун передельный",      "т", "prod-steel", 0.9, 0},
+    {"prod-steel",  "SF-003",  "Сталь жидкая",           "т", "prod-slab", 1.1, 0},
+    {"prod-slab",   "SF-004",  "Сляб (заготовка)",       "т", "prod-hrc",  1.05, 0},
+    {"prod-hrc",    "FIN-001", "Рулон горячекатаный",    "т", "prod-crc",  1.08, 0},
+    {"prod-crc",    "FIN-002", "Лист холоднокатаный",    "т", "",          0,   0},
+  };
+
+  // Операции-шаблоны НСИ (routing_id = NULL). wc_types — имена типов (как фильтрует фронт).
+  struct OpTemplate {
+    std::string id, code, name, opType, wcTypes; int tNorm; std::string inputs, outputs;
+  };
+  const std::vector<OpTemplate> opTemplates = {
+    {"opt-crush",   "OP-010", "Дробление и обогащение руды", "machining", "Обогащение и подготовка", 45,  "Железная руда", "Концентрат"},
+    {"opt-sinter",  "OP-020", "Агломерация",                 "heat",      "Аглофабрика / Сушка",     90,  "Концентрат, Флюс (известняк)", "Агломерат"},
+    {"opt-blast",   "OP-030", "Доменная плавка",             "heat",      "Плавильные агрегаты",     240, "Агломерат, Кокс", "Чугун передельный"},
+    {"opt-bof",     "OP-040", "Конвертерная плавка",         "heat",      "Сталеплавильное",         40,  "Чугун передельный, Металлолом", "Сталь жидкая"},
+    {"opt-eaf",     "OP-041", "Электроплавка (ЭДП)",         "heat",      "Сталеплавильное",         75,  "Металлолом", "Сталь жидкая"},
+    {"opt-ladle",   "OP-050", "Внепечная обработка стали",   "heat",      "Плавильные агрегаты",     35,  "Сталь жидкая", "Сталь жидкая"},
+    {"opt-cast",    "OP-060", "Непрерывная разливка",        "machining", "Прокатное производство",  55,  "Сталь жидкая", "Сляб (заготовка)"},
+    {"opt-hotroll", "OP-070", "Горячая прокатка",            "machining", "Прокатное производство",  30,  "Сляб (заготовка)", "Рулон горячекатаный"},
+    {"opt-coldroll","OP-080", "Холодная прокатка",           "machining", "Обогащение и подготовка", 28,  "Рулон горячекатаный", "Лист холоднокатаный"},
+    {"opt-heat",    "OP-090", "Термообработка (отжиг)",      "heat",      "Плавильные агрегаты",     120, "Лист холоднокатаный", "Лист холоднокатаный"},
+    {"opt-qc",      "OP-100", "Контроль качества",           "control",   "Вспомогательные службы",  20,  "", ""},
+  };
+
+  // Техкарты: routing + операции-шаги (берут параметры из шаблонов).
+  struct RoutingDef {
+    std::string id, name, productId;
+    std::vector<std::string> opTemplateIds;  // последовательность шаблонов
+  };
+  const std::vector<RoutingDef> routings = {
+    {"route-hrc", "Производство горячекатаного рулона", "prod-hrc",
+      {"opt-sinter", "opt-blast", "opt-bof", "opt-ladle", "opt-cast", "opt-hotroll", "opt-qc"}},
+    {"route-crc", "Производство холоднокатаного листа", "prod-crc",
+      {"opt-coldroll", "opt-heat", "opt-qc"}},
+  };
+
+  db.exec("BEGIN");
+
+  for (auto& w : wcts)
+    db.exec("INSERT OR IGNORE INTO work_center_types(id,name,group_name,kind) VALUES(?,?,?,?)",
+            {w.id, w.name, w.group, w.kind});
+
+  for (auto& m : seed_machines())
+    db.exec("INSERT OR IGNORE INTO machines(id,name,wc_type_id,org_unit,status) VALUES(?,?,?,?,?)",
+            {m.machId, m.name, m.wctId, m.orgUnit, "active"});
+
+  // Изделия: сначала без parent (избегаем FK-порядка), потом проставляем parent_id.
+  for (auto& p : prods)
+    db.exec("INSERT OR IGNORE INTO products(id,code,name,unit,purchased) VALUES(?,?,?,?,?)",
+            {p.id, p.code, p.name, p.unit, std::to_string(p.purchased)});
+  for (auto& p : prods)
+    if (!p.parentId.empty())
+      db.exec("UPDATE products SET parent_id=?, qty_in_parent=? WHERE id=?",
+              {p.parentId, std::to_string(p.qtyInParent), p.id});
+
+  // Шаблоны операций (routing_id = NULL).
+  for (auto& o : opTemplates)
+    db.exec("INSERT OR IGNORE INTO operations(id,code,name,op_type,wc_types,t_norm,t_opt,t_pess,inputs,outputs) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            {o.id, o.code, o.name, o.opType, o.wcTypes,
+             std::to_string(o.tNorm), std::to_string(o.tNorm), std::to_string(o.tNorm),
+             o.inputs, o.outputs});
+
+  // Техкарты + их шаги (копии шаблонов, привязанные к routing_id).
+  for (auto& r : routings) {
+    db.exec("INSERT OR IGNORE INTO routings(id,name,product_id) VALUES(?,?,?)",
+            {r.id, r.name, r.productId});
+    int order = 10;
+    for (auto& tplId : r.opTemplateIds) {
+      const OpTemplate* tpl = nullptr;
+      for (auto& o : opTemplates) if (o.id == tplId) { tpl = &o; break; }
+      if (!tpl) continue;
+      std::string stepId = r.id + "-" + tplId;
+      db.exec("INSERT OR IGNORE INTO operations(id,routing_id,code,name,op_type,wc_types,order_no,"
+              "t_norm,t_opt,t_pess,inputs,outputs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+              {stepId, r.id, tpl->code, tpl->name, tpl->opType, tpl->wcTypes,
+               std::to_string(order),
+               std::to_string(tpl->tNorm), std::to_string(tpl->tNorm), std::to_string(tpl->tNorm),
+               tpl->inputs, tpl->outputs});
+      order += 10;
+    }
+  }
+
+  db.exec("COMMIT");
+}
+
 static void register_demo_seed(httplib::Server& svr, Database& db) {
   svr.Post("/api/demo/seed", [&db](const httplib::Request&, httplib::Response& res) {
     try {
-      struct WctDef { std::string id, name, group, kind; };
-      const std::vector<WctDef> wcts = {
-        {"wct-feedstock",    "Сырьевой двор",           "Сырьё",       "feedstock"},
-        {"wct-cleaning",     "Обогащение и подготовка", "Переработка", "cleaningarea"},
-        {"wct-dryer",        "Аглофабрика / Сушка",     "Термическое", "dryer"},
-        {"wct-boiler",       "Энергетика и дутьё",      "Энергетика",  "boiler"},
-        {"wct-finecleaning", "Плавильные агрегаты",     "Плавка",      "finecleaning"},
-        {"wct-briquettes",   "Сталеплавильное",         "Плавка",      "briquettes"},
-        {"wct-pileizer",     "Прокатное производство",  "Прокат",      "pileizer"},
-        {"wct-transformer",  "Электроснабжение",        "Энергетика",  "transformer"},
-        {"wct-wirehouse",    "Складское хозяйство",     "Хранение",    "wirehouse"},
-        {"wct-sale",         "Отгрузка",                "Логистика",   "sale"},
-        {"wct-marketing",    "Вспомогательные службы",  "Сервис",      "marketing"},
-      };
-
-      struct MachDef {
-        std::string nodeId, machId, name, wctId, orgUnit;
-      };
-      const std::vector<MachDef> machs = {
-        {"scrapyard",    "mach-scrapyard",    "Скрапный двор",                 "wct-feedstock",    "Сырьевой цех"},
-        {"oreyard",      "mach-oreyard",      "Рудный двор",                   "wct-feedstock",    "Сырьевой цех"},
-        {"cokeyard",     "mach-cokeyard",     "Коксовый двор",                 "wct-feedstock",    "Сырьевой цех"},
-        {"crushing",     "mach-crushing",     "Дробильно-обогатительный цех",  "wct-cleaning",     "ДОЦ"},
-        {"screening",    "mach-screening",    "Отделение грохочения",          "wct-cleaning",     "ДОЦ"},
-        {"sinter",       "mach-sinter",       "Аглофабрика №1",                "wct-dryer",        "Аглоцех"},
-        {"chp",          "mach-chp",          "ТЭЦ — энергоблок",              "wct-boiler",       "Энергоцех"},
-        {"gasclean",     "mach-gasclean",     "Газоочистка доменного цеха",    "wct-finecleaning", "Доменный цех"},
-        {"blastfurnace", "mach-blastfurnace", "Доменная печь №1",              "wct-finecleaning", "Доменный цех"},
-        {"hotblast",     "mach-hotblast",     "Воздухонагреватели (дутьё)",    "wct-boiler",       "Доменный цех"},
-        {"converter",    "mach-converter",    "Кислородный конвертер №1",      "wct-briquettes",   "ККЦ"},
-        {"eaf",          "mach-eaf",          "Электродуговая печь ЭДП-100",   "wct-briquettes",   "ЭСПЦ"},
-        {"ladle",        "mach-ladle",        "Установка ковш-печь УКП-1",     "wct-finecleaning", "ККЦ"},
-        {"ccm",          "mach-ccm",          "МНЛЗ №1 (слябовая)",            "wct-pileizer",     "ССЦ"},
-        {"rolling",      "mach-rolling",      "Прокатный стан 2000 (горячий)", "wct-pileizer",     "ПЦ"},
-        {"coldrolling",  "mach-coldrolling",  "Прокатный стан 1700 (холодный)","wct-cleaning",     "ПЦ"},
-        {"heattreat",    "mach-heattreat",    "Термическое отделение",         "wct-finecleaning", "ПЦ"},
-        {"substation",   "mach-substation",   "Главная подстанция 110 кВ",     "wct-transformer",  "Энергоцех"},
-        {"substation2",  "mach-substation2",  "Подстанция ПС-2 (35 кВ)",       "wct-transformer",  "Энергоцех"},
-        {"warehouse",    "mach-warehouse",    "Склад готовой продукции",       "wct-wirehouse",    "Склад"},
-        {"slabyard",     "mach-slabyard",     "Склад слябов и заготовок",      "wct-wirehouse",    "ССЦ"},
-        {"maintenance",  "mach-maintenance",  "Ремонтно-механический цех",     "wct-marketing",    "РМЦ"},
-        {"lab",          "mach-lab",          "Центральная лаборатория (ОТК)", "wct-marketing",    "ОТК"},
-        {"shipping",     "mach-shipping",     "Отгрузка — железная дорога",    "wct-sale",         "Отгрузка"},
-        {"shipping2",    "mach-shipping2",    "Отгрузка — автотранспорт",      "wct-sale",         "Отгрузка"},
-        {"sales",        "mach-sales",        "Служба сбыта и маркетинга",     "wct-marketing",    "Сбыт"},
-      };
-
-      db.exec("BEGIN");
-      for (auto& w : wcts) {
-        db.exec(
-          "INSERT OR IGNORE INTO work_center_types(id,name,group_name,kind) VALUES(?,?,?,?)",
-          {w.id, w.name, w.group, w.kind}
-        );
-      }
-      for (auto& m : machs) {
-        db.exec(
-          "INSERT OR IGNORE INTO machines(id,name,wc_type_id,org_unit,status) VALUES(?,?,?,?,?)",
-          {m.machId, m.name, m.wctId, m.orgUnit, "active"}
-        );
-      }
-      db.exec("COMMIT");
-
+      seed_demo(db);
       json mapping = json::array();
-      for (auto& m : machs)
+      for (auto& m : seed_machines())
         mapping.push_back({{"nodeId", m.nodeId}, {"machineId", m.machId}});
       ok(res, mapping);
     } catch (std::exception& e) {
       try { db.exec("ROLLBACK"); } catch (...) {}
       err(res, 400, e.what());
     }
+  });
+
+  // Маппинг узел→машина без посева (для авто-линковки на фронте).
+  svr.Get("/api/demo/mapping", [](const httplib::Request&, httplib::Response& res) {
+    json mapping = json::array();
+    for (auto& m : seed_machines())
+      mapping.push_back({{"nodeId", m.nodeId}, {"machineId", m.machId}});
+    ok(res, mapping);
   });
 }
 
@@ -414,6 +512,18 @@ int main(int argc, char* argv[]) {
   Database db(db_path);
   db.init_schema();
   std::cout << "Schema ready.\n";
+
+  // Авто-посев демо-данных при пустой базе: реестры и схема должны быть
+  // согласованы — нельзя иметь объекты на схеме без записей в НСИ.
+  try {
+    auto cnt = db.query_one("SELECT COUNT(*) AS n FROM work_center_types");
+    if (cnt["n"].get<std::string>() == "0") {
+      seed_demo(db);
+      std::cout << "Demo data seeded (empty DB).\n";
+    }
+  } catch (std::exception& e) {
+    std::cerr << "Seed check failed: " << e.what() << "\n";
+  }
 
   httplib::Server svr;
 
