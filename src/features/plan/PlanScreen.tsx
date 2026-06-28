@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   api, type ScheduleResult, type OptRunSummary, type DemandOrder, type Product,
-  type MrpResult,
+  type MrpResult, type ProductionPlan,
 } from '../../lib/api'
 import './plan.css'
 
@@ -100,24 +100,42 @@ export function PlanScreen() {
   const [useCalendar, setUseCalendar] = useState(true)
   const [loadView, setLoadView] = useState<'types' | 'machines'>('types')
 
+  const [plans, setPlans] = useState<ProductionPlan[]>([])
+  const [activePlan, setActivePlan] = useState('')
   const [mrp, setMrp] = useState<MrpResult | null>(null)
-  const loadMrp = () => api.mrp.run().then(setMrp).catch(() => {})
+
+  // Заказы только активного плана.
+  const planOrders = orders.filter((o) => o.plan_id === activePlan)
+  const planProgram = () => planOrders.map((o) => ({ product_id: o.product_id, qty: Number(o.quantity) || 1 }))
+  const loadMrp = (prog?: Array<{ product_id: string; qty: number }>) =>
+    api.mrp.run(prog).then(setMrp).catch(() => {})
   const loadOrders = () => api.demandOrders.list().then(setOrders).catch(() => {})
+  const loadPlans = () => api.plans.list().then((ps) => {
+    setPlans(ps); if (ps.length && !activePlan) setActivePlan(ps[0].id)
+  }).catch(() => {})
   useEffect(() => {
     api.optimize.runs().then(setRuns).catch(() => {})
     api.products.list().then((p) => setProducts(p.filter((x) => x.sellable === '1'))).catch(() => {})
-    loadOrders(); loadMrp()
+    loadOrders(); loadPlans()
   }, [])
+  // Пересчитать MRP под активный план.
+  useEffect(() => { if (activePlan) loadMrp(planProgram()) }, [activePlan, orders]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const prodName = (id: string) => products.find((p) => p.id === id)?.name ?? id
   const addOrder = async () => {
-    if (!newProd) return
-    await api.demandOrders.create({ product_id: newProd, quantity: newQty, due_hours: newDue, priority: '5' }).catch(() => {})
-    setNewProd(''); await loadOrders(); await loadMrp()
+    if (!newProd || !activePlan) return
+    await api.demandOrders.create({ plan_id: activePlan, product_id: newProd, quantity: newQty, due_hours: newDue, priority: '5' }).catch(() => {})
+    setNewProd(''); await loadOrders()
   }
-  const delOrder = async (id: string) => { await api.demandOrders.delete(id).catch(() => {}); await loadOrders(); await loadMrp() }
+  const delOrder = async (id: string) => { await api.demandOrders.delete(id).catch(() => {}); await loadOrders() }
   const updateOrder = async (id: string, patch: Record<string, string>) => {
-    await api.demandOrders.update(id, patch).catch(() => {}); await loadOrders(); await loadMrp()
+    await api.demandOrders.update(id, patch).catch(() => {}); await loadOrders()
+  }
+  const createPlan = async () => {
+    const name = window.prompt('Название нового производственного плана:', 'План ' + (plans.length + 1))
+    if (!name) return
+    const p = await api.plans.create({ name }).catch(() => null)
+    await loadPlans(); if (p) setActivePlan(p.id)
   }
 
   const run = async () => {
@@ -126,6 +144,7 @@ export function PlanScreen() {
       const r = await api.schedule.run({
         rule, samples: Number(samples) || 500, w_risk: Number(wRisk) || 0.5,
         run_id: runId || undefined, use_calendar: useCalendar,
+        program: runId ? undefined : planProgram(),
       })
       if (r.error_soft) setError(r.warnings?.join(' ') || 'Нет данных для плана')
       else setResult(r)
@@ -184,11 +203,20 @@ export function PlanScreen() {
 
       {!runId && (
         <div className="plan__panel">
-          <p className="plan__section-title" style={{ marginTop: 0 }}>Производственная программа — заказы (что и к какому сроку)</p>
+          <p className="plan__section-title" style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>Производственная программа — заказы (что и к какому сроку)</span>
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ textTransform: 'none', letterSpacing: 0 }}>План:</span>
+              <select className="plan__select" style={{ height: 26, minWidth: 160 }} value={activePlan} onChange={(e) => setActivePlan(e.target.value)}>
+                {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <button className="btn" style={{ height: 26, padding: '0 8px' }} onClick={createPlan}>+ План</button>
+            </span>
+          </p>
           <table className="plan__rules" style={{ marginBottom: 8 }}>
             <thead><tr><th>Изделие</th><th>Кол-во</th><th>Срок, ч</th><th>Приоритет</th><th></th></tr></thead>
             <tbody>
-              {orders.map((o) => (
+              {planOrders.map((o) => (
                 <tr key={o.id}>
                   <td>{prodName(o.product_id)}</td>
                   <td><input className="plan__cell" type="number" min="1" defaultValue={Math.round(Number(o.quantity))}
@@ -200,7 +228,7 @@ export function PlanScreen() {
                   <td><button className="btn btn--danger" style={{ height: 22, padding: '0 8px' }} onClick={() => delOrder(o.id)}>✕</button></td>
                 </tr>
               ))}
-              {orders.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>Заказов нет — добавьте ниже.</td></tr>}
+              {planOrders.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>В этом плане заказов нет — добавьте ниже.</td></tr>}
             </tbody>
           </table>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>

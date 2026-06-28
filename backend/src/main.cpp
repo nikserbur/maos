@@ -1025,6 +1025,22 @@ static void migrate_v6(Database& db) {
   std::cout << "Migration v6 done.\n";
 }
 
+// v7: производственные планы (именованные программы) + привязка заказов к плану.
+static void migrate_v7(Database& db) {
+  if (db.user_version() >= 7) return;
+  std::cout << "Migrating schema → v7 (production plans)…\n";
+  db.exec_safe("ALTER TABLE demand_orders ADD COLUMN plan_id TEXT");
+  db.exec("BEGIN");
+  try {
+    db.exec("INSERT OR IGNORE INTO production_plans(id,name,description) "
+            "VALUES('plan-default','Текущий план','Демо-программа заказов')");
+    db.exec("UPDATE demand_orders SET plan_id='plan-default' WHERE plan_id IS NULL OR plan_id=''");
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(7);
+  std::cout << "Migration v7 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1440,6 +1456,7 @@ int main(int argc, char* argv[]) {
     migrate_v4(db);
     migrate_v5(db);
     migrate_v6(db);
+    migrate_v7(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1456,7 +1473,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.7.8"} });
+    ok(res, { {"status", "ok"}, {"version", "0.8.0"} });
   });
 
   // Auth
@@ -1499,7 +1516,12 @@ int main(int argc, char* argv[]) {
   // Производственная программа (заказы) — вход Стадии 1
   register_crud(svr, db, {
     "demand_orders", "demand_order",
-    { "product_id", "quantity", "due_hours", "release_hours", "priority", "status" }
+    { "plan_id", "product_id", "quantity", "due_hours", "release_hours", "priority", "status" }
+  });
+
+  // Именованные производственные планы (программы заказов)
+  register_crud(svr, db, {
+    "production_plans", "production_plan", { "name", "description" }
   });
 
   // Оргструктура (подразделения/цеха) — для выпадающих списков

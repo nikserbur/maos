@@ -221,9 +221,10 @@ export interface MrpResult { feasible: boolean; materials: MrpMaterial[]; n_orde
 
 /* ── Производственная программа (заказы) ─────────────────────────────────── */
 export interface DemandOrder {
-  id: string; product_id: string; quantity: string; due_hours: string
+  id: string; plan_id: string; product_id: string; quantity: string; due_hours: string
   release_hours: string; priority: string; status: string; created_at: string
 }
+export interface ProductionPlan { id: string; name: string; description: string; created_at: string }
 
 /* ── API surface ─────────────────────────────────────────────────────────── */
 export const api = {
@@ -338,6 +339,12 @@ export const api = {
     create: (d: Partial<DemandOrder>)   => post<DemandOrder>('/demand_orders', d),
     update: (id: string, d: Partial<DemandOrder>) => put<DemandOrder>(`/demand_orders/${id}`, d),
     delete: (id: string)                => del<object>(`/demand_orders/${id}`),
+  },
+
+  plans: {
+    list:   ()                          => get<ProductionPlan[]>('/production_plans'),
+    create: (d: { name: string; description?: string }) => post<ProductionPlan>('/production_plans', d),
+    delete: (id: string)                => del<object>(`/production_plans/${id}`),
   },
 
   demo: {

@@ -197,9 +197,18 @@ CREATE TABLE IF NOT EXISTS calendar_exceptions (
   end_min     INTEGER
 );
 
+-- ── Производственные планы (именованные программы заказов) ─────────────────
+CREATE TABLE IF NOT EXISTS production_plans (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ── Производственная программа (заказы) — вход Стадии 1 ────────────────────
 CREATE TABLE IF NOT EXISTS demand_orders (
   id            TEXT PRIMARY KEY,
+  plan_id       TEXT REFERENCES production_plans(id) ON DELETE CASCADE,
   product_id    TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   quantity      REAL NOT NULL DEFAULT 1,
   due_hours     REAL NOT NULL DEFAULT 0,   -- срок готовности, ч от начала горизонта (0=авто)
