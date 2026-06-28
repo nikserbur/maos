@@ -1,5 +1,8 @@
 /* Экран «План» — Стадия 1: расписание исполнения (Ганта, загрузка, рабочие). */
 .plan { height: 100%; overflow-y: auto; padding: calc(var(--grid) * 2.4); display: flex; flex-direction: column; gap: calc(var(--grid) * 2.2); }
+/* Прямые секции не сжимаются по высоте — иначе панели с overflow-x схлопывались
+   в флекс-колонке и прятали таблицы за внутренним скроллом. */
+.plan > * { flex-shrink: 0; }
 .plan__cell { width: 70px; height: 24px; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 6px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .plan__head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--grid); flex-wrap: wrap; }
 .plan__title { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }

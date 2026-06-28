@@ -111,6 +111,8 @@ export function NsiScreen() {
         <EditDialog
           registry={active}
           row={editRow}
+          wcTypes={wcTypes}
+          products={products}
           onClose={() => setEditRow(null)}
           onSaved={() => { setEditRow(null); handleCreated() }}
         />
