@@ -123,3 +123,7 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Кликабельная строка реестра — открыть для редактирования */
+.nsi__row--clickable { cursor: pointer; }
+.nsi__row--clickable:hover td { background: var(--bg-input); }

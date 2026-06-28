@@ -43,18 +43,19 @@ export interface KindMeta {
 }
 
 /** Палитра типов узлов (каждый тип = 3D-модель). */
+// Масштабы увеличены (~×1.5) для более крупных и читаемых объектов схемы.
 export const KIND_META: Record<ObjectKind, KindMeta> = {
-  feedstock: { label: 'Двор сырья', scale: 1 / 6 },
-  cleaningarea: { label: 'Обработка', scale: 1 / 6, rotationY: -Math.PI / 2 },
-  dryer: { label: 'Большой цех', scale: 1 / 10, rotationY: Math.PI },
-  boiler: { label: 'Энергоблок', scale: 1 / 10, rotationY: Math.PI },
-  finecleaning: { label: 'Печь', scale: 1 / 11 },
-  briquettes: { label: 'Агрегат A', scale: 1 / 6 },
-  pileizer: { label: 'Агрегат B', scale: 1 / 6 },
-  transformer: { label: 'Подстанция', scale: 1 / 6 },
-  wirehouse: { label: 'Склад', scale: 1 / 6 },
-  sale: { label: 'Отгрузка', scale: 1 / 6, rotationY: -Math.PI / 2 },
-  marketing: { label: 'Корпус', scale: 1 / 6, rotationY: -Math.PI / 2 },
+  feedstock: { label: 'Двор сырья', scale: 1 / 4 },
+  cleaningarea: { label: 'Обработка', scale: 1 / 4, rotationY: -Math.PI / 2 },
+  dryer: { label: 'Большой цех', scale: 1 / 6.5, rotationY: Math.PI },
+  boiler: { label: 'Энергоблок', scale: 1 / 6.5, rotationY: Math.PI },
+  finecleaning: { label: 'Печь', scale: 1 / 7.5 },
+  briquettes: { label: 'Агрегат A', scale: 1 / 4 },
+  pileizer: { label: 'Агрегат B', scale: 1 / 4 },
+  transformer: { label: 'Подстанция', scale: 1 / 4 },
+  wirehouse: { label: 'Склад', scale: 1 / 4 },
+  sale: { label: 'Отгрузка', scale: 1 / 4, rotationY: -Math.PI / 2 },
+  marketing: { label: 'Корпус', scale: 1 / 4, rotationY: -Math.PI / 2 },
 }
 
 export const PALETTE: ObjectKind[] = [

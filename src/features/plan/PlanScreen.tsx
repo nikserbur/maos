@@ -110,6 +110,9 @@ export function PlanScreen() {
     setNewProd(''); await loadOrders(); await loadMrp()
   }
   const delOrder = async (id: string) => { await api.demandOrders.delete(id).catch(() => {}); await loadOrders(); await loadMrp() }
+  const updateOrder = async (id: string, patch: Record<string, string>) => {
+    await api.demandOrders.update(id, patch).catch(() => {}); await loadOrders(); await loadMrp()
+  }
 
   const run = async () => {
     setRunning(true); setError(null)
@@ -182,9 +185,12 @@ export function PlanScreen() {
               {orders.map((o) => (
                 <tr key={o.id}>
                   <td>{prodName(o.product_id)}</td>
-                  <td>{Math.round(Number(o.quantity))}</td>
-                  <td>{Math.round(Number(o.due_hours))}</td>
-                  <td>{o.priority}</td>
+                  <td><input className="plan__cell" type="number" min="1" defaultValue={Math.round(Number(o.quantity))}
+                             onBlur={(e) => Number(e.target.value) !== Number(o.quantity) && updateOrder(o.id, { quantity: e.target.value })} /></td>
+                  <td><input className="plan__cell" type="number" min="0" defaultValue={Math.round(Number(o.due_hours))}
+                             onBlur={(e) => Number(e.target.value) !== Number(o.due_hours) && updateOrder(o.id, { due_hours: e.target.value })} /></td>
+                  <td><input className="plan__cell" type="number" min="1" max="9" defaultValue={o.priority}
+                             onBlur={(e) => e.target.value !== o.priority && updateOrder(o.id, { priority: e.target.value })} /></td>
                   <td><button className="btn btn--danger" style={{ height: 22, padding: '0 8px' }} onClick={() => delOrder(o.id)}>✕</button></td>
                 </tr>
               ))}

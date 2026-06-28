@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import type { SceneEdge, SceneNode } from './graph/sceneModel'
 
 const LINK_COLOR = '#4a9eff'
-const LINK_WIDTH = 3.5
+const LINK_WIDTH = 7
 
 interface FlowLineProps {
   from: [number, number]
@@ -13,38 +13,50 @@ interface FlowLineProps {
   speed: number
 }
 
-/** Линия физической связи + бегущий «пакет», показывающий направление. */
+/** Линия физической связи + бегущая «вагонетка», показывающая направление потока. */
 function FlowLine({ from, to, speed }: FlowLineProps) {
-  const packet = useRef<THREE.Mesh>(null)
+  const wagon = useRef<THREE.Group>(null)
 
-  const [start, end, linePoints] = useMemo(() => {
-    const s = new THREE.Vector3(from[0], 0.45, from[1])
-    const e = new THREE.Vector3(to[0], 0.45, to[1])
+  const [start, end, linePoints, yaw] = useMemo(() => {
+    const s = new THREE.Vector3(from[0], 0.5, from[1])
+    const e = new THREE.Vector3(to[0], 0.5, to[1])
     const pts: [number, number, number][] = [
-      [from[0], 0.25, from[1]],
-      [to[0], 0.25, to[1]],
+      [from[0], 0.28, from[1]],
+      [to[0], 0.28, to[1]],
     ]
-    return [s, e, pts] as const
+    // Ориентация вагонетки вдоль направления потока (поворот вокруг Y).
+    const rot = Math.atan2(-(to[1] - from[1]), to[0] - from[0])
+    return [s, e, pts, rot] as const
   }, [from, to])
 
   useFrame((state) => {
-    if (!packet.current) return
+    if (!wagon.current) return
     const t = (state.clock.elapsedTime * speed) % 1
-    packet.current.position.lerpVectors(start, end, t)
+    wagon.current.position.lerpVectors(start, end, t)
   })
 
   return (
     <group>
-      <Line points={linePoints} color={LINK_COLOR} lineWidth={LINK_WIDTH} transparent opacity={0.55} />
-      <mesh ref={packet}>
-        <sphereGeometry args={[0.26, 16, 16]} />
-        <meshStandardMaterial
-          color={LINK_COLOR}
-          emissive={LINK_COLOR}
-          emissiveIntensity={1.5}
-          toneMapped={false}
-        />
-      </mesh>
+      <Line points={linePoints} color={LINK_COLOR} lineWidth={LINK_WIDTH} transparent opacity={0.7} />
+      <group ref={wagon} rotation={[0, yaw, 0]}>
+        {/* корпус вагонетки */}
+        <mesh position={[0, 0.04, 0]} castShadow>
+          <boxGeometry args={[0.62, 0.26, 0.4]} />
+          <meshStandardMaterial color="#2a3340" metalness={0.6} roughness={0.4} />
+        </mesh>
+        {/* светящийся груз */}
+        <mesh position={[0, 0.22, 0]}>
+          <boxGeometry args={[0.46, 0.16, 0.3]} />
+          <meshStandardMaterial color={LINK_COLOR} emissive={LINK_COLOR} emissiveIntensity={1.4} toneMapped={false} />
+        </mesh>
+        {/* колёса */}
+        {([[-0.22, 0.16], [0.22, 0.16], [-0.22, -0.16], [0.22, -0.16]] as const).map(([x, z], i) => (
+          <mesh key={i} position={[x, -0.08, z]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.09, 0.09, 0.06, 10]} />
+            <meshStandardMaterial color="#11151b" metalness={0.3} roughness={0.7} />
+          </mesh>
+        ))}
+      </group>
     </group>
   )
 }

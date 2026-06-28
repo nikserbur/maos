@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { REGISTRIES } from './registries'
 import { CreateDialog } from './CreateDialog'
+import { EditDialog } from './EditDialog'
 import { api, type WorkCenterType, type Product } from '../../lib/api'
 import { KIND_META } from '../plant-scene/graph/sceneModel'
 import './nsi.css'
@@ -56,6 +57,7 @@ function cellText(
 export function NsiScreen() {
   const [activeId, setActiveId]     = useState(REGISTRIES[0].id)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editRow, setEditRow]       = useState<AnyRow | null>(null)
   const [rows, setRows]             = useState<AnyRow[]>([])
   const [loading, setLoading]       = useState(false)
   const [search, setSearch]         = useState('')
@@ -104,6 +106,14 @@ export function NsiScreen() {
     <div className="nsi">
       {createOpen && (
         <CreateDialog registryId={activeId} onClose={handleCreated} />
+      )}
+      {editRow && (
+        <EditDialog
+          registry={active}
+          row={editRow}
+          onClose={() => setEditRow(null)}
+          onSaved={() => { setEditRow(null); handleCreated() }}
+        />
       )}
 
       <aside className="nsi__list">
@@ -166,7 +176,10 @@ export function NsiScreen() {
                 </tr>
               ) : (
                 filtered.map((row, i) => (
-                  <tr key={String(row.id ?? row.tab_no ?? i)}>
+                  <tr key={String(row.id ?? row.tab_no ?? i)}
+                      className="nsi__row--clickable"
+                      onClick={() => setEditRow(row)}
+                      title="Открыть для редактирования">
                     {active.columns.map((col) => (
                       <td key={col.key}>
                         {cellText(col.key, row[col.key], wcTypes, products)}

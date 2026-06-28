@@ -14,6 +14,32 @@ const DIST_TYPES: Array<{ id: DistType; label: string }> = [
 
 const numStr = (v: number | string | undefined) => (v === undefined || v === null ? '' : String(v))
 
+/** Мини-график распределения цены (форма по типу + ширина по волатильности CV). */
+function MiniDist({ type, mean, std }: { type: string; mean: number; std: number }) {
+  const W = 132, H = 38
+  const cv = mean > 0 ? std / mean : 0.12
+  const sigmaX = Math.min(0.34, Math.max(0.06, cv))
+  const n = 44
+  const pts: string[] = []
+  for (let i = 0; i <= n; i++) {
+    const x = i / n
+    let y: number
+    if (type === 'uniform') y = x > 0.5 - sigmaX * 1.7 && x < 0.5 + sigmaX * 1.7 ? 1 : 0.02
+    else if (type === 'triangular') y = Math.max(0, 1 - Math.abs(x - 0.5) / (sigmaX * 2.2))
+    else if (type === 'lognormal') { const z = (Math.log(Math.max(0.05, x)) - Math.log(0.42)) / (sigmaX + 0.18); y = Math.exp(-0.5 * z * z) }
+    else { const z = (x - 0.5) / sigmaX; y = Math.exp(-0.5 * z * z) }
+    pts.push(`${(x * W).toFixed(1)},${(H - 3 - y * (H - 7)).toFixed(1)}`)
+  }
+  const line = 'M' + pts.join(' L')
+  return (
+    <svg width={W} height={H} aria-hidden style={{ display: 'block' }}>
+      <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--accent)" opacity="0.16" />
+      <path d={line} fill="none" stroke="var(--focus)" strokeWidth="1.5" />
+      <line x1={W / 2} y1="2" x2={W / 2} y2={H - 2} stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="2 2" />
+    </svg>
+  )
+}
+
 export function ScenariosScreen() {
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
   const [products, setProducts]   = useState<Product[]>([])
@@ -177,7 +203,7 @@ export function ScenariosScreen() {
                 <thead>
                   <tr>
                     <th>Изделие</th><th>Распределение</th><th>Средняя цена, ₽</th>
-                    <th>СКО (σ), ₽</th><th>β (рынок)</th><th>CV</th>
+                    <th>СКО (σ), ₽</th><th>β (рынок)</th><th>CV</th><th>График цены</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,6 +236,7 @@ export function ScenariosScreen() {
                                  onChange={(e) => setDist(p.id, { beta: e.target.value })} />
                         </td>
                         <td className={`scn__cv${cv > 0.2 ? ' scn__cv--high' : ''}`}>{(cv * 100).toFixed(0)}%</td>
+                        <td><MiniDist type={d.dist_type} mean={mean} std={sd} /></td>
                       </tr>
                     )
                   })}
