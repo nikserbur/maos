@@ -8,12 +8,15 @@
  *   ./maos_server [path/to/maos.db]
  */
 #include "Database.h"
+#include "Optimizer.h"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <string>
 #include <sstream>
 #include <random>
+#include <unordered_map>
+#include <cstdint>
 
 using json = nlohmann::json;
 
@@ -69,6 +72,49 @@ static std::string jstr(const json& j, const std::string& key) {
   if (!j.contains(key)) return "";
   if (j[key].is_string()) return j[key].get<std::string>();
   return j[key].dump();  // arrays / numbers → their JSON string
+}
+
+// Записать связи операции по ID (operation_wc_types, operation_inputs) из тела:
+//   wc_type_ids: ["id1","id2"]              — допустимые типы оборудования
+//   input_products: [{product_id, qty}, …]  | ["pid", …]
+// Реестры связаны по ID — это основа расчёта себестоимости/мощности.
+static void link_operation(Database& db, const std::string& opId, const json& body) {
+  db.exec("DELETE FROM operation_wc_types WHERE operation_id=?", { opId });
+  db.exec("DELETE FROM operation_inputs   WHERE operation_id=?", { opId });
+  if (body.contains("wc_type_ids") && body["wc_type_ids"].is_array())
+    for (auto& w : body["wc_type_ids"]) {
+      if (!w.is_string() || w.get<std::string>().empty()) continue;
+      db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)",
+              { opId, w.get<std::string>() });
+    }
+  if (body.contains("input_products") && body["input_products"].is_array())
+    for (auto& in : body["input_products"]) {
+      std::string pid; std::string qty = "1";
+      if (in.is_string()) pid = in.get<std::string>();
+      else if (in.is_object()) { pid = jstr(in, "product_id"); if (in.contains("qty")) qty = jstr(in, "qty"); }
+      if (pid.empty()) continue;
+      db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) VALUES(?,?,?)",
+              { opId, pid, qty });
+    }
+}
+
+// Демо-KDF: солёный FNV-1a (не криптостойкий, но не план-текст). Формат "salt$hex".
+static uint64_t fnv1a(const std::string& s) {
+  uint64_t h = 1469598103934665603ULL;
+  for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
+  return h;
+}
+static std::string hash_password(const std::string& pw) {
+  std::string salt = gen_uuid().substr(0, 8);
+  std::ostringstream ss; ss << salt << "$" << std::hex << fnv1a(salt + ":" + pw);
+  return ss.str();
+}
+static bool verify_password(const std::string& pw, const std::string& stored) {
+  auto pos = stored.find('$');
+  if (pos == std::string::npos) return false;
+  std::string salt = stored.substr(0, pos);
+  std::ostringstream ss; ss << std::hex << fnv1a(salt + ":" + pw);
+  return ss.str() == stored.substr(pos + 1);
 }
 
 static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& cfg) {
@@ -149,22 +195,43 @@ static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& 
 }
 
 /* ── Auth ────────────────────────────────────────────────────────────────── */
-
-static const char* DEMO_PASSWORD = "maos2025";
+// Аутентификация против реестра пользователей (RBAC), не против константы.
+// Логин по умолчанию: admin / maos2025 (хеш засеян миграцией).
 
 static void register_auth(httplib::Server& svr, Database& db) {
   svr.Post("/api/auth/login", [&db](const httplib::Request& req, httplib::Response& res) {
     try {
       auto body = json::parse(req.body);
+      std::string login    = jstr(body, "login");
       std::string password = jstr(body, "password");
-      if (password != DEMO_PASSWORD) {
-        err(res, 401, "Неверный пароль");
+      if (login.empty()) login = "admin";  // окно входа по умолчанию
+
+      json user;
+      try {
+        user = db.query_one("SELECT * FROM users WHERE login=?", { login });
+      } catch (...) { err(res, 401, "Пользователь не найден"); return; }
+
+      if (jstr(user, "status") != "active") { err(res, 403, "Учётная запись заблокирована"); return; }
+      if (!verify_password(password, jstr(user, "password_hash"))) {
+        db.exec_safe("UPDATE users SET failed_attempts=failed_attempts+1 WHERE id='"
+                     + jstr(user, "id") + "'");
+        err(res, 401, "Неверный логин или пароль");
         return;
       }
-      // In production: verify against SQLCipher key / RBAC table
-      std::string token = gen_uuid();  // placeholder session token
-      audit(db, "auth", "", "LOGIN");
-      ok(res, { {"token", token}, {"role", "admin"} });
+      db.exec_safe("UPDATE users SET failed_attempts=0 WHERE id='" + jstr(user, "id") + "'");
+
+      std::string roleName = "viewer", perms = "[]";
+      std::string roleId = jstr(user, "role_id");
+      if (!roleId.empty()) {
+        try {
+          auto role = db.query_one("SELECT * FROM roles WHERE id=?", { roleId });
+          roleName = jstr(role, "name"); perms = jstr(role, "permissions");
+        } catch (...) {}
+      }
+      std::string token = gen_uuid();  // локальный сессионный токен
+      audit(db, "auth", jstr(user, "id"), "LOGIN");
+      ok(res, { {"token", token}, {"login", login}, {"role", roleName},
+                {"permissions", json::parse(perms.empty() ? "[]" : perms)} });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 }
@@ -186,6 +253,7 @@ static void register_routing_routes(httplib::Server& svr, Database& db) {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
 
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());  // атомарная транзакция
       db.exec("BEGIN");
       db.exec(
         "INSERT INTO routings(id,name,product_id) VALUES(?,?,NULLIF(?,?))",
@@ -212,6 +280,7 @@ static void register_routing_routes(httplib::Server& svr, Database& db) {
               jstr(op, "inputs"),   jstr(op, "outputs"),
             }
           );
+          link_operation(db, op_id, op);  // связи шага по ID (типы оборуд., входы)
         }
       }
       db.exec("COMMIT");
@@ -316,9 +385,41 @@ static void register_operation_routes(httplib::Server& svr, Database& db) {
           }
         );
       }
+      link_operation(db, id, body);
       audit(db, "operation", id, "CREATE", body);
       auto row = db.query_one("SELECT * FROM operations WHERE id=?", { id });
       res.status = 201;
+      ok(res, row);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+
+  // PUT /api/operations/:id — обновление + ПЕРЕсвязывание join-таблиц по ID.
+  // Должен предшествовать generic CRUD, иначе связи operation_wc_types/
+  // operation_inputs останутся устаревшими (capacity/cost берутся из них).
+  svr.Put("/api/operations/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const std::string id = req.matches[1];
+      auto body = json::parse(req.body);
+      static const std::vector<std::string> cols = {
+        "routing_id","code","name","op_type","wc_types","order_no","setup_required",
+        "setup_cost","labor_rate","t_norm","t_opt","t_pess","cost","risk_coef",
+        "controls","mechanisms","inputs","outputs" };
+      std::string set_clause; std::vector<std::string> vals;
+      for (auto& col : cols) {
+        if (!body.contains(col)) continue;
+        if (!set_clause.empty()) set_clause += ", ";
+        set_clause += col + "=?";
+        vals.push_back(jstr(body, col));
+      }
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());  // строка + связи атомарно
+      if (!set_clause.empty()) {
+        vals.push_back(id);
+        db.exec("UPDATE operations SET " + set_clause + " WHERE id=?", vals);
+      }
+      if (body.contains("wc_type_ids") || body.contains("input_products"))
+        link_operation(db, id, body);
+      audit(db, "operation", id, "UPDATE", body);
+      auto row = db.query_one("SELECT * FROM operations WHERE id=?", { id });
       ok(res, row);
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
@@ -582,6 +683,325 @@ static void register_demo_seed(httplib::Server& svr, Database& db) {
   });
 }
 
+/* ── Миграция: связи реестров + экономика + RBAC + сценарии ──────────────── */
+
+static std::vector<std::string> split_trim(const std::string& s, char sep) {
+  std::vector<std::string> out; std::string cur; std::istringstream ss(s);
+  while (std::getline(ss, cur, sep)) {
+    size_t a = cur.find_first_not_of(" \t\r\n");
+    size_t b = cur.find_last_not_of(" \t\r\n");
+    if (a != std::string::npos) out.push_back(cur.substr(a, b - a + 1));
+  }
+  return out;
+}
+
+// Доводит существующую БД до целевой схемы и связывает реестры. Идемпотентно,
+// выполняется один раз (PRAGMA user_version). Существующие данные сохраняются.
+static void migrate(Database& db) {
+  if (db.user_version() >= 1) return;
+  std::cout << "Migrating schema → v1 (linking registries)…\n";
+
+  // 1) Новые колонки на существующих таблицах (guarded — повторно безопасно).
+  db.exec_safe("ALTER TABLE products ADD COLUMN sellable INTEGER NOT NULL DEFAULT 0");
+  db.exec_safe("ALTER TABLE products ADD COLUMN base_cost REAL NOT NULL DEFAULT 0");
+  db.exec_safe("ALTER TABLE products ADD COLUMN base_price REAL NOT NULL DEFAULT 0");
+  db.exec_safe("ALTER TABLE products ADD COLUMN demand_max REAL NOT NULL DEFAULT 0");
+  db.exec_safe("ALTER TABLE work_center_types ADD COLUMN hour_rate REAL NOT NULL DEFAULT 0");
+  db.exec_safe("ALTER TABLE work_center_types ADD COLUMN efficiency REAL NOT NULL DEFAULT 0.85");
+  db.exec_safe("ALTER TABLE machines ADD COLUMN org_unit_id TEXT");
+  db.exec_safe("ALTER TABLE operations ADD COLUMN template_id TEXT");
+  db.exec_safe("ALTER TABLE operations ADD COLUMN setup_cost REAL");
+  db.exec_safe("ALTER TABLE operations ADD COLUMN labor_rate REAL");
+  db.exec_safe("ALTER TABLE workers ADD COLUMN org_unit_id TEXT");
+  db.exec_safe("ALTER TABLE workers ADD COLUMN cost_per_hour REAL NOT NULL DEFAULT 0");
+
+  db.exec("BEGIN");
+  try {
+
+  // 2) Backfill связей операция↔тип оборудования (имя → ID).
+  std::unordered_map<std::string, std::string> wctByName, prodByName;
+  for (auto& t : db.query_json("SELECT id,name FROM work_center_types"))
+    wctByName[jstr(t, "name")] = jstr(t, "id");
+  for (auto& p : db.query_json("SELECT id,name FROM products"))
+    prodByName[jstr(p, "name")] = jstr(p, "id");
+
+  for (auto& o : db.query_json("SELECT id,wc_types,inputs FROM operations")) {
+    std::string opId = jstr(o, "id");
+    for (auto& nm : split_trim(jstr(o, "wc_types"), ',')) {
+      auto it = wctByName.find(nm);
+      if (it != wctByName.end())
+        db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)",
+                { opId, it->second });
+    }
+    for (auto& nm : split_trim(jstr(o, "inputs"), ',')) {
+      auto it = prodByName.find(nm);
+      if (it != prodByName.end())
+        db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) VALUES(?,?,?)",
+                { opId, it->second, "1" });
+    }
+  }
+
+  // 3) Экономика типов оборудования (ставка машино-часа).
+  const std::vector<std::pair<std::string, double>> rates = {
+    {"wct-feedstock",100},{"wct-cleaning",300},{"wct-dryer",400},{"wct-boiler",250},
+    {"wct-finecleaning",800},{"wct-briquettes",700},{"wct-pileizer",500},
+    {"wct-transformer",80},{"wct-wirehouse",60},{"wct-sale",120},{"wct-marketing",150},
+  };
+  for (auto& [id, r] : rates)
+    db.exec("UPDATE work_center_types SET hour_rate=? WHERE id=? AND hour_rate=0",
+            { std::to_string(r), id });
+
+  // 4) Экономика изделий: закупка сырья, товарные позиции, спрос, ориентир цены.
+  const std::vector<std::pair<std::string, double>> buyCost = {
+    {"prod-ore",4000},{"prod-coke",12000},{"prod-flux",1500},{"prod-scrap",9000},
+  };
+  for (auto& [id, c] : buyCost)
+    db.exec("UPDATE products SET base_cost=? WHERE id=? AND base_cost=0",
+            { std::to_string(c), id });
+  // prod-hrc (Рулон горячекатаный), prod-crc (Лист холоднокатаный) — товарные.
+  db.exec_safe("UPDATE products SET sellable=1, base_price=90000, demand_max=4000 "
+               "WHERE id='prod-hrc'");
+  db.exec_safe("UPDATE products SET sellable=1, base_price=120000, demand_max=2500 "
+               "WHERE id='prod-crc'");
+
+  // 5) Оргструктура из имён цехов (machines.org_unit → org_units).
+  for (auto& r : db.query_json(
+         "SELECT DISTINCT org_unit FROM machines WHERE org_unit IS NOT NULL AND org_unit<>''")) {
+    std::string nm = jstr(r, "org_unit");
+    std::string id = "ou-" + std::to_string(fnv1a(nm) % 1000000ULL);
+    db.exec("INSERT OR IGNORE INTO org_units(id,name) VALUES(?,?)", { id, nm });
+    db.exec("UPDATE machines SET org_unit_id=? WHERE org_unit=? AND (org_unit_id IS NULL OR org_unit_id='')",
+            { id, nm });
+  }
+
+  // 6) Сценарии внешних условий (цены) — базовый рынок и ценовой кризис.
+  auto seedScenario = [&](const std::string& id, const std::string& name,
+                          const std::string& desc, double hrcMean, double hrcStd,
+                          double crcMean, double crcStd) {
+    db.exec("INSERT OR IGNORE INTO price_scenarios(id,name,description,horizon_hours) VALUES(?,?,?,?)",
+            { id, name, desc, "720" });
+    auto dist = [&](const std::string& pid, double mean, double sd) {
+      db.exec("INSERT OR IGNORE INTO price_distributions"
+              "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val) "
+              "VALUES(?,?,?,?,?,?,?,?)",
+              { id + "-" + pid, id, pid, "normal", std::to_string(mean), std::to_string(sd),
+                std::to_string(mean - 3*sd), std::to_string(mean + 3*sd) });
+    };
+    dist("prod-hrc", hrcMean, hrcStd);
+    dist("prod-crc", crcMean, crcStd);
+  };
+  seedScenario("scen-base",   "Базовый рынок",
+               "Умеренная волатильность цен на прокат.", 90000, 9000, 120000, 24000);
+  seedScenario("scen-crisis", "Ценовой кризис",
+               "Падение средних цен и рост разброса (downturn).", 72000, 18000, 95000, 38000);
+
+  // 7) RBAC: роли + пользователь admin (вместо хардкод-пароля).
+  db.exec("INSERT OR IGNORE INTO roles(id,name,permissions) VALUES('role-admin','Администратор',?)",
+          { R"(["READ","EDIT_NSI","WRITE_PLAN","RUN_OPTIMIZE","MANAGE_USERS"])" });
+  db.exec("INSERT OR IGNORE INTO roles(id,name,permissions) VALUES('role-planner','Планировщик',?)",
+          { R"(["READ","WRITE_PLAN","RUN_OPTIMIZE"])" });
+  db.exec("INSERT OR IGNORE INTO roles(id,name,permissions) VALUES('role-viewer','Наблюдатель',?)",
+          { R"(["READ"])" });
+  db.exec("INSERT OR IGNORE INTO users(id,login,password_hash,role_id,status) VALUES(?,?,?,?,?)",
+          { "user-admin", "admin", hash_password("maos2025"), "role-admin", "active" });
+
+  // 8) 3D-схема как сохранённый агрегат.
+  db.exec("INSERT OR IGNORE INTO scheme_meta(id,name) VALUES('default','Схема предприятия')");
+
+  } catch (...) {
+    try { db.exec("ROLLBACK"); } catch (...) {}
+    throw;  // не помечаем версию — миграция повторится при следующем старте
+  }
+
+  db.exec("COMMIT");
+  db.set_user_version(1);
+  std::cout << "Migration v1 done.\n";
+}
+
+/* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
+
+static void register_scheme(httplib::Server& svr, Database& db) {
+  svr.Get("/api/scheme", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      json meta;
+      try { meta = db.query_one("SELECT * FROM scheme_meta WHERE id='default'"); }
+      catch (...) { meta = { {"id","default"}, {"name","Схема предприятия"}, {"ground_size","80"} }; }
+      json out = {
+        {"meta",  meta},
+        {"nodes", db.query_json("SELECT * FROM machines")},
+        {"edges", db.query_json("SELECT * FROM flows")},
+        {"types", db.query_json("SELECT * FROM work_center_types")},
+      };
+      ok(res, out);
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+}
+
+/* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
+
+static void register_scenarios(httplib::Server& svr, Database& db) {
+  svr.Get("/api/scenarios", [&db](const httplib::Request&, httplib::Response& res) {
+    try { ok(res, db.query_json("SELECT * FROM price_scenarios ORDER BY created_at")); }
+    catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  svr.Get("/api/scenarios/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { req.matches[1] });
+      sc["distributions"] = db.query_json(
+        "SELECT * FROM price_distributions WHERE scenario_id=?", { std::string(req.matches[1]) });
+      ok(res, sc);
+    } catch (...) { err(res, 404, "not found"); }
+  });
+
+  auto writeDists = [&db](const std::string& sid, const json& body) {
+    if (!body.contains("distributions") || !body["distributions"].is_array()) return;
+    db.exec("DELETE FROM price_distributions WHERE scenario_id=?", { sid });
+    for (auto& d : body["distributions"]) {
+      db.exec("INSERT INTO price_distributions"
+              "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val) "
+              "VALUES(?,?,?,?,?,?,?,?,?)",
+              { gen_uuid(), sid, jstr(d,"product_id"),
+                jstr(d,"dist_type").empty() ? "normal" : jstr(d,"dist_type"),
+                jstr(d,"mean"), jstr(d,"stddev"), jstr(d,"min_val"),
+                jstr(d,"max_val"), jstr(d,"mode_val") });
+    }
+  };
+
+  svr.Post("/api/scenarios", [&db, writeDists](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = json::parse(req.body);
+      std::string id = gen_uuid();
+      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours) VALUES(?,?,?,?)",
+              { id, jstr(body,"name"), jstr(body,"description"),
+                jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours") });
+      writeDists(id, body);
+      audit(db, "scenario", id, "CREATE", body);
+      auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
+      sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
+      res.status = 201; ok(res, sc);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+
+  svr.Put("/api/scenarios/([^/]+)", [&db, writeDists](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const std::string id = req.matches[1];
+      auto body = json::parse(req.body);
+      db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=? WHERE id=?",
+              { jstr(body,"name"), jstr(body,"description"),
+                jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"), id });
+      writeDists(id, body);
+      audit(db, "scenario", id, "UPDATE", body);
+      auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
+      sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
+      ok(res, sc);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+
+  svr.Delete("/api/scenarios/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      db.exec("DELETE FROM price_scenarios WHERE id=?", { std::string(req.matches[1]) });
+      audit(db, "scenario", req.matches[1], "DELETE");
+      ok(res, json::object());
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
+/* ── Оптимизация (робастная, стохастическая) ─────────────────────────────── */
+
+static void persist_run(Database& db, const std::string& runId, const maos::OptimizeParams& pr,
+                        const json& result) {
+  db.exec("INSERT INTO optimization_runs"
+          "(id,scenario_id,objective,samples,alpha,lambda,seed,status,result_json) "
+          "VALUES(?,?,?,?,?,?,?,?,?)",
+          { runId, pr.scenarioId, pr.objective, std::to_string(pr.samples),
+            std::to_string(pr.alpha), std::to_string(pr.lambda), std::to_string(pr.seed),
+            "done", result.dump() });
+
+  auto savePortfolio = [&](const std::string& kind, const json& pf) {
+    if (!pf.is_object()) return;
+    std::string pfId = gen_uuid();
+    const json& mt = pf.value("metrics", json::object());
+    db.exec("INSERT INTO portfolios(id,run_id,kind,exp_profit,cvar,worst_case,std_dev,p_loss) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            { pfId, runId, kind,
+              std::to_string(mt.value("expected", 0.0)), std::to_string(mt.value("cvar", 0.0)),
+              std::to_string(mt.value("worst_case", 0.0)), std::to_string(mt.value("std", 0.0)),
+              std::to_string(mt.value("p_loss", 0.0)) });
+    for (auto& it : pf.value("items", json::array()))
+      db.exec("INSERT OR IGNORE INTO portfolio_items(portfolio_id,product_id,qty) VALUES(?,?,?)",
+              { pfId, it.value("product_id", std::string()),
+                std::to_string(it.value("qty", 0.0)) });
+  };
+  savePortfolio("robust",   result.value("robust", json::object()));
+  savePortfolio("expected", result.value("expected", json::object()));
+
+  // План производства (загрузка ресурсов робастного портфеля).
+  std::string planId = gen_uuid();
+  db.exec("INSERT INTO plans(id,run_id) VALUES(?,?)", { planId, runId });
+  const json& robust = result.value("robust", json::object());
+  for (auto& l : robust.value("resource_load", json::array()))
+    db.exec("INSERT INTO plan_tasks(id,plan_id,wc_type_id,load_hours) VALUES(?,?,?,?)",
+            { gen_uuid(), planId, l.value("wc_type_id", std::string()),
+              std::to_string(l.value("load_hours", 0.0)) });
+}
+
+static void register_optimize(httplib::Server& svr, Database& db) {
+  svr.Post("/api/optimize", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      maos::OptimizeParams pr;
+      pr.scenarioId = jstr(body, "scenario_id");
+      if (!jstr(body, "objective").empty()) pr.objective = jstr(body, "objective");
+      if (body.contains("samples")) pr.samples = (int)std::stod(jstr(body, "samples"));
+      if (body.contains("alpha"))   pr.alpha   = std::stod(jstr(body, "alpha"));
+      if (body.contains("lambda"))  pr.lambda  = std::stod(jstr(body, "lambda"));
+      if (body.contains("seed"))    pr.seed    = (unsigned)std::stod(jstr(body, "seed"));
+      if (body.contains("horizon_hours") && !jstr(body,"horizon_hours").empty())
+        pr.horizonHours = std::stod(jstr(body, "horizon_hours"));
+
+      json result = maos::run_optimization(db, pr);
+      if (result.value("error_soft", false)) { ok(res, result); return; }
+
+      std::string runId = gen_uuid();
+      bool persisted = false;
+      {
+        // Держим блокировку на всю транзакцию — иначе другой поток вклинится
+        // между BEGIN и COMMIT на общем хэндле.
+        std::lock_guard<std::recursive_mutex> lk(db.mutex());
+        db.exec("BEGIN");
+        try { persist_run(db, runId, pr, result); db.exec("COMMIT"); persisted = true; }
+        catch (std::exception& pe) {
+          try { db.exec("ROLLBACK"); } catch (...) {}
+          std::cerr << "persist_run failed: " << pe.what() << "\n";
+        }
+      }
+      if (persisted) {
+        result["run_id"] = runId;
+        audit(db, "optimization", runId, "RUN", { {"objective", pr.objective} });
+      } else {
+        result["persist_error"] = true;  // результат верный, но не сохранён
+      }
+      ok(res, result);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+
+  svr.Get("/api/optimize/runs", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      ok(res, db.query_json(
+        "SELECT id,scenario_id,objective,samples,alpha,created_at "
+        "FROM optimization_runs ORDER BY created_at DESC LIMIT 50"));
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  svr.Get("/api/optimize/runs/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto row = db.query_one("SELECT result_json FROM optimization_runs WHERE id=?", { req.matches[1] });
+      ok(res, json::parse(jstr(row, "result_json")));
+    } catch (...) { err(res, 404, "not found"); }
+  });
+}
+
 /* ── main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char* argv[]) {
@@ -605,6 +1025,17 @@ int main(int argc, char* argv[]) {
     }
   } catch (std::exception& e) {
     std::cerr << "Seed check failed: " << e.what() << "\n";
+  }
+
+  // Миграция: связать реестры по ID, завести экономику/сценарии/RBAC. Идемпотентно,
+  // существующие данные сохраняются (PRAGMA user_version). Данные-часть — в
+  // транзакции с откатом; при ошибке НЕ стартуем с полу-мигрированной БД.
+  try {
+    migrate(db);
+  } catch (std::exception& e) {
+    std::cerr << "FATAL: migration failed: " << e.what() << "\n"
+              << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
+    return 1;
   }
 
   httplib::Server svr;
@@ -644,13 +1075,15 @@ int main(int argc, char* argv[]) {
   register_crud(svr, db, {
     "products", "product",
     { "code", "name", "unit", "parent_id", "qty_in_parent",
-      "batch_size", "stock", "purchased" }
+      "batch_size", "stock", "purchased",
+      // Экономика внешних условий — иначе товарные позиции невидимы оптимизатору:
+      "sellable", "base_cost", "base_price", "demand_max" }
   });
 
   register_crud(svr, db, {
     "workers", "worker",
     { "tab_no", "last_name", "first_name", "middle_name",
-      "org_unit", "position", "grade", "skills" }
+      "org_unit", "org_unit_id", "position", "grade", "cost_per_hour", "skills" }
   });
 
   // Custom POST for operations (NULLIF routing_id) — must precede generic CRUD
@@ -665,6 +1098,15 @@ int main(int argc, char* argv[]) {
 
   // Routings (complex — nested ops, transactional)
   register_routing_routes(svr, db);
+
+  // 3D-схема как сохранённый агрегат
+  register_scheme(svr, db);
+
+  // Сценарии внешних условий (стохастика цен)
+  register_scenarios(svr, db);
+
+  // Устойчивая стохастическая оптимизация
+  register_optimize(svr, db);
 
   // Demo seed
   register_demo_seed(svr, db);

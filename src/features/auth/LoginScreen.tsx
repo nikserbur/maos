@@ -1,32 +1,37 @@
 import { useState, type FormEvent } from 'react'
+import { api } from '../../lib/api'
 
 interface LoginScreenProps {
   onLogin: () => void
 }
 
-const DEMO_PASS = 'maos2025'
-
 export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [db, setDb]         = useState('production.db')
+  const [login, setLogin]   = useState('admin')
   const [pass, setPass]     = useState('')
   const [error, setError]   = useState('')
   const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-    if (!db.trim()) { setError('Укажите файл базы данных.'); return }
-    if (!pass)      { setError('Введите пароль.'); return }
+    if (!db.trim())   { setError('Укажите файл базы данных.'); return }
+    if (!login.trim()){ setError('Введите логин.'); return }
+    if (!pass)        { setError('Введите пароль.'); return }
 
     setLoading(true)
-    setTimeout(() => {
-      if (pass === DEMO_PASS) {
-        onLogin()
-      } else {
-        setError('Неверный пароль. Подсказка: maos2025')
-        setLoading(false)
-      }
-    }, 600)
+    try {
+      // Настоящая аутентификация против реестра пользователей (RBAC) на бэкенде.
+      const res = await api.auth.login(login, pass)
+      try {
+        sessionStorage.setItem('maos.session',
+          JSON.stringify({ login: res.login, role: res.role, permissions: res.permissions }))
+      } catch { /* ignore storage errors */ }
+      onLogin()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось войти. Подсказка: admin / maos2025')
+      setLoading(false)
+    }
   }
 
   return (
@@ -81,6 +86,17 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               >…</button>
             </div>
             <span className="form__hint">SQLite WAL · локальное подключение 127.0.0.1</span>
+          </div>
+
+          <div className="form__field">
+            <label className="form__label">Логин</label>
+            <input
+              className="form__input"
+              value={login}
+              onChange={e => setLogin(e.target.value)}
+              placeholder="admin"
+              autoComplete="username"
+            />
           </div>
 
           <div className="form__field">

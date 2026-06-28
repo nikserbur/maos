@@ -1,6 +1,9 @@
 import type { ComponentType } from 'react'
 import PlantScene from '../features/plant-scene'
 import { NsiScreen } from '../features/nsi/NsiScreen'
+import { OptimizationScreen } from '../features/optimization/OptimizationScreen'
+import { ScenariosScreen } from '../features/scenarios/ScenariosScreen'
+import { PlanScreen } from '../features/plan/PlanScreen'
 import { Placeholder } from './Placeholder'
 
 export interface ScreenDef {
@@ -8,33 +11,6 @@ export interface ScreenDef {
   label: string
   icon: string
   Component: ComponentType
-}
-
-function PlanScreen() {
-  return (
-    <Placeholder
-      title="Производственный план"
-      caption="Выбор изделий и даты выпуска (производственная программа) → построение плана-графика."
-    />
-  )
-}
-
-function OptimizationScreen() {
-  return (
-    <Placeholder
-      title="Оптимизация"
-      caption="Оптимальная загрузка оборудования и рабочих ради пропускной способности; критерий время/стоимость/риск."
-    />
-  )
-}
-
-function ScenariosScreen() {
-  return (
-    <Placeholder
-      title="Сценарии"
-      caption="What-if: оверрайды, клонирование и сравнение сценариев бок о бок."
-    />
-  )
 }
 
 function AdminScreen() {

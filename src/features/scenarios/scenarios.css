@@ -1,0 +1,63 @@
+/* Экран «Сценарии» — стохастические внешние условия (распределения цен). */
+
+.scn { height: 100%; display: grid; grid-template-columns: 260px 1fr; }
+@media (max-width: 760px) { .scn { grid-template-columns: 1fr; } }
+
+.scn__list {
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.scn__list-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--grid); border-bottom: 1px solid var(--border);
+}
+.scn__list-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+
+.scn__item {
+  text-align: left;
+  padding: 10px var(--grid);
+  border: none; border-left: 3px solid transparent;
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; border-bottom: 1px solid var(--border);
+}
+.scn__item:hover { background: var(--bg-card); color: var(--text); }
+.scn__item--active { background: var(--bg-card); color: var(--text); border-left-color: var(--accent); }
+.scn__item-name { font-size: 13px; font-weight: 600; }
+.scn__item-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.scn__editor { overflow-y: auto; padding: calc(var(--grid) * 2); display: flex; flex-direction: column; gap: var(--grid); }
+.scn__editor-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--grid); flex-wrap: wrap; }
+.scn__name-input {
+  font-size: 18px; font-weight: 600; background: transparent; border: none;
+  border-bottom: 1px solid var(--border); color: var(--text); padding: 4px 0; min-width: 280px;
+}
+.scn__name-input:focus { outline: none; border-bottom-color: var(--accent); }
+.scn__desc-input {
+  width: 100%; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 6px 8px; font-size: 12.5px;
+}
+
+.scn__table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.scn__table th {
+  text-align: left; font-weight: 500; color: var(--text-muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
+}
+.scn__table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.scn__table tr:last-child td { border-bottom: none; }
+.scn__cell-input, .scn__cell-select {
+  width: 100%; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 6px; font-size: 12.5px; font-variant-numeric: tabular-nums;
+}
+.scn__prod { color: var(--text); }
+.scn__prod small { color: var(--text-muted); display: block; font-size: 10.5px; }
+
+.scn__hint { color: var(--text-muted); font-size: 12px; }
+.scn__cv { font-variant-numeric: tabular-nums; }
+.scn__cv--high { color: var(--intent-warning); }
+.scn__actions { display: flex; gap: 8px; }
+.scn__empty { padding: calc(var(--grid) * 3); color: var(--text-muted); text-align: center; }

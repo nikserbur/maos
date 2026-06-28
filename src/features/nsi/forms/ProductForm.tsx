@@ -17,6 +17,11 @@ export function ProductForm({ onSuccess }: Props) {
   const [batch, setBatch]         = useState('1')
   const [purchased, setPurchased] = useState(false)
   const [stock, setStock]         = useState('0')
+  // Экономика внешних условий (для устойчивой оптимизации):
+  const [sellable, setSellable]   = useState(false)
+  const [basePrice, setBasePrice] = useState('')
+  const [baseCost, setBaseCost]   = useState('')
+  const [demandMax, setDemandMax] = useState('')
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
@@ -32,6 +37,10 @@ export function ProductForm({ onSuccess }: Props) {
         batch_size: batch,
         purchased: purchased ? '1' : '0',
         stock,
+        sellable: sellable ? '1' : '0',
+        base_price: basePrice || '0',
+        base_cost: baseCost || '0',
+        demand_max: demandMax || '0',
       })
       onSuccess()
     } catch (e) {
@@ -100,6 +109,31 @@ export function ProductForm({ onSuccess }: Props) {
             <input type="checkbox" checked={purchased} onChange={(e) => setPurchased(e.target.checked)} />
             Покупное
           </label>
+        </div>
+      </div>
+
+      <div className="form__section">Экономика (внешние условия)</div>
+      <label className="form__check">
+        <input type="checkbox" checked={sellable} onChange={(e) => setSellable(e.target.checked)} />
+        Товарная позиция (участвует в портфеле и оптимизации)
+      </label>
+      <div className="form__row form__row--3">
+        <div className="form__field">
+          <label className="form__label">{purchased ? 'Цена закупки, ₽' : 'Себест. закупки, ₽'}</label>
+          <input className="form__input" type="number" min="0" value={baseCost}
+                 onChange={(e) => setBaseCost(e.target.value)} placeholder="0" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Ориентир цены, ₽</label>
+          <input className="form__input" type="number" min="0" value={basePrice}
+                 disabled={!sellable}
+                 onChange={(e) => setBasePrice(e.target.value)} placeholder={sellable ? '90000' : '—'} />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Спрос на горизонт</label>
+          <input className="form__input" type="number" min="0" value={demandMax}
+                 disabled={!sellable}
+                 onChange={(e) => setDemandMax(e.target.value)} placeholder={sellable ? '4000' : '—'} />
         </div>
       </div>
 

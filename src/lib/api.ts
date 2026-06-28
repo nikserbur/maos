@@ -50,6 +50,8 @@ export interface Product {
   id: string; code: string; name: string; unit: string
   parent_id: string; qty_in_parent: string; batch_size: string
   stock: string; purchased: string; created_at: string
+  // Экономика внешних условий / робастной оптимизации:
+  sellable: string; base_cost: string; base_price: string; demand_max: string
 }
 export interface Routing {
   id: string; name: string; product_id: string; created_at: string
@@ -59,9 +61,15 @@ export interface Operation {
   id: string; routing_id: string; code: string; name: string
   op_type: string; wc_types: string; order_no: string
   setup_required: string; t_norm: string; t_opt: string; t_pess: string
-  cost: string; risk_coef: string
+  cost: string; risk_coef: string; setup_cost?: string; labor_rate?: string
   controls: string; mechanisms: string; inputs: string; outputs: string
   created_at: string
+}
+/** Тело создания операции: связи реестров — по ID (типы оборуд., входные изделия). */
+export interface OperationCreatePayload extends Partial<Operation> {
+  name: string
+  wc_type_ids?: string[]
+  input_products?: Array<{ product_id: string; qty: number }>
 }
 export interface Worker {
   id: string; tab_no: string; last_name: string; first_name: string
@@ -80,13 +88,75 @@ export interface AuditAction {
   action_type: string; payload: string
 }
 
+/* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
+export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform'
+
+export interface PriceDistribution {
+  id?: string; scenario_id?: string; product_id: string
+  dist_type: DistType
+  mean: number | string; stddev: number | string
+  min_val?: number | string; max_val?: number | string; mode_val?: number | string
+}
+export interface PriceScenario {
+  id: string; name: string; description: string; horizon_hours: string; created_at: string
+  distributions?: PriceDistribution[]
+}
+export interface ScenarioPayload {
+  name: string; description?: string; horizon_hours?: number
+  distributions?: PriceDistribution[]
+}
+
+/* ── Результат робастной оптимизации (зеркало Optimizer.cpp) ──────────────── */
+export interface OptMetrics {
+  expected: number; std: number; worst_case: number; var: number
+  cvar: number; p_loss: number; downside: number; best: number; max_regret: number
+}
+export interface OptItem {
+  product_id: string; qty: number; unit_price: number; unit_cost: number
+  unit_margin: number; contribution: number
+}
+export interface OptResourceLoad {
+  wc_type_id: string; load_hours: number; capacity_hours: number; utilization: number
+}
+export interface OptPortfolio {
+  items: OptItem[]; resource_load: OptResourceLoad[]; total_load_hours: number; metrics: OptMetrics
+}
+export interface OptHistBin { x0: number; x1: number; count: number }
+export interface OptCandidate {
+  expected: number; cvar: number; worst_case: number; std: number
+  p_loss: number; max_regret: number; is_robust: boolean; is_expected: boolean
+}
+export interface OptResult {
+  scenario_id: string; scenario_name: string; objective: string
+  samples: number; alpha: number; lambda: number; seed: number; horizon_hours: number
+  sellables: number
+  robust: OptPortfolio; expected: OptPortfolio
+  price_of_robustness: number
+  histogram: OptHistBin[]; candidates: OptCandidate[]
+  warnings: string[]; run_id?: string
+  error_soft?: boolean
+}
+export interface OptimizeParams {
+  scenario_id?: string; objective?: string; samples?: number
+  alpha?: number; lambda?: number; seed?: number; horizon_hours?: number
+}
+export interface OptRunSummary {
+  id: string; scenario_id: string; objective: string; samples: string; alpha: string; created_at: string
+}
+
+export interface SchemeAggregate {
+  meta: Record<string, string>
+  nodes: Machine[]; edges: Flow[]; types: WorkCenterType[]
+}
+
 /* ── API surface ─────────────────────────────────────────────────────────── */
 export const api = {
   health: () => get<{ status: string; version: string }>('/health'),
 
   auth: {
-    login: (password: string) =>
-      post<{ token: string; role: string }>('/auth/login', { password }),
+    login: (login: string, password: string) =>
+      post<{ token: string; login: string; role: string; permissions: string[] }>(
+        '/auth/login', { login, password }),
   },
 
   workCenterTypes: {
@@ -123,7 +193,7 @@ export const api = {
   operations: {
     list:   ()                             => get<Operation[]>('/operations'),
     get:    (id: string)                   => get<Operation>(`/operations/${id}`),
-    create: (d: Partial<Operation>)        => post<Operation>('/operations', d),
+    create: (d: OperationCreatePayload)    => post<Operation>('/operations', d),
     update: (id: string, d: Partial<Operation>) => put<Operation>(`/operations/${id}`, d),
     delete: (id: string)                   => del<object>(`/operations/${id}`),
   },
@@ -144,6 +214,24 @@ export const api = {
 
   actions: {
     list: (limit = 100) => get<AuditAction[]>(`/actions?limit=${limit}`),
+  },
+
+  scheme: {
+    get: () => get<SchemeAggregate>('/scheme'),
+  },
+
+  scenarios: {
+    list:   ()                          => get<PriceScenario[]>('/scenarios'),
+    get:    (id: string)                => get<PriceScenario>(`/scenarios/${id}`),
+    create: (d: ScenarioPayload)        => post<PriceScenario>('/scenarios', d),
+    update: (id: string, d: ScenarioPayload) => put<PriceScenario>(`/scenarios/${id}`, d),
+    delete: (id: string)                => del<object>(`/scenarios/${id}`),
+  },
+
+  optimize: {
+    run:  (p: OptimizeParams)  => post<OptResult>('/optimize', p),
+    runs: ()                   => get<OptRunSummary[]>('/optimize/runs'),
+    run_get: (id: string)      => get<OptResult>(`/optimize/runs/${id}`),
   },
 
   demo: {

@@ -30,6 +30,7 @@ find_package(SQLite3 REQUIRED)
 add_executable(maos_server
   src/main.cpp
   src/Database.cpp
+  src/Optimizer.cpp
 )
 
 target_include_directories(maos_server PRIVATE

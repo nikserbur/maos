@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <stdexcept>
+#include <mutex>
 
 using json = nlohmann::json;
 using Row  = std::vector<std::pair<std::string, std::string>>;
@@ -18,6 +19,14 @@ public:
   Database& operator=(const Database&) = delete;
 
   void init_schema();
+
+  // Schema version (PRAGMA user_version) — drives idempotent migrations.
+  int  user_version() const;
+  void set_user_version(int v);
+
+  // Execute a statement, swallowing errors. For guarded DDL such as
+  // `ALTER TABLE ... ADD COLUMN` that is expected to fail if already applied.
+  void exec_safe(const std::string& sql) noexcept;
 
   // Execute a statement that returns no rows (INSERT / UPDATE / DELETE / DDL).
   void exec(const std::string& sql);
@@ -40,8 +49,14 @@ public:
 
   sqlite3* handle() { return db_; }
 
+  // Один общий sqlite3-хэндл обслуживает все потоки httplib. Рекурсивный мьютекс
+  // сериализует доступ (предотвращает гонку/повреждение кучи) и позволяет
+  // удерживать блокировку на всю транзакцию (BEGIN…COMMIT) из одного потока.
+  std::recursive_mutex& mutex() const { return mtx_; }
+
 private:
   sqlite3* db_ = nullptr;
+  mutable std::recursive_mutex mtx_;
 
   sqlite3_stmt* prepare(const std::string& sql) const;
   void          bind(sqlite3_stmt* stmt, const std::vector<std::string>& params) const;

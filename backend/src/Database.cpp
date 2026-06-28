@@ -19,6 +19,7 @@ Database::~Database() {
 }
 
 void Database::init_schema() {
+  std::lock_guard<std::recursive_mutex> lk(mtx_);
   // Try to read schema.sql from the directory of the executable
   std::string sql_path = "schema.sql";
   std::ifstream f(sql_path);
@@ -37,6 +38,25 @@ void Database::init_schema() {
   }
 }
 
+int Database::user_version() const {
+  int v = 0;
+  query("PRAGMA user_version", {}, [&](const Row& row) {
+    if (!row.empty()) v = std::stoi(row[0].second);
+  });
+  return v;
+}
+
+void Database::set_user_version(int v) {
+  exec("PRAGMA user_version = " + std::to_string(v));
+}
+
+void Database::exec_safe(const std::string& sql) noexcept {
+  std::lock_guard<std::recursive_mutex> lk(mtx_);
+  char* errmsg = nullptr;
+  sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errmsg);
+  if (errmsg) sqlite3_free(errmsg);
+}
+
 sqlite3_stmt* Database::prepare(const std::string& sql) const {
   sqlite3_stmt* stmt = nullptr;
   check(sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr), "prepare");
@@ -50,6 +70,7 @@ void Database::bind(sqlite3_stmt* stmt, const std::vector<std::string>& params) 
 }
 
 void Database::exec(const std::string& sql) {
+  std::lock_guard<std::recursive_mutex> lk(mtx_);
   char* errmsg = nullptr;
   int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errmsg);
   if (rc != SQLITE_OK) {
@@ -60,6 +81,7 @@ void Database::exec(const std::string& sql) {
 }
 
 void Database::exec(const std::string& sql, const std::vector<std::string>& params) {
+  std::lock_guard<std::recursive_mutex> lk(mtx_);
   auto* stmt = prepare(sql);
   bind(stmt, params);
   int rc = sqlite3_step(stmt);
@@ -71,6 +93,7 @@ void Database::exec(const std::string& sql, const std::vector<std::string>& para
 void Database::query(const std::string& sql,
                      const std::vector<std::string>& params,
                      const std::function<void(const Row&)>& cb) const {
+  std::lock_guard<std::recursive_mutex> lk(mtx_);
   auto* stmt = prepare(sql);
   bind(stmt, params);
   int cols = sqlite3_column_count(stmt);

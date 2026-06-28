@@ -1,18 +1,21 @@
 import { useState } from 'react'
 import { api } from '../../../lib/api'
-import { useWorkCenterTypes } from '../useNsi'
+import { useWorkCenterTypes, useProducts } from '../useNsi'
 
 interface Props {
   onSuccess: () => void
 }
 
 export function OperationForm({ onSuccess }: Props) {
-  const wcTypes = useWorkCenterTypes()
+  const wcTypes  = useWorkCenterTypes()
+  const products = useProducts()
 
   const [code, setCode]       = useState('')
   const [name, setName]       = useState('')
   const [opType, setOpType]   = useState('')
-  const [wcTypeSel, setWcTypeSel] = useState<string[]>([])
+  // Связи по ID (не по имени): типы оборудования и входные изделия.
+  const [wcTypeIds, setWcTypeIds] = useState<string[]>([])
+  const [inputIds, setInputIds]   = useState<string[]>([])
   const [order, setOrder]     = useState('10')
   const [setup, setSetup]     = useState(false)
   const [tNorm, setTNorm]     = useState('')
@@ -20,30 +23,34 @@ export function OperationForm({ onSuccess }: Props) {
   const [tPess, setTPess]     = useState('')
   const [cost, setCost]       = useState('')
   const [risk, setRisk]       = useState('0.05')
-  const [inputs, setInputs]   = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
-  // Храним имена типов (не ID) — EditorPanel фильтрует по имени
-  const toggleWcType = (name: string) => {
-    setWcTypeSel((prev) =>
-      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name],
-    )
-  }
+  const toggleId = (set: React.Dispatch<React.SetStateAction<string[]>>) => (id: string) =>
+    set((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const toggleWcType = toggleId(setWcTypeIds)
+  const toggleInput  = toggleId(setInputIds)
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError('Укажите наименование операции'); return }
     setLoading(true)
     setError(null)
     try {
+      // Дублируем имена типов в wc_types (для совместимости отображения),
+      // но истинная связь — по ID через wc_type_ids / input_products.
+      const wcNames = wcTypeIds
+        .map((id) => wcTypes.find((t) => t.id === id)?.name)
+        .filter(Boolean)
+        .join(',')
       await api.operations.create({
         code, name, op_type: opType,
-        wc_types: wcTypeSel.join(','),
+        wc_types: wcNames,
+        wc_type_ids: wcTypeIds,
+        input_products: inputIds.map((product_id) => ({ product_id, qty: 1 })),
         order_no: order,
         setup_required: setup ? '1' : '0',
         t_norm: tNorm, t_opt: tOpt, t_pess: tPess,
         cost, risk_coef: risk,
-        inputs,
         controls: '', mechanisms: '', outputs: '',
       })
       onSuccess()
@@ -86,15 +93,15 @@ export function OperationForm({ onSuccess }: Props) {
 
       <div className="form__row">
         <div className="form__field">
-          <label className="form__label">Допустимые типы оборудования</label>
+          <label className="form__label">Допустимые типы оборудования (связь по ID)</label>
           {wcTypes.length > 0 ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
               {wcTypes.map((t) => (
                 <label key={t.id} className="form__check" style={{ margin: 0 }}>
                   <input
                     type="checkbox"
-                    checked={wcTypeSel.includes(t.name)}
-                    onChange={() => toggleWcType(t.name)}
+                    checked={wcTypeIds.includes(t.id)}
+                    onChange={() => toggleWcType(t.id)}
                   />
                   {t.name}
                 </label>
@@ -138,9 +145,24 @@ export function OperationForm({ onSuccess }: Props) {
       </div>
 
       <div className="form__field">
-        <label className="form__label">Входные изделия (артикулы через запятую)</label>
-        <input className="form__input" value={inputs} onChange={(e) => setInputs(e.target.value)} placeholder="STL-001, FLUX-002" />
-        <span className="form__hint">Изделия, потребляемые при выполнении операции.</span>
+        <label className="form__label">Входные изделия (связь по ID)</label>
+        {products.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
+            {products.map((p) => (
+              <label key={p.id} className="form__check" style={{ margin: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={inputIds.includes(p.id)}
+                  onChange={() => toggleInput(p.id)}
+                />
+                {p.code} · {p.name}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <span className="form__hint">Нет изделий — создайте их в реестре «Изделия».</span>
+        )}
+        <span className="form__hint">Изделия, потребляемые при выполнении операции (для расчёта себестоимости).</span>
       </div>
 
       <label className="form__check">
