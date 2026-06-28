@@ -2,6 +2,7 @@ import { Suspense, useEffect, useReducer, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Loader } from '@react-three/drei'
 import { SceneEnvironment } from './SceneEnvironment'
+import { Facility } from './Facility'
 import { PlantLayout } from './PlantLayout'
 import { EditorPanel } from './EditorPanel'
 import { Breadcrumbs } from './Breadcrumbs'
@@ -131,8 +132,9 @@ export default function PlantScene() {
           camera={{ position: [30, 24, 32], fov: 42 }}
           onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
         >
-          <SceneEnvironment />
+          <SceneEnvironment indoor={state.currentParentId != null} />
           <Suspense fallback={null}>
+            {state.currentParentId == null && <Facility />}
             <PlantLayout
               nodes={nodes}
               edges={edges}

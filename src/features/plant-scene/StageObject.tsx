@@ -67,6 +67,11 @@ export function StageObject({
   return (
     <>
       <group ref={groupRef} position={[x, 0, z]}>
+        {/* Бетонная подложка под объектом (площадка). */}
+        <mesh position={[0, 0.02, 0]} receiveShadow>
+          <boxGeometry args={[5, 0.06, 5]} />
+          <meshStandardMaterial color="#565b62" roughness={0.95} metalness={0.05} />
+        </mesh>
         <group
           rotation={[0, node.rotationY ?? 0, 0]}
           scale={node.scale}

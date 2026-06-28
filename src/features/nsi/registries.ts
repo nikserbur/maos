@@ -48,9 +48,10 @@ export const REGISTRIES: RegistryDef[] = [
     columns: [
       { key: 'code',      title: 'Код' },
       { key: 'name',      title: 'Наименование' },
+      { key: 'role',      title: 'Роль' },
       { key: 'unit',      title: 'Ед.' },
       { key: 'parent_id', title: 'Входит в' },
-      { key: 'batch_size', title: 'Партия' },
+      { key: 'stock',     title: 'Остаток' },
       { key: 'purchased', title: 'Покупное' },
     ],
   },

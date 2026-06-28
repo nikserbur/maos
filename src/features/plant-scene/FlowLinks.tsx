@@ -1,63 +1,85 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { Line } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import type { SceneEdge, SceneNode } from './graph/sceneModel'
 
-const LINK_COLOR = '#4a9eff'
-const LINK_WIDTH = 7
+const ROAD_COLOR = '#3b3f45'
+const ROAD_EDGE = '#5a5f66'
 
 interface FlowLineProps {
   from: [number, number]
   to: [number, number]
   speed: number
+  withTruck: boolean
 }
 
-/** Линия физической связи + бегущая «вагонетка», показывающая направление потока. */
-function FlowLine({ from, to, speed }: FlowLineProps) {
-  const wagon = useRef<THREE.Group>(null)
+/** Дорога между объектами + (опц.) едущий по ней грузовик ЗИЛ. */
+function FlowLine({ from, to, speed, withTruck }: FlowLineProps) {
+  const truck = useRef<THREE.Group>(null)
 
-  const [start, end, linePoints, yaw] = useMemo(() => {
-    const s = new THREE.Vector3(from[0], 0.5, from[1])
-    const e = new THREE.Vector3(to[0], 0.5, to[1])
-    const pts: [number, number, number][] = [
-      [from[0], 0.28, from[1]],
-      [to[0], 0.28, to[1]],
-    ]
-    // Ориентация вагонетки вдоль направления потока (поворот вокруг Y).
+  const [start, end, cx, cz, len, yaw] = useMemo(() => {
+    const s = new THREE.Vector3(from[0], 0.32, from[1])
+    const e = new THREE.Vector3(to[0], 0.32, to[1])
+    const mx = (from[0] + to[0]) / 2, mz = (from[1] + to[1]) / 2
+    const l = Math.hypot(to[0] - from[0], to[1] - from[1])
     const rot = Math.atan2(-(to[1] - from[1]), to[0] - from[0])
-    return [s, e, pts, rot] as const
+    return [s, e, mx, mz, l, rot] as const
   }, [from, to])
 
   useFrame((state) => {
-    if (!wagon.current) return
+    if (!truck.current) return
     const t = (state.clock.elapsedTime * speed) % 1
-    wagon.current.position.lerpVectors(start, end, t)
+    truck.current.position.lerpVectors(start, end, t)
   })
 
   return (
     <group>
-      <Line points={linePoints} color={LINK_COLOR} lineWidth={LINK_WIDTH} transparent opacity={0.7} />
-      <group ref={wagon} rotation={[0, yaw, 0]} scale={1.35}>
-        {/* корпус вагонетки — светлый металл, чтобы был виден на тёмном фоне */}
-        <mesh position={[0, 0.05, 0]} castShadow>
-          <boxGeometry args={[0.62, 0.3, 0.42]} />
-          <meshStandardMaterial color="#b9c6d6" emissive="#33424f" emissiveIntensity={0.5}
-                                metalness={0.7} roughness={0.3} />
+      {/* асфальт */}
+      <mesh position={[cx, 0.05, cz]} rotation={[-Math.PI / 2, 0, -yaw]} receiveShadow>
+        <planeGeometry args={[len, 2.0]} />
+        <meshStandardMaterial color={ROAD_COLOR} roughness={1} />
+      </mesh>
+      {/* осевая разметка */}
+      <mesh position={[cx, 0.07, cz]} rotation={[-Math.PI / 2, 0, -yaw]}>
+        <planeGeometry args={[len, 0.12]} />
+        <meshBasicMaterial color={ROAD_EDGE} />
+      </mesh>
+
+      {withTruck && (
+        <group ref={truck} rotation={[0, yaw, 0]} scale={1.1}>
+          <Zil />
+        </group>
+      )}
+    </group>
+  )
+}
+
+/** Грузовик ЗИЛ: синяя кабина + бортовой кузов + колёса. */
+function Zil() {
+  const wheels: [number, number][] = [
+    [0.55, 0.34], [0.55, -0.34],            // передние
+    [-0.35, 0.34], [-0.35, -0.34],          // задние 1
+    [-0.7, 0.34], [-0.7, -0.34],            // задние 2 (ЗИЛ — 6 колёс)
+  ]
+  return (
+    <group position={[0, 0.05, 0]}>
+      {/* рама */}
+      <mesh position={[-0.1, 0.18, 0]}><boxGeometry args={[1.9, 0.12, 0.62]} /><meshStandardMaterial color="#23262b" /></mesh>
+      {/* кабина */}
+      <mesh position={[0.62, 0.42, 0]} castShadow><boxGeometry args={[0.62, 0.5, 0.66]} /><meshStandardMaterial color="#2f6fb0" metalness={0.3} roughness={0.5} /></mesh>
+      {/* лобовое/крыша */}
+      <mesh position={[0.5, 0.74, 0]}><boxGeometry args={[0.4, 0.18, 0.62]} /><meshStandardMaterial color="#1c2a3a" /></mesh>
+      {/* кузов (борт) */}
+      <mesh position={[-0.42, 0.5, 0]} castShadow><boxGeometry args={[1.05, 0.42, 0.66]} /><meshStandardMaterial color="#6b6f4e" roughness={0.85} /></mesh>
+      {/* фары */}
+      <mesh position={[0.94, 0.36, 0.22]}><boxGeometry args={[0.05, 0.1, 0.1]} /><meshStandardMaterial color="#ffe9a8" emissive="#ffd36b" emissiveIntensity={0.8} /></mesh>
+      <mesh position={[0.94, 0.36, -0.22]}><boxGeometry args={[0.05, 0.1, 0.1]} /><meshStandardMaterial color="#ffe9a8" emissive="#ffd36b" emissiveIntensity={0.8} /></mesh>
+      {wheels.map(([x, z], i) => (
+        <mesh key={i} position={[x, 0.16, z]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.17, 0.17, 0.12, 12]} />
+          <meshStandardMaterial color="#15171a" roughness={0.8} />
         </mesh>
-        {/* светящийся груз */}
-        <mesh position={[0, 0.26, 0]}>
-          <boxGeometry args={[0.48, 0.18, 0.32]} />
-          <meshStandardMaterial color="#8fd0ff" emissive={LINK_COLOR} emissiveIntensity={1.8} toneMapped={false} />
-        </mesh>
-        {/* колёса */}
-        {([[-0.22, 0.18], [0.22, 0.18], [-0.22, -0.18], [0.22, -0.18]] as const).map(([x, z], i) => (
-          <mesh key={i} position={[x, -0.08, z]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.1, 0.1, 0.07, 10]} />
-            <meshStandardMaterial color="#6b7888" metalness={0.5} roughness={0.5} />
-          </mesh>
-        ))}
-      </group>
+      ))}
     </group>
   )
 }
@@ -67,7 +89,7 @@ interface FlowLinksProps {
   edges: SceneEdge[]
 }
 
-/** Связи текущего уровня схемы. */
+/** Дороги текущего уровня схемы + грузовики на части из них. */
 export function FlowLinks({ nodes, edges }: FlowLinksProps) {
   const positions = useMemo(() => {
     const map: Record<string, [number, number]> = {}
@@ -86,7 +108,8 @@ export function FlowLinks({ nodes, edges }: FlowLinksProps) {
             key={edge.id}
             from={from}
             to={to}
-            speed={0.18 + (index % 3) * 0.04}
+            speed={0.05 + (index % 3) * 0.015}
+            withTruck={index % 2 === 0}
           />
         )
       })}

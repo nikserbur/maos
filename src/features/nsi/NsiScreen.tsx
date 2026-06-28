@@ -180,7 +180,10 @@ export function NsiScreen() {
                       title="Открыть для редактирования">
                     {active.columns.map((col) => (
                       <td key={col.key}>
-                        {cellText(col.key, row[col.key], wcTypes, products)}
+                        {col.key === 'role'
+                          ? (String(row.purchased) === '1' ? 'Сырьё (вход)'
+                             : String(row.sellable) === '1' ? 'Товар' : 'Полуфабрикат')
+                          : cellText(col.key, row[col.key], wcTypes, products)}
                       </td>
                     ))}
                   </tr>
