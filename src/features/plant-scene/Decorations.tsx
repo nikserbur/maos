@@ -52,8 +52,8 @@ function BmwZ4({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
       {[0.18, -0.18].map((sz, i) => (
         <mesh key={i} position={[-0.4, 0.66, sz]}><boxGeometry args={[0.28, 0.26, 0.26]} /><meshStandardMaterial color="#2a2a2d" /></mesh>
       ))}
-      {/* лобовое стекло */}
-      <mesh position={[0.18, 0.74, 0]} rotation={[0, 0, -0.55]}><boxGeometry args={[0.04, 0.34, 0.84]} /><meshStandardMaterial color="#acc6dd" transparent opacity={0.55} /></mesh>
+      {/* лобовое стекло — наклон назад (верх к салону) */}
+      <mesh position={[0.05, 0.74, 0]} rotation={[0, 0, 0.55]}><boxGeometry args={[0.04, 0.34, 0.84]} /><meshStandardMaterial color="#acc6dd" transparent opacity={0.55} /></mesh>
       {/* две «ноздри» решётки BMW */}
       {[0.16, -0.16].map((gz, i) => (
         <mesh key={i} position={[1.33, 0.42, gz]}><boxGeometry args={[0.04, 0.16, 0.13]} /><meshStandardMaterial color="#1a1a1c" /></mesh>
