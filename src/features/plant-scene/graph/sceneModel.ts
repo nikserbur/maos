@@ -120,7 +120,8 @@ export function buildGraphFromDb(
       parentId: m.parent_machine_id || null,
       kind,
       title: m.name,
-      subtitle: m.subtitle || type?.name || '',
+      // Показываем ТИП оборудования (3D-вид привязан к типу через type.kind).
+      subtitle: type?.name ? `Тип: ${type.name}` : (m.subtitle || ''),
       position: [Number(m.pos_x) || 0, Number(m.pos_z) || 0],
       rotationY: Number(m.rotation_y) || meta.rotationY || 0,
       scale: meta.scale,

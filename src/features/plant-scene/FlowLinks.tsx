@@ -38,22 +38,23 @@ function FlowLine({ from, to, speed }: FlowLineProps) {
   return (
     <group>
       <Line points={linePoints} color={LINK_COLOR} lineWidth={LINK_WIDTH} transparent opacity={0.7} />
-      <group ref={wagon} rotation={[0, yaw, 0]}>
-        {/* корпус вагонетки */}
-        <mesh position={[0, 0.04, 0]} castShadow>
-          <boxGeometry args={[0.62, 0.26, 0.4]} />
-          <meshStandardMaterial color="#2a3340" metalness={0.6} roughness={0.4} />
+      <group ref={wagon} rotation={[0, yaw, 0]} scale={1.35}>
+        {/* корпус вагонетки — светлый металл, чтобы был виден на тёмном фоне */}
+        <mesh position={[0, 0.05, 0]} castShadow>
+          <boxGeometry args={[0.62, 0.3, 0.42]} />
+          <meshStandardMaterial color="#b9c6d6" emissive="#33424f" emissiveIntensity={0.5}
+                                metalness={0.7} roughness={0.3} />
         </mesh>
         {/* светящийся груз */}
-        <mesh position={[0, 0.22, 0]}>
-          <boxGeometry args={[0.46, 0.16, 0.3]} />
-          <meshStandardMaterial color={LINK_COLOR} emissive={LINK_COLOR} emissiveIntensity={1.4} toneMapped={false} />
+        <mesh position={[0, 0.26, 0]}>
+          <boxGeometry args={[0.48, 0.18, 0.32]} />
+          <meshStandardMaterial color="#8fd0ff" emissive={LINK_COLOR} emissiveIntensity={1.8} toneMapped={false} />
         </mesh>
         {/* колёса */}
-        {([[-0.22, 0.16], [0.22, 0.16], [-0.22, -0.16], [0.22, -0.16]] as const).map(([x, z], i) => (
+        {([[-0.22, 0.18], [0.22, 0.18], [-0.22, -0.18], [0.22, -0.18]] as const).map(([x, z], i) => (
           <mesh key={i} position={[x, -0.08, z]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.09, 0.09, 0.06, 10]} />
-            <meshStandardMaterial color="#11151b" metalness={0.3} roughness={0.7} />
+            <cylinderGeometry args={[0.1, 0.1, 0.07, 10]} />
+            <meshStandardMaterial color="#6b7888" metalness={0.5} roughness={0.5} />
           </mesh>
         ))}
       </group>
