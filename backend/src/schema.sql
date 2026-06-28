@@ -105,7 +105,11 @@ CREATE TABLE IF NOT EXISTS operations (
   order_no       INTEGER NOT NULL DEFAULT 10,
   setup_required INTEGER NOT NULL DEFAULT 0,
   setup_cost     REAL,
+  setup_time     REAL NOT NULL DEFAULT 0,   -- наладка, мин (Стадия 1)
   labor_rate     REAL,
+  -- Тяжёлый хвост длительности (Стадия 1): примесь редких длинных исполнений.
+  tail_weight    REAL NOT NULL DEFAULT 0.08, -- вероятность тяжёлого исхода
+  tail_index     REAL NOT NULL DEFAULT 2.5,  -- индекс Парето (меньше → тяжелее хвост)
   t_norm         REAL,
   t_opt          REAL,
   t_pess         REAL,
@@ -217,6 +221,11 @@ CREATE TABLE IF NOT EXISTS plan_tasks (
   product_id   TEXT REFERENCES products(id) ON DELETE SET NULL,
   operation_id TEXT REFERENCES operations(id) ON DELETE SET NULL,
   wc_type_id   TEXT REFERENCES work_center_types(id) ON DELETE SET NULL,
+  machine_id   TEXT REFERENCES machines(id) ON DELETE SET NULL,  -- назначение (Ганта)
+  worker_id    TEXT REFERENCES workers(id) ON DELETE SET NULL,
+  start_min    REAL NOT NULL DEFAULT 0,    -- старт, мин от начала горизонта
+  end_min      REAL NOT NULL DEFAULT 0,    -- финиш, мин
+  order_idx    INTEGER NOT NULL DEFAULT 0, -- индекс заказа в программе
   load_hours   REAL NOT NULL DEFAULT 0,
   qty          REAL NOT NULL DEFAULT 0
 );

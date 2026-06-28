@@ -9,6 +9,7 @@
  */
 #include "Database.h"
 #include "Optimizer.h"
+#include "Scheduler.h"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -901,6 +902,56 @@ static void migrate_v2(Database& db) {
   std::cout << "Migration v2 done (" << skus.size() << " finished SKUs).\n";
 }
 
+// v3: Стадия 1 (расписание) — тяжёлый хвост у операций, поля Ганта в plan_tasks,
+// рабочие-операторы (для планов по рабочим). Идемпотентно, данные сохраняются.
+static void migrate_v3(Database& db) {
+  if (db.user_version() >= 3) return;
+  std::cout << "Migrating schema → v3 (scheduling: heavy tail + workers)…\n";
+  // Колонки добавляем NULLABLE с DEFAULT: ALTER ADD COLUMN NOT NULL не переписывает
+  // существующие строки физически (integrity_check ругается на «NULL»), хотя SELECT
+  // отдаёт дефолт. Ниже материализуем значения явным UPDATE.
+  db.exec_safe("ALTER TABLE operations  ADD COLUMN setup_time  REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE operations  ADD COLUMN tail_weight REAL DEFAULT 0.08");
+  db.exec_safe("ALTER TABLE operations  ADD COLUMN tail_index  REAL DEFAULT 2.5");
+  db.exec_safe("ALTER TABLE plan_tasks  ADD COLUMN machine_id  TEXT");
+  db.exec_safe("ALTER TABLE plan_tasks  ADD COLUMN worker_id   TEXT");
+  db.exec_safe("ALTER TABLE plan_tasks  ADD COLUMN start_min   REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE plan_tasks  ADD COLUMN end_min     REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE plan_tasks  ADD COLUMN order_idx   INTEGER DEFAULT 0");
+  // Материализация (физически записать дефолты, чтобы integrity_check был чист).
+  db.exec_safe("UPDATE operations SET tail_weight=COALESCE(tail_weight,0.08), "
+               "tail_index=COALESCE(tail_index,2.5), setup_time=COALESCE(setup_time,0)");
+  db.exec_safe("UPDATE plan_tasks SET start_min=COALESCE(start_min,0), "
+               "end_min=COALESCE(end_min,0), order_idx=COALESCE(order_idx,0)");
+
+  db.exec("BEGIN");
+  try {
+    // Рабочие-операторы (dual-resource, планы по рабочим). Наладочные операции
+    // тяжелее по хвосту — у некоторых типов поднимем вероятность хвоста.
+    struct W { std::string id, tab, last, first, unit, pos; int grade; };
+    const std::vector<W> workers = {
+      {"wk-01","T-101","Иванов","Сергей",  "Доменный цех","Горновой",6},
+      {"wk-02","T-102","Петров","Андрей",  "ККЦ",         "Сталевар",6},
+      {"wk-03","T-103","Сидоров","Дмитрий","ЭСПЦ",        "Сталевар",5},
+      {"wk-04","T-104","Кузнецов","Игорь", "ПЦ",          "Вальцовщик",5},
+      {"wk-05","T-105","Смирнов","Алексей","ПЦ",          "Вальцовщик",4},
+      {"wk-06","T-106","Попов","Николай",  "ДОЦ",         "Оператор",4},
+      {"wk-07","T-107","Лебедев","Павел",  "ОТК",         "Контролёр",5},
+      {"wk-08","T-108","Козлов","Виктор",  "Энергоцех",   "Энергетик",6},
+    };
+    for (auto& w : workers)
+      db.exec("INSERT OR IGNORE INTO workers(id,tab_no,last_name,first_name,org_unit,position,grade) "
+              "VALUES(?,?,?,?,?,?,?)",
+              { w.id, w.tab, w.last, w.first, w.unit, w.pos, std::to_string(w.grade) });
+    // Чуть тяжелее хвост у плавильных/наладочных операций (риск длинных задержек).
+    db.exec_safe("UPDATE operations SET tail_weight=0.14, tail_index=2.0 WHERE op_type='heat'");
+    db.exec_safe("UPDATE operations SET setup_time=15 WHERE setup_required=1");
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(3);
+  std::cout << "Migration v3 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1090,6 +1141,60 @@ static void register_optimize(httplib::Server& svr, Database& db) {
   });
 }
 
+/* ── Стадия 1: расписание (план исполнения) ──────────────────────────────── */
+
+static void persist_schedule(Database& db, const std::string& planId, const json& result) {
+  db.exec("INSERT INTO plans(id,run_id) VALUES(?,?)", { planId, "" });
+  for (auto& g : result.value("gantt", json::array()))
+    db.exec("INSERT INTO plan_tasks(id,plan_id,product_id,operation_id,wc_type_id,machine_id,"
+            "worker_id,start_min,end_min,order_idx) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            { gen_uuid(), planId, g.value("product_id", std::string()),
+              g.value("op_id", std::string()), g.value("wc_type_id", std::string()),
+              g.value("machine_id", std::string()), "",
+              std::to_string(g.value("start", 0.0) * 60.0), std::to_string(g.value("end", 0.0) * 60.0),
+              std::to_string(g.value("order_idx", 0)) });
+}
+
+static void register_schedule(httplib::Server& svr, Database& db) {
+  svr.Post("/api/schedule", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      maos::ScheduleParams sp;
+      sp.runId = jstr(body, "run_id");
+      if (!jstr(body, "rule").empty()) sp.rule = jstr(body, "rule");
+      if (body.contains("w_time")) sp.wTime = std::stod(jstr(body, "w_time"));
+      if (body.contains("w_cost")) sp.wCost = std::stod(jstr(body, "w_cost"));
+      if (body.contains("w_risk")) sp.wRisk = std::stod(jstr(body, "w_risk"));
+      if (body.contains("samples")) sp.samples = (int)std::stod(jstr(body, "samples"));
+      if (body.contains("alpha")) sp.alpha = std::stod(jstr(body, "alpha"));
+      if (body.contains("tail_weight") && !jstr(body,"tail_weight").empty())
+        sp.tailWeight = std::stod(jstr(body, "tail_weight"));
+      if (body.contains("program") && body["program"].is_array())
+        for (auto& o : body["program"]) {
+          maos::OrderLine ol; ol.productId = jstr(o, "product_id");
+          ol.qty = o.contains("qty") ? std::stod(jstr(o,"qty")) : 1;
+          ol.dueHours = o.contains("due_hours") ? std::stod(jstr(o,"due_hours")) : 0;
+          if (!ol.productId.empty()) sp.program.push_back(ol);
+        }
+
+      json result = maos::run_schedule(db, sp);
+      if (result.value("error_soft", false)) { ok(res, result); return; }
+
+      std::string planId = gen_uuid();
+      {
+        std::lock_guard<std::recursive_mutex> lk(db.mutex());
+        db.exec("BEGIN");
+        try { persist_schedule(db, planId, result); db.exec("COMMIT"); }
+        catch (std::exception& e) { try { db.exec("ROLLBACK"); } catch (...) {}
+          std::cerr << "persist_schedule failed: " << e.what() << "\n"; }
+      }
+      result["plan_id"] = planId;
+      audit(db, "schedule", planId, "RUN", { {"rule", result.value("rule", std::string())} });
+      ok(res, result);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
 /* ── main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char* argv[]) {
@@ -1121,6 +1226,7 @@ int main(int argc, char* argv[]) {
   try {
     migrate(db);
     migrate_v2(db);
+    migrate_v3(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1194,8 +1300,11 @@ int main(int argc, char* argv[]) {
   // Сценарии внешних условий (стохастика цен)
   register_scenarios(svr, db);
 
-  // Устойчивая стохастическая оптимизация
+  // Устойчивая стохастическая оптимизация (Стадия 2)
   register_optimize(svr, db);
+
+  // Расписание производства (Стадия 1)
+  register_schedule(svr, db);
 
   // Demo seed
   register_demo_seed(svr, db);

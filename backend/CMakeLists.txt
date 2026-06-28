@@ -31,6 +31,7 @@ add_executable(maos_server
   src/main.cpp
   src/Database.cpp
   src/Optimizer.cpp
+  src/Scheduler.cpp
 )
 
 target_include_directories(maos_server PRIVATE

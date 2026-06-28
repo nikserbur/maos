@@ -156,6 +156,48 @@ export interface SchemeAggregate {
   nodes: Machine[]; edges: Flow[]; types: WorkCenterType[]
 }
 
+/* ── Стадия 1: расписание (план исполнения) ──────────────────────────────── */
+export interface GanttJob {
+  order_idx: number; product_id: string; product_name: string
+  op_id: string; op_name: string; wc_type_id: string; wc_name: string
+  machine_id: string; machine_name: string; worker: number
+  start: number; end: number; due: number; late: boolean
+}
+export interface SchedLoad {
+  wc_type_id?: string; wc_name?: string; machine_id?: string; machine_name?: string
+  busy_hours: number; idle_hours: number; utilization: number
+}
+export interface WorkerPlan {
+  worker_id: string; name: string; job_count: number
+  busy_hours: number; idle_hours: number; utilization: number
+  jobs: Array<{ op_name: string; product_id: string; start: number; end: number }>
+}
+export interface SchedRule {
+  rule: string; makespan: number; makespan_cvar: number; makespan_worst: number
+  tardiness: number; score: number; chosen: boolean
+}
+export interface SchedKpi {
+  makespan: number; makespan_mean: number; makespan_cvar: number; makespan_worst: number
+  tardiness: number; tardiness_cvar: number; n_late: number; otd: number
+  utilization: number; cost: number
+}
+export interface ScheduleResult {
+  rule: string; samples: number; alpha: number
+  weights: { time: number; cost: number; risk: number }
+  n_orders: number; n_jobs: number; n_machines: number; n_workers: number
+  program: Array<{ product_id: string; product_name: string; qty: number; due_hours: number }>
+  gantt: GanttJob[]; machine_load: SchedLoad[]; wc_load: SchedLoad[]; worker_plan: WorkerPlan[]
+  bottleneck: { wc_type_id: string; wc_name: string; utilization: number }
+  idle: { machine_idle_hours: number; machine_utilization: number }
+  kpi: SchedKpi; rules: SchedRule[]; warnings: string[]
+  plan_id?: string; error_soft?: boolean
+}
+export interface ScheduleParams {
+  run_id?: string; rule?: string; w_time?: number; w_cost?: number; w_risk?: number
+  samples?: number; alpha?: number; tail_weight?: number
+  program?: Array<{ product_id: string; qty: number; due_hours?: number }>
+}
+
 /* ── API surface ─────────────────────────────────────────────────────────── */
 export const api = {
   health: () => get<{ status: string; version: string }>('/health'),
@@ -239,6 +281,10 @@ export const api = {
     run:  (p: OptimizeParams)  => post<OptResult>('/optimize', p),
     runs: ()                   => get<OptRunSummary[]>('/optimize/runs'),
     run_get: (id: string)      => get<OptResult>(`/optimize/runs/${id}`),
+  },
+
+  schedule: {
+    run: (p: ScheduleParams) => post<ScheduleResult>('/schedule', p),
   },
 
   demo: {
