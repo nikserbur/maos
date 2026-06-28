@@ -9,6 +9,8 @@ interface PlantLayoutProps {
   connectFrom: string | null
   connecting: boolean
   editing: boolean
+  /** Верхний уровень — узлы рисуются как здания. */
+  asBuilding: boolean
   onSelect: (id: string) => void
   onEnter: (id: string) => void
   onMove: (id: string, position: [number, number]) => void
@@ -23,6 +25,7 @@ export function PlantLayout({
   connectFrom,
   connecting,
   editing,
+  asBuilding,
   onSelect,
   onEnter,
   onMove,
@@ -39,6 +42,7 @@ export function PlantLayout({
           connectSource={node.id === connectFrom}
           connecting={connecting}
           editing={editing}
+          asBuilding={asBuilding}
           onSelect={onSelect}
           onEnter={onEnter}
           onMove={onMove}

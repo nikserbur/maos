@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Html, TransformControls } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import { OBJECT_REGISTRY } from './registry'
+import { Building } from './Building'
 import { STATUS_META } from './types'
 import type { SceneNode } from './graph/sceneModel'
 
@@ -14,6 +15,8 @@ interface StageObjectProps {
   connectSource: boolean
   /** Режим прокладки связи активен (кнопка ↔ скрыта). */
   connecting: boolean
+  /** Верхний уровень схемы — рисуем здание (цех/склад), а не модель оборудования. */
+  asBuilding: boolean
   onSelect: (id: string) => void
   onEnter: (id: string) => void
   onMove: (id: string, position: [number, number]) => void
@@ -21,13 +24,14 @@ interface StageObjectProps {
   onConnectFrom: (id: string) => void
 }
 
-/** Узел схемы: 3D-модель + кольцо статуса + подпись; в режиме правки — gizmo. */
+/** Узел схемы: здание (верхний уровень) или 3D-модель оборудования (внутри цеха). */
 export function StageObject({
   node,
   selected,
   editing,
   connectSource,
   connecting,
+  asBuilding,
   onSelect,
   onEnter,
   onMove,
@@ -39,6 +43,11 @@ export function StageObject({
   const meta = STATUS_META[node.status]
   const [x, z] = node.position
   const ringColor = connectSource ? '#2bb3a3' : selected ? '#2d72d2' : meta.color
+
+  // Здания крупнее моделей — подложка/кольцо/подпись масштабируются под них.
+  const pad   = asBuilding ? 15 : 5
+  const ringR = asBuilding ? 7.5 : 2.4
+  const labelY = asBuilding ? 9.5 : 4.2
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
@@ -67,40 +76,42 @@ export function StageObject({
   return (
     <>
       <group ref={groupRef} position={[x, 0, z]}>
-        {/* Бетонная подложка под объектом (площадка). */}
-        <mesh position={[0, 0.02, 0]} receiveShadow>
-          <boxGeometry args={[5, 0.06, 5]} />
+        {/* Бетонная площадка под объектом. */}
+        <mesh position={[0, 0.03, 0]} receiveShadow>
+          <boxGeometry args={[pad, 0.08, pad]} />
           <meshStandardMaterial color="#565b62" roughness={0.95} metalness={0.05} />
         </mesh>
+
         <group
           rotation={[0, node.rotationY ?? 0, 0]}
-          scale={node.scale}
           onClick={handleClick}
           onDoubleClick={handleDouble}
           onPointerOver={handleOver}
           onPointerOut={handleOut}
         >
-          <Model />
+          {asBuilding
+            ? <Building kind={node.kind} accent={meta.color} />
+            : <group scale={node.scale}><Model /></group>}
         </group>
 
         {(selected || connectSource) && (
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-            <circleGeometry args={[2.4, 48]} />
-            <meshBasicMaterial color={ringColor} transparent opacity={0.12} />
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+            <circleGeometry args={[ringR, 56]} />
+            <meshBasicMaterial color={ringColor} transparent opacity={0.1} />
           </mesh>
         )}
 
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-          <ringGeometry args={[2.2, 2.5, 48]} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.07, 0]}>
+          <ringGeometry args={[ringR - 0.3, ringR, 56]} />
           <meshBasicMaterial
             color={ringColor}
             transparent
-            opacity={selected || hovered || connectSource ? 0.95 : 0.65}
+            opacity={selected || hovered || connectSource ? 0.95 : 0.6}
           />
         </mesh>
 
         {showLabel && (
-          <Html position={[0, 4.2, 0]} center distanceFactor={26} className="stage-tag-wrap">
+          <Html position={[0, labelY, 0]} center distanceFactor={26} className="stage-tag-wrap">
             <div className="stage-tag">
               <span className="stage-tag__dot" style={{ background: meta.color }} />
               <span>{node.title}</span>

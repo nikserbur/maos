@@ -134,7 +134,7 @@ export default function PlantScene() {
         >
           <SceneEnvironment indoor={state.currentParentId != null} />
           <Suspense fallback={null}>
-            {state.currentParentId == null && <Facility />}
+            {state.currentParentId == null && <Facility nodes={nodes} />}
             <PlantLayout
               nodes={nodes}
               edges={edges}
@@ -142,6 +142,7 @@ export default function PlantScene() {
               connectFrom={state.connectFrom}
               connecting={state.connecting}
               editing={editing}
+              asBuilding={state.currentParentId == null}
               onSelect={handleSelect}
               onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
               onMove={handleMove}
