@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   api, type ScheduleResult, type OptRunSummary, type DemandOrder, type Product,
+  type MrpResult,
 } from '../../lib/api'
 import './plan.css'
 
@@ -93,20 +94,22 @@ export function PlanScreen() {
   const [newDue, setNewDue] = useState('120')
   const [useCalendar, setUseCalendar] = useState(true)
 
+  const [mrp, setMrp] = useState<MrpResult | null>(null)
+  const loadMrp = () => api.mrp.run().then(setMrp).catch(() => {})
   const loadOrders = () => api.demandOrders.list().then(setOrders).catch(() => {})
   useEffect(() => {
     api.optimize.runs().then(setRuns).catch(() => {})
     api.products.list().then((p) => setProducts(p.filter((x) => x.sellable === '1'))).catch(() => {})
-    loadOrders()
+    loadOrders(); loadMrp()
   }, [])
 
   const prodName = (id: string) => products.find((p) => p.id === id)?.name ?? id
   const addOrder = async () => {
     if (!newProd) return
     await api.demandOrders.create({ product_id: newProd, quantity: newQty, due_hours: newDue, priority: '5' }).catch(() => {})
-    setNewProd(''); await loadOrders()
+    setNewProd(''); await loadOrders(); await loadMrp()
   }
-  const delOrder = async (id: string) => { await api.demandOrders.delete(id).catch(() => {}); await loadOrders() }
+  const delOrder = async (id: string) => { await api.demandOrders.delete(id).catch(() => {}); await loadOrders(); await loadMrp() }
 
   const run = async () => {
     setRunning(true); setError(null)
@@ -197,6 +200,40 @@ export function PlanScreen() {
             <input className="plan__input" type="number" min="0" value={newDue} onChange={(e) => setNewDue(e.target.value)} placeholder="срок, ч" />
             <button className="btn btn--primary" style={{ height: 'var(--control)' }} onClick={addOrder} disabled={!newProd}>+ Добавить заказ</button>
           </div>
+        </div>
+      )}
+
+      {!runId && mrp && (
+        <div className="plan__panel">
+          <p className="plan__section-title" style={{ marginTop: 0 }}>
+            MRP — потребность в материалах под программу{' '}
+            <span style={{ color: mrp.feasible ? 'var(--intent-success)' : 'var(--intent-danger)', fontWeight: 600 }}>
+              {mrp.feasible ? '· материально осуществимо' : '· дефицит сырья'}
+            </span>
+          </p>
+          <table className="plan__rules">
+            <thead><tr><th>Материал</th><th>Потребность</th><th>Остаток</th><th>Нетто</th><th>Срок поставки</th><th>Статус</th></tr></thead>
+            <tbody>
+              {mrp.materials.filter((m) => m.purchased).sort((a, b) => b.net_req - a.net_req).map((m) => (
+                <tr key={m.product_id} className={m.shortage ? 'chosen' : ''}>
+                  <td>{m.name}</td>
+                  <td>{Math.round(m.gross_req).toLocaleString('ru')}</td>
+                  <td>{Math.round(m.on_hand).toLocaleString('ru')}</td>
+                  <td>{Math.round(m.net_req).toLocaleString('ru')}</td>
+                  <td>{Math.round(m.lead_time_hours)} ч</td>
+                  <td style={{ color: m.shortage ? 'var(--intent-danger)' : m.reorder ? 'var(--intent-warning)' : 'var(--text-muted)' }}>
+                    {m.shortage ? 'дефицит — закупить' : m.reorder ? 'дозаказ' : 'ок'}
+                  </td>
+                </tr>
+              ))}
+              {mrp.materials.filter((m) => m.purchased).length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>Закупных материалов под программу нет.</td></tr>
+              )}
+            </tbody>
+          </table>
+          <p className="plan__subtitle" style={{ marginTop: 6 }}>
+            Полуфабрикаты ({mrp.materials.filter((m) => !m.purchased).length}) производятся внутри по техкартам; нетто учитывает страховой запас.
+          </p>
         </div>
       )}
 

@@ -17,6 +17,8 @@
 #include <sstream>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
+#include <functional>
 #include <cstdint>
 
 using json = nlohmann::json;
@@ -993,6 +995,33 @@ static void migrate_v5(Database& db) {
   std::cout << "Migration v5 done.\n";
 }
 
+// v6: запасы/MRP — поля запаса у изделий + начальные остатки сырья.
+static void migrate_v6(Database& db) {
+  if (db.user_version() >= 6) return;
+  std::cout << "Migrating schema → v6 (inventory / MRP)…\n";
+  db.exec_safe("ALTER TABLE products ADD COLUMN safety_stock    REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE products ADD COLUMN reorder_point   REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE products ADD COLUMN lead_time_hours REAL DEFAULT 0");
+  db.exec_safe("UPDATE products SET safety_stock=COALESCE(safety_stock,0), "
+               "reorder_point=COALESCE(reorder_point,0), lead_time_hours=COALESCE(lead_time_hours,0)");
+  db.exec("BEGIN");
+  try {
+    // Начальные остатки + параметры закупки покупного сырья.
+    struct S { std::string id; double stock, safety, reorder, lead; };
+    const std::vector<S> raws = {
+      {"prod-ore",  5000, 1000, 2000, 48}, {"prod-coke", 1800,  500, 1000, 72},
+      {"prod-flux", 2000,  300,  600, 24}, {"prod-scrap",1500,  800, 1500, 36},
+    };
+    for (auto& r : raws)
+      db.exec("UPDATE products SET stock=?, safety_stock=?, reorder_point=?, lead_time_hours=? WHERE id=?",
+              { std::to_string(r.stock), std::to_string(r.safety), std::to_string(r.reorder),
+                std::to_string(r.lead), r.id });
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(6);
+  std::cout << "Migration v6 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1240,6 +1269,75 @@ static void register_schedule(httplib::Server& svr, Database& db) {
   });
 }
 
+/* ── MRP: разузлование программы → потребность в материалах (Стадия C) ────── */
+
+static void register_mrp(httplib::Server& svr, Database& db) {
+  svr.Post("/api/mrp", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+
+      // Программа: из тела / из реестра заказов.
+      std::vector<std::pair<std::string,double>> program;
+      if (body.contains("program") && body["program"].is_array())
+        for (auto& o : body["program"])
+          program.push_back({ jstr(o,"product_id"),
+                              o.contains("qty") ? std::stod(jstr(o,"qty")) : 1 });
+      if (program.empty())
+        for (auto& r : db.query_json("SELECT product_id,quantity FROM demand_orders WHERE status<>'done'"))
+          program.push_back({ jstr(r,"product_id"), std::stod(jstr(r,"quantity")) });
+
+      // Кэш техкарт/входов/изделий.
+      std::unordered_map<std::string, std::vector<std::pair<std::string,double>>> inputsByProduct;
+      auto chainInputs = [&](const std::string& pid) -> std::vector<std::pair<std::string,double>>& {
+        auto it = inputsByProduct.find(pid);
+        if (it != inputsByProduct.end()) return it->second;
+        std::vector<std::pair<std::string,double>> v;
+        for (auto& r : db.query_json("SELECT id FROM routings WHERE product_id=?", { pid }))
+          for (auto& o : db.query_json("SELECT id FROM operations WHERE routing_id=?", { jstr(r,"id") }))
+            for (auto& in : db.query_json("SELECT product_id,qty FROM operation_inputs WHERE operation_id=?", { jstr(o,"id") }))
+              v.push_back({ jstr(in,"product_id"), std::stod(jstr(in,"qty")) });
+        return inputsByProduct[pid] = v;
+      };
+
+      // Рекурсивное разузлование: накапливаем потребность по изделиям.
+      std::unordered_map<std::string,double> need;
+      std::function<void(const std::string&, double, std::unordered_set<std::string>&, int)> explode =
+        [&](const std::string& pid, double mult, std::unordered_set<std::string>& vis, int depth) {
+          if (depth > 48 || vis.count(pid)) return;
+          vis.insert(pid);
+          for (auto& [q, qty] : chainInputs(pid)) {
+            need[q] += mult * qty;
+            explode(q, mult * qty, vis, depth + 1);   // произвести/закупить вход
+          }
+          vis.erase(pid);
+        };
+      for (auto& [pid, qty] : program) { std::unordered_set<std::string> vis; explode(pid, qty, vis, 0); }
+
+      // Сводка по материалам (акцент на покупном сырье).
+      json materials = json::array(); bool feasible = true;
+      for (auto& [pid, gross] : need) {
+        json p;
+        try { p = db.query_one("SELECT * FROM products WHERE id=?", { pid }); } catch (...) { continue; }
+        bool purchased = std::stod(jstr(p,"purchased").empty()?"0":jstr(p,"purchased")) != 0;
+        double onHand = std::stod(jstr(p,"stock").empty()?"0":jstr(p,"stock"));
+        double safety = std::stod(jstr(p,"safety_stock").empty()?"0":jstr(p,"safety_stock"));
+        double reorder= std::stod(jstr(p,"reorder_point").empty()?"0":jstr(p,"reorder_point"));
+        double lead   = std::stod(jstr(p,"lead_time_hours").empty()?"0":jstr(p,"lead_time_hours"));
+        double net = std::max(0.0, gross + safety - onHand);   // нетто с учётом страх. запаса
+        if (purchased && net > 0) feasible = false;
+        materials.push_back({
+          {"product_id", pid}, {"name", jstr(p,"name")}, {"purchased", purchased},
+          {"gross_req", gross}, {"on_hand", onHand}, {"safety_stock", safety},
+          {"net_req", net}, {"shortage", net > 0}, {"reorder", onHand < reorder && reorder > 0},
+          {"lead_time_hours", lead}, {"unit_cost", std::stod(jstr(p,"base_cost").empty()?"0":jstr(p,"base_cost"))},
+        });
+      }
+      ok(res, { {"feasible", feasible}, {"materials", materials},
+                {"n_orders", (int)program.size()} });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
 /* ── Рабочий календарь (смены по умолчанию) ──────────────────────────────── */
 
 static void register_calendar(httplib::Server& svr, Database& db) {
@@ -1318,6 +1416,7 @@ int main(int argc, char* argv[]) {
     migrate_v3(db);
     migrate_v4(db);
     migrate_v5(db);
+    migrate_v6(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1363,7 +1462,9 @@ int main(int argc, char* argv[]) {
     { "code", "name", "unit", "parent_id", "qty_in_parent",
       "batch_size", "stock", "purchased",
       // Экономика внешних условий — иначе товарные позиции невидимы оптимизатору:
-      "sellable", "base_cost", "base_price", "demand_max" }
+      "sellable", "base_cost", "base_price", "demand_max",
+      // Запасы / MRP:
+      "safety_stock", "reorder_point", "lead_time_hours" }
   });
 
   register_crud(svr, db, {
@@ -1405,6 +1506,9 @@ int main(int argc, char* argv[]) {
 
   // Рабочий календарь (смены)
   register_calendar(svr, db);
+
+  // MRP — потребность в материалах из программы (Стадия C)
+  register_mrp(svr, db);
 
   // Demo seed
   register_demo_seed(svr, db);

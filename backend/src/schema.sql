@@ -82,8 +82,24 @@ CREATE TABLE IF NOT EXISTS products (
   base_cost       REAL NOT NULL DEFAULT 0,      -- цена закупки (для purchased)
   base_price      REAL NOT NULL DEFAULT 0,      -- ориентир цены реализации (mean по умолчанию)
   demand_max      REAL NOT NULL DEFAULT 0,      -- верхняя граница спроса/сбыта на горизонте
+  -- Запасы / MRP (Стадия C):
+  safety_stock    REAL NOT NULL DEFAULT 0,      -- страховой запас
+  reorder_point   REAL NOT NULL DEFAULT 0,      -- точка дозаказа
+  lead_time_hours REAL NOT NULL DEFAULT 0,      -- срок поставки покупного, ч
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ── Движения запасов (история) ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS stock_moves (
+  id            TEXT PRIMARY KEY,
+  product_id    TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  date          TEXT NOT NULL DEFAULT (datetime('now')),
+  delta         REAL NOT NULL DEFAULT 0,        -- +приход / −расход
+  reason        TEXT,                            -- procure | consume | adjust | produce
+  ref_id        TEXT,
+  stock_at_end  REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_stockmove_product ON stock_moves (product_id);
 
 -- ── Техкарты (маршруты) ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS routings (

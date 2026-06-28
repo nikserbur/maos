@@ -203,6 +203,14 @@ export interface WorkCalendar {
   start_hour?: number; end_hour?: number; days?: number[]
 }
 
+/* ── MRP / запасы (Стадия C) ─────────────────────────────────────────────── */
+export interface MrpMaterial {
+  product_id: string; name: string; purchased: boolean
+  gross_req: number; on_hand: number; safety_stock: number; net_req: number
+  shortage: boolean; reorder: boolean; lead_time_hours: number; unit_cost: number
+}
+export interface MrpResult { feasible: boolean; materials: MrpMaterial[]; n_orders: number }
+
 /* ── Производственная программа (заказы) ─────────────────────────────────── */
 export interface DemandOrder {
   id: string; product_id: string; quantity: string; due_hours: string
@@ -301,6 +309,11 @@ export const api = {
   calendar: {
     get:    ()                       => get<WorkCalendar>('/calendar'),
     update: (d: { start_hour: number; end_hour: number; days: number[] }) => put<{ ok: boolean }>('/calendar', d),
+  },
+
+  mrp: {
+    run: (program?: Array<{ product_id: string; qty: number }>) =>
+      post<MrpResult>('/mrp', program ? { program } : {}),
   },
 
   demandOrders: {
