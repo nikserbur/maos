@@ -1041,6 +1041,71 @@ static void migrate_v7(Database& db) {
   std::cout << "Migration v7 done.\n";
 }
 
+// v8: глобальные ЦЕХА. Раньше верхний уровень схемы = 27 отдельных станков
+// (выглядели как частокол одинаковых зданий). Теперь верхний уровень = 6 цехов,
+// а все станки переезжают ВНУТРЬ соответствующего цеха (parent_machine_id).
+// Внутрицеховые потоки сохраняются (привязываются к цеху), межцеховые — заменяются
+// технологической цепочкой между цехами. Данные не теряются.
+static void migrate_v8(Database& db) {
+  if (db.user_version() >= 8) return;
+  std::cout << "Migrating schema → v8 (глобальные цеха: станки внутрь)…\n";
+  db.exec("BEGIN");
+  try {
+    // 1. Шесть цехов верхнего уровня (тип задаёт силуэт здания).
+    db.exec(
+      "INSERT OR IGNORE INTO machines(id,name,wc_type_id,status,pos_x,pos_z) VALUES"
+      "('shop-raw','Сырьевой цех','wct-feedstock','active',-30,-13),"
+      "('shop-iron','Аглодоменный цех','wct-dryer','active',0,-13),"
+      "('shop-steel','Сталеплавильный цех','wct-briquettes','active',30,-13),"
+      "('shop-roll','Прокатный цех','wct-pileizer','active',30,13),"
+      "('shop-energy','Энергоцех','wct-boiler','active',0,13),"
+      "('shop-logistics','Склад и сбыт','wct-wirehouse','active',-30,13)");
+
+    // 2. Станки — внутрь цехов.
+    db.exec("UPDATE machines SET parent_machine_id='shop-raw' WHERE id IN "
+            "('mach-oreyard','mach-cokeyard','mach-scrapyard','mach-crushing','mach-screening')");
+    db.exec("UPDATE machines SET parent_machine_id='shop-iron' WHERE id IN "
+            "('mach-sinter','mach-blastfurnace','mach-hotblast','mach-gasclean','mach-ladle')");
+    db.exec("UPDATE machines SET parent_machine_id='shop-steel' WHERE id IN "
+            "('mach-converter','mach-eaf','mach-ccm')");
+    db.exec("UPDATE machines SET parent_machine_id='shop-roll' WHERE id IN "
+            "('mach-rolling','mach-coldrolling','mach-heattreat','mach-slabyard')");
+    db.exec("UPDATE machines SET parent_machine_id='shop-energy' WHERE id IN "
+            "('mach-chp','mach-substation','mach-substation2')");
+    db.exec("UPDATE machines SET parent_machine_id='shop-logistics' WHERE id IN "
+            "('mach-warehouse','mach-shipping','mach-shipping2','mach-sales','mach-maintenance','mach-lab','1c18904f3e71819bd3a2d1b86827a21')");
+
+    // 3. Внутрицеховые потоки → принадлежат цеху (видны при заходе внутрь).
+    auto intra = [&](const char* shop, const std::string& ids) {
+      db.exec("UPDATE flows SET parent_id='" + std::string(shop) +
+              "' WHERE (parent_id IS NULL OR parent_id='') AND from_id IN (" + ids +
+              ") AND to_id IN (" + ids + ")");
+    };
+    intra("shop-raw", "'mach-oreyard','mach-cokeyard','mach-scrapyard','mach-crushing','mach-screening'");
+    intra("shop-iron", "'mach-sinter','mach-blastfurnace','mach-hotblast','mach-gasclean','mach-ladle'");
+    intra("shop-steel", "'mach-converter','mach-eaf','mach-ccm'");
+    intra("shop-roll", "'mach-rolling','mach-coldrolling','mach-heattreat','mach-slabyard'");
+    intra("shop-energy", "'mach-chp','mach-substation','mach-substation2'");
+    intra("shop-logistics", "'mach-warehouse','mach-shipping','mach-shipping2','mach-sales','mach-maintenance','mach-lab','1c18904f3e71819bd3a2d1b86827a21'");
+
+    // Остаток верхнего уровня — межцеховые потоки между станками: убираем.
+    db.exec("DELETE FROM flows WHERE parent_id IS NULL OR parent_id=''");
+
+    // 4. Технологическая цепочка между цехами (верхний уровень).
+    db.exec(
+      "INSERT OR IGNORE INTO flows(id,from_id,to_id,parent_id) VALUES"
+      "('flow-ws-1','shop-raw','shop-iron',''),"
+      "('flow-ws-2','shop-iron','shop-steel',''),"
+      "('flow-ws-3','shop-steel','shop-roll',''),"
+      "('flow-ws-4','shop-roll','shop-logistics',''),"
+      "('flow-ws-5','shop-energy','shop-iron',''),"
+      "('flow-ws-6','shop-energy','shop-steel','')");
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(8);
+  std::cout << "Migration v8 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1457,6 +1522,7 @@ int main(int argc, char* argv[]) {
     migrate_v5(db);
     migrate_v6(db);
     migrate_v7(db);
+    migrate_v8(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1473,7 +1539,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.9.3"} });
+    ok(res, { {"status", "ok"}, {"version", "0.10.0"} });
   });
 
   // Auth
