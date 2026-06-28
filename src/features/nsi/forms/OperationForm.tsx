@@ -1,30 +1,42 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '../../../lib/api'
 import { useWorkCenterTypes, useProducts } from '../useNsi'
+import type { EditCtx } from '../CreateDialog'
 
 interface Props {
   onSuccess: () => void
+  edit?: EditCtx
 }
 
-export function OperationForm({ onSuccess }: Props) {
+export function OperationForm({ onSuccess, edit }: Props) {
   const wcTypes  = useWorkCenterTypes()
   const products = useProducts()
+  const r = edit?.row ?? {}
+  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
 
-  const [code, setCode]       = useState('')
-  const [name, setName]       = useState('')
-  const [opType, setOpType]   = useState('')
+  const [code, setCode]       = useState(sv('code'))
+  const [name, setName]       = useState(sv('name'))
+  const [opType, setOpType]   = useState(sv('op_type'))
   // Связи по ID (не по имени): типы оборудования (множ.) и входные изделия (таблица).
   const [wcTypeIds, setWcTypeIds] = useState<string[]>([])
   const [inputRows, setInputRows] = useState<Array<{ product_id: string; qty: string }>>([])
-  const [order, setOrder]     = useState('10')
-  const [setup, setSetup]     = useState(false)
-  const [tNorm, setTNorm]     = useState('')
-  const [tOpt, setTOpt]       = useState('')
-  const [tPess, setTPess]     = useState('')
-  const [cost, setCost]       = useState('')
-  const [risk, setRisk]       = useState('0.05')
+  const [order, setOrder]     = useState(sv('order_no', '10'))
+  const [setup, setSetup]     = useState(sv('setup_required') === '1')
+  const [tNorm, setTNorm]     = useState(sv('t_norm'))
+  const [tOpt, setTOpt]       = useState(sv('t_opt'))
+  const [tPess, setTPess]     = useState(sv('t_pess'))
+  const [cost, setCost]       = useState(sv('cost'))
+  const [risk, setRisk]       = useState(sv('risk_coef', '0.05'))
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+
+  // При редактировании: предвыбор типов оборудования по именам из wc_types (когда типы загрузятся).
+  useEffect(() => {
+    if (!edit) return
+    const names = sv('wc_types').split(',').map((s) => s.trim()).filter(Boolean)
+    if (names.length && wcTypes.length) setWcTypeIds(wcTypes.filter((t) => names.includes(t.name)).map((t) => t.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wcTypes.length])
 
   const toggleWcType = (id: string) =>
     setWcTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -44,19 +56,21 @@ export function OperationForm({ onSuccess }: Props) {
         .map((id) => wcTypes.find((t) => t.id === id)?.name)
         .filter(Boolean)
         .join(',')
-      await api.operations.create({
+      const payload = {
         code, name, op_type: opType,
         wc_types: wcNames,
         wc_type_ids: wcTypeIds,
         input_products: inputRows
-          .filter((r) => r.product_id)
-          .map((r) => ({ product_id: r.product_id, qty: Number(r.qty) || 1 })),
+          .filter((row) => row.product_id)
+          .map((row) => ({ product_id: row.product_id, qty: Number(row.qty) || 1 })),
         order_no: order,
         setup_required: setup ? '1' : '0',
         t_norm: tNorm, t_opt: tOpt, t_pess: tPess,
         cost, risk_coef: risk,
         controls: '', mechanisms: '', outputs: '',
-      })
+      }
+      if (edit) await api.operations.update(edit.id, payload)
+      else await api.operations.create(payload)
       onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')

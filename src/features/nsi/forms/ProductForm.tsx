@@ -1,27 +1,31 @@
 import { useState } from 'react'
 import { api } from '../../../lib/api'
 import { useProducts } from '../useNsi'
+import type { EditCtx } from '../CreateDialog'
 
 interface Props {
   onSuccess: () => void
+  edit?: EditCtx
 }
 
-export function ProductForm({ onSuccess }: Props) {
+export function ProductForm({ onSuccess, edit }: Props) {
   const products = useProducts()
+  const r = edit?.row ?? {}
+  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
 
-  const [code, setCode]           = useState('')
-  const [name, setName]           = useState('')
-  const [unit, setUnit]           = useState('шт')
-  const [parentId, setParentId]   = useState('')
-  const [qty, setQty]             = useState('1')
-  const [batch, setBatch]         = useState('1')
-  const [purchased, setPurchased] = useState(false)
-  const [stock, setStock]         = useState('0')
+  const [code, setCode]           = useState(sv('code'))
+  const [name, setName]           = useState(sv('name'))
+  const [unit, setUnit]           = useState(sv('unit', 'шт'))
+  const [parentId, setParentId]   = useState(sv('parent_id'))
+  const [qty, setQty]             = useState(sv('qty_in_parent', '1'))
+  const [batch, setBatch]         = useState(sv('batch_size', '1'))
+  const [purchased, setPurchased] = useState(sv('purchased') === '1')
+  const [stock, setStock]         = useState(sv('stock', '0'))
   // Экономика внешних условий (для устойчивой оптимизации):
-  const [sellable, setSellable]   = useState(false)
-  const [basePrice, setBasePrice] = useState('')
-  const [baseCost, setBaseCost]   = useState('')
-  const [demandMax, setDemandMax] = useState('')
+  const [sellable, setSellable]   = useState(sv('sellable') === '1')
+  const [basePrice, setBasePrice] = useState(sv('base_price'))
+  const [baseCost, setBaseCost]   = useState(sv('base_cost'))
+  const [demandMax, setDemandMax] = useState(sv('demand_max'))
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
@@ -30,7 +34,7 @@ export function ProductForm({ onSuccess }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await api.products.create({
+      const payload = {
         code, name, unit,
         parent_id: parentId,
         qty_in_parent: qty,
@@ -41,7 +45,9 @@ export function ProductForm({ onSuccess }: Props) {
         base_price: basePrice || '0',
         base_cost: baseCost || '0',
         demand_max: demandMax || '0',
-      })
+      }
+      if (edit) await api.products.update(edit.id, payload)
+      else await api.products.create(payload)
       onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')

@@ -1,21 +1,25 @@
 import { useState } from 'react'
 import { api } from '../../../lib/api'
 import { useOrgUnits } from '../useNsi'
+import type { EditCtx } from '../CreateDialog'
 
 interface Props {
   onSuccess: () => void
+  edit?: EditCtx
 }
 
-export function WorkerForm({ onSuccess }: Props) {
+export function WorkerForm({ onSuccess, edit }: Props) {
   const orgUnits = useOrgUnits()
-  const [tabNo, setTabNo]     = useState('')
-  const [last, setLast]       = useState('')
-  const [first, setFirst]     = useState('')
-  const [middle, setMiddle]   = useState('')
-  const [orgUnit, setOrgUnit] = useState('')
-  const [position, setPos]    = useState('')
-  const [grade, setGrade]     = useState('3')
-  const [skills, setSkills]   = useState('')
+  const r = edit?.row ?? {}
+  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
+  const [tabNo, setTabNo]     = useState(sv('tab_no'))
+  const [last, setLast]       = useState(sv('last_name'))
+  const [first, setFirst]     = useState(sv('first_name'))
+  const [middle, setMiddle]   = useState(sv('middle_name'))
+  const [orgUnit, setOrgUnit] = useState(sv('org_unit'))
+  const [position, setPos]    = useState(sv('position'))
+  const [grade, setGrade]     = useState(sv('grade', '3'))
+  const [skills, setSkills]   = useState(sv('skills'))
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
@@ -25,11 +29,13 @@ export function WorkerForm({ onSuccess }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await api.workers.create({
+      const payload = {
         tab_no: tabNo, last_name: last, first_name: first,
         middle_name: middle, org_unit: orgUnit, position,
         grade, skills,
-      })
+      }
+      if (edit) await api.workers.update(edit.id, payload)
+      else await api.workers.create(payload)
       onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')

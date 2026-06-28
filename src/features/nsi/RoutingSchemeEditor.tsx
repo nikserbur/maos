@@ -645,9 +645,10 @@ function Panel({
 interface RoutingSchemeEditorProps {
   onSave: () => void
   onCancel: () => void
+  edit?: import('./CreateDialog').EditCtx
 }
 
-export function RoutingSchemeEditor({ onSave, onCancel }: RoutingSchemeEditorProps) {
+export function RoutingSchemeEditor({ onSave, onCancel, edit }: RoutingSchemeEditorProps) {
   const [state, dispatch] = useReducer(reducer, INIT)
   const products    = useProducts()
   const registryOps = useOperations()
@@ -711,6 +712,11 @@ export function RoutingSchemeEditor({ onSave, onCancel }: RoutingSchemeEditorPro
         </span>
         {saveError && (
           <span style={{ fontSize: 12, color: '#ff6b6b' }}>{saveError}</span>
+        )}
+        {edit && (
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+            редактирование «{String(edit.row.name ?? '')}» — пересоберите маршрут и сохраните
+          </span>
         )}
         <div style={{ flex: 1 }} />
         <button className="btn" onClick={onCancel} disabled={saving}>Отмена</button>

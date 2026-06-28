@@ -2,21 +2,25 @@ import { useState } from 'react'
 import { api } from '../../../lib/api'
 import { KIND_META, PALETTE } from '../../plant-scene/graph/sceneModel'
 import { useOperations } from '../useNsi'
+import type { EditCtx } from '../CreateDialog'
 
 interface Props {
   onSuccess: () => void
+  edit?: EditCtx
 }
 
-export function WorkCenterTypeForm({ onSuccess }: Props) {
+export function WorkCenterTypeForm({ onSuccess, edit }: Props) {
   const operations = useOperations()
   // только шаблоны НСИ (без привязки к техкарте) — кандидаты для типа
   const opTemplates = operations.filter((o) => !o.routing_id)
+  const r = edit?.row ?? {}
+  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
 
-  const [name,  setName]  = useState('')
-  const [group, setGroup] = useState('')
-  const [kind,  setKind]  = useState('feedstock')
-  const [desc,  setDesc]  = useState('')
-  const [inter, setInter] = useState(false)
+  const [name,  setName]  = useState(sv('name'))
+  const [group, setGroup] = useState(sv('group_name'))
+  const [kind,  setKind]  = useState(sv('kind', 'feedstock'))
+  const [desc,  setDesc]  = useState(sv('description'))
+  const [inter, setInter] = useState(sv('interchangeable') === '1')
   const [opIds, setOpIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -29,11 +33,13 @@ export function WorkCenterTypeForm({ onSuccess }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await api.workCenterTypes.create({
+      const payload = {
         name, group_name: group, kind,
         description: desc,
         interchangeable: inter ? '1' : '0',
-      })
+      }
+      if (edit) await api.workCenterTypes.update(edit.id, payload)
+      else await api.workCenterTypes.create(payload)
       // Связываем выбранные операции с этим типом: добавляем имя типа в op.wc_types.
       await Promise.all(
         opIds.map((id) => {

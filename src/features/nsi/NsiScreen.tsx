@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { REGISTRIES } from './registries'
 import { CreateDialog } from './CreateDialog'
-import { EditDialog } from './EditDialog'
 import { api, type WorkCenterType, type Product } from '../../lib/api'
 import { KIND_META } from '../plant-scene/graph/sceneModel'
 import './nsi.css'
@@ -108,13 +107,10 @@ export function NsiScreen() {
         <CreateDialog registryId={activeId} onClose={handleCreated} />
       )}
       {editRow && (
-        <EditDialog
-          registry={active}
-          row={editRow}
-          wcTypes={wcTypes}
-          products={products}
-          onClose={() => setEditRow(null)}
-          onSaved={() => { setEditRow(null); handleCreated() }}
+        <CreateDialog
+          registryId={activeId}
+          edit={{ id: String(editRow.id ?? ''), row: editRow }}
+          onClose={() => { setEditRow(null); handleCreated() }}
         />
       )}
 

@@ -1,23 +1,27 @@
 import { useState } from 'react'
 import { api } from '../../../lib/api'
 import { useWorkCenterTypes, useOrgUnits } from '../useNsi'
+import type { EditCtx } from '../CreateDialog'
 
 interface Props {
   onSuccess: () => void
+  edit?: EditCtx
 }
 
-export function MachineForm({ onSuccess }: Props) {
+export function MachineForm({ onSuccess, edit }: Props) {
   const wcTypes = useWorkCenterTypes()
   const orgUnits = useOrgUnits()
+  const r = edit?.row ?? {}
+  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
 
-  const [name, setName]         = useState('')
-  const [wcTypeId, setWcTypeId] = useState('')
-  const [orgUnit, setOrgUnit]   = useState('')
-  const [invNo, setInvNo]       = useState('')
-  const [serial, setSerial]     = useState('')
-  const [year, setYear]         = useState('')
-  const [schedule, setSchedule] = useState('')
-  const [status, setStatus]     = useState('active')
+  const [name, setName]         = useState(sv('name'))
+  const [wcTypeId, setWcTypeId] = useState(sv('wc_type_id'))
+  const [orgUnit, setOrgUnit]   = useState(sv('org_unit'))
+  const [invNo, setInvNo]       = useState(sv('inv_no'))
+  const [serial, setSerial]     = useState(sv('serial_no'))
+  const [year, setYear]         = useState(sv('year_made'))
+  const [schedule, setSchedule] = useState(sv('schedule'))
+  const [status, setStatus]     = useState(sv('status', 'active'))
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
 
@@ -26,11 +30,13 @@ export function MachineForm({ onSuccess }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await api.machines.create({
+      const payload = {
         name, wc_type_id: wcTypeId, org_unit: orgUnit,
         inv_no: invNo, serial_no: serial, year_made: year,
         schedule, status,
-      })
+      }
+      if (edit) await api.machines.update(edit.id, payload)
+      else await api.machines.create(payload)
       onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')
