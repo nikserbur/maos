@@ -16,16 +16,73 @@ function Car({ x, z, rot = 0, color }: { x: number; z: number; rot?: number; col
   )
 }
 
-/** Парковка: асфальт + разметка + ряд машин. */
+/** Красный родстер BMW Z4 — без крыши (открытый кокпит). */
+function BmwZ4({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
+  const red = '#c01824'
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.66}>
+      {/* длинный низкий кузов */}
+      <mesh position={[0, 0.3, 0]} castShadow><boxGeometry args={[2.3, 0.32, 0.96]} /><meshStandardMaterial color={red} metalness={0.5} roughness={0.3} /></mesh>
+      {/* длинный капот спереди */}
+      <mesh position={[0.75, 0.42, 0]}><boxGeometry args={[0.9, 0.22, 0.9]} /><meshStandardMaterial color={red} metalness={0.5} roughness={0.3} /></mesh>
+      {/* борта кокпита */}
+      <mesh position={[-0.45, 0.52, 0]}><boxGeometry args={[0.95, 0.24, 0.96]} /><meshStandardMaterial color={red} metalness={0.5} roughness={0.3} /></mesh>
+      {/* открытый салон (тёмная ниша) */}
+      <mesh position={[-0.45, 0.55, 0]}><boxGeometry args={[0.8, 0.16, 0.66]} /><meshStandardMaterial color="#1a1a1c" /></mesh>
+      {/* два сиденья */}
+      {[0.18, -0.18].map((sz, i) => (
+        <mesh key={i} position={[-0.55, 0.62, sz]}><boxGeometry args={[0.22, 0.22, 0.22]} /><meshStandardMaterial color="#2a2a2d" /></mesh>
+      ))}
+      {/* лобовое стекло (низкое, наклонное) */}
+      <mesh position={[-0.08, 0.68, 0]} rotation={[0, 0, -0.5]}><boxGeometry args={[0.05, 0.3, 0.8]} /><meshStandardMaterial color="#bcd3e6" transparent opacity={0.6} /></mesh>
+      {/* дуги безопасности */}
+      {[0.2, -0.2].map((sz, i) => (
+        <mesh key={i} position={[-0.78, 0.72, sz]}><boxGeometry args={[0.08, 0.22, 0.08]} /><meshStandardMaterial color="#cfd4d8" metalness={0.6} /></mesh>
+      ))}
+      {[[0.72, 0.46], [0.72, -0.46], [-0.78, 0.46], [-0.78, -0.46]].map(([wx, wz], i) => (
+        <mesh key={i} position={[wx, 0.18, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.2, 0.2, 0.14, 12]} /><meshStandardMaterial color="#15171a" /></mesh>
+      ))}
+    </group>
+  )
+}
+
+/** Белый кроссовер Omoda C5 с чёрной крышей. */
+function OmodaC5({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
+  const white = '#eef0f2'
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.66}>
+      {/* кузов кроссовера (повыше) */}
+      <mesh position={[0, 0.4, 0]} castShadow><boxGeometry args={[2.2, 0.56, 1.0]} /><meshStandardMaterial color={white} metalness={0.3} roughness={0.4} /></mesh>
+      {/* остеклённая надстройка */}
+      <mesh position={[-0.1, 0.82, 0]}><boxGeometry args={[1.3, 0.42, 0.94]} /><meshStandardMaterial color="#9fb6c8" emissive="#7fa8c8" emissiveIntensity={0.12} /></mesh>
+      {/* чёрная крыша */}
+      <mesh position={[-0.1, 1.06, 0]} castShadow><boxGeometry args={[1.36, 0.12, 0.98]} /><meshStandardMaterial color="#16181b" roughness={0.5} /></mesh>
+      {/* чёрные стойки/молдинги */}
+      <mesh position={[-0.1, 0.82, 0.48]}><boxGeometry args={[1.3, 0.42, 0.03]} /><meshStandardMaterial color="#1a1c1f" /></mesh>
+      <mesh position={[-0.1, 0.82, -0.48]}><boxGeometry args={[1.3, 0.42, 0.03]} /><meshStandardMaterial color="#1a1c1f" /></mesh>
+      {/* решётка/бампер */}
+      <mesh position={[1.02, 0.36, 0]}><boxGeometry args={[0.1, 0.3, 0.9]} /><meshStandardMaterial color="#2a2d31" /></mesh>
+      {[[0.7, 0.5], [0.7, -0.5], [-0.7, 0.5], [-0.7, -0.5]].map(([wx, wz], i) => (
+        <mesh key={i} position={[wx, 0.2, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.22, 0.22, 0.16, 12]} /><meshStandardMaterial color="#15171a" /></mesh>
+      ))}
+    </group>
+  )
+}
+
+/** Парковка: асфальт + разметка + автомобили (в т.ч. BMW Z4 и Omoda C5). */
 function ParkingLot({ x, z }: { x: number; z: number }) {
-  const cars = ['#b5483a', '#3a6ea5', '#d8b24a', '#4c8a52', '#9a9ea3', '#7a5aa0']
+  const cars = ['#3a6ea5', '#d8b24a', '#4c8a52', '#9a9ea3']
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[12, 7]} /><meshStandardMaterial color={ASPHALT} roughness={1} /></mesh>
       {[-5, -3, -1, 1, 3, 5].map((mx, i) => (
-        <mesh key={i} position={[mx, 0.05, -0.3]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[0.12, 5]} /><meshBasicMaterial color="#c7cdd2" /></mesh>
+        <mesh key={i} position={[mx, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[0.12, 6.4]} /><meshBasicMaterial color="#c7cdd2" /></mesh>
       ))}
-      {cars.map((c, i) => <Car key={i} x={-5 + i * 2} z={-1.2} rot={Math.PI / 2} color={c} />)}
+      {/* передний ряд — BMW Z4 и Omoda C5 рядышком */}
+      <BmwZ4 x={-1.2} z={1.7} rot={Math.PI / 2} />
+      <OmodaC5 x={0.9} z={1.7} rot={Math.PI / 2} />
+      {/* задний ряд — обычные авто */}
+      {cars.map((c, i) => <Car key={i} x={-4 + i * 2} z={-1.6} rot={Math.PI / 2} color={c} />)}
     </group>
   )
 }

@@ -93,28 +93,33 @@ function RoadStrip({ cx, cz, w, d }: { cx: number; cz: number; w: number; d: num
   )
 }
 
-/** Кольцевая развязка: асфальтовое кольцо + газонный островок + бордюрная разметка. */
-function Roundabout({ x, z }: { x: number; z: number }) {
+/**
+ * Кольцевая развязка: асфальтовое кольцо + бордюр + островок. На улице островок
+ * газонный с деревцем; в цехе — бетонный, без «ёлочки».
+ */
+function Roundabout({ x, z, indoor }: { x: number; z: number; indoor?: boolean }) {
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, 0.052, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <ringGeometry args={[1.3, 2.6, 36]} /><meshStandardMaterial color={ASPHALT} roughness={1} />
       </mesh>
       <mesh position={[0, 0.066, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[2.5, 2.6, 36]} /><meshBasicMaterial color={LANE} />
+        <ringGeometry args={[2.5, 2.6, 36]} /><meshBasicMaterial color={indoor ? '#c7cdd2' : LANE} />
       </mesh>
       <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[1.25, 28]} /><meshStandardMaterial color="#3f5d3a" roughness={1} />
+        <circleGeometry args={[1.25, 28]} /><meshStandardMaterial color={indoor ? '#6a7076' : '#3f5d3a'} roughness={1} />
       </mesh>
-      <mesh position={[0, 0.45, 0]} castShadow>
-        <coneGeometry args={[0.5, 1, 8]} /><meshStandardMaterial color="#4d7d44" roughness={1} />
-      </mesh>
+      {!indoor && (
+        <mesh position={[0, 0.45, 0]} castShadow>
+          <coneGeometry args={[0.5, 1, 8]} /><meshStandardMaterial color="#4d7d44" roughness={1} />
+        </mesh>
+      )}
     </group>
   )
 }
 
-/** Грузовик ЗИЛ, курсирующий по отрезку дороги (туда-обратно). */
-function Truck({ a, b, speed }: { a: [number, number]; b: [number, number]; speed: number }) {
+/** Транспорт, курсирующий по отрезку: ЗИЛ на улице, вилочный погрузчик в цехе. */
+function Vehicle({ a, b, speed, indoor }: { a: [number, number]; b: [number, number]; speed: number; indoor?: boolean }) {
   const ref = useRef<THREE.Group>(null)
   const yaw = Math.atan2(-(b[1] - a[1]), b[0] - a[0])
   useFrame((s) => {
@@ -125,7 +130,23 @@ function Truck({ a, b, speed }: { a: [number, number]; b: [number, number]; spee
     ref.current.position.set(a[0] + (b[0] - a[0]) * t, 0.06, a[1] + (b[1] - a[1]) * t)
     ref.current.rotation.y = fwd ? yaw : yaw + Math.PI
   })
-  return <group ref={ref} scale={0.5}><Zil /></group>
+  return <group ref={ref} scale={indoor ? 0.85 : 0.9}>{indoor ? <ForkliftModel /> : <Zil />}</group>
+}
+
+/** Вилочный погрузчик (для движения внутри цеха). */
+function ForkliftModel() {
+  return (
+    <group position={[0, 0.05, 0]}>
+      <mesh position={[0, 0.5, 0]} castShadow><boxGeometry args={[1.4, 0.7, 0.9]} /><meshStandardMaterial color="#d8b24a" metalness={0.2} roughness={0.6} /></mesh>
+      <mesh position={[0.35, 1.15, 0]}><boxGeometry args={[0.55, 0.6, 0.8]} /><meshStandardMaterial color="#33363a" /></mesh>
+      <mesh position={[0.85, 0.7, 0]}><boxGeometry args={[0.12, 1.4, 0.7]} /><meshStandardMaterial color="#2a2d31" /></mesh>
+      <mesh position={[1.1, 0.2, 0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color="#1e2024" /></mesh>
+      <mesh position={[1.1, 0.2, -0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color="#1e2024" /></mesh>
+      {[[0.45, 0.45], [0.45, -0.45], [-0.45, 0.45], [-0.45, -0.45]].map(([wx, wz], i) => (
+        <mesh key={i} position={[wx, 0.22, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.22, 0.22, 0.16, 10]} /><meshStandardMaterial color="#15171a" /></mesh>
+      ))}
+    </group>
+  )
 }
 
 function Zil() {
@@ -149,10 +170,10 @@ function Zil() {
   )
 }
 
-interface FlowLinksProps { nodes: SceneNode[]; edges: SceneEdge[] }
+interface FlowLinksProps { nodes: SceneNode[]; edges: SceneEdge[]; indoor?: boolean }
 
-/** Единая ортогональная дорожная сеть: дедуп-отрезки + развязки + грузовики. */
-export function FlowLinks({ nodes, edges }: FlowLinksProps) {
+/** Единая ортогональная дорожная сеть: дедуп-отрезки + развязки + транспорт. */
+export function FlowLinks({ nodes, edges, indoor }: FlowLinksProps) {
   const { hSegs, vSegs, roundabouts, trucks } = useMemo(() => {
     const net = buildNetwork(nodes, edges)
     // Грузовики — на самых длинных отрезках сети (по одному, чтобы без толкучки).
@@ -167,8 +188,8 @@ export function FlowLinks({ nodes, edges }: FlowLinksProps) {
     <group>
       {hSegs.map((h, i) => <RoadStrip key={`h${i}`} cx={(h.x0 + h.x1) / 2} cz={h.z} w={h.x1 - h.x0} d={0} />)}
       {vSegs.map((v, i) => <RoadStrip key={`v${i}`} cx={v.x} cz={(v.z0 + v.z1) / 2} w={0} d={v.z1 - v.z0} />)}
-      {roundabouts.map(([x, z], i) => <Roundabout key={`r${i}`} x={x} z={z} />)}
-      {trucks.map((t, i) => <Truck key={`t${i}`} a={t.a} b={t.b} speed={0.1 + (i % 3) * 0.03} />)}
+      {roundabouts.map(([x, z], i) => <Roundabout key={`r${i}`} x={x} z={z} indoor={indoor} />)}
+      {trucks.map((t, i) => <Vehicle key={`t${i}`} a={t.a} b={t.b} speed={0.1 + (i % 3) * 0.03} indoor={indoor} />)}
     </group>
   )
 }

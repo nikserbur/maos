@@ -33,7 +33,7 @@ export function PlantLayout({
 }: PlantLayoutProps) {
   return (
     <group>
-      <FlowLinks nodes={nodes} edges={edges} />
+      <FlowLinks nodes={nodes} edges={edges} indoor={!asBuilding} />
       {nodes.map((node) => (
         <StageObject
           key={node.id}
