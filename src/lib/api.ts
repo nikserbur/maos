@@ -88,6 +88,13 @@ export interface AuditAction {
   action_type: string; payload: string
 }
 
+/* ── Администрирование (Стадия D) ────────────────────────────────────────── */
+export interface User {
+  id: string; login: string; status: string; failed_attempts: string
+  role_id: string; role_name: string; permissions: string; created_at: string
+}
+export interface Role { id: string; name: string; permissions: string }
+
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
 export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform'
 
@@ -282,6 +289,11 @@ export const api = {
 
   actions: {
     list: (limit = 100) => get<AuditAction[]>(`/actions?limit=${limit}`),
+  },
+
+  admin: {
+    users: () => get<User[]>('/users'),
+    roles: () => get<Role[]>('/roles'),
   },
 
   scheme: {

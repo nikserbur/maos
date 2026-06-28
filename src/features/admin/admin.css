@@ -1,0 +1,27 @@
+/* Экран «Администрирование» — Action layer, пользователи, роли. */
+.adm { height: 100%; overflow-y: auto; padding: calc(var(--grid) * 2); display: flex; flex-direction: column; gap: var(--grid); }
+.adm__title { font-size: 20px; font-weight: 600; margin: 0; }
+.adm__subtitle { color: var(--text-muted); font-size: 12.5px; margin: 4px 0 0; max-width: 72ch; }
+.adm__grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--grid); }
+@media (max-width: 920px) { .adm__grid { grid-template-columns: 1fr; } }
+.adm__panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: calc(var(--grid) * 1.1); }
+.adm__panel--wide { grid-row: span 2; }
+.adm__panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.adm__panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.adm__filter { height: 26px; background: var(--bg-input); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0 8px; font-size: 12px; }
+.adm__log { display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto; }
+.adm__log-row { display: grid; grid-template-columns: 160px 90px 1fr 90px; gap: 8px; align-items: baseline; padding: 4px 6px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.adm__log-ts { color: var(--text-muted); font-size: 11px; }
+.adm__log-act { font-weight: 600; }
+.adm__log-ent { color: var(--text-secondary); }
+.adm__log-actor { color: var(--text-muted); font-size: 11px; text-align: right; }
+.adm__user { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.adm__user-login { font-size: 13px; font-weight: 600; }
+.adm__user-role { font-size: 11px; color: var(--text-muted); }
+.adm__badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--bg-input); color: var(--text-muted); }
+.adm__badge--ok { background: rgba(35,133,81,.2); color: var(--intent-success); }
+.adm__role { padding: 8px; border-bottom: 1px solid var(--border); }
+.adm__role-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.adm__perms { display: flex; flex-wrap: wrap; gap: 4px; }
+.adm__perm { font-size: 10px; padding: 1px 6px; border-radius: 2px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-secondary); }
+.adm__empty { color: var(--text-muted); font-size: 12px; padding: 8px; }

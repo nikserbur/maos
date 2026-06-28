@@ -4,22 +4,13 @@ import { NsiScreen } from '../features/nsi/NsiScreen'
 import { OptimizationScreen } from '../features/optimization/OptimizationScreen'
 import { ScenariosScreen } from '../features/scenarios/ScenariosScreen'
 import { PlanScreen } from '../features/plan/PlanScreen'
-import { Placeholder } from './Placeholder'
+import { AdminScreen } from '../features/admin/AdminScreen'
 
 export interface ScreenDef {
   id: string
   label: string
   icon: string
   Component: ComponentType
-}
-
-function AdminScreen() {
-  return (
-    <Placeholder
-      title="Администрирование"
-      caption="Пользователи, роли и права доступа, журнал действий (Action layer)."
-    />
-  )
 }
 
 /**

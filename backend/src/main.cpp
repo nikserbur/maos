@@ -1269,6 +1269,26 @@ static void register_schedule(httplib::Server& svr, Database& db) {
   });
 }
 
+/* ── Администрирование: пользователи, роли (Стадия D) ─────────────────────── */
+
+static void register_admin(httplib::Server& svr, Database& db) {
+  // Пользователи — без хеша пароля; с именем роли.
+  svr.Get("/api/users", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      auto rows = db.query_json(
+        "SELECT u.id, u.login, u.status, u.failed_attempts, u.role_id, "
+        "       r.name AS role_name, r.permissions AS permissions, u.created_at "
+        "FROM users u LEFT JOIN roles r ON r.id=u.role_id ORDER BY u.created_at");
+      ok(res, rows);
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  // Роли с правами.
+  svr.Get("/api/roles", [&db](const httplib::Request&, httplib::Response& res) {
+    try { ok(res, db.query_json("SELECT * FROM roles ORDER BY id")); }
+    catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+}
+
 /* ── MRP: разузлование программы → потребность в материалах (Стадия C) ────── */
 
 static void register_mrp(httplib::Server& svr, Database& db) {
@@ -1509,6 +1529,9 @@ int main(int argc, char* argv[]) {
 
   // MRP — потребность в материалах из программы (Стадия C)
   register_mrp(svr, db);
+
+  // Администрирование — пользователи, роли (Стадия D)
+  register_admin(svr, db);
 
   // Demo seed
   register_demo_seed(svr, db);
