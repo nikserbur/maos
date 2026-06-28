@@ -975,6 +975,24 @@ static void migrate_v4(Database& db) {
   std::cout << "Migration v4 done.\n";
 }
 
+// v5: расписания/смены — рабочий календарь по умолчанию (двусменный 5/2, 06–22).
+static void migrate_v5(Database& db) {
+  if (db.user_version() >= 5) return;
+  std::cout << "Migrating schema → v5 (schedules & calendars)…\n";
+  db.exec("BEGIN");
+  try {
+    db.exec("INSERT OR IGNORE INTO schedules(id,name,pattern,is_default) "
+            "VALUES('sch-default','Двусменный 5/2','Пн–Пт 06:00–22:00',1)");
+    for (int dow = 1; dow <= 5; ++dow)      // Пн–Пт, 06:00–22:00 (360–1320 мин)
+      db.exec("INSERT OR IGNORE INTO shifts(id,schedule_id,day_of_week,start_min,end_min) "
+              "VALUES(?,?,?,?,?)",
+              { "sh-" + std::to_string(dow), "sch-default", std::to_string(dow), "360", "1320" });
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(5);
+  std::cout << "Migration v5 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1192,6 +1210,10 @@ static void register_schedule(httplib::Server& svr, Database& db) {
       if (body.contains("alpha")) sp.alpha = std::stod(jstr(body, "alpha"));
       if (body.contains("tail_weight") && !jstr(body,"tail_weight").empty())
         sp.tailWeight = std::stod(jstr(body, "tail_weight"));
+      if (body.contains("use_calendar")) {
+        std::string uc = jstr(body, "use_calendar");
+        sp.useCalendar = !(uc == "0" || uc == "false");
+      }
       if (body.contains("program") && body["program"].is_array())
         for (auto& o : body["program"]) {
           maos::OrderLine ol; ol.productId = jstr(o, "product_id");
@@ -1214,6 +1236,50 @@ static void register_schedule(httplib::Server& svr, Database& db) {
       result["plan_id"] = planId;
       audit(db, "schedule", planId, "RUN", { {"rule", result.value("rule", std::string())} });
       ok(res, result);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
+/* ── Рабочий календарь (смены по умолчанию) ──────────────────────────────── */
+
+static void register_calendar(httplib::Server& svr, Database& db) {
+  // GET — окно работы по умолчанию (выводим из смен: единое start/end + рабочие дни).
+  svr.Get("/api/calendar", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      auto sch = db.query_json("SELECT id,name FROM schedules WHERE is_default=1 LIMIT 1");
+      if (sch.empty()) { ok(res, { {"enabled", false} }); return; }
+      std::string sid = jstr(sch[0], "id");
+      auto shifts = db.query_json("SELECT day_of_week,start_min,end_min FROM shifts WHERE schedule_id=? ORDER BY day_of_week", { sid });
+      json days = json::array(); double sMin = 360, eMin = 1320;
+      for (auto& s : shifts) {
+        days.push_back(std::stoi(jstr(s, "day_of_week")));
+        sMin = std::stod(jstr(s, "start_min")); eMin = std::stod(jstr(s, "end_min"));
+      }
+      ok(res, { {"schedule_id", sid}, {"name", jstr(sch[0], "name")}, {"enabled", !shifts.empty()},
+                {"start_hour", sMin / 60.0}, {"end_hour", eMin / 60.0}, {"days", days} });
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  // PUT — заменить смены окна работы (start_hour, end_hour, days[1..7]).
+  svr.Put("/api/calendar", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = json::parse(req.body);
+      auto sch = db.query_json("SELECT id FROM schedules WHERE is_default=1 LIMIT 1");
+      std::string sid = sch.empty() ? "" : jstr(sch[0], "id");
+      if (sid.empty()) { sid = "sch-default";
+        db.exec("INSERT OR IGNORE INTO schedules(id,name,is_default) VALUES(?, 'Рабочий календарь', 1)", { sid }); }
+      int sMin = (int)(std::stod(jstr(body, "start_hour").empty() ? "6" : jstr(body, "start_hour")) * 60);
+      int eMin = (int)(std::stod(jstr(body, "end_hour").empty() ? "22" : jstr(body, "end_hour")) * 60);
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());
+      db.exec("DELETE FROM shifts WHERE schedule_id=?", { sid });
+      if (body.contains("days") && body["days"].is_array())
+        for (auto& d : body["days"]) {
+          int dow = d.is_number() ? d.get<int>() : std::stoi(d.get<std::string>());
+          db.exec("INSERT INTO shifts(id,schedule_id,day_of_week,start_min,end_min) VALUES(?,?,?,?,?)",
+                  { gen_uuid(), sid, std::to_string(dow), std::to_string(sMin), std::to_string(eMin) });
+        }
+      audit(db, "calendar", sid, "UPDATE", body);
+      ok(res, { {"ok", true} });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 }
@@ -1251,6 +1317,7 @@ int main(int argc, char* argv[]) {
     migrate_v2(db);
     migrate_v3(db);
     migrate_v4(db);
+    migrate_v5(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1335,6 +1402,9 @@ int main(int argc, char* argv[]) {
 
   // Расписание производства (Стадия 1)
   register_schedule(svr, db);
+
+  // Рабочий календарь (смены)
+  register_calendar(svr, db);
 
   // Demo seed
   register_demo_seed(svr, db);

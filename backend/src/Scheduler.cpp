@@ -1,5 +1,6 @@
 #include "Scheduler.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <random>
 #include <unordered_map>
@@ -8,6 +9,70 @@
 
 namespace maos {
 namespace {
+
+double num(const json& j, const char* k, double def);   // определены ниже
+std::string str(const json& j, const char* k);
+
+/* ── Рабочий календарь: операции «растягиваются» через нерабочие интервалы ──
+   Время — минуты от начала горизонта; день 0 = Пн 00:00. */
+struct Calendar {
+  std::array<std::vector<std::pair<int,int>>, 7> day;   // dow(0=Пн..6=Вс) → [start,end] мин дня
+  bool any = false;
+  // Ближайшая рабочая абсолютная минута ≥ t.
+  double nextWork(double t) const {
+    if (!any) return t;
+    for (int g = 0; g < 21; ++g) {
+      long abs = (long)std::floor(t); int dow = (int)(((abs / 1440) % 7 + 7) % 7); int mod = (int)(abs % 1440);
+      for (auto& [s, e] : day[dow]) { if (mod < s) return (double)((abs / 1440) * 1440 + s); if (mod < e) return t; }
+      t = (double)(((abs / 1440) + 1) * 1440);          // следующий день
+    }
+    return t;
+  }
+  // Финиш после накопления `work` рабочих минут начиная с t (с учётом нерабочих окон).
+  double advance(double t, double work) const {
+    if (!any) return t + work;
+    t = nextWork(t); double rem = work;
+    for (int g = 0; g < 4000 && rem > 1e-9; ++g) {
+      long abs = (long)std::floor(t); int dow = (int)(((abs / 1440) % 7 + 7) % 7); int mod = (int)(abs % 1440);
+      int end = -1; for (auto& [s, e] : day[dow]) if (mod >= s && mod < e) { end = e; break; }
+      if (end < 0) { t = nextWork(t); continue; }
+      double avail = (double)((abs / 1440) * 1440 + end) - t;
+      if (avail >= rem) return t + rem;
+      rem -= avail; t = nextWork((double)((abs / 1440) * 1440 + end));
+    }
+    return t;
+  }
+};
+
+// Рабочих минут в [0, makespan] (фонд времени для загрузки/простоя ресурса).
+double working_span(const Calendar& cal, double makespan) {
+  if (!cal.any || makespan <= 0) return makespan > 0 ? makespan : 1;
+  double w = 0; long days = (long)(makespan / 1440) + 1;
+  for (long d = 0; d <= days; ++d) {
+    int dow = (int)((d % 7 + 7) % 7);
+    for (auto& [s, e] : cal.day[dow]) {
+      double lo = std::max(0.0, d * 1440.0 + s), hi = std::min(makespan, d * 1440.0 + e);
+      if (hi > lo) w += hi - lo;
+    }
+  }
+  return w > 0 ? w : makespan;
+}
+
+Calendar load_calendar(Database& db, bool enabled) {
+  Calendar c;
+  if (!enabled) return c;
+  auto sched = db.query_json("SELECT id FROM schedules WHERE is_default=1 LIMIT 1");
+  if (sched.empty()) sched = db.query_json("SELECT id FROM schedules LIMIT 1");
+  if (sched.empty()) return c;
+  std::string sid = str(sched[0], "id");
+  for (auto& s : db.query_json("SELECT day_of_week,start_min,end_min FROM shifts WHERE schedule_id=?", { sid })) {
+    int dow = (int)num(s, "day_of_week", 1) - 1;        // 1..7 → 0..6
+    if (dow < 0 || dow > 6) continue;
+    int a = (int)num(s, "start_min", 0), b = (int)num(s, "end_min", 1440);
+    if (b > a) { c.day[dow].push_back({ a, b }); c.any = true; }
+  }
+  return c;
+}
 
 double num(const json& j, const char* k, double def = 0) {
   if (!j.contains(k) || j[k].is_null()) return def;
@@ -160,7 +225,8 @@ struct SimOut {
 };
 
 SimOut simulate(const Model& m, const std::vector<Job>& jobs,
-                const std::vector<double>& key, const std::vector<double>& dur) {
+                const std::vector<double>& key, const std::vector<double>& dur,
+                const Calendar& cal) {
   size_t J = jobs.size(); SimOut o;
   o.start.assign(J,0); o.end.assign(J,0); o.machineId.assign(J,""); o.worker.assign(J,-1);
   o.busyByWorker.assign(m.workers.size(), 0);
@@ -186,7 +252,8 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
     if (!m.workers.empty()) { double bw = 1e300;
       for (size_t w = 0; w < wFree.size(); ++w) if (wFree[w] < bw) { bw = wFree[w]; wi = (int)w; }
       wfree = bw; }
-    double st = std::max(readyT, std::max(mfree, wfree)), en = st + dur[best];
+    double st = cal.nextWork(std::max(readyT, std::max(mfree, wfree)));  // снап к рабочему времени
+    double en = cal.advance(st, dur[best]);                              // финиш с учётом смен
     o.start[best] = st; o.end[best] = en; o.machineId[best] = chosenM; o.worker[best] = wi;
     if (!chosenM.empty()) mFree[chosenM] = en, o.busyByMachine[chosenM] += dur[best];
     if (wi >= 0) wFree[wi] = en, o.busyByWorker[wi] += dur[best];
@@ -216,6 +283,7 @@ double mean_of(const std::vector<double>& v) { double s = 0; for (double x : v) 
 /* ── Главная процедура ───────────────────────────────────────────────────── */
 json run_schedule(Database& db, const ScheduleParams& p) {
   Model m = load_model(db);
+  Calendar cal = load_calendar(db, p.useCalendar);   // рабочий календарь (смены/выходные)
   json warnings = json::array();
 
   // ── Программа: из запроса / из портфеля прогона / демо ──
@@ -284,11 +352,11 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   std::vector<RuleEval> evals;
   for (auto& rule : rules) {
     auto key = priorities(rule, jobs, orderWork);
-    SimOut det = simulate(m, jobs, key, durMean);
+    SimOut det = simulate(m, jobs, key, durMean, cal);
     int nl; double tardDet = order_tardiness(jobs, det, nOrders, due, nl);
     std::vector<double> mks(N), tards(N);
     for (int s = 0; s < N; ++s) {
-      SimOut so = simulate(m, jobs, key, durMC[s]);
+      SimOut so = simulate(m, jobs, key, durMC[s], cal);
       mks[s] = so.makespan; int nl2; tards[s] = order_tardiness(jobs, so, nOrders, due, nl2);
     }
     RuleEval e; e.rule = rule; e.mkDet = det.makespan;
@@ -305,7 +373,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
 
   // ── Детальное расписание выбранного правила (по средним — для Ганта) ──
   auto key = priorities(chosenRule, jobs, orderWork);
-  SimOut sched = simulate(m, jobs, key, durMean);
+  SimOut sched = simulate(m, jobs, key, durMean, cal);
   double makespan = sched.makespan;
   int nLate = 0; double tardiness = order_tardiness(jobs, sched, nOrders, due, nLate);
 
@@ -329,16 +397,17 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     });
   }
 
-  // Загрузка станков + простои.
+  // Загрузка станков + простои. Фонд = рабочее время в [0, makespan] (без выходных/смен).
+  double fond = working_span(cal, makespan);
   json machineLoad = json::array(); double totalBusy = 0, totalCap = 0;
   std::unordered_map<std::string,double> wcBusy, wcCap;
   for (auto& [wct, mids] : m.machinesOf) for (auto& mid : mids) {
     double busy = sched.busyByMachine.count(mid)?sched.busyByMachine[mid]:0;
-    double util = makespan > 0 ? busy / makespan : 0;
+    double util = fond > 0 ? busy / fond : 0;
     machineLoad.push_back({ {"machine_id", mid}, {"machine_name", m.machineName[mid]},
       {"wc_type_id", wct}, {"wc_name", m.wcName.count(wct)?m.wcName[wct]:wct},
-      {"busy_hours", H(busy)}, {"idle_hours", H(makespan - busy)}, {"utilization", util} });
-    totalBusy += busy; totalCap += makespan; wcBusy[wct] += busy; wcCap[wct] += makespan;
+      {"busy_hours", H(busy)}, {"idle_hours", H(std::max(0.0, fond - busy))}, {"utilization", util} });
+    totalBusy += busy; totalCap += fond; wcBusy[wct] += busy; wcCap[wct] += fond;
   }
   json wcLoad = json::array(); std::string bottleneck; double bnUtil = -1;
   for (auto& [wct, cap] : wcCap) {
@@ -389,6 +458,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
                      {"utilization", bnUtil} }},
     {"idle", { {"machine_idle_hours", H(totalCap - totalBusy)},
                {"machine_utilization", totalCap>0?totalBusy/totalCap:0} }},
+    {"calendar", { {"enabled", cal.any}, {"work_fond_hours", H(fond)} }},
     {"kpi", {
       {"makespan", H(makespan)}, {"makespan_mean", H(be.mkMean)}, {"makespan_cvar", H(be.mkCVaR)},
       {"makespan_worst", H(be.mkWorst)}, {"tardiness", H(tardiness)}, {"tardiness_cvar", H(be.tardCVaR)},

@@ -153,6 +153,34 @@ CREATE TABLE IF NOT EXISTS workers (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ── Расписания и календари (Стадия B) ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS schedules (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  pattern    TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Смена: окно работы в минутах от полуночи для дня недели (1=Пн … 7=Вс).
+CREATE TABLE IF NOT EXISTS shifts (
+  id          TEXT PRIMARY KEY,
+  schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+  day_of_week INTEGER NOT NULL,
+  start_min   INTEGER NOT NULL,
+  end_min     INTEGER NOT NULL,
+  efficiency  REAL NOT NULL DEFAULT 1.0
+);
+CREATE INDEX IF NOT EXISTS idx_shifts_sched ON shifts (schedule_id);
+-- Исключение календаря: праздник/ремонт/доп.рабочий день.
+CREATE TABLE IF NOT EXISTS calendar_exceptions (
+  id          TEXT PRIMARY KEY,
+  schedule_id TEXT REFERENCES schedules(id) ON DELETE CASCADE,
+  date        TEXT NOT NULL,
+  type        TEXT NOT NULL,           -- holiday | repair | extra
+  start_min   INTEGER,
+  end_min     INTEGER
+);
+
 -- ── Производственная программа (заказы) — вход Стадии 1 ────────────────────
 CREATE TABLE IF NOT EXISTS demand_orders (
   id            TEXT PRIMARY KEY,

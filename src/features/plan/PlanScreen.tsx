@@ -91,6 +91,7 @@ export function PlanScreen() {
   const [newProd, setNewProd] = useState('')
   const [newQty, setNewQty] = useState('100')
   const [newDue, setNewDue] = useState('120')
+  const [useCalendar, setUseCalendar] = useState(true)
 
   const loadOrders = () => api.demandOrders.list().then(setOrders).catch(() => {})
   useEffect(() => {
@@ -112,7 +113,7 @@ export function PlanScreen() {
     try {
       const r = await api.schedule.run({
         rule, samples: Number(samples) || 500, w_risk: Number(wRisk) || 0.5,
-        run_id: runId || undefined,
+        run_id: runId || undefined, use_calendar: useCalendar,
       })
       if (r.error_soft) setError(r.warnings?.join(' ') || 'Нет данных для плана')
       else setResult(r)
@@ -156,6 +157,13 @@ export function PlanScreen() {
         <div className="plan__ctl">
           <span className="plan__ctl-label">Вес риска</span>
           <input className="plan__input" type="number" min="0" max="3" step="0.5" value={wRisk} onChange={(e) => setWRisk(e.target.value)} />
+        </div>
+        <div className="plan__ctl">
+          <span className="plan__ctl-label">Календарь (смены 5/2)</span>
+          <label className="form__check" style={{ height: 'var(--control)', display: 'flex', alignItems: 'center' }}>
+            <input type="checkbox" checked={useCalendar} onChange={(e) => setUseCalendar(e.target.checked)} />
+            учитывать рабочее время
+          </label>
         </div>
         <button className="btn btn--primary" style={{ height: 'var(--control)' }} onClick={run} disabled={running}>
           {running ? 'Строим план…' : 'Построить и оптимизировать план'}
@@ -212,7 +220,10 @@ export function PlanScreen() {
               <strong>Узкое место</strong> — загрузка {pct(result.bottleneck.utilization)}; здесь теряется
               больше всего времени. Правило <strong>{result.rule}</strong> выбрано как устойчивое к
               тяжёлому хвосту (минимум целевой функции время+риск). Простой станков{' '}
-              {h1(result.idle.machine_idle_hours)} ч.
+              {h1(result.idle.machine_idle_hours)} ч.{' '}
+              {result.calendar.enabled
+                ? `Рабочий календарь учтён (фонд ${h1(result.calendar.work_fond_hours)} ч в смены).`
+                : 'Календарь выключен (24/7).'}
             </span>
           </div>
 

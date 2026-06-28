@@ -29,6 +29,7 @@ struct ScheduleParams {
   double alpha   = 0.10;              // хвост для CVaR makespan/tardiness
   unsigned seed  = 42;
   double tailWeight = -1;             // <0 → из операций; иначе глобальный override
+  bool   useCalendar = true;          // учитывать рабочий календарь (смены/выходные)
 };
 
 // Строит и оптимизирует расписание; ПЕРСИСТИТ план (plans/plan_tasks) и

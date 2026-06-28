@@ -189,13 +189,18 @@ export interface ScheduleResult {
   gantt: GanttJob[]; machine_load: SchedLoad[]; wc_load: SchedLoad[]; worker_plan: WorkerPlan[]
   bottleneck: { wc_type_id: string; wc_name: string; utilization: number }
   idle: { machine_idle_hours: number; machine_utilization: number }
+  calendar: { enabled: boolean; work_fond_hours: number }
   kpi: SchedKpi; rules: SchedRule[]; warnings: string[]
   plan_id?: string; error_soft?: boolean
 }
 export interface ScheduleParams {
   run_id?: string; rule?: string; w_time?: number; w_cost?: number; w_risk?: number
-  samples?: number; alpha?: number; tail_weight?: number
+  samples?: number; alpha?: number; tail_weight?: number; use_calendar?: boolean
   program?: Array<{ product_id: string; qty: number; due_hours?: number }>
+}
+export interface WorkCalendar {
+  schedule_id?: string; name?: string; enabled: boolean
+  start_hour?: number; end_hour?: number; days?: number[]
 }
 
 /* ── Производственная программа (заказы) ─────────────────────────────────── */
@@ -291,6 +296,11 @@ export const api = {
 
   schedule: {
     run: (p: ScheduleParams) => post<ScheduleResult>('/schedule', p),
+  },
+
+  calendar: {
+    get:    ()                       => get<WorkCalendar>('/calendar'),
+    update: (d: { start_hour: number; end_hour: number; days: number[] }) => put<{ ok: boolean }>('/calendar', d),
   },
 
   demandOrders: {
