@@ -30,6 +30,7 @@ interface EditorPanelProps {
   onClose: () => void
   onLinkMachine: (nodeId: string, machineId: string | null) => void
   onCreateMachine: (nodeId: string, data: MachineCreateData) => Promise<void>
+  onChangeMachineType: (machineId: string, wcTypeId: string) => void
   onChangeKind: (nodeId: string, kind: ObjectKind) => void
 }
 
@@ -49,6 +50,7 @@ export function EditorPanel({
   onClose,
   onLinkMachine,
   onCreateMachine,
+  onChangeMachineType,
   onChangeKind,
 }: EditorPanelProps) {
   const editing = mode === 'edit'
@@ -135,24 +137,21 @@ export function EditorPanel({
         )}
       </div>
 
-      {/* Палитра — только в редактировании */}
+      {/* Добавление объекта — только в редактировании. 3D-вид задаёт ТИП
+          оборудования (выбирается справа в карточке после добавления). */}
       {editing && (
         <div className="editor-panel__section">
           <div className="editor-panel__label">Добавить объект</div>
-          <div className="editor-panel__palette">
-            {PALETTE.map((kind) => (
-              <button
-                key={kind}
-                className="editor-panel__chip"
-                title={KIND_META[kind].label}
-                onClick={() => onAddNode(kind)}
-              >
-                {KIND_META[kind].label}
-              </button>
-            ))}
-          </div>
+          <button
+            className="btn btn--primary"
+            style={{ width: '100%' }}
+            onClick={() => onAddNode((wcTypes[0]?.kind as ObjectKind) || 'marketing')}
+          >
+            + Добавить оборудование на схему
+          </button>
           <p className="editor-panel__tip mono">
-            Нажмите для добавления, gizmo — перемещение, ↔ — соединить.
+            Объект появится в центре. Выберите его и задайте справа <b>тип оборудования</b>
+            (= 3D-вид), наименование и подразделение — gizmo перемещает, ↔ соединяет.
           </p>
         </div>
       )}
@@ -204,7 +203,20 @@ export function EditorPanel({
           {linkedMachine ? (
             <div className="ep-machine-card">
               <div className="ep-machine-card__name">{linkedMachine.name}</div>
-              {linkedWcTypeName && (
+              {/* Смена типа оборудования у уже зарегистрированной машины (3D-вид следует типу). */}
+              {editing ? (
+                <div style={{ margin: '4px 0' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Тип оборудования (= 3D-вид)</span>
+                  <select className="ep-register__select" style={{ width: '100%' }}
+                    value={linkedMachine.wc_type_id || ''}
+                    onChange={(e) => onChangeMachineType(linkedMachine.id, e.target.value)}>
+                    <option value="">— выберите тип —</option>
+                    {wcTypes.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} — {KIND_META[t.kind as ObjectKind]?.label ?? t.kind}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : linkedWcTypeName && (
                 <div className="ep-machine-card__type">{linkedWcTypeName}</div>
               )}
               <dl className="editor-panel__kpis" style={{ marginTop: 6 }}>

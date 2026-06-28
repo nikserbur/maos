@@ -13,9 +13,9 @@ export function OperationForm({ onSuccess }: Props) {
   const [code, setCode]       = useState('')
   const [name, setName]       = useState('')
   const [opType, setOpType]   = useState('')
-  // Связи по ID (не по имени): типы оборудования и входные изделия.
+  // Связи по ID (не по имени): типы оборудования (множ.) и входные изделия (таблица).
   const [wcTypeIds, setWcTypeIds] = useState<string[]>([])
-  const [inputIds, setInputIds]   = useState<string[]>([])
+  const [inputRows, setInputRows] = useState<Array<{ product_id: string; qty: string }>>([])
   const [order, setOrder]     = useState('10')
   const [setup, setSetup]     = useState(false)
   const [tNorm, setTNorm]     = useState('')
@@ -26,10 +26,12 @@ export function OperationForm({ onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
-  const toggleId = (set: React.Dispatch<React.SetStateAction<string[]>>) => (id: string) =>
-    set((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  const toggleWcType = toggleId(setWcTypeIds)
-  const toggleInput  = toggleId(setInputIds)
+  const toggleWcType = (id: string) =>
+    setWcTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const addInput    = () => setInputRows((p) => [...p, { product_id: '', qty: '1' }])
+  const setInput    = (i: number, patch: Partial<{ product_id: string; qty: string }>) =>
+    setInputRows((p) => p.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  const delInput    = (i: number) => setInputRows((p) => p.filter((_, idx) => idx !== i))
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError('Укажите наименование операции'); return }
@@ -46,7 +48,9 @@ export function OperationForm({ onSuccess }: Props) {
         code, name, op_type: opType,
         wc_types: wcNames,
         wc_type_ids: wcTypeIds,
-        input_products: inputIds.map((product_id) => ({ product_id, qty: 1 })),
+        input_products: inputRows
+          .filter((r) => r.product_id)
+          .map((r) => ({ product_id: r.product_id, qty: Number(r.qty) || 1 })),
         order_no: order,
         setup_required: setup ? '1' : '0',
         t_norm: tNorm, t_opt: tOpt, t_pess: tPess,
@@ -145,24 +149,28 @@ export function OperationForm({ onSuccess }: Props) {
       </div>
 
       <div className="form__field">
-        <label className="form__label">Входные изделия (связь по ID)</label>
-        {products.length > 0 ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
-            {products.map((p) => (
-              <label key={p.id} className="form__check" style={{ margin: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={inputIds.includes(p.id)}
-                  onChange={() => toggleInput(p.id)}
-                />
-                {p.code} · {p.name}
-              </label>
-            ))}
-          </div>
-        ) : (
+        <label className="form__label">Входные изделия (таблица — может быть несколько)</label>
+        {products.length === 0 ? (
           <span className="form__hint">Нет изделий — создайте их в реестре «Изделия».</span>
+        ) : (
+          <>
+            {inputRows.map((r, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                <select className="form__select" style={{ flex: 1 }} value={r.product_id}
+                        onChange={(e) => setInput(i, { product_id: e.target.value })}>
+                  <option value="">— изделие —</option>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+                </select>
+                <input className="form__input" type="number" min="0" step="0.001" style={{ width: 90 }}
+                       value={r.qty} onChange={(e) => setInput(i, { qty: e.target.value })} placeholder="кол-во" />
+                <button type="button" className="btn btn--danger" style={{ height: 28, padding: '0 8px' }}
+                        onClick={() => delInput(i)}>✕</button>
+              </div>
+            ))}
+            <button type="button" className="btn" style={{ marginTop: 2 }} onClick={addInput}>+ Добавить вход</button>
+          </>
         )}
-        <span className="form__hint">Изделия, потребляемые при выполнении операции (для расчёта себестоимости).</span>
+        <span className="form__hint">Изделия и их количество, потребляемые операцией (для расчёта себестоимости).</span>
       </div>
 
       <label className="form__check">

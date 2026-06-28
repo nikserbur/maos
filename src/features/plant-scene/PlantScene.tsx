@@ -116,6 +116,12 @@ export default function PlantScene() {
     await loadGraph()
   }
 
+  /** Смена типа оборудования у уже зарегистрированной машины (3D-вид следует типу). */
+  const handleChangeMachineType = async (machineId: string, wcTypeId: string) => {
+    await api.machines.update(machineId, { wc_type_id: wcTypeId }).catch(() => {})
+    await loadGraph()
+  }
+
   return (
     <div className="scene">
       <div className="scene__canvas">
@@ -181,6 +187,7 @@ export default function PlantScene() {
           dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId })
         }
         onCreateMachine={handleCreateMachine}
+        onChangeMachineType={handleChangeMachineType}
         onChangeKind={(nodeId, kind) => dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })}
       />
     </div>
