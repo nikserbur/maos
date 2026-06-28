@@ -847,9 +847,12 @@ static void migrate_v2(Database& db) {
   db.exec("BEGIN");
   try {
     for (auto& s : skus) {
-      db.exec("INSERT OR IGNORE INTO products(id,code,name,unit,parent_id,qty_in_parent,"
-              "purchased,sellable,base_price,demand_max) VALUES(?,?,?,?,?,?,0,1,?,?)",
-              { s.id, s.code, s.name, "т", s.parent, std::to_string(s.qty),
+      // Товарное изделие — верхний уровень (parent_id пуст). Связь с верхним
+      // переделом — через ВХОД операции (operation_inputs), а не BOM-дерево:
+      // один полуфабрикат (hrc/crc) питает много изделий — это DAG.
+      db.exec("INSERT OR IGNORE INTO products(id,code,name,unit,"
+              "purchased,sellable,base_price,demand_max) VALUES(?,?,?,?,0,1,?,?)",
+              { s.id, s.code, s.name, "т",
                 std::to_string(s.price), std::to_string(s.demand) });
       std::string rid = "route-" + s.id, oid = "op-" + s.id;
       db.exec("INSERT OR IGNORE INTO routings(id,name,product_id) VALUES(?,?,?)",
@@ -860,6 +863,9 @@ static void migrate_v2(Database& db) {
                 std::to_string(s.finMin), std::to_string(s.finMin), std::to_string(s.finMin) });
       db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)",
               { oid, s.wct });
+      // Вход финишной операции = полуфабрикат верхнего передела (qty на единицу).
+      db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) VALUES(?,?,?)",
+              { oid, s.parent, std::to_string(s.qty) });
     }
 
     // Взаимосвязь цен по сценариям (общий рыночный фактор).

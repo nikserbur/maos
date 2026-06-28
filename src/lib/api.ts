@@ -96,13 +96,15 @@ export interface PriceDistribution {
   dist_type: DistType
   mean: number | string; stddev: number | string
   min_val?: number | string; max_val?: number | string; mode_val?: number | string
+  beta?: number | string   // загрузка на рыночный фактор (корреляция цен)
 }
 export interface PriceScenario {
-  id: string; name: string; description: string; horizon_hours: string; created_at: string
+  id: string; name: string; description: string; horizon_hours: string
+  market_corr?: string; created_at: string
   distributions?: PriceDistribution[]
 }
 export interface ScenarioPayload {
-  name: string; description?: string; horizon_hours?: number
+  name: string; description?: string; horizon_hours?: number; market_corr?: number
   distributions?: PriceDistribution[]
 }
 
@@ -113,13 +115,17 @@ export interface OptMetrics {
 }
 export interface OptItem {
   product_id: string; qty: number; unit_price: number; unit_cost: number
-  unit_margin: number; contribution: number
+  unit_margin: number; contribution: number; risk_contribution: number
 }
 export interface OptResourceLoad {
   wc_type_id: string; load_hours: number; capacity_hours: number; utilization: number
 }
+export interface OptDiversification {
+  n_products: number; hhi: number; effective_n: number; concentration: number
+}
 export interface OptPortfolio {
-  items: OptItem[]; resource_load: OptResourceLoad[]; total_load_hours: number; metrics: OptMetrics
+  items: OptItem[]; resource_load: OptResourceLoad[]; total_load_hours: number
+  diversification: OptDiversification; metrics: OptMetrics
 }
 export interface OptHistBin { x0: number; x1: number; count: number }
 export interface OptCandidate {
@@ -129,6 +135,7 @@ export interface OptCandidate {
 export interface OptResult {
   scenario_id: string; scenario_name: string; objective: string
   samples: number; alpha: number; lambda: number; seed: number; horizon_hours: number
+  market_corr: number; max_share: number
   sellables: number
   robust: OptPortfolio; expected: OptPortfolio
   price_of_robustness: number
@@ -138,7 +145,7 @@ export interface OptResult {
 }
 export interface OptimizeParams {
   scenario_id?: string; objective?: string; samples?: number
-  alpha?: number; lambda?: number; seed?: number; horizon_hours?: number
+  alpha?: number; lambda?: number; seed?: number; horizon_hours?: number; max_share?: number
 }
 export interface OptRunSummary {
   id: string; scenario_id: string; objective: string; samples: string; alpha: string; created_at: string

@@ -47,7 +47,7 @@ export function ScenariosScreen() {
     if (found) return found
     const p = products.find((x) => x.id === productId)
     const base = Number(p?.base_price || 0)
-    return { product_id: productId, dist_type: 'normal', mean: base, stddev: Math.round(base * 0.12) }
+    return { product_id: productId, dist_type: 'normal', mean: base, stddev: Math.round(base * 0.12), beta: 0.7 }
   }
 
   const setDist = (productId: string, patch: Partial<PriceDistribution>) => {
@@ -64,10 +64,11 @@ export function ScenariosScreen() {
   const createScenario = async () => {
     try {
       const created = await api.scenarios.create({
-        name: 'Новый сценарий', description: '',
+        name: 'Новый сценарий', description: '', market_corr: 0.5,
         distributions: sellable.map((p) => ({
           product_id: p.id, dist_type: 'normal',
           mean: Number(p.base_price || 0), stddev: Math.round(Number(p.base_price || 0) * 0.12),
+          beta: 0.7,
         })),
       })
       await loadList()
@@ -91,6 +92,7 @@ export function ScenariosScreen() {
       await api.scenarios.update(draft.id, {
         name: draft.name, description: draft.description,
         horizon_hours: Number(draft.horizon_hours) || 720,
+        market_corr: Number(draft.market_corr) || 0.5,
         distributions: rows,
       })
       await loadList()
@@ -147,9 +149,23 @@ export function ScenariosScreen() {
                    value={draft.description || ''}
                    onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
 
+            <div className="scn__corr">
+              <label className="scn__corr-label">Взаимосвязь цен ρ (общий рыночный фактор)</label>
+              <input type="range" min="0" max="0.95" step="0.05"
+                     value={Number(draft.market_corr ?? 0.5)}
+                     onChange={(e) => setDraft({ ...draft, market_corr: e.target.value })} />
+              <span className="scn__corr-val">{Number(draft.market_corr ?? 0.5).toFixed(2)}</span>
+              <span className="scn__hint">
+                {Number(draft.market_corr ?? 0.5) >= 0.7
+                  ? 'Высокая — цены ходят вместе, диверсификация слабее (системный риск).'
+                  : 'Низкая — цены независимее, диверсификация портфеля снижает риск.'}
+              </span>
+            </div>
+
             <p className="scn__hint">
-              Цена реализации товарной продукции — стохастическое внешнее условие. Задайте распределение
-              для каждого изделия: оптимизатор сэмплирует цены и ищет устойчивый портфель.
+              Цена реализации товарной продукции — стохастическое внешнее условие. β — чувствительность
+              цены изделия к рынку (корреляция). Оптимизатор сэмплирует коррелированные цены и строит
+              устойчивый портфель рисков.
             </p>
 
             {sellable.length === 0 ? (
@@ -161,7 +177,7 @@ export function ScenariosScreen() {
                 <thead>
                   <tr>
                     <th>Изделие</th><th>Распределение</th><th>Средняя цена, ₽</th>
-                    <th>СКО (σ), ₽</th><th>Мин</th><th>Макс</th><th>CV</th>
+                    <th>СКО (σ), ₽</th><th>β (рынок)</th><th>CV</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +186,6 @@ export function ScenariosScreen() {
                     const mean = Number(d.mean) || 0
                     const sd = Number(d.stddev) || 0
                     const cv = mean > 0 ? sd / mean : 0
-                    const needsMinMax = d.dist_type === 'uniform' || d.dist_type === 'triangular'
                     return (
                       <tr key={p.id}>
                         <td className="scn__prod">{p.name}<small>{p.code}</small></td>
@@ -189,14 +204,10 @@ export function ScenariosScreen() {
                                  onChange={(e) => setDist(p.id, { stddev: e.target.value })} />
                         </td>
                         <td>
-                          <input className="scn__cell-input" type="number" value={numStr(d.min_val)}
-                                 placeholder={needsMinMax ? '' : 'авто'}
-                                 onChange={(e) => setDist(p.id, { min_val: e.target.value })} />
-                        </td>
-                        <td>
-                          <input className="scn__cell-input" type="number" value={numStr(d.max_val)}
-                                 placeholder={needsMinMax ? '' : 'авто'}
-                                 onChange={(e) => setDist(p.id, { max_val: e.target.value })} />
+                          <input className="scn__cell-input" type="number" min="0" max="1" step="0.05"
+                                 value={d.beta === undefined ? '0.7' : numStr(d.beta)}
+                                 title="Чувствительность цены к рынку (0 — независима, 1 — полностью)"
+                                 onChange={(e) => setDist(p.id, { beta: e.target.value })} />
                         </td>
                         <td className={`scn__cv${cv > 0.2 ? ' scn__cv--high' : ''}`}>{(cv * 100).toFixed(0)}%</td>
                       </tr>

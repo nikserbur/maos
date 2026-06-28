@@ -142,23 +142,24 @@ Model load_model(Database& db) {
   return m;
 }
 
-/* ── Часы на единицу изделия по типам оборудования (детерминир., для мощности) */
+/* ── Часы на единицу изделия по типам оборудования (детерминир., для мощности) ──
+   Загрузка распространяется по производственной цепочке через ВХОДЫ операций
+   (operation_inputs) — общий полуфабрикат тянет за собой весь верхний передел
+   (узкое место), сколько бы изделий его ни потребляло (DAG, не дерево). */
 void hours_per_unit(const Model& m, const std::string& pid,
                     std::unordered_map<std::string, double>& out,
                     std::unordered_set<std::string>& visiting, int depth = 0) {
-  if (depth > 32 || visiting.count(pid)) return;     // защита от циклов BOM
+  if (depth > 48 || visiting.count(pid)) return;     // защита от циклов цепочки
   visiting.insert(pid);
   auto opsIt = m.opsOf.find(pid);
   if (opsIt != m.opsOf.end())
-    for (const Op& o : opsIt->second)
+    for (const Op& o : opsIt->second) {
       if (!o.primaryWct.empty()) out[o.primaryWct] += pertMean(o) / 60.0;
-  auto cit = m.componentsOf.find(pid);
-  if (cit != m.componentsOf.end())
-    for (const std::string& q : cit->second) {
-      const Prod& qp = m.prods.at(q);
-      std::unordered_map<std::string, double> sub;
-      hours_per_unit(m, q, sub, visiting, depth + 1);
-      for (auto& [w, h] : sub) out[w] += h * qp.qtyInParent;
+      for (const OpInput& in : o.inputs) {            // входы операции → цепочка
+        std::unordered_map<std::string, double> sub;
+        hours_per_unit(m, in.productId, sub, visiting, depth + 1);
+        for (auto& [w, h] : sub) out[w] += h * in.qty;
+      }
     }
   visiting.erase(pid);
 }
@@ -171,19 +172,14 @@ double unit_cost(const Model& m, const std::string& pid,
                  std::unordered_map<std::string, double>& memo,
                  std::unordered_set<std::string>& visiting, int depth = 0) {
   if (auto it = memo.find(pid); it != memo.end()) return it->second;
-  if (depth > 32 || visiting.count(pid)) return 0;   // защита от циклов
+  if (depth > 48 || visiting.count(pid)) return 0;   // защита от циклов цепочки
   visiting.insert(pid);
   const Prod& p = m.prods.at(pid);
   double c = p.purchased ? p.baseCost : 0.0;
 
-  // Композиция (BOM-компоненты).
-  if (auto cit = m.componentsOf.find(pid); cit != m.componentsOf.end())
-    for (const std::string& q : cit->second)
-      c += m.prods.at(q).qtyInParent *
-           unit_cost(m, q, realizedTime, riskInfl, memo, visiting, depth + 1);
-
-  // Операции техкарты: обработка (машина+труд+наладка+прочее) с инфляцией риска;
-  // материалы операций — только покупное сырьё (полуфабрикаты уже в BOM).
+  // Операции техкарты: обработка (машина+труд+наладка+прочее) с инфляцией риска +
+  // материалы входов операции по производственной цепочке (рекурсивно): покупное
+  // сырьё даёт base_cost, полуфабрикат — свою накопленную себестоимость.
   if (auto oit = m.opsOf.find(pid); oit != m.opsOf.end())
     for (const Op& o : oit->second) {
       double t   = realizedTime.count(o.id) ? realizedTime.at(o.id) : pertMean(o);
@@ -191,11 +187,8 @@ double unit_cost(const Model& m, const std::string& pid,
       double proc = (t / 60.0) * (o.hourRate + o.laborRate)
                   + (o.setupRequired ? o.setupCost : 0.0) + o.cost;
       c += proc * inf;
-      for (const OpInput& in : o.inputs) {
-        auto pit = m.prods.find(in.productId);
-        if (pit != m.prods.end() && pit->second.purchased)
-          c += in.qty * pit->second.baseCost;
-      }
+      for (const OpInput& in : o.inputs)
+        c += in.qty * unit_cost(m, in.productId, realizedTime, riskInfl, memo, visiting, depth + 1);
     }
   visiting.erase(pid);
   memo[pid] = c;

@@ -22,6 +22,7 @@ function money(v: number): string {
   return v.toFixed(0) + ' ₽'
 }
 const pct = (v: number) => (v * 100).toFixed(1) + '%'
+const pct1 = (v: number) => Math.round(v * 100) + '%'
 
 interface PortfolioCardProps {
   kind: 'robust' | 'expected'
@@ -51,15 +52,34 @@ function PortfolioCard({ kind, title, hint, pf, nameOf }: PortfolioCardProps) {
         <Metric k="макс. сожаление" v={money(m.max_regret)} />
       </div>
 
+      <div className="pf-div">
+        <span className="pf-div__chip" title="Число изделий в портфеле">
+          {pf.diversification.n_products} изделий
+        </span>
+        <span className="pf-div__chip" title="Эффективное число изделий (1/HHI)">
+          эфф. {pf.diversification.effective_n.toFixed(1)}
+        </span>
+        <span className={`pf-div__chip${pf.diversification.concentration > 0.5 ? ' pf-div__chip--warn' : ''}`}
+              title="Доля крупнейшего изделия в выручке">
+          концентрация {pct1(pf.diversification.concentration)}
+        </span>
+      </div>
+
       <div className="pf-items">
         {pf.items.length === 0 && <span className="pf-card__hint">Пустой портфель.</span>}
-        {pf.items.map((it) => (
+        {[...pf.items].sort((a, b) => b.contribution - a.contribution).slice(0, 8).map((it) => (
           <div className="pf-item" key={it.product_id}>
-            <span>{nameOf(it.product_id)}</span>
-            <span className="pf-item__qty">{it.qty.toLocaleString('ru')} ед · {money(it.unit_margin)}/ед</span>
-            <span className="pf-item__contrib">{money(it.contribution)}</span>
+            <span className="pf-item__name">{nameOf(it.product_id)}</span>
+            <span className="pf-item__qty">{Math.round(it.qty).toLocaleString('ru')} ед</span>
+            <span className="pf-item__risk" title="Вклад в риск портфеля">
+              <span className="pf-item__risk-bar" style={{ width: `${Math.max(0, Math.min(100, it.risk_contribution * 100))}%` }} />
+              <span className="pf-item__risk-pct">{pct1(it.risk_contribution)}</span>
+            </span>
           </div>
         ))}
+        {pf.items.length > 8 && (
+          <span className="pf-card__hint">…ещё {pf.items.length - 8} изделий</span>
+        )}
       </div>
     </div>
   )
@@ -104,6 +124,7 @@ export function OptimizationScreen() {
   const [objective, setObjective]   = useState('cvar')
   const [samples, setSamples]       = useState('3000')
   const [alpha, setAlpha]           = useState('0.10')
+  const [maxShare, setMaxShare]     = useState('0.35')
 
   const [result, setResult]   = useState<OptResult | null>(null)
   const [running, setRunning] = useState(false)
@@ -139,6 +160,7 @@ export function OptimizationScreen() {
         objective,
         samples: Number(samples) || 3000,
         alpha: Number(alpha) || 0.1,
+        max_share: Number(maxShare) || 0.35,
       })
       setResult(r)
     } catch (e) {
@@ -192,6 +214,11 @@ export function OptimizationScreen() {
           <input className="opt__input" type="number" min="0.01" max="0.5" step="0.05" value={alpha}
                  onChange={(e) => setAlpha(e.target.value)} />
         </div>
+        <div className="opt__ctl">
+          <span className="opt__ctl-label">Макс. доля 1 изделия</span>
+          <input className="opt__input" type="number" min="0.1" max="1" step="0.05" value={maxShare}
+                 onChange={(e) => setMaxShare(e.target.value)} title="Ограничение концентрации — «не ставить всё на одно»" />
+        </div>
         <button className="btn btn--primary opt__run" onClick={run} disabled={running}>
           {running ? 'Моделируем…' : 'Найти устойчивое решение'}
         </button>
@@ -233,6 +260,10 @@ export function OptimizationScreen() {
               получить лучший худший случай ({money(result.robust.metrics.worst_case)} против{' '}
               {money(result.expected.metrics.worst_case)}) и ниже риск убытка
               ({pct(result.robust.metrics.p_loss)} против {pct(result.expected.metrics.p_loss)}).
+              {' '}Решение — <strong>диверсифицированный портфель</strong> из{' '}
+              {result.robust.diversification.n_products} изделий (а не «всё на одно»):
+              при взаимосвязи цен ρ={result.market_corr.toFixed(2)} это снижает разброс прибыли
+              с σ={money(result.expected.metrics.std)} до σ={money(result.robust.metrics.std)}.
             </span>
           </div>
 
