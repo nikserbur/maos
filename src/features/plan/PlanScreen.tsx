@@ -31,16 +31,21 @@ function Gantt({ result }: { result: ScheduleResult }) {
         <div className="gantt__row" key={mid}>
           <span className="gantt__lane" title={mname}>{mname}</span>
           <span className="gantt__track">
-            {result.gantt.filter((g) => g.machine_id === mid).map((g, i) => (
-              <span key={i}
-                className={`gantt__bar${g.late ? ' gantt__bar--late' : ''}`}
-                title={`${g.op_name} · ${g.product_name}\n${h1(g.start)}–${h1(g.end)} ч${g.late ? ' · просрочка' : ''}`}
-                style={{
-                  left: `${(g.start / makespan) * 100}%`,
-                  width: `${Math.max(0.6, ((g.end - g.start) / makespan) * 100)}%`,
-                  background: ORDER_COLORS[g.order_idx % ORDER_COLORS.length],
-                }} />
-            ))}
+            {result.gantt.filter((g) => g.machine_id === mid).map((g, i) => {
+              const w = ((g.end - g.start) / makespan) * 100
+              return (
+                <span key={i}
+                  className={`gantt__bar${g.late ? ' gantt__bar--late' : ''}`}
+                  title={`${g.op_name} · ${g.product_name}\nстанок: ${g.machine_name}\n${h1(g.start)}–${h1(g.end)} ч (${h1(g.end - g.start)} ч)${g.late ? ' · ПРОСРОЧКА' : ''}`}
+                  style={{
+                    left: `${(g.start / makespan) * 100}%`,
+                    width: `${Math.max(0.6, w)}%`,
+                    background: ORDER_COLORS[g.order_idx % ORDER_COLORS.length],
+                  }}>
+                  {w > 7 && <span className="gantt__bar-label">{g.op_name}</span>}
+                </span>
+              )
+            })}
           </span>
         </div>
       ))}
@@ -93,6 +98,7 @@ export function PlanScreen() {
   const [newQty, setNewQty] = useState('100')
   const [newDue, setNewDue] = useState('120')
   const [useCalendar, setUseCalendar] = useState(true)
+  const [loadView, setLoadView] = useState<'types' | 'machines'>('types')
 
   const [mrp, setMrp] = useState<MrpResult | null>(null)
   const loadMrp = () => api.mrp.run().then(setMrp).catch(() => {})
@@ -283,8 +289,20 @@ export function PlanScreen() {
 
           <div className="plan__grid2">
             <div>
-              <p className="plan__section-title">Загрузка оборудования и простои (по типам)</p>
-              <div className="plan__panel"><LoadBars rows={result.wc_load} nameKey="wc_name" /></div>
+              <p className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Загрузка оборудования и простои</span>
+                <span style={{ display: 'inline-flex', gap: 4 }}>
+                  <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'types' ? 1 : 0.55 }}
+                          onClick={() => setLoadView('types')}>по типам</button>
+                  <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'machines' ? 1 : 0.55 }}
+                          onClick={() => setLoadView('machines')}>по станкам</button>
+                </span>
+              </p>
+              <div className="plan__panel">
+                {loadView === 'types'
+                  ? <LoadBars rows={result.wc_load} nameKey="wc_name" />
+                  : <LoadBars rows={result.machine_load} nameKey="machine_name" />}
+              </div>
             </div>
             <div>
               <p className="plan__section-title">Сравнение правил (makespan ч)</p>

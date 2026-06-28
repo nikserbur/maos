@@ -48,7 +48,11 @@ export function ScenariosScreen() {
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
-  const sellable = products.filter((p) => p.sellable === '1' || p.sellable === 'true')
+  // Все экономически значимые позиции: товарные (цена сбыта) + покупное сырьё
+  // (цена закупки тоже стохастична). distFor берёт ориентир из base_price/base_cost.
+  const sellable = products.filter(
+    (p) => p.sellable === '1' || p.sellable === 'true' || p.purchased === '1',
+  )
 
   const loadList = async () => {
     const [sc, pr] = await Promise.all([
@@ -72,7 +76,7 @@ export function ScenariosScreen() {
     const found = draft?.distributions?.find((d) => d.product_id === productId)
     if (found) return found
     const p = products.find((x) => x.id === productId)
-    const base = Number(p?.base_price || 0)
+    const base = Number((p?.purchased === '1' ? p?.base_cost : p?.base_price) || 0)
     return { product_id: productId, dist_type: 'normal', mean: base, stddev: Math.round(base * 0.12), beta: 0.7 }
   }
 

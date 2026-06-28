@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -95,7 +96,7 @@ struct Op {
   int orderNo = 10;
   std::vector<std::pair<std::string,double>> inputs;  // (productId, qty)
 };
-struct Prod { double batchSize = 1; };
+struct Prod { double batchSize = 1, stock = 0, leadHours = 0; bool purchased = false; };
 
 struct Model {
   std::unordered_map<std::string, Prod> prods;
@@ -117,8 +118,10 @@ Model load_model(Database& db) {
     m.machinesOf[str(mc,"wc_type_id")].push_back(str(mc,"id"));
     m.machineName[str(mc,"id")] = str(mc,"name"); m.machineWct[str(mc,"id")] = str(mc,"wc_type_id");
   }
-  for (auto& p : db.query_json("SELECT id,name,batch_size FROM products")) {
-    m.prods[str(p,"id")] = { std::max(1.0, num(p,"batch_size",1)) };
+  for (auto& p : db.query_json("SELECT id,name,batch_size,stock,purchased,lead_time_hours FROM products")) {
+    Prod pr; pr.batchSize = std::max(1.0, num(p,"batch_size",1));
+    pr.stock = num(p,"stock"); pr.purchased = num(p,"purchased") != 0; pr.leadHours = num(p,"lead_time_hours");
+    m.prods[str(p,"id")] = pr;
     m.prodName[str(p,"id")] = str(p,"name");
   }
   for (auto& w : db.query_json("SELECT id,first_name,last_name FROM workers"))
@@ -324,6 +327,45 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   if (jobs.empty()) return { {"error_soft", true},
     {"warnings", json::array({"Программа не развернулась в операции (нет техкарт)."})} };
 
+  // ── Дефицит сырья → операция «Поставка/подготовка» как предшественник заказа ──
+  // Считаем потребность в покупном сырье по всей программе; для дефицитных
+  // (потребность > остаток) добавляем срок поставки как отдельную подготовительную
+  // операцию перед началом заказа (см. «Требования к запасам»).
+  {
+    std::unordered_map<std::string, double> matNeed;
+    std::function<void(const std::string&, double, std::unordered_set<std::string>&)> reqf =
+      [&](const std::string& pid, double mult, std::unordered_set<std::string>& vis) {
+        if (vis.count(pid)) return; vis.insert(pid);
+        if (auto it = m.opsOf.find(pid); it != m.opsOf.end())
+          for (auto& o : it->second) for (auto& in : o.inputs) {
+            matNeed[in.first] += mult * in.second; reqf(in.first, mult * in.second, vis);
+          }
+        vis.erase(pid);
+      };
+    for (auto& ol : program) { std::unordered_set<std::string> vis; reqf(ol.productId, std::max(1.0, ol.qty), vis); }
+    double supplyLead = 0; json shortJson = json::array();
+    for (auto& [mid, need] : matNeed) {
+      auto pit = m.prods.find(mid);
+      if (pit != m.prods.end() && pit->second.purchased && need > pit->second.stock) {
+        supplyLead = std::max(supplyLead, pit->second.leadHours);
+        shortJson.push_back(m.prodName.count(mid) ? m.prodName[mid] : mid);
+      }
+    }
+    if (supplyLead > 0) {
+      for (int k = 0; k < nOrders; ++k) {
+        Job sj; sj.orderIdx = k; sj.productId = "supply"; sj.opId = "supply";
+        sj.opName = "Поставка/подготовка сырья"; sj.wcType = "";
+        sj.durMean = supplyLead * 60.0; sj.sigma = supplyLead * 60.0 * 0.2;
+        sj.riskCoef = 0.05; sj.tailWeight = 0.12; sj.tailIndex = 2.0;
+        sj.hourRate = 0; sj.laborRate = 0; sj.dueMin = 1e12;
+        int sjIdx = (int)jobs.size(); jobs.push_back(sj);
+        for (size_t j = 0; j < jobs.size(); ++j)
+          if (jobs[j].orderIdx == k && (int)j != sjIdx && jobs[j].preds.empty())
+            jobs[j].preds.push_back(sjIdx);
+      }
+    }
+  }
+
   // Работа по заказам + грубая оценка горизонта для дедлайнов.
   std::vector<double> orderWork(nOrders, 0);
   for (auto& j : jobs) orderWork[j.orderIdx] += j.durMean;
@@ -384,13 +426,16 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   for (size_t i = 0; i < jobs.size(); ++i) {
     const Job& j = jobs[i];
     bool late = sched.end[i] > j.dueMin + 1e-6;
+    bool isSupply = j.productId == "supply";
+    std::string mid = isSupply ? "supply" : sched.machineId[i];
+    std::string mname = isSupply ? "Снабжение/поставка"
+      : (m.machineName.count(sched.machineId[i]) ? m.machineName[sched.machineId[i]] : "");
     gantt.push_back({
       {"order_idx", j.orderIdx}, {"product_id", j.productId},
-      {"product_name", m.prodName.count(j.productId)?m.prodName[j.productId]:j.productId},
+      {"product_name", isSupply ? "—" : (m.prodName.count(j.productId)?m.prodName[j.productId]:j.productId)},
       {"op_id", j.opId}, {"op_name", j.opName},
       {"wc_type_id", j.wcType}, {"wc_name", m.wcName.count(j.wcType)?m.wcName[j.wcType]:j.wcType},
-      {"machine_id", sched.machineId[i]},
-      {"machine_name", m.machineName.count(sched.machineId[i])?m.machineName[sched.machineId[i]]:""},
+      {"machine_id", mid}, {"machine_name", mname},
       {"worker", sched.worker[i]},
       {"start", H(sched.start[i])}, {"end", H(sched.end[i])},
       {"due", H(j.dueMin)}, {"late", late},
