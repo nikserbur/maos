@@ -37,10 +37,10 @@ export function Building({ kind, accent }: BuildingProps) {
 
   // Базовые габариты по категории (ширина X, высота Y, глубина Z).
   const dims: Record<Cat, [number, number, number]> = {
-    warehouse: [11, 5.5, 8],
-    hall:      [9, 7.5, 8],
-    office:    [7, 8, 6],
-    substation:[7, 3.2, 6],
+    warehouse: [7, 3.8, 5],
+    hall:      [6, 5, 5],
+    office:    [4.5, 5.5, 4],
+    substation:[5, 2.6, 4],
   }
   const [w, h, d] = dims[cat]
 

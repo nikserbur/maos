@@ -6,7 +6,35 @@ import type { SceneEdge, SceneNode } from './graph/sceneModel'
 const ASPHALT = '#34383d'
 const SHOULDER = '#54595f'
 const LANE = '#c9b65a'
-const ROAD_W = 3.0
+const ROAD_W = 2.4
+const Y_SHOULDER = 0.035
+const Y_ROAD = 0.05
+const Y_LANE = 0.065
+
+/** Прямой сегмент дороги по оси (горизонтальный вдоль X или вертикальный вдоль Z). */
+function RoadSegment({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: number }) {
+  const horizontal = Math.abs(x2 - x1) >= Math.abs(z2 - z1)
+  const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
+  const len = Math.hypot(x2 - x1, z2 - z1)
+  if (len < 0.01) return null
+  // План повёрнут в горизонталь: локальный X → мир X, локальный Y → мир Z.
+  const roadArgs: [number, number]     = horizontal ? [len, ROAD_W] : [ROAD_W, len]
+  const shoulderArgs: [number, number] = horizontal ? [len, ROAD_W + 0.9] : [ROAD_W + 0.9, len]
+  const laneArgs: [number, number]     = horizontal ? [len, 0.14] : [0.14, len]
+  return (
+    <group>
+      <mesh position={[cx, Y_SHOULDER, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={shoulderArgs} /><meshStandardMaterial color={SHOULDER} roughness={1} />
+      </mesh>
+      <mesh position={[cx, Y_ROAD, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={roadArgs} /><meshStandardMaterial color={ASPHALT} roughness={1} />
+      </mesh>
+      <mesh position={[cx, Y_LANE, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={laneArgs} /><meshBasicMaterial color={LANE} />
+      </mesh>
+    </group>
+  )
+}
 
 interface FlowLineProps {
   from: [number, number]
@@ -15,49 +43,46 @@ interface FlowLineProps {
   withTruck: boolean
 }
 
-/** Дорога между объектами + (опц.) грузовик ЗИЛ, курсирующий по ней. */
+/** Г-образная дорога (прямые углы) между объектами + курсирующий ЗИЛ. */
 function FlowLine({ from, to, speed, withTruck }: FlowLineProps) {
   const truck = useRef<THREE.Group>(null)
 
-  const [start, end, cx, cz, len, yaw] = useMemo(() => {
-    const s = new THREE.Vector3(from[0], 0.06, from[1])
-    const e = new THREE.Vector3(to[0], 0.06, to[1])
-    const mx = (from[0] + to[0]) / 2, mz = (from[1] + to[1]) / 2
-    const l = Math.hypot(to[0] - from[0], to[1] - from[1])
-    const rot = Math.atan2(-(to[1] - from[1]), to[0] - from[0])
-    return [s, e, mx, mz, l, rot] as const
+  // Ломаная с прямым углом: горизонтальный участок → поворот → вертикальный.
+  const { waypoints, segLen, total, corner } = useMemo(() => {
+    const a: [number, number] = from
+    const c: [number, number] = [to[0], from[1]]   // угол
+    const b: [number, number] = to
+    const wp: [number, number][] = [a, c, b]
+    const l1 = Math.abs(c[0] - a[0])
+    const l2 = Math.abs(b[1] - c[1])
+    return { waypoints: wp, segLen: [l1, l2], total: l1 + l2 || 0.001, corner: c }
   }, [from, to])
 
-  // Грузовик курсирует туда-обратно (без телепортации), разворачиваясь на концах.
   useFrame((state) => {
     if (!truck.current) return
     const phase = (state.clock.elapsedTime * speed) % 2
     const fwd = phase < 1
-    const tt = fwd ? phase : 2 - phase
-    truck.current.position.lerpVectors(start, end, tt)
-    truck.current.rotation.y = fwd ? yaw : yaw + Math.PI
+    let d = (fwd ? phase : 2 - phase) * total
+    let i = 0
+    while (i < segLen.length - 1 && d > segLen[i]) { d -= segLen[i]; i++ }
+    const a = waypoints[i], b = waypoints[i + 1]
+    const f = segLen[i] > 0.001 ? d / segLen[i] : 0
+    truck.current.position.set(a[0] + (b[0] - a[0]) * f, 0.06, a[1] + (b[1] - a[1]) * f)
+    const segYaw = Math.atan2(-(b[1] - a[1]), b[0] - a[0])
+    truck.current.rotation.y = fwd ? segYaw : segYaw + Math.PI
   })
 
   return (
     <group>
-      {/* обочина */}
-      <mesh position={[cx, 0.035, cz]} rotation={[-Math.PI / 2, 0, -yaw]} receiveShadow>
-        <planeGeometry args={[len, ROAD_W + 1.0]} />
-        <meshStandardMaterial color={SHOULDER} roughness={1} />
-      </mesh>
-      {/* асфальт */}
-      <mesh position={[cx, 0.05, cz]} rotation={[-Math.PI / 2, 0, -yaw]} receiveShadow>
-        <planeGeometry args={[len, ROAD_W]} />
-        <meshStandardMaterial color={ASPHALT} roughness={1} />
-      </mesh>
-      {/* осевая разметка */}
-      <mesh position={[cx, 0.065, cz]} rotation={[-Math.PI / 2, 0, -yaw]}>
-        <planeGeometry args={[len, 0.16]} />
-        <meshBasicMaterial color={LANE} />
+      <RoadSegment x1={waypoints[0][0]} z1={waypoints[0][1]} x2={corner[0]} z2={corner[1]} />
+      <RoadSegment x1={corner[0]} z1={corner[1]} x2={waypoints[2][0]} z2={waypoints[2][1]} />
+      {/* заполнение угла */}
+      <mesh position={[corner[0], Y_ROAD, corner[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[ROAD_W, ROAD_W]} /><meshStandardMaterial color={ASPHALT} roughness={1} />
       </mesh>
 
       {withTruck && (
-        <group ref={truck} rotation={[0, yaw, 0]} scale={0.55}>
+        <group ref={truck} rotation={[0, 0, 0]} scale={0.5}>
           <Zil />
         </group>
       )}
@@ -95,7 +120,7 @@ interface FlowLinksProps {
   edges: SceneEdge[]
 }
 
-/** Дороги текущего уровня схемы + грузовики на части из них. */
+/** Ортогональная дорожная сеть текущего уровня + грузовики на части дорог. */
 export function FlowLinks({ nodes, edges }: FlowLinksProps) {
   const positions = useMemo(() => {
     const map: Record<string, [number, number]> = {}
