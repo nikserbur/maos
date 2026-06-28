@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS price_scenarios (
   name          TEXT NOT NULL,
   description   TEXT,
   horizon_hours REAL NOT NULL DEFAULT 720,   -- фонд времени горизонта (≈ месяц)
+  market_corr   REAL NOT NULL DEFAULT 0.5,   -- взаимосвязь цен (общий рыночный фактор)
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS price_distributions (
   min_val     REAL,
   max_val     REAL,
   mode_val    REAL,                            -- для triangular
+  beta        REAL NOT NULL DEFAULT 0.7,       -- загрузка на рыночный фактор (корреляция)
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

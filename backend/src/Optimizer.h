@@ -26,6 +26,8 @@ struct OptimizeParams {
   double lambda        = 1.0;         // штраф за СКО в mean-variance
   unsigned seed        = 42;          // воспроизводимость
   double horizonHours  = 0;           // 0 → взять из сценария / по умолчанию
+  double maxShare      = 0.6;         // макс. доля одного изделия в выручке портфеля
+                                      // («не ставить всё на одно» → диверсификация)
 };
 
 /**

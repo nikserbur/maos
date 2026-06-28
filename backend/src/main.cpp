@@ -818,6 +818,83 @@ static void migrate(Database& db) {
   std::cout << "Migration v1 done.\n";
 }
 
+// v2: десятки товарных изделий + взаимосвязь цен (корреляция). Линейка готовой
+// продукции, разделяющая верхний передел (узкое место) → реальная задача
+// портфеля рисков. Идемпотентно (INSERT OR IGNORE), данные сохраняются.
+static void migrate_v2(Database& db) {
+  if (db.user_version() >= 2) return;
+  std::cout << "Migrating schema → v2 (product line + price correlation)…\n";
+  db.exec_safe("ALTER TABLE price_scenarios   ADD COLUMN market_corr REAL NOT NULL DEFAULT 0.5");
+  db.exec_safe("ALTER TABLE price_distributions ADD COLUMN beta REAL NOT NULL DEFAULT 0.7");
+
+  struct Sku { std::string id, code, name, parent; double qty, price, demand, beta;
+               std::string wct; int finMin; std::string op; };
+  const std::vector<Sku> skus = {
+    // готовая продукция из горячекатаного (prod-hrc) — товарная, commodity-like
+    {"fin-s235","RL-S235","Рулон S235JR",        "prod-hrc",1.02, 88000,1500,0.85,"wct-pileizer",25,"Правка и порезка S235"},
+    {"fin-s355","RL-S355","Рулон S355",          "prod-hrc",1.02, 96000,1100,0.88,"wct-pileizer",28,"Правка и порезка S355"},
+    {"fin-pkl", "RL-PKL", "Рулон травленый",      "prod-hrc",1.03,104000, 700,0.70,"wct-cleaning", 35,"Травление"},
+    {"fin-prof","PR-GNT", "Профиль гнутый",       "prod-hrc",1.05,112000, 600,0.82,"wct-pileizer",40,"Профилирование"},
+    {"fin-pipe","TR-SV57","Труба сварная Ø57",    "prod-hrc",1.06,118000, 550,0.92,"wct-pileizer",50,"Формовка и сварка"},
+    {"fin-reb", "AR-A500","Арматура A500C",       "prod-hrc",1.04, 76000,2200,0.90,"wct-pileizer",20,"Прокатка арматуры"},
+    // готовая продукция из холоднокатаного (prod-crc) — премиальная, менее коррелир.
+    {"fin-galv","LS-OC",  "Лист оцинкованный",    "prod-crc",1.02,142000, 900,0.62,"wct-cleaning", 30,"Цинкование"},
+    {"fin-pnt", "LS-OK",  "Лист окрашенный",      "prod-crc",1.03,168000, 500,0.50,"wct-cleaning", 45,"Окраска"},
+    {"fin-tin", "LS-JE",  "Жесть электролит.",    "prod-crc",1.04,182000, 380,0.45,"wct-cleaning", 55,"Лужение"},
+    {"fin-cold","LS-XK",  "Лист х/к калибр.",     "prod-crc",1.01,124000,1000,0.90,"wct-cleaning", 22,"Калибровка"},
+  };
+
+  db.exec("BEGIN");
+  try {
+    for (auto& s : skus) {
+      db.exec("INSERT OR IGNORE INTO products(id,code,name,unit,parent_id,qty_in_parent,"
+              "purchased,sellable,base_price,demand_max) VALUES(?,?,?,?,?,?,0,1,?,?)",
+              { s.id, s.code, s.name, "т", s.parent, std::to_string(s.qty),
+                std::to_string(s.price), std::to_string(s.demand) });
+      std::string rid = "route-" + s.id, oid = "op-" + s.id;
+      db.exec("INSERT OR IGNORE INTO routings(id,name,product_id) VALUES(?,?,?)",
+              { rid, std::string("Финиш: ") + s.name, s.id });
+      db.exec("INSERT OR IGNORE INTO operations(id,routing_id,code,name,op_type,order_no,"
+              "t_norm,t_opt,t_pess,risk_coef) VALUES(?,?,?,?,?,10,?,?,?,0.06)",
+              { oid, rid, std::string("OPF-") + s.code, s.op, "finishing",
+                std::to_string(s.finMin), std::to_string(s.finMin), std::to_string(s.finMin) });
+      db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)",
+              { oid, s.wct });
+    }
+
+    // Взаимосвязь цен по сценариям (общий рыночный фактор).
+    db.exec_safe("UPDATE price_scenarios SET market_corr=0.45 WHERE id='scen-base'");
+    db.exec_safe("UPDATE price_scenarios SET market_corr=0.80 WHERE id='scen-crisis'");
+
+    auto clamp01 = [](double v){ return std::min(0.97, std::max(0.05, v)); };
+    struct Scn { std::string id; double mult, sd, betaBump; };
+    const std::vector<Scn> scns = { {"scen-base",1.0,0.13,1.0}, {"scen-crisis",0.82,0.30,1.15} };
+    for (auto& sc : scns) {
+      for (auto& s : skus) {
+        double mean = s.price * sc.mult, sd = mean * sc.sd;
+        db.exec("INSERT OR IGNORE INTO price_distributions"
+                "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,beta) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                { sc.id + "-" + s.id, sc.id, s.id, "normal",
+                  std::to_string(mean), std::to_string(sd),
+                  std::to_string(mean - 3*sd), std::to_string(mean + 3*sd),
+                  std::to_string(clamp01(s.beta * sc.betaBump)) });
+      }
+      // beta на исходные hrc/crc (commodity).
+      db.exec_safe("UPDATE price_distributions SET beta=" + std::to_string(clamp01(0.90*sc.betaBump)) +
+                   " WHERE scenario_id='" + sc.id + "' AND product_id='prod-hrc'");
+      db.exec_safe("UPDATE price_distributions SET beta=" + std::to_string(clamp01(0.85*sc.betaBump)) +
+                   " WHERE scenario_id='" + sc.id + "' AND product_id='prod-crc'");
+    }
+  } catch (...) {
+    try { db.exec("ROLLBACK"); } catch (...) {}
+    throw;
+  }
+  db.exec("COMMIT");
+  db.set_user_version(2);
+  std::cout << "Migration v2 done (" << skus.size() << " finished SKUs).\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -859,12 +936,13 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     db.exec("DELETE FROM price_distributions WHERE scenario_id=?", { sid });
     for (auto& d : body["distributions"]) {
       db.exec("INSERT INTO price_distributions"
-              "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val) "
-              "VALUES(?,?,?,?,?,?,?,?,?)",
+              "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?)",
               { gen_uuid(), sid, jstr(d,"product_id"),
                 jstr(d,"dist_type").empty() ? "normal" : jstr(d,"dist_type"),
                 jstr(d,"mean"), jstr(d,"stddev"), jstr(d,"min_val"),
-                jstr(d,"max_val"), jstr(d,"mode_val") });
+                jstr(d,"max_val"), jstr(d,"mode_val"),
+                jstr(d,"beta").empty() ? "0.7" : jstr(d,"beta") });
     }
   };
 
@@ -872,9 +950,10 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
-      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours) VALUES(?,?,?,?)",
+      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr) VALUES(?,?,?,?,?)",
               { id, jstr(body,"name"), jstr(body,"description"),
-                jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours") });
+                jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
+                jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr") });
       writeDists(id, body);
       audit(db, "scenario", id, "CREATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
@@ -887,9 +966,10 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       const std::string id = req.matches[1];
       auto body = json::parse(req.body);
-      db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=? WHERE id=?",
+      db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=?, market_corr=? WHERE id=?",
               { jstr(body,"name"), jstr(body,"description"),
-                jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"), id });
+                jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
+                jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"), id });
       writeDists(id, body);
       audit(db, "scenario", id, "UPDATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
@@ -957,6 +1037,8 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       if (body.contains("alpha"))   pr.alpha   = std::stod(jstr(body, "alpha"));
       if (body.contains("lambda"))  pr.lambda  = std::stod(jstr(body, "lambda"));
       if (body.contains("seed"))    pr.seed    = (unsigned)std::stod(jstr(body, "seed"));
+      if (body.contains("max_share") && !jstr(body,"max_share").empty())
+        pr.maxShare = std::stod(jstr(body, "max_share"));
       if (body.contains("horizon_hours") && !jstr(body,"horizon_hours").empty())
         pr.horizonHours = std::stod(jstr(body, "horizon_hours"));
 
@@ -1032,6 +1114,7 @@ int main(int argc, char* argv[]) {
   // транзакции с откатом; при ошибке НЕ стартуем с полу-мигрированной БД.
   try {
     migrate(db);
+    migrate_v2(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";

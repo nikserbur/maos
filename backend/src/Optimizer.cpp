@@ -207,30 +207,31 @@ struct PriceDist {
   std::string type = "normal";
   double mean = 0, stddev = 0, minV = 0, maxV = 0, mode = 0;
   bool hasMin = false, hasMax = false, hasMode = false;
+  double beta = 1.0;   // загрузка на общий рыночный фактор (корреляция цен)
 };
 
-double sample_dist(const PriceDist& d, std::mt19937& rng) {
+/* CDF стандартного нормального через erfc. */
+double normal_cdf(double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }
+
+/* Маргиналь по стандартному нормальному шоку z (гауссова копула):
+   корреляция между ценами наводится общим z через beta, см. correlated-sampling. */
+double price_from_z(const PriceDist& d, double z) {
   if (d.type == "uniform" && d.hasMin && d.hasMax) {
-    std::uniform_real_distribution<double> u(d.minV, d.maxV);
-    return u(rng);
+    return d.minV + (d.maxV - d.minV) * normal_cdf(z);
   }
   if (d.type == "triangular" && d.hasMin && d.hasMax) {
     double mode = d.hasMode ? d.mode : d.mean;
-    std::uniform_real_distribution<double> u(0, 1);
-    double r = u(rng), c = (mode - d.minV) / std::max(1e-9, d.maxV - d.minV);
-    double v = (r < c) ? d.minV + std::sqrt(r * (d.maxV - d.minV) * (mode - d.minV))
-                       : d.maxV - std::sqrt((1 - r) * (d.maxV - d.minV) * (d.maxV - mode));
-    return v;
+    double r = normal_cdf(z), c = (mode - d.minV) / std::max(1e-9, d.maxV - d.minV);
+    return (r < c) ? d.minV + std::sqrt(r * (d.maxV - d.minV) * (mode - d.minV))
+                   : d.maxV - std::sqrt((1 - r) * (d.maxV - d.minV) * (d.maxV - mode));
   }
   if (d.type == "lognormal" && d.mean > 0) {
-    double cv = (d.mean > 0) ? d.stddev / d.mean : 0;
+    double cv = d.stddev / d.mean;
     double sigma = std::sqrt(std::log(1.0 + cv * cv));
     double mu = std::log(d.mean) - 0.5 * sigma * sigma;
-    std::lognormal_distribution<double> ln(mu, std::max(1e-9, sigma));
-    return ln(rng);
+    return std::exp(mu + std::max(1e-9, sigma) * z);
   }
-  std::normal_distribution<double> n(d.mean, std::max(0.0, d.stddev));
-  return std::max(0.0, n(rng));
+  return std::max(0.0, d.mean + std::max(0.0, d.stddev) * z);  // normal
 }
 
 /* ── Метрики риска по эмпирическому распределению прибыли ─────────────────── */
@@ -299,6 +300,66 @@ double hours_total(const std::vector<std::pair<std::string,double>>& hp) {
   double t = 0; for (auto& [w, h] : hp) t += h; return t;
 }
 
+/* Диверсифицированное распределение мощности пропорционально весам (water-filling):
+   масштаб T максимизируется до первого упёршегося ограничения (мощность/спрос).
+   Даёт портфель, размазанный по нескольким изделиям, — «не ставить всё на одно». */
+Portfolio proportional_fill(const Model& m,
+                            const std::vector<std::vector<std::pair<std::string,double>>>& hpu,
+                            const std::unordered_map<std::string, double>& cap,
+                            const std::vector<double>& weights) {
+  size_t S = m.sellables.size();
+  Portfolio x(S, 0.0);
+  double sumW = 0; for (double w : weights) sumW += std::max(0.0, w);
+  if (sumW <= 0) return x;
+
+  // Нагрузка на тип оборудования при T=1 (Σ_s w_s·часы_s,wct).
+  std::unordered_map<std::string, double> loadPerT;
+  for (size_t s = 0; s < S; ++s) {
+    double w = std::max(0.0, weights[s]);
+    if (w <= 0) continue;
+    for (auto& [wct, h] : hpu[s]) loadPerT[wct] += w * h;
+  }
+  // T, ограниченное мощностью каждого типа.
+  double T = 1e18;
+  for (auto& [wct, perT] : loadPerT)
+    if (perT > 0 && cap.count(wct))
+      T = std::min(T, cap.at(wct) / perT);
+  // T, ограниченное спросом по каждому изделию.
+  for (size_t s = 0; s < S; ++s) {
+    double w = std::max(0.0, weights[s]);
+    double dem = m.prods.at(m.sellables[s]).demandMax;
+    if (w > 0 && dem > 0) T = std::min(T, dem / w);
+  }
+  if (T >= 1e17 || T <= 0) return x;
+
+  for (size_t s = 0; s < S; ++s) {
+    double w = std::max(0.0, weights[s]);
+    if (w <= 0) continue;
+    const Prod& p = m.prods.at(m.sellables[s]);
+    double q = w * T;
+    if (p.demandMax > 0) q = std::min(q, p.demandMax);
+    q = std::floor(q / p.batchSize) * p.batchSize;
+    x[s] = std::max(0.0, q);
+  }
+  return x;
+}
+
+/* Концентрация портфеля = макс. доля одного изделия в выручке (по средним ценам). */
+double concentration(const Portfolio& x, const std::vector<double>& meanPrice) {
+  double total = 0, mx = 0;
+  for (size_t s = 0; s < x.size(); ++s) { double v = x[s] * meanPrice[s]; total += v; mx = std::max(mx, v); }
+  return total > 0 ? mx / total : 1.0;
+}
+
+/* Индекс Херфиндаля по долям выручки → эффективное число изделий = 1/HHI. */
+double herfindahl(const std::vector<double>& x, const std::vector<double>& meanPrice) {
+  double total = 0; for (size_t s = 0; s < x.size(); ++s) total += x[s] * meanPrice[s];
+  if (total <= 0) return 1.0;
+  double hhi = 0;
+  for (size_t s = 0; s < x.size(); ++s) { double sh = x[s] * meanPrice[s] / total; hhi += sh * sh; }
+  return hhi;
+}
+
 }  // namespace
 
 /* ── Главная процедура ───────────────────────────────────────────────────── */
@@ -314,15 +375,19 @@ json run_optimization(Database& db, const OptimizeParams& p) {
 
   // Горизонт + фонд мощности по типам оборудования.
   double horizon = p.horizonHours;
+  double marketCorr = 0.5;            // взаимосвязь цен (общий рыночный фактор)
   std::string scenName = "Базовые цены НСИ";
   if (!p.scenarioId.empty()) {
     try {
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { p.scenarioId });
       scenName = str(sc, "name");
       if (horizon <= 0) horizon = num(sc, "horizon_hours", 720);
+      marketCorr = num(sc, "market_corr", 0.5);
     } catch (...) { warnings.push_back("Сценарий не найден — берутся базовые цены."); }
   }
   if (horizon <= 0) horizon = 720;
+  marketCorr = std::min(0.98, std::max(0.0, marketCorr));
+  const double betaMarket = std::sqrt(marketCorr);  // загрузка по умолчанию на фактор
 
   std::unordered_map<std::string, double> cap;
   for (auto& [id, w] : m.wcts)
@@ -353,6 +418,9 @@ json run_optimization(Database& db, const OptimizeParams& p) {
         { pd.maxV = num(d, "max_val"); pd.hasMax = true; }
       if (d.contains("mode_val") && !d["mode_val"].is_null() && str(d,"mode_val")!="")
         { pd.mode = num(d, "mode_val"); pd.hasMode = true; }
+      // Загрузка на рыночный фактор (корреляция). По умолчанию — от market_corr.
+      pd.beta = (d.contains("beta") && str(d,"beta") != "") ? num(d, "beta", betaMarket) : betaMarket;
+      pd.beta = std::min(1.0, std::max(0.0, pd.beta));
       priceDist[str(d, "product_id")] = pd;
     }
   }
@@ -362,7 +430,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     if (priceDist.count(sid)) continue;
     const Prod& pr = m.prods.at(sid);
     PriceDist pd; pd.type = "normal"; pd.mean = pr.basePrice;
-    pd.stddev = pr.basePrice * 0.12;
+    pd.stddev = pr.basePrice * 0.12; pd.beta = betaMarket;
     priceDist[sid] = pd;
   }
 
@@ -379,6 +447,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   std::vector<std::vector<double>> cost(N, std::vector<double>(S, 0));
   std::uniform_real_distribution<double> u01(0, 1);
 
+  std::normal_distribution<double> nstd(0.0, 1.0);
   for (int i = 0; i < N; ++i) {
     // Реализованное время и инфляция риска для каждой операции.
     std::unordered_map<std::string, double> realizedTime, riskInfl;
@@ -387,16 +456,23 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       if (o->tPess > o->tOpt) {                    // триангулярная аппроксимация PERT
         PriceDist td; td.type = "triangular"; td.minV = o->tOpt; td.maxV = o->tPess;
         td.mode = o->tNorm; td.hasMin = td.hasMax = td.hasMode = true; td.mean = o->tNorm;
-        t = sample_dist(td, rng);
+        t = price_from_z(td, nstd(rng));
       }
       realizedTime[o->id] = t;
       double infl = 1.0;
       if (u01(rng) < o->riskCoef) infl = 1.0 + 0.5;  // риск-событие → +50% переделка
       riskInfl[o->id] = infl;
     }
-    // Цены товарных изделий.
-    for (size_t s = 0; s < S; ++s)
-      price[i][s] = sample_dist(priceDist[m.sellables[s]], rng);
+    // Цены товарных изделий — КОРРЕЛИРОВАННО (гауссова копула): общий рыночный
+    // шок M роднит цены, β_s задаёт силу связи. z_s = β_s·M + √(1−β_s²)·ε_s.
+    // Корреляция цен s,t ≈ β_s·β_t — это и есть «анализ взаимосвязи цен».
+    double M = nstd(rng);
+    for (size_t s = 0; s < S; ++s) {
+      const PriceDist& pd = priceDist[m.sellables[s]];
+      double eps = nstd(rng);
+      double z = pd.beta * M + std::sqrt(std::max(0.0, 1.0 - pd.beta * pd.beta)) * eps;
+      price[i][s] = price_from_z(pd, z);
+    }
     // Себестоимость (мемоизация в пределах прогона).
     std::unordered_map<std::string, double> memo;
     for (size_t s = 0; s < S; ++s) {
@@ -416,29 +492,51 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   }
 
   // ── Кандидаты ────────────────────────────────────────────────────────────
+  // Генерируем И концентрированные (greedy, «всё на одно»), И диверсифицированные
+  // (water-filling по весам) портфели. Отбор по робастному критерию с ограничением
+  // концентрации (maxShare) выберет устойчивый ПОРТФЕЛЬ РИСКОВ, размазанный по
+  // изделиям и оборудованию.
   std::vector<Portfolio> cand;
   auto add = [&](Portfolio x) {
     for (double v : x) if (v > 0) { cand.push_back(std::move(x)); return; }
   };
-  std::vector<double> scExp(S), scWorst(S), scPerHour(S), scDemand(S), scEqual(S, 1.0);
+  std::vector<double> margin(S), scPerHour(S);
   for (size_t s = 0; s < S; ++s) {
-    scExp[s]    = meanPrice[s] - meanCost[s];                       // макс ожидаемая маржа
-    scWorst[s]  = scExp[s] - 1.5 * stdMargin[s];                    // макс «худшая» маржа
-    double th   = std::max(1e-6, hours_total(hpu[s]));
-    scPerHour[s] = scExp[s] / th;                                   // маржа на час узкого ресурса
-    scDemand[s]  = m.prods.at(m.sellables[s]).demandMax;            // по спросу
+    margin[s]   = meanPrice[s] - meanCost[s];
+    scPerHour[s] = margin[s] / std::max(1e-6, hours_total(hpu[s]));
   }
-  add(greedy_fill(m, hpu, cap, scExp));
-  add(greedy_fill(m, hpu, cap, scWorst));
+  auto pos = [](double v) { return std::max(0.0, v); };
+
+  // Концентрированные (для контраста — будут отфильтрованы maxShare при отборе).
+  add(greedy_fill(m, hpu, cap, margin));
   add(greedy_fill(m, hpu, cap, scPerHour));
-  add(greedy_fill(m, hpu, cap, scDemand));
-  add(greedy_fill(m, hpu, cap, scEqual));
-  // Случайные пертурбации весов → разнообразие портфелей.
-  std::uniform_real_distribution<double> uw(0.05, 1.0);
-  for (int r = 0; r < 60; ++r) {
+
+  // Диверсифицированные веса → water-filling.
+  std::vector<double> wExp(S), wEqual(S), wRP(S), wPH(S), wDem(S);
+  for (size_t s = 0; s < S; ++s) {
+    wExp[s]   = pos(margin[s]);
+    wEqual[s] = margin[s] > 0 ? 1.0 : 0.0;
+    wRP[s]    = margin[s] > 0 ? 1.0 / std::max(1.0, stdMargin[s]) : 0.0;  // risk-parity (1/σ)
+    wPH[s]    = pos(scPerHour[s]);
+    wDem[s]   = m.prods.at(m.sellables[s]).demandMax;
+  }
+  add(proportional_fill(m, hpu, cap, wExp));
+  add(proportional_fill(m, hpu, cap, wEqual));
+  add(proportional_fill(m, hpu, cap, wRP));
+  add(proportional_fill(m, hpu, cap, wPH));
+  add(proportional_fill(m, hpu, cap, wDem));
+  // Mean-variance: веса ∝ max(0, маржа − λ·σ) — сдвиг к устойчивым изделиям.
+  for (double lam : {0.5, 1.0, 1.5, 2.5, 4.0}) {
     std::vector<double> w(S);
-    for (size_t s = 0; s < S; ++s) w[s] = scExp[s] * uw(rng);
-    add(greedy_fill(m, hpu, cap, w));
+    for (size_t s = 0; s < S; ++s) w[s] = pos(margin[s] - lam * stdMargin[s]);
+    add(proportional_fill(m, hpu, cap, w));
+  }
+  // Случайные диверсифицированные смеси → разнообразие портфелей.
+  std::uniform_real_distribution<double> uw(0.0, 1.0);
+  for (int r = 0; r < 80; ++r) {
+    std::vector<double> w(S);
+    for (size_t s = 0; s < S; ++s) w[s] = (margin[s] > 0) ? std::pow(uw(rng), 1.5) : 0.0;
+    add(proportional_fill(m, hpu, cap, w));
   }
   if (cand.empty()) {                                              // на всякий случай
     Portfolio x(S, 0); for (size_t s = 0; s < S; ++s) {
@@ -469,44 +567,83 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   }
 
   std::vector<Metrics> mts(K);
-  for (size_t c = 0; c < K; ++c) mts[c] = metrics_of(profit[c], p.alpha);
+  std::vector<double> conc(K);
+  for (size_t c = 0; c < K; ++c) {
+    mts[c] = metrics_of(profit[c], p.alpha);
+    conc[c] = concentration(cand[c], meanPrice);
+  }
+  double maxShare = std::min(1.0, std::max(0.1, p.maxShare));
 
-  // Выбор робастного и ожидаемо-лучшего.
-  size_t robustIdx = 0, expIdx = 0;
+  // Робаст — устойчивый ДИВЕРСИФИЦИРОВАННЫЙ портфель: лучший робаст-критерий среди
+  // кандидатов с концентрацией ≤ maxShare («не ставить всё на одно»). Ожидаемо-лучшее —
+  // наивный максимум матожидания БЕЗ ограничения (для контраста, обычно концентрирован).
+  size_t robustIdx = SIZE_MAX, expIdx = 0;
   double bestRobust = -1e300, bestExp = -1e300;
   for (size_t c = 0; c < K; ++c) {
-    double rs = robust_score(p.objective, mts[c], regret[c], p.lambda);
-    if (rs > bestRobust) { bestRobust = rs; robustIdx = c; }
+    if (conc[c] <= maxShare + 1e-9) {
+      double rs = robust_score(p.objective, mts[c], regret[c], p.lambda);
+      if (rs > bestRobust) { bestRobust = rs; robustIdx = c; }
+    }
     if (mts[c].mean > bestExp) { bestExp = mts[c].mean; expIdx = c; }
+  }
+  if (robustIdx == SIZE_MAX) {                      // ни один не уложился в maxShare
+    warnings.push_back("Слишком мало изделий для диверсификации в пределах maxShare.");
+    for (size_t c = 0; c < K; ++c) {
+      double rs = robust_score(p.objective, mts[c], regret[c], p.lambda);
+      if (rs > bestRobust) { bestRobust = rs; robustIdx = c; }
+    }
   }
 
   // ── Сборка результата ────────────────────────────────────────────────────
   auto portfolioJson = [&](size_t c) {
+    const Portfolio& x = cand[c];
+    // Профиль прибыли портфеля и вклад каждого изделия в риск (доля ковариации
+    // с прибылью портфеля). Сумма вкладов = 1 — видно, что «гонит» риск.
+    std::vector<double> P(N, 0.0);
+    for (int i = 0; i < N; ++i) { double pr = 0;
+      for (size_t s = 0; s < S; ++s) pr += x[s] * (price[i][s] - cost[i][s]); P[i] = pr; }
+    double meanP = 0; for (double v : P) meanP += v; meanP /= N;
+    double varP = 0; for (double v : P) varP += (v - meanP) * (v - meanP); varP /= N;
+    if (varP < 1e-6) varP = 1e-6;
+    auto riskContrib = [&](size_t s) -> double {
+      if (x[s] <= 0) return 0;
+      double mc = 0; for (int i = 0; i < N; ++i) mc += x[s] * (price[i][s] - cost[i][s]); mc /= N;
+      double cov = 0; for (int i = 0; i < N; ++i)
+        cov += (x[s] * (price[i][s] - cost[i][s]) - mc) * (P[i] - meanP);
+      return (cov / N) / varP;
+    };
+
     json items = json::array();
     std::unordered_map<std::string, double> loadByWct;
-    double totalHours = 0;
+    double totalHours = 0; int nProd = 0;
     for (size_t s = 0; s < S; ++s) {
-      if (cand[c][s] <= 0) continue;
-      const Prod& pr = m.prods.at(m.sellables[s]);
+      if (x[s] <= 0) continue;
+      ++nProd;
       double unitMargin = meanPrice[s] - meanCost[s];
       items.push_back({
         {"product_id", m.sellables[s]},
-        {"qty", cand[c][s]},
+        {"qty", x[s]},
         {"unit_price", meanPrice[s]},
         {"unit_cost", meanCost[s]},
         {"unit_margin", unitMargin},
-        {"contribution", unitMargin * cand[c][s]},
+        {"contribution", unitMargin * x[s]},
+        {"risk_contribution", riskContrib(s)},
       });
-      for (auto& [w, h] : hpu[s]) { loadByWct[w] += cand[c][s] * h; totalHours += cand[c][s]*h; }
+      for (auto& [w, h] : hpu[s]) { loadByWct[w] += x[s] * h; totalHours += x[s]*h; }
     }
     json load = json::array();
     for (auto& [w, h] : loadByWct)
       load.push_back({ {"wc_type_id", w}, {"load_hours", h},
                        {"capacity_hours", cap.count(w) ? cap[w] : 0},
                        {"utilization", cap.count(w) && cap[w] > 0 ? h / cap[w] : 0} });
+    double hhi = herfindahl(x, meanPrice);
     const Metrics& mt = mts[c];
     return json{
       {"items", items}, {"resource_load", load}, {"total_load_hours", totalHours},
+      {"diversification", {
+        {"n_products", nProd}, {"hhi", hhi}, {"effective_n", hhi > 0 ? 1.0 / hhi : 1.0},
+        {"concentration", concentration(x, meanPrice)},
+      }},
       {"metrics", {
         {"expected", mt.mean}, {"std", mt.std}, {"worst_case", mt.worst},
         {"var", mt.varA}, {"cvar", mt.cvar}, {"p_loss", mt.pLoss},
@@ -554,6 +691,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     {"scenario_id", p.scenarioId}, {"scenario_name", scenName},
     {"objective", p.objective}, {"samples", N}, {"alpha", p.alpha},
     {"lambda", p.lambda}, {"seed", (int)p.seed}, {"horizon_hours", horizon},
+    {"market_corr", marketCorr}, {"max_share", maxShare},
     {"sellables", (int)S},
     {"robust", robustPf}, {"expected", expPf},
     {"price_of_robustness", priceOfRobustness},
