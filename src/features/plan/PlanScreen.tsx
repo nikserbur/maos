@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, type ScheduleResult, type OptRunSummary } from '../../lib/api'
+import {
+  api, type ScheduleResult, type OptRunSummary, type DemandOrder, type Product,
+} from '../../lib/api'
 import './plan.css'
 
 const ORDER_COLORS = ['#2d72d2', '#238551', '#c87619', '#9179f2', '#149e8e', '#cd4246', '#db2c6f', '#d1980b']
@@ -83,7 +85,27 @@ export function PlanScreen() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { api.optimize.runs().then(setRuns).catch(() => {}) }, [])
+  // Производственная программа (реестр заказов)
+  const [orders, setOrders] = useState<DemandOrder[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [newProd, setNewProd] = useState('')
+  const [newQty, setNewQty] = useState('100')
+  const [newDue, setNewDue] = useState('120')
+
+  const loadOrders = () => api.demandOrders.list().then(setOrders).catch(() => {})
+  useEffect(() => {
+    api.optimize.runs().then(setRuns).catch(() => {})
+    api.products.list().then((p) => setProducts(p.filter((x) => x.sellable === '1'))).catch(() => {})
+    loadOrders()
+  }, [])
+
+  const prodName = (id: string) => products.find((p) => p.id === id)?.name ?? id
+  const addOrder = async () => {
+    if (!newProd) return
+    await api.demandOrders.create({ product_id: newProd, quantity: newQty, due_hours: newDue, priority: '5' }).catch(() => {})
+    setNewProd(''); await loadOrders()
+  }
+  const delOrder = async (id: string) => { await api.demandOrders.delete(id).catch(() => {}); await loadOrders() }
 
   const run = async () => {
     setRunning(true); setError(null)
@@ -117,7 +139,7 @@ export function PlanScreen() {
         <div className="plan__ctl">
           <span className="plan__ctl-label">Программа</span>
           <select className="plan__select" value={runId} onChange={(e) => setRunId(e.target.value)}>
-            <option value="">Демо-программа</option>
+            <option value="">Реестр заказов ({orders.length})</option>
             {runs.map((r) => <option key={r.id} value={r.id}>Портфель Стадии 2 · {r.objective} · {r.created_at?.slice(5, 16)}</option>)}
           </select>
         </div>
@@ -139,6 +161,36 @@ export function PlanScreen() {
           {running ? 'Строим план…' : 'Построить и оптимизировать план'}
         </button>
       </div>
+
+      {!runId && (
+        <div className="plan__panel">
+          <p className="plan__section-title" style={{ marginTop: 0 }}>Производственная программа — заказы (что и к какому сроку)</p>
+          <table className="plan__rules" style={{ marginBottom: 8 }}>
+            <thead><tr><th>Изделие</th><th>Кол-во</th><th>Срок, ч</th><th>Приоритет</th><th></th></tr></thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.id}>
+                  <td>{prodName(o.product_id)}</td>
+                  <td>{Math.round(Number(o.quantity))}</td>
+                  <td>{Math.round(Number(o.due_hours))}</td>
+                  <td>{o.priority}</td>
+                  <td><button className="btn btn--danger" style={{ height: 22, padding: '0 8px' }} onClick={() => delOrder(o.id)}>✕</button></td>
+                </tr>
+              ))}
+              {orders.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>Заказов нет — добавьте ниже.</td></tr>}
+            </tbody>
+          </table>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <select className="plan__select" value={newProd} onChange={(e) => setNewProd(e.target.value)}>
+              <option value="">— изделие —</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input className="plan__input" type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} placeholder="кол-во" />
+            <input className="plan__input" type="number" min="0" value={newDue} onChange={(e) => setNewDue(e.target.value)} placeholder="срок, ч" />
+            <button className="btn btn--primary" style={{ height: 'var(--control)' }} onClick={addOrder} disabled={!newProd}>+ Добавить заказ</button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="plan__empty" style={{ color: 'var(--intent-warning)' }}>{error}</div>}
       {!result && !error && <div className="plan__empty">Выберите программу и правило, затем постройте план.</div>}

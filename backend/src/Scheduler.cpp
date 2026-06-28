@@ -220,12 +220,18 @@ json run_schedule(Database& db, const ScheduleParams& p) {
 
   // ── Программа: из запроса / из портфеля прогона / демо ──
   std::vector<OrderLine> program = p.program;
-  if (program.empty() && !p.runId.empty()) {
+  if (program.empty() && !p.runId.empty()) {   // программа из портфеля Стадии 2
     auto rows = db.query_json(
       "SELECT pi.product_id AS pid, pi.qty AS qty FROM portfolios pf "
       "JOIN portfolio_items pi ON pi.portfolio_id=pf.id "
       "WHERE pf.run_id=? AND pf.kind='robust'", { p.runId });
     for (auto& r : rows) program.push_back({ str(r,"pid"), num(r,"qty"), 0 });
+  }
+  if (program.empty()) {                       // программа из реестра заказов
+    for (auto& r : db.query_json(
+           "SELECT product_id,quantity,due_hours FROM demand_orders "
+           "WHERE status<>'done' ORDER BY priority, due_hours"))
+      program.push_back({ str(r,"product_id"), num(r,"quantity",1), num(r,"due_hours") });
   }
   if (program.empty()) {                       // демо-программа из готовых SKU
     const std::vector<std::pair<std::string,double>> demo = {

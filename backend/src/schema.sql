@@ -153,6 +153,19 @@ CREATE TABLE IF NOT EXISTS workers (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ── Производственная программа (заказы) — вход Стадии 1 ────────────────────
+CREATE TABLE IF NOT EXISTS demand_orders (
+  id            TEXT PRIMARY KEY,
+  product_id    TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  quantity      REAL NOT NULL DEFAULT 1,
+  due_hours     REAL NOT NULL DEFAULT 0,   -- срок готовности, ч от начала горизонта (0=авто)
+  release_hours REAL NOT NULL DEFAULT 0,   -- самая ранняя дата запуска, ч
+  priority      INTEGER NOT NULL DEFAULT 5,
+  status        TEXT NOT NULL DEFAULT 'planned',  -- planned | in_progress | done
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_demand_product ON demand_orders (product_id);
+
 -- ── Сценарии внешних условий (стохастика цен) ──────────────────────────────
 CREATE TABLE IF NOT EXISTS price_scenarios (
   id            TEXT PRIMARY KEY,

@@ -952,6 +952,29 @@ static void migrate_v3(Database& db) {
   std::cout << "Migration v3 done.\n";
 }
 
+// v4: производственная программа (заказы) — вход Стадии 1. Демо-заказы.
+static void migrate_v4(Database& db) {
+  if (db.user_version() >= 4) return;
+  std::cout << "Migrating schema → v4 (demand orders)…\n";
+  db.exec("BEGIN");
+  try {
+    struct Ord { std::string id, product; double qty, due; int prio; };
+    const std::vector<Ord> orders = {
+      {"do-1","fin-reb", 180, 120, 3}, {"do-2","fin-galv",120, 90, 4},
+      {"do-3","fin-cold",150, 150, 5}, {"do-4","fin-s235",160, 110, 4},
+      {"do-5","fin-pnt",  90, 80, 2},  {"do-6","prod-hrc",100, 100, 5},
+    };
+    for (auto& o : orders)
+      if (!db.query_json("SELECT id FROM products WHERE id=?", { o.product }).empty())
+        db.exec("INSERT OR IGNORE INTO demand_orders(id,product_id,quantity,due_hours,priority) "
+                "VALUES(?,?,?,?,?)",
+                { o.id, o.product, std::to_string(o.qty), std::to_string(o.due), std::to_string(o.prio) });
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(4);
+  std::cout << "Migration v4 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1227,6 +1250,7 @@ int main(int argc, char* argv[]) {
     migrate(db);
     migrate_v2(db);
     migrate_v3(db);
+    migrate_v4(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1279,6 +1303,12 @@ int main(int argc, char* argv[]) {
     "workers", "worker",
     { "tab_no", "last_name", "first_name", "middle_name",
       "org_unit", "org_unit_id", "position", "grade", "cost_per_hour", "skills" }
+  });
+
+  // Производственная программа (заказы) — вход Стадии 1
+  register_crud(svr, db, {
+    "demand_orders", "demand_order",
+    { "product_id", "quantity", "due_hours", "release_hours", "priority", "status" }
   });
 
   // Custom POST for operations (NULLIF routing_id) — must precede generic CRUD

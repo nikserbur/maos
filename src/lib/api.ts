@@ -198,6 +198,12 @@ export interface ScheduleParams {
   program?: Array<{ product_id: string; qty: number; due_hours?: number }>
 }
 
+/* ── Производственная программа (заказы) ─────────────────────────────────── */
+export interface DemandOrder {
+  id: string; product_id: string; quantity: string; due_hours: string
+  release_hours: string; priority: string; status: string; created_at: string
+}
+
 /* ── API surface ─────────────────────────────────────────────────────────── */
 export const api = {
   health: () => get<{ status: string; version: string }>('/health'),
@@ -285,6 +291,13 @@ export const api = {
 
   schedule: {
     run: (p: ScheduleParams) => post<ScheduleResult>('/schedule', p),
+  },
+
+  demandOrders: {
+    list:   ()                          => get<DemandOrder[]>('/demand_orders'),
+    create: (d: Partial<DemandOrder>)   => post<DemandOrder>('/demand_orders', d),
+    update: (id: string, d: Partial<DemandOrder>) => put<DemandOrder>(`/demand_orders/${id}`, d),
+    delete: (id: string)                => del<object>(`/demand_orders/${id}`),
   },
 
   demo: {
