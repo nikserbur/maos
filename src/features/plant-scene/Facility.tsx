@@ -4,8 +4,8 @@ import type { SceneNode } from './graph/sceneModel'
 const FENCE_H = 2.4
 const FENCE_COLOR = '#6a7568'
 const POST_COLOR = '#4c5550'
-/** Отступ забора от крайних зданий (здания ~11 в ширину + проезд). */
-const MARGIN = 17
+/** Отступ забора от крайних зданий (под мелкие здания + проезд). */
+const MARGIN = 11
 
 interface PostProps { x: number; z: number; h?: number; w?: number }
 function Post({ x, z, h = FENCE_H + 0.4, w = 0.32 }: PostProps) {

@@ -1473,7 +1473,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.9.2"} });
+    ok(res, { {"status", "ok"}, {"version", "0.9.3"} });
   });
 
   // Auth

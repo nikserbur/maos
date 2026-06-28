@@ -45,9 +45,9 @@ export function StageObject({
   const ringColor = connectSource ? '#2bb3a3' : selected ? '#2d72d2' : meta.color
 
   // Здания крупнее моделей — подложка/кольцо/подпись масштабируются под них.
-  const pad   = asBuilding ? 9.5 : 5
-  const ringR = asBuilding ? 5 : 2.4
-  const labelY = asBuilding ? 7 : 4.2
+  const pad   = asBuilding ? 6.5 : 5
+  const ringR = asBuilding ? 3.4 : 2.4
+  const labelY = asBuilding ? 5 : 4.2
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
