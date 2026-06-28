@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { SceneNode } from './graph/sceneModel'
+import { Decorations } from './Decorations'
 
 const FENCE_H = 2.4
 const FENCE_COLOR = '#6a7568'
@@ -151,6 +152,9 @@ export function Facility({ nodes }: FacilityProps) {
 
       {/* Деревья за оградой */}
       {trees.map(([x, z, s], i) => <Tree key={i} x={x} z={z} s={s} />)}
+
+      {/* Декорации территории (КПП, шлагбаум, парковка, навесы, скамейки, курилки) */}
+      <Decorations minX={minX} maxX={maxX} minZ={minZ} maxZ={maxZ} gMid={gMid} />
     </group>
   )
 }

@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { Loader } from '@react-three/drei'
 import { SceneEnvironment } from './SceneEnvironment'
 import { Facility } from './Facility'
+import { WorkshopInterior } from './WorkshopInterior'
 import { PlantLayout } from './PlantLayout'
 import { EditorPanel } from './EditorPanel'
 import { Breadcrumbs } from './Breadcrumbs'
@@ -134,7 +135,9 @@ export default function PlantScene() {
         >
           <SceneEnvironment indoor={state.currentParentId != null} />
           <Suspense fallback={null}>
-            {state.currentParentId == null && <Facility nodes={nodes} />}
+            {state.currentParentId == null
+              ? <Facility nodes={nodes} />
+              : <WorkshopInterior nodes={nodes} />}
             <PlantLayout
               nodes={nodes}
               edges={edges}
