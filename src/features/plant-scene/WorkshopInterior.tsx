@@ -1,39 +1,10 @@
-import { useMemo, useRef } from 'react'
-import * as THREE from 'three'
-import { useFrame } from '@react-three/fiber'
+import { useMemo } from 'react'
 import type { SceneNode } from './graph/sceneModel'
 
 const FLOOR = '#5a5f64'
 const COLUMN = '#8a9088'
 const RAIL = '#6a7076'
 const HAZARD = '#caa83a'
-
-/** Вилочный погрузчик, курсирующий по полу цеха (туда-обратно). */
-function Forklift({ a, b, speed }: { a: [number, number]; b: [number, number]; speed: number }) {
-  const ref = useRef<THREE.Group>(null)
-  const yaw = Math.atan2(-(b[1] - a[1]), b[0] - a[0])
-  useFrame((s) => {
-    if (!ref.current) return
-    const ph = (s.clock.elapsedTime * speed) % 2
-    const fwd = ph < 1
-    const t = fwd ? ph : 2 - ph
-    ref.current.position.set(a[0] + (b[0] - a[0]) * t, 0.12, a[1] + (b[1] - a[1]) * t)
-    ref.current.rotation.y = fwd ? yaw : yaw + Math.PI
-  })
-  return (
-    <group ref={ref} scale={0.85}>
-      <mesh position={[0, 0.5, 0]} castShadow><boxGeometry args={[1.4, 0.7, 0.9]} /><meshStandardMaterial color="#d8b24a" metalness={0.2} roughness={0.6} /></mesh>
-      <mesh position={[0.35, 1.15, 0]}><boxGeometry args={[0.55, 0.6, 0.8]} /><meshStandardMaterial color="#33363a" /></mesh>
-      {/* мачта + вилы */}
-      <mesh position={[0.85, 0.7, 0]}><boxGeometry args={[0.12, 1.4, 0.7]} /><meshStandardMaterial color="#2a2d31" /></mesh>
-      <mesh position={[1.1, 0.2, 0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color="#1e2024" /></mesh>
-      <mesh position={[1.1, 0.2, -0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color="#1e2024" /></mesh>
-      {[[0.45, 0.45], [0.45, -0.45], [-0.45, 0.45], [-0.45, -0.45]].map(([wx, wz], i) => (
-        <mesh key={i} position={[wx, 0.22, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.22, 0.22, 0.16, 10]} /><meshStandardMaterial color="#15171a" /></mesh>
-      ))}
-    </group>
-  )
-}
 
 /** Поддон с грузом. */
 function Pallet({ x, z, color }: { x: number; z: number; color: string }) {
@@ -115,11 +86,7 @@ export function WorkshopInterior({ nodes }: WorkshopInteriorProps) {
 
       {/* Поддоны с грузом */}
       {pallets.map(([x, z, c], i) => <Pallet key={i} x={x} z={z} color={c} />)}
-
-      {/* Погрузчики курсируют по полу */}
-      <Forklift a={[minX + 3, minZ + 2.5]} b={[maxX - 3, minZ + 2.5]} speed={0.16} />
-      <Forklift a={[maxX - 3, maxZ - 2.5]} b={[minX + 3, maxZ - 2.5]} speed={0.12} />
-      <Forklift a={[cx, minZ + 3]} b={[cx, maxZ - 3]} speed={0.1} />
+      {/* Погрузчики ездят по дорогам цеха — см. FlowLinks (indoor). */}
     </group>
   )
 }

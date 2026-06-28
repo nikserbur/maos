@@ -130,7 +130,7 @@ function Vehicle({ a, b, speed, indoor }: { a: [number, number]; b: [number, num
     ref.current.position.set(a[0] + (b[0] - a[0]) * t, 0.06, a[1] + (b[1] - a[1]) * t)
     ref.current.rotation.y = fwd ? yaw : yaw + Math.PI
   })
-  return <group ref={ref} scale={indoor ? 0.85 : 0.9}>{indoor ? <ForkliftModel /> : <Zil />}</group>
+  return <group ref={ref} scale={indoor ? 0.85 : 1.15}>{indoor ? <ForkliftModel /> : <Zil />}</group>
 }
 
 /** Вилочный погрузчик (для движения внутри цеха). */
