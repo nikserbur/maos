@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../../lib/api'
-import { useWorkCenterTypes } from '../useNsi'
+import { useWorkCenterTypes, useOrgUnits } from '../useNsi'
 
 interface Props {
   onSuccess: () => void
@@ -8,6 +8,7 @@ interface Props {
 
 export function MachineForm({ onSuccess }: Props) {
   const wcTypes = useWorkCenterTypes()
+  const orgUnits = useOrgUnits()
 
   const [name, setName]         = useState('')
   const [wcTypeId, setWcTypeId] = useState('')
@@ -74,12 +75,10 @@ export function MachineForm({ onSuccess }: Props) {
       <div className="form__row">
         <div className="form__field">
           <label className="form__label">Подразделение / Цех</label>
-          <input
-            className="form__input"
-            value={orgUnit}
-            onChange={(e) => setOrgUnit(e.target.value)}
-            placeholder="Сталелитейный цех №1"
-          />
+          <select className="form__select" value={orgUnit} onChange={(e) => setOrgUnit(e.target.value)}>
+            <option value="">— выберите подразделение —</option>
+            {orgUnits.map((o) => <option key={o.id} value={o.name}>{o.name}</option>)}
+          </select>
         </div>
         <div className="form__field">
           <label className="form__label">Статус</label>

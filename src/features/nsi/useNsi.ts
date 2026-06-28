@@ -5,7 +5,14 @@ import {
   type Machine,
   type Product,
   type Operation,
+  type OrgUnit,
 } from '../../lib/api'
+
+export function useOrgUnits(): OrgUnit[] {
+  const [data, setData] = useState<OrgUnit[]>([])
+  useEffect(() => { api.orgUnits.list().then(setData).catch(() => {}) }, [])
+  return data
+}
 
 export function useWorkCenterTypes(): WorkCenterType[] {
   const [data, setData] = useState<WorkCenterType[]>([])

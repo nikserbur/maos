@@ -94,6 +94,7 @@ export interface User {
   role_id: string; role_name: string; permissions: string; created_at: string
 }
 export interface Role { id: string; name: string; permissions: string }
+export interface OrgUnit { id: string; name: string; parent_id: string; created_at: string }
 
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
 export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform'
@@ -294,6 +295,10 @@ export const api = {
   admin: {
     users: () => get<User[]>('/users'),
     roles: () => get<Role[]>('/roles'),
+  },
+
+  orgUnits: {
+    list: () => get<OrgUnit[]>('/org_units'),
   },
 
   scheme: {

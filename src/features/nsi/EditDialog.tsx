@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '../../shell/Modal'
-import { api, type WorkCenterType, type Product } from '../../lib/api'
+import { api, type WorkCenterType, type Product, type OrgUnit } from '../../lib/api'
 import { PALETTE, KIND_META } from '../plant-scene/graph/sceneModel'
 import type { RegistryDef } from './registries'
 
@@ -49,6 +49,8 @@ export function EditDialog({ registry, row, wcTypes, products, onClose, onSaved 
     const names = String(row.wc_types ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     return wcTypes.filter((t) => names.includes(t.name)).map((t) => t.id)
   })
+  const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([])
+  useEffect(() => { api.orgUnits.list().then(setOrgUnits).catch(() => {}) }, [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,6 +107,13 @@ export function EditDialog({ registry, row, wcTypes, products, onClose, onSaved 
         <select className="form__select" value={v} onChange={(e) => set(key, e.target.value)}>
           <option value="">— верхний уровень —</option>
           {products.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+        </select>
+      )
+    else if (key === 'org_unit')
+      control = (
+        <select className="form__select" value={v} onChange={(e) => set(key, e.target.value)}>
+          <option value="">— подразделение —</option>
+          {orgUnits.map((o) => <option key={o.id} value={o.name}>{o.name}</option>)}
         </select>
       )
     else if (key === 'op_type')

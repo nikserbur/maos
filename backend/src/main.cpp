@@ -145,12 +145,14 @@ static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& 
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
 
-      // Build INSERT
+      // Build INSERT. Для FK-колонок (…_id) пустую строку превращаем в NULL —
+      // иначе '' нарушает внешний ключ (SQLITE_CONSTRAINT, код 19).
       std::string cols = "id", holders = "?";
       std::vector<std::string> vals = { id };
       for (auto& col : cfg.columns) {
+        bool fk = col.size() >= 3 && col.compare(col.size() - 3, 3, "_id") == 0;
         cols     += ", " + col;
-        holders  += ", ?";
+        holders  += fk ? ", NULLIF(?, '')" : ", ?";
         vals.push_back(jstr(body, col));
       }
       db.exec("INSERT INTO " + cfg.table + "(" + cols + ") VALUES(" + holders + ")", vals);
@@ -172,8 +174,9 @@ static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& 
       std::vector<std::string> vals;
       for (auto& col : cfg.columns) {
         if (!body.contains(col)) continue;
+        bool fk = col.size() >= 3 && col.compare(col.size() - 3, 3, "_id") == 0;
         if (!set_clause.empty()) set_clause += ", ";
-        set_clause += col + "=?";
+        set_clause += col + (fk ? "=NULLIF(?, '')" : "=?");
         vals.push_back(jstr(body, col));
       }
       if (set_clause.empty()) { err(res, 400, "no fields to update"); return; }
@@ -1453,7 +1456,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.7.4"} });
+    ok(res, { {"status", "ok"}, {"version", "0.7.5"} });
   });
 
   // Auth
@@ -1497,6 +1500,11 @@ int main(int argc, char* argv[]) {
   register_crud(svr, db, {
     "demand_orders", "demand_order",
     { "product_id", "quantity", "due_hours", "release_hours", "priority", "status" }
+  });
+
+  // Оргструктура (подразделения/цеха) — для выпадающих списков
+  register_crud(svr, db, {
+    "org_units", "org_unit", { "name", "parent_id" }
   });
 
   // Custom POST for operations (NULLIF routing_id) — must precede generic CRUD

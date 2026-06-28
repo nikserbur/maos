@@ -4,7 +4,7 @@ import { STATUS_META } from './types'
 import type { SceneMode } from './graph/graphReducer'
 import type { SceneNode } from './graph/sceneModel'
 import { KIND_META, PALETTE } from './graph/sceneModel'
-import type { Machine, WorkCenterType, Operation } from '../../lib/api'
+import { api, type Machine, type WorkCenterType, type Operation, type OrgUnit } from '../../lib/api'
 
 interface MachineCreateData {
   name: string
@@ -77,6 +77,20 @@ export function EditorPanel({
   const [regStatus, setRegStatus] = useState('active')
   const [registering, setRegistering] = useState(false)
   const [regError,  setRegError]  = useState<string | null>(null)
+  const [orgUnits, setOrgUnits]   = useState<OrgUnit[]>([])
+
+  useEffect(() => { api.orgUnits.list().then(setOrgUnits).catch(() => {}) }, [])
+
+  // 3D-вид объекта = вид его ТИПА оборудования: при выборе типа модель на схеме
+  // подстраивается под тип (объект на схеме и тип оборудования — одно и то же).
+  const selectWcType = (typeId: string) => {
+    setRegWcType(typeId)
+    const t = wcTypes.find((x) => x.id === typeId)
+    if (t && (PALETTE as string[]).includes(t.kind)) {
+      setRegKind(t.kind as ObjectKind)
+      if (selectedNode) onChangeKind(selectedNode.id, t.kind as ObjectKind)
+    }
+  }
 
   useEffect(() => {
     if (!selectedNode) return
@@ -169,22 +183,6 @@ export function EditorPanel({
             </div>
           )}
 
-          {/* Смена модели в режиме редактирования */}
-          {editing && !linkedMachine && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>Модель:</span>
-              <select
-                className="ep-register__select"
-                style={{ flex: 1, height: 26, fontSize: 12 }}
-                value={selectedNode.kind}
-                onChange={(e) => onChangeKind(selectedNode.id, e.target.value as ObjectKind)}
-              >
-                {PALETTE.map((k) => (
-                  <option key={k} value={k}>{KIND_META[k].label}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {selectedNode.kpis.length > 0 && (
             <>
@@ -286,20 +284,12 @@ export function EditorPanel({
                 onChange={(e) => setRegName(e.target.value)}
                 placeholder="Название единицы оборудования" />
 
-              <label className="ep-register__label">Модель на схеме</label>
-              <select className="ep-register__select" value={regKind}
-                onChange={(e) => setRegKind(e.target.value as ObjectKind)}>
-                {PALETTE.map((k) => (
-                  <option key={k} value={k}>{KIND_META[k].label}</option>
-                ))}
-              </select>
-
-              <label className="ep-register__label">Тип оборудования</label>
+              <label className="ep-register__label">Тип оборудования (= 3D-вид на схеме)</label>
               <select className="ep-register__select" value={regWcType}
-                onChange={(e) => setRegWcType(e.target.value)}>
+                onChange={(e) => selectWcType(e.target.value)}>
                 <option value="">— выберите тип —</option>
                 {wcTypes.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                  <option key={t.id} value={t.id}>{t.name} — {KIND_META[t.kind as ObjectKind]?.label ?? t.kind}</option>
                 ))}
               </select>
               {wcTypes.length === 0 && (
@@ -307,11 +297,20 @@ export function EditorPanel({
                   Нет типов — создайте их в НСИ → Типы оборудования.
                 </p>
               )}
+              {regWcType && (
+                <p className="ep-register__hint mono" style={{ color: 'var(--text-muted)' }}>
+                  3D-модель: {KIND_META[regKind]?.label ?? regKind} (по типу оборудования).
+                </p>
+              )}
 
               <label className="ep-register__label">Подразделение / Цех</label>
-              <input className="ep-register__input" value={regOrgUnit}
-                onChange={(e) => setRegOrgUnit(e.target.value)}
-                placeholder="Цех №1" />
+              <select className="ep-register__select" value={regOrgUnit}
+                onChange={(e) => setRegOrgUnit(e.target.value)}>
+                <option value="">— выберите подразделение —</option>
+                {orgUnits.map((o) => (
+                  <option key={o.id} value={o.name}>{o.name}</option>
+                ))}
+              </select>
 
               <label className="ep-register__label">Статус</label>
               <select className="ep-register__select" value={regStatus}
