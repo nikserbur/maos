@@ -37,8 +37,8 @@
 /* Загрузка / простои */
 .load-row { display: grid; grid-template-columns: 150px 1fr 92px; gap: 8px; align-items: center; margin-bottom: 5px; font-size: 12px; }
 .load-row__name { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.load-bar { height: 11px; background: var(--bg-input); border-radius: 999px; overflow: hidden; }
-.load-bar__fill { height: 100%; border-radius: 999px; background: var(--intent-success); }
+.load-bar { height: 11px; background: var(--bg-input); border-radius: 999px; overflow: hidden; display: block; }
+.load-bar__fill { display: block; height: 100%; min-width: 2px; border-radius: 999px; background: var(--intent-success); }
 .load-bar__fill--hot { background: var(--intent-warning); } .load-bar__fill--full { background: var(--intent-danger); }
 .load-row__pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
 

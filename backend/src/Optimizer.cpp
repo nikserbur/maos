@@ -169,13 +169,16 @@ void hours_per_unit(const Model& m, const std::string& pid,
 double unit_cost(const Model& m, const std::string& pid,
                  const std::unordered_map<std::string, double>& realizedTime,
                  const std::unordered_map<std::string, double>& riskInfl,
+                 const std::unordered_map<std::string, double>& matFactor,  // множитель цены сырья
                  std::unordered_map<std::string, double>& memo,
                  std::unordered_set<std::string>& visiting, int depth = 0) {
   if (auto it = memo.find(pid); it != memo.end()) return it->second;
   if (depth > 48 || visiting.count(pid)) return 0;   // защита от циклов цепочки
   visiting.insert(pid);
   const Prod& p = m.prods.at(pid);
-  double c = p.purchased ? p.baseCost : 0.0;
+  // Цена покупного сырья — СТОХАСТИЧНА (может сильно вырасти): base_cost × множитель.
+  double rawF = matFactor.count(pid) ? matFactor.at(pid) : 1.0;
+  double c = p.purchased ? p.baseCost * rawF : 0.0;
 
   // Операции техкарты: обработка (машина+труд+наладка+прочее) с инфляцией риска +
   // материалы входов операции по производственной цепочке (рекурсивно): покупное
@@ -188,7 +191,7 @@ double unit_cost(const Model& m, const std::string& pid,
                   + (o.setupRequired ? o.setupCost : 0.0) + o.cost;
       c += proc * inf;
       for (const OpInput& in : o.inputs)
-        c += in.qty * unit_cost(m, in.productId, realizedTime, riskInfl, memo, visiting, depth + 1);
+        c += in.qty * unit_cost(m, in.productId, realizedTime, riskInfl, matFactor, memo, visiting, depth + 1);
     }
   visiting.erase(pid);
   memo[pid] = c;
@@ -440,6 +443,10 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   std::vector<std::vector<double>> cost(N, std::vector<double>(S, 0));
   std::uniform_real_distribution<double> u01(0, 1);
 
+  // Покупное сырьё — для стохастики цены закупки (может сильно вырасти).
+  std::vector<std::string> rawMats;
+  for (auto& [id, pr] : m.prods) if (pr.purchased && pr.baseCost > 0) rawMats.push_back(id);
+
   std::normal_distribution<double> nstd(0.0, 1.0);
   for (int i = 0; i < N; ++i) {
     // Реализованное время и инфляция риска для каждой операции.
@@ -466,11 +473,25 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       double z = pd.beta * M + std::sqrt(std::max(0.0, 1.0 - pd.beta * pd.beta)) * eps;
       price[i][s] = price_from_z(pd, z);
     }
+    // Цена СЫРЬЯ — тоже стохастична и может СИЛЬНО вырасти: логнормальный множитель
+    // (CV ~20%), коррелирован с рынком (β=√market_corr) + редкий скачок (Парето).
+    std::unordered_map<std::string, double> matFactor;
+    {
+      const double rawCv = 0.20, betaRaw = std::sqrt(marketCorr);
+      const double slRaw = std::sqrt(std::log(1.0 + rawCv * rawCv));
+      for (const std::string& mid : rawMats) {
+        double zr = betaRaw * M + std::sqrt(std::max(0.0, 1.0 - betaRaw * betaRaw)) * nstd(rng);
+        double f = std::exp(slRaw * zr - 0.5 * slRaw * slRaw);
+        if (u01(rng) < 0.06)                          // редкий скачок цены сырья
+          f *= 1.0 + std::min(2.5, std::pow(std::max(1e-9, 1.0 - u01(rng)), -1.0 / 2.0) - 1.0);
+        matFactor[mid] = f;
+      }
+    }
     // Себестоимость (мемоизация в пределах прогона).
     std::unordered_map<std::string, double> memo;
     for (size_t s = 0; s < S; ++s) {
       std::unordered_set<std::string> vis;
-      cost[i][s] = unit_cost(m, m.sellables[s], realizedTime, riskInfl, memo, vis);
+      cost[i][s] = unit_cost(m, m.sellables[s], realizedTime, riskInfl, matFactor, memo, vis);
     }
   }
 
