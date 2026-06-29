@@ -96,6 +96,13 @@ export function ScenarioCompareScreen() {
     await api.scenarios.delete(id).catch(() => {})
     setSel((s) => s.filter((x) => x !== id)); load()
   }
+  const createScenario = async () => {
+    const name = window.prompt('Название нового сценария:', 'Новый сценарий')
+    if (!name) return
+    const sc = await api.scenarios.create({ name }).catch(() => null)
+    await load()
+    if (sc && sc.id) setOpenId(sc.id)   // сразу раскрываем для задания внешних условий
+  }
 
   const compare = async () => {
     if (sel.length < 2) return
@@ -115,12 +122,15 @@ export function ScenarioCompareScreen() {
     <div className="scen">
       <header className="scen__head">
         <div>
-          <h1 className="scen__title">Сценарии — сравнение</h1>
+          <h1 className="scen__title">Сценарии</h1>
           <p className="scen__desc">
-            Единый сценарий = цены (распределения) + цель оптимизации. Клонируйте, меняйте цель,
-            выберите два и сравните робастный портфель бок о бок.
+            Реестр сценариев. <b>Создайте</b> сценарий → откройте («▾ Условия и прогноз цен»),
+            задайте внешние условия (инфляция, курс, спрос, корреляция, цель, режим, план, оверрайды),
+            посмотрите стартовые графики и распределения цен, сохраните. Выделите <b>два</b> + «Сравнить» —
+            сравнение бок о бок. Сценарий применяется в оптимизации.
           </p>
         </div>
+        <button className="btn btn--primary" onClick={createScenario}>+ Создать сценарий</button>
       </header>
 
       <section className="scen__list">
