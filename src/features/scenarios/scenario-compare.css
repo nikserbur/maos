@@ -152,3 +152,10 @@
 }
 
 .scn__card-hint { font-size: 11px; font-weight: 400; color: var(--text-muted, #6a7079); font-style: normal; text-transform: none; letter-spacing: 0; }
+
+/* Редактор распределений цены */
+.scn__dist { display: flex; flex-direction: column; gap: 10px; }
+.scn__dist > select { background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37); border-radius: 7px; color: var(--text, #e6e9ee); font-size: 13px; padding: 7px 9px; }
+.scn__dist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.scn__dist-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--text-muted, #8a929c); }
+.scn__dist-grid input, .scn__dist-grid select { background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37); border-radius: 7px; color: var(--text, #e6e9ee); font-size: 13px; padding: 6px 8px; }

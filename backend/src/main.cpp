@@ -1961,6 +1961,8 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       if (body.contains("seed"))    pr.seed    = (unsigned)std::stod(jstr(body, "seed"));
       if (body.contains("max_share") && !jstr(body,"max_share").empty())
         pr.maxShare = std::stod(jstr(body, "max_share"));
+      if (body.contains("volatility") && !jstr(body,"volatility").empty())
+        pr.volatility = std::stod(jstr(body, "volatility"));
       if (body.contains("horizon_hours") && !jstr(body,"horizon_hours").empty())
         pr.horizonHours = std::stod(jstr(body, "horizon_hours"));
 
@@ -1971,7 +1973,7 @@ static void register_optimize(httplib::Server& svr, Database& db) {
           if (!body.contains("objective") && !jstr(sc,"objective").empty()) pr.objective = jstr(sc,"objective");
           if (!body.contains("alpha")     && !jstr(sc,"alpha").empty())     pr.alpha     = std::stod(jstr(sc,"alpha"));
           if (!body.contains("max_share") && !jstr(sc,"max_share").empty()) pr.maxShare  = std::stod(jstr(sc,"max_share"));
-          if (!jstr(sc,"volatility").empty()) pr.volatility = std::stod(jstr(sc,"volatility"));
+          if (!body.contains("volatility") && !jstr(sc,"volatility").empty()) pr.volatility = std::stod(jstr(sc,"volatility"));
         } catch (...) {}
       }
 
@@ -2331,7 +2333,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.31.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.32.0"} });
   });
 
   // Auth

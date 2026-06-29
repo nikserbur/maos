@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type PriceScenario, type OptResult, type Product, type ScenarioPayload } from '../../lib/api'
+import { api, type PriceScenario, type OptResult, type Product, type ScenarioPayload, type PriceDistribution, type DistType } from '../../lib/api'
 import { ForecastScreen } from '../forecast/ForecastScreen'
 import './scenario-compare.css'
 
@@ -98,6 +98,19 @@ export function ScenarioCompareScreen() {
     await api.scenarios.update(sc.id, payloadOf(next, { overrides: [] })).catch(() => {})
   }
 
+  // Настройка стохастического распределения цены изделия (тип/среднее/СКО/границы).
+  const setDist = async (sc: PriceScenario, productId: string, patch: Partial<PriceDistribution>) => {
+    if (!productId) return
+    const base = Number(products.find((p) => p.id === productId)?.base_price) || 0
+    const existing = sc.distributions ?? []
+    const cur: PriceDistribution = existing.find((d) => d.product_id === productId)
+      ?? { product_id: productId, dist_type: 'normal', mean: base, stddev: Math.round(base * 0.12), beta: 0.7 }
+    const distributions = [...existing.filter((d) => d.product_id !== productId), { ...cur, ...patch }]
+    const next = { ...sc, distributions }
+    setScenarios((list) => list.map((x) => x.id === sc.id ? next : x))
+    await api.scenarios.update(sc.id, payloadOf(next, { distributions })).catch(() => {})
+  }
+
   const clone = async (id: string) => { await api.scenarios.clone(id).catch(() => {}); load() }
   const remove = async (id: string) => {
     await api.scenarios.delete(id).catch(() => {})
@@ -171,7 +184,7 @@ export function ScenarioCompareScreen() {
           </div>
         ) : selected ? (
           <ScenarioDetail key={selected.id} sc={selected} products={products}
-            onPatch={patch} onSetOverride={setOverride} onClearOverrides={clearOverrides}
+            onPatch={patch} onSetOverride={setOverride} onClearOverrides={clearOverrides} onSetDist={setDist}
             onClone={() => clone(selected.id)} onRemove={() => { remove(selected.id); setOpenId('') }} />
         ) : (
           <div className="scn__placeholder">Выберите сценарий слева или создайте новый («＋»).</div>
@@ -199,11 +212,12 @@ function Slider({ label, hint, value, min, max, step, unit = '', onChange }: {
 }
 
 /** Детальный вид сценария: красивые контролы внешних условий + графики цен. */
-function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides, onClone, onRemove }: {
+function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides, onSetDist, onClone, onRemove }: {
   sc: PriceScenario; products: Product[]
   onPatch: (sc: PriceScenario, p: Partial<PriceScenario>) => void
   onSetOverride: (sc: PriceScenario, pid: string, price: string) => void
   onClearOverrides: (sc: PriceScenario) => void
+  onSetDist: (sc: PriceScenario, pid: string, patch: Partial<PriceDistribution>) => void
   onClone: () => void; onRemove: () => void
 }) {
   const [refreshKey, setRefreshKey] = useState(0)
@@ -259,6 +273,11 @@ function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides
         <section className="scn__card">
           <h3 className="scn__card-h">Точечные оверрайды цен</h3>
           <OverrideEditor sc={sc} products={products} onSet={(pid, price) => onSetOverride(sc, pid, price)} onClear={() => onClearOverrides(sc)} />
+        </section>
+
+        <section className="scn__card">
+          <h3 className="scn__card-h">Распределения цен (стохастика) <i className="scn__card-hint">— тип/среднее/СКО/коридор; волатильность их масштабирует</i></h3>
+          <DistEditor sc={sc} products={products} onSet={(pid, patch) => onSetDist(sc, pid, patch)} />
         </section>
       </div>
 
@@ -316,6 +335,56 @@ function OverrideEditor({ sc, products, onSet, onClear }: {
       <button className="btn" disabled={!pid || !price} onClick={() => { onSet(pid, price); setPid(''); setPrice('') }}>＋ оверрайд</button>
       {ovr.length > 0 && <button className="btn" onClick={onClear}>сбросить</button>}
       {ovr.map((o) => <span key={o.product_id} className="scen__ovr-chip">{o.product_id} = {o.base_price ?? o.base_cost}</span>)}
+    </div>
+  )
+}
+
+/** Редактор стохастического распределения цены изделия (тип/среднее/СКО/коридор). */
+function DistEditor({ sc, products, onSet }: {
+  sc: PriceScenario; products: Product[]
+  onSet: (productId: string, patch: Partial<PriceDistribution>) => void
+}) {
+  const [pid, setPid] = useState('')
+  const base = Number(products.find((p) => p.id === pid)?.base_price) || 0
+  const d = sc.distributions?.find((x) => x.product_id === pid)
+  const type = (d?.dist_type ?? 'normal') as DistType
+  const num = (v: number | string | undefined, dflt: number) => (v === undefined || v === '' ? dflt : Number(v))
+  const bounded = type === 'uniform' || type === 'triangular'
+  return (
+    <div className="scn__dist">
+      <select value={pid} onChange={(e) => setPid(e.target.value)}>
+        <option value="">— изделие —</option>
+        {products.map((p) => (
+          <option key={p.id} value={p.id}>{p.code} {p.name}{sc.distributions?.some((x) => x.product_id === p.id) ? ' ✓' : ''}</option>
+        ))}
+      </select>
+      {pid && (
+        <div className="scn__dist-grid">
+          <label>Тип
+            <select value={type} onChange={(e) => onSet(pid, { dist_type: e.target.value as DistType })}>
+              <option value="normal">нормаль</option>
+              <option value="lognormal">логнормаль</option>
+              <option value="uniform">равномерное</option>
+              <option value="triangular">треугольное</option>
+            </select>
+          </label>
+          <label>Среднее
+            <input type="number" value={num(d?.mean, base)} onChange={(e) => onSet(pid, { mean: e.target.value })} />
+          </label>
+          {!bounded && <label>СКО
+            <input type="number" value={num(d?.stddev, Math.round(base * 0.12))} onChange={(e) => onSet(pid, { stddev: e.target.value })} />
+          </label>}
+          <label>Мин (коридор)
+            <input type="number" value={d?.min_val ?? ''} placeholder="—" onChange={(e) => onSet(pid, { min_val: e.target.value })} />
+          </label>
+          <label>Макс (коридор)
+            <input type="number" value={d?.max_val ?? ''} placeholder="—" onChange={(e) => onSet(pid, { max_val: e.target.value })} />
+          </label>
+          {type === 'triangular' && <label>Мода
+            <input type="number" value={d?.mode_val ?? ''} placeholder="—" onChange={(e) => onSet(pid, { mode_val: e.target.value })} />
+          </label>}
+        </div>
+      )}
     </div>
   )
 }
