@@ -188,12 +188,12 @@ function Slider({ label, hint, value, min, max, step, unit = '', onChange }: {
 }) {
   return (
     <label className="scn__slider">
-      <span className="scn__slider-l">{label}{hint && <i className="scn__field-h"> {hint}</i>}</span>
-      <div className="scn__slider-wrap">
-        <input type="range" className="scn__slider-input" min={min} max={max} step={step}
-               value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <span className="scn__slider-top">
+        <span className="scn__slider-l">{label}{hint && <i className="scn__field-h"> {hint}</i>}</span>
         <span className="scn__slider-val">{(step < 1 ? value.toFixed(2) : value.toFixed(0))}{unit}</span>
-      </div>
+      </span>
+      <input type="range" className="scn__slider-input" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   )
 }
@@ -206,11 +206,14 @@ function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides
   onClearOverrides: (sc: PriceScenario) => void
   onClone: () => void; onRemove: () => void
 }) {
+  const [refreshKey, setRefreshKey] = useState(0)
   return (
     <div className="scn__detail">
       <div className="scn__detail-head">
         <input className="scn__name-input" value={sc.name} onChange={(e) => onPatch(sc, { name: e.target.value })} />
         <div className="scn__detail-actions">
+          <button className="btn btn--primary" title="Пересчитать прогноз по текущим условиям"
+                  onClick={() => setRefreshKey((k) => k + 1)}>↻ Обновить графики</button>
           <button className="btn" onClick={onClone}>Клонировать</button>
           <button className="btn" onClick={onRemove}>Удалить</button>
         </div>
@@ -261,7 +264,7 @@ function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides
 
       <section className="scn__card scn__card--chart">
         <h3 className="scn__card-h">Прогноз цен по сценарию <i className="scn__card-hint">— ⚙ на графике: оверрайд базовой цены</i></h3>
-        <ForecastScreen scenarioId={sc.id} onOverride={(pid, price) => onSetOverride(sc, pid, price)} />
+        <ForecastScreen scenarioId={sc.id} refreshKey={refreshKey} onOverride={(pid, price) => onSetOverride(sc, pid, price)} />
       </section>
     </div>
   )
