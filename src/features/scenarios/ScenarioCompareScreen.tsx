@@ -53,6 +53,7 @@ export function ScenarioCompareScreen() {
       objective: next.objective || 'cvar',
       alpha: Number(next.alpha) || 0.1,
       max_share: Number(next.max_share) || 0.6,
+      mode: next.mode || 'stochastic',
     }).catch(() => {})
   }
 
@@ -112,6 +113,12 @@ export function ScenarioCompareScreen() {
               <label>Корр.
                 <input type="number" step={0.05} min={0} max={1} value={sc.market_corr ?? '0.5'}
                        onChange={(e) => patch(sc, { market_corr: e.target.value })} />
+              </label>
+              <label>Режим
+                <select value={sc.mode || 'stochastic'} onChange={(e) => patch(sc, { mode: e.target.value })}>
+                  <option value="stochastic">стохаст.</option>
+                  <option value="deterministic">детерм.</option>
+                </select>
               </label>
             </div>
             <div className="scen__actions">

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { api, type ForecastResult, type ForecastProduct } from '../../lib/api'
+import { api, type ForecastResult, type ForecastProduct, type PriceScenario } from '../../lib/api'
 import './forecast.css'
 
 const W = 320, H = 150, PADL = 6, PADR = 6, PADT = 12, PADB = 20
@@ -46,14 +46,28 @@ export function ForecastScreen() {
   const [res, setRes]           = useState<ForecastResult | null>(null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
+  const [scenarios, setScenarios] = useState<PriceScenario[]>([])
+  const [scenarioId, setScenarioId] = useState('')
+
+  useEffect(() => { api.scenarios.list().then(setScenarios).catch(() => {}) }, [])
 
   const run = useCallback(() => {
     setLoading(true); setError(null)
-    api.forecast({ months, inflation: inflation / 100, fx, demand, volatility: volatility / 100, corr, runs: 3000 })
-      .then(setRes)
+    // Со сценарием — его параметры рулят (Стадия E); иначе ручные ползунки.
+    const params = scenarioId
+      ? { scenario_id: scenarioId, runs: 3000 }
+      : { months, inflation: inflation / 100, fx, demand, volatility: volatility / 100, corr, runs: 3000 }
+    api.forecast(params)
+      .then((r) => {
+        setRes(r)
+        if (scenarioId) {   // синхронизируем ползунки с тем, что задал сценарий
+          setMonths(r.months); setInfl(r.inflation_monthly * 100); setFx(r.fx)
+          setDemand(r.demand); setVol(r.volatility * 100); setCorr(r.corr)
+        }
+      })
       .catch((e) => setError(e instanceof Error ? e.message : 'Ошибка прогноза'))
       .finally(() => setLoading(false))
-  }, [months, inflation, fx, demand, volatility, corr])
+  }, [scenarioId, months, inflation, fx, demand, volatility, corr])
 
   useEffect(() => { run() }, [])  // первичный расчёт; дальше — кнопкой
 
@@ -76,6 +90,12 @@ export function ForecastScreen() {
       </header>
 
       <section className="forecast__controls">
+        <label>Сценарий
+          <select value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
+            <option value="">— ручные параметры —</option>
+            {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
         <label>Горизонт, мес
           <input type="number" min={1} max={36} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(36, Number(e.target.value) || 6)))} />
         </label>
@@ -104,6 +124,7 @@ export function ForecastScreen() {
       {res && (
         <div className="forecast__macro mono">
           Накопленная инфляция за {res.months} мес: <b>+{cumInfl.toFixed(1)}%</b>
+          {res.mode === 'deterministic' && <> · <b>режим: детерминированный (точечный)</b></>}
           {fx !== 1 && <> · курс ×{fx.toFixed(2)}</>}
           {demand !== 1 && <> · спрос ×{demand.toFixed(2)}</>}
           {' · '}индекс: {res.inflation_index.map((v) => v.toFixed(0)).join(' → ')}

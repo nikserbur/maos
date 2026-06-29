@@ -109,12 +109,16 @@ export interface PriceDistribution {
 export interface PriceScenario {
   id: string; name: string; description: string; horizon_hours: string
   market_corr?: string; objective?: string; alpha?: string; max_share?: string
+  mode?: string; inflation?: string; fx?: string; demand?: string
+  volatility?: string; months?: string
   created_at: string
   distributions?: PriceDistribution[]
 }
 export interface ScenarioPayload {
   name: string; description?: string; horizon_hours?: number; market_corr?: number
   objective?: string; alpha?: number; max_share?: number
+  mode?: string; inflation?: number; fx?: number; demand?: number
+  volatility?: number; months?: number
   distributions?: PriceDistribution[]
 }
 
@@ -232,7 +236,7 @@ export interface ProductionPlan { id: string; name: string; description: string;
 // Стадия E+: прогноз цен во времени под макрофакторами.
 export interface ForecastParams {
   months?: number; inflation?: number; fx?: number; demand?: number
-  volatility?: number; corr?: number; runs?: number
+  volatility?: number; corr?: number; runs?: number; scenario_id?: string
 }
 export interface ForecastFit {
   data_driven: boolean; dist: 'normal' | 'laplace' | 't'; n_obs: number
@@ -246,7 +250,8 @@ export interface ForecastProduct {
 }
 export interface ForecastResult {
   months: number; inflation_monthly: number; fx: number; demand: number
-  volatility: number; corr: number; inflation_index: number[]
+  volatility: number; corr: number; mode?: string; scenario_id?: string
+  inflation_index: number[]
   rate?: ForecastProduct | null
   products: ForecastProduct[]
 }

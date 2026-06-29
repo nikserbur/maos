@@ -6,7 +6,7 @@ interface StatusBarProps {
 export function StatusBar({ screen }: StatusBarProps) {
   return (
     <footer className="statusbar mono">
-      <span>MAOS v0.15.1</span>
+      <span>MAOS v0.15.2</span>
       <span className="statusbar__sep">·</span>
       <span>Локально</span>
       <span className="statusbar__sep">·</span>

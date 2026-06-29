@@ -1211,6 +1211,22 @@ static void migrate_v11(Database& db) {
   std::cout << "Migration v11 done.\n";
 }
 
+// v12 (Стадия E): сценарий несёт параметры ПРОГНОЗА цен (макрофакторы) и РЕЖИМ
+// (стохастический ↔ детерминированный) — один сценарий гоняет и цены, и оптимизацию.
+static void migrate_v12(Database& db) {
+  if (db.user_version() >= 12) return;
+  std::cout << "Migrating schema → v12 (сценарий: прогноз + режим)…\n";
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN mode TEXT");        // stochastic | deterministic
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN inflation REAL");   // мес. инфляция (доля)
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN fx REAL");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN demand REAL");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN volatility REAL");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN months INTEGER");
+  db.exec("UPDATE price_scenarios SET mode=COALESCE(mode,'stochastic')");
+  db.set_user_version(12);
+  std::cout << "Migration v12 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1266,14 +1282,18 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
-      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share) "
-              "VALUES(?,?,?,?,?,?,?,?)",
+      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,"
+              "mode,inflation,fx,demand,volatility,months) "
+              "VALUES(?,?,?,?,?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
               { id, jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
                 jstr(body,"objective").empty() ? "cvar" : jstr(body,"objective"),
                 jstr(body,"alpha").empty() ? "0.1" : jstr(body,"alpha"),
-                jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share") });
+                jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"),
+                jstr(body,"mode").empty() ? "stochastic" : jstr(body,"mode"),
+                jstr(body,"inflation"), jstr(body,"fx"), jstr(body,"demand"),
+                jstr(body,"volatility"), jstr(body,"months") });
       writeDists(id, body);
       audit(db, "scenario", id, "CREATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
@@ -1287,13 +1307,18 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       const std::string id = req.matches[1];
       auto body = json::parse(req.body);
       db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=?, market_corr=?, "
-              "objective=?, alpha=?, max_share=? WHERE id=?",
+              "objective=?, alpha=?, max_share=?, "
+              "mode=COALESCE(NULLIF(?,''),mode), inflation=COALESCE(NULLIF(?,''),inflation), "
+              "fx=COALESCE(NULLIF(?,''),fx), demand=COALESCE(NULLIF(?,''),demand), "
+              "volatility=COALESCE(NULLIF(?,''),volatility), months=COALESCE(NULLIF(?,''),months) WHERE id=?",
               { jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
                 jstr(body,"objective").empty() ? "cvar" : jstr(body,"objective"),
                 jstr(body,"alpha").empty() ? "0.1" : jstr(body,"alpha"),
-                jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"), id });
+                jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"),
+                jstr(body,"mode"), jstr(body,"inflation"), jstr(body,"fx"),
+                jstr(body,"demand"), jstr(body,"volatility"), jstr(body,"months"), id });
       writeDists(id, body);
       audit(db, "scenario", id, "UPDATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
@@ -1308,8 +1333,9 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       const std::string src = req.matches[1];
       const std::string nid = gen_uuid();
       db.exec("INSERT INTO price_scenarios"
-              "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share) "
-              "SELECT ?, name || ' (копия)', description, horizon_hours, market_corr, objective, alpha, max_share "
+              "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months) "
+              "SELECT ?, name || ' (копия)', description, horizon_hours, market_corr, objective, alpha, max_share,"
+              "mode, inflation, fx, demand, volatility, months "
               "FROM price_scenarios WHERE id=?", { nid, src });
       db.exec("INSERT INTO price_distributions"
               "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
@@ -1393,6 +1419,24 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       int runs     = std::max(200, std::min(20000, (int)getd("runs", 3000)));
       unsigned seed = (unsigned)getd("seed", 42);
 
+      // Стадия E: сценарий задаёт параметры прогноза и режим (если не заданы в запросе).
+      std::string mode = "stochastic";
+      const std::string scenarioId = jstr(body, "scenario_id");
+      if (!scenarioId.empty()) {
+        try {
+          auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { scenarioId });
+          auto scd = [&](const char* k, double cur) { std::string s = jstr(sc, k); return s.empty() ? cur : std::stod(s); };
+          if (!body.contains("months")     && !jstr(sc,"months").empty())      months = std::max(1, std::min(36, (int)scd("months", months)));
+          if (!body.contains("inflation")  && !jstr(sc,"inflation").empty())   infl   = scd("inflation", infl);
+          if (!body.contains("fx")         && !jstr(sc,"fx").empty())          fx     = scd("fx", fx);
+          if (!body.contains("demand")     && !jstr(sc,"demand").empty())      demand = scd("demand", demand);
+          if (!body.contains("volatility") && !jstr(sc,"volatility").empty())  vol    = scd("volatility", vol);
+          if (!body.contains("corr")       && !jstr(sc,"market_corr").empty()) corr   = std::max(0.0, std::min(1.0, scd("market_corr", corr)));
+          if (!jstr(sc,"mode").empty()) mode = jstr(sc, "mode");
+        } catch (...) {}
+      }
+      const bool deterministic = (mode == "deterministic");   // точечный прогноз (без разброса)
+
       auto rows = db.query_json(
         "SELECT id,name,base_price,base_cost,sellable,purchased FROM products "
         "WHERE sellable=1 OR purchased=1 ORDER BY sellable DESC, name");
@@ -1468,11 +1512,13 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           px[0][r] = base * macroMul;
           for (int t = 1; t <= months; ++t) {
             const double z = beta * M[r][t] + idio * nd(rng);   // коррелир. стд. нормаль
-            double innov;
-            if (dist == "laplace")   innov = lapQ(Phi(z), lapB);
-            else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);  // мультивар.-t
-            else                     innov = vol_p * z;
-            logp += drift_p + innov - 0.5 * vol_p * vol_p;
+            double innov = 0;
+            if (!deterministic) {
+              if (dist == "laplace")   innov = lapQ(Phi(z), lapB);
+              else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);  // мультивар.-t
+              else                     innov = vol_p * z;
+            }
+            logp += drift_p + (deterministic ? 0.0 : innov - 0.5 * vol_p * vol_p);
             px[t][r] = std::exp(logp) * macroMul;
           }
         }
@@ -1529,8 +1575,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
 
       ok(res, {
         {"months", months}, {"inflation_monthly", infl}, {"fx", fx}, {"demand", demand},
-        {"volatility", vol}, {"corr", corr}, {"inflation_index", inflIdx},
-        {"rate", rateJson}, {"products", products},
+        {"volatility", vol}, {"corr", corr}, {"mode", mode}, {"scenario_id", scenarioId},
+        {"inflation_index", inflIdx}, {"rate", rateJson}, {"products", products},
       });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
@@ -1835,6 +1881,7 @@ int main(int argc, char* argv[]) {
     migrate_v9(db);
     migrate_v10(db);
     migrate_v11(db);
+    migrate_v12(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1851,7 +1898,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.15.1"} });
+    ok(res, { {"status", "ok"}, {"version", "0.15.2"} });
   });
 
   // Auth
