@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <array>
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
@@ -1595,7 +1596,33 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           for (int t = 0; t < Hn; ++t) res.push_back(ly[t] - (lvl + slp * t));
         }
 
-        // 2) РАСПРЕДЕЛЕНИЕ остатков по AIC.
+        // 1b) ГАРМОНИКИ (System Dynamics / EMD-подобное разложение): топ-3 синусоиды
+        //     де-трендового ряда — их продолжаем в прогнозе (колебания), а распределение
+        //     потом фитим к ОСТАВШЕМУСЯ нерегулярному остатку.
+        std::vector<std::array<double, 3>> harm;   // {omega, A, B}
+        if (dd) {
+          std::vector<std::array<double, 3>> cand;
+          for (int P : { 2, 3, 4, 5, 6, 8, 10, 12 }) {
+            if (P > Hn / 2) continue;
+            const double w = 2 * M_PI / P;
+            double A = 0, B = 0;
+            for (int t = 0; t < Hn; ++t) { A += res[t] * std::cos(w * t); B += res[t] * std::sin(w * t); }
+            A *= 2.0 / Hn; B *= 2.0 / Hn;
+            cand.push_back({ w, A, B });
+          }
+          std::sort(cand.begin(), cand.end(), [](const std::array<double, 3>& x, const std::array<double, 3>& y) {
+            return x[1] * x[1] + x[2] * x[2] > y[1] * y[1] + y[2] * y[2];
+          });
+          for (int i = 0; i < (int)cand.size() && i < 3; ++i) harm.push_back(cand[i]);
+          for (int t = 0; t < Hn; ++t) {
+            double h = 0; for (auto& c : harm) h += c[1] * std::cos(c[0] * t) + c[2] * std::sin(c[0] * t);
+            res[t] -= h;
+          }
+        }
+        auto harmAt = [&](double t) { double h = 0; for (auto& c : harm) h += c[1] * std::cos(c[0] * t) + c[2] * std::sin(c[0] * t); return h; };
+        const double hNow = harmAt(dd ? (Hn - 1) : 0);
+
+        // 2) РАСПРЕДЕЛЕНИЕ нерегулярного остатка по AIC.
         double mu = 0, sg = vol, aicN = 0, aicL = 0, aicT = 0, aicS = 0;
         std::string dist = "normal"; double lapB = vol / std::sqrt(2.0);
         double tNu = 40.0, tScale = vol, sAlpha = 2.0, sGamma = vol;
@@ -1667,7 +1694,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
                       * std::pow(std::cos((1 - sAlpha) * U) / W, (1 - sAlpha) / sAlpha);
               } else                   innov = sg * z;
             }
-            px[t][r] = std::exp(anchor + slopeFwd * t + innov) * macroMul;  // тренд + остаток
+            px[t][r] = std::exp(anchor + slopeFwd * t + (harmAt(Hn - 1 + t) - hNow) + innov) * macroMul;  // тренд + гармоники + остаток
           }
         }
         json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
@@ -2075,7 +2102,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.20.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.21.0"} });
   });
 
   // Auth
