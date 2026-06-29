@@ -129,6 +129,9 @@ export function OptimizationScreen() {
   const [result, setResult]   = useState<OptResult | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+  const [planName, setPlanName]   = useState('')
+  const [savingPlan, setSavingPlan] = useState(false)
+  const [savedMsg, setSavedMsg]   = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -163,10 +166,27 @@ export function OptimizationScreen() {
         max_share: Number(maxShare) || 0.35,
       })
       setResult(r)
+      setSavedMsg(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка оптимизации')
     } finally {
       setRunning(false)
+    }
+  }
+
+  const savePlan = async () => {
+    if (!result?.run_id) return
+    setSavingPlan(true)
+    setSavedMsg(null)
+    try {
+      const name = planName.trim() || `Оптимизация ${new Date().toLocaleString('ru')}`
+      const p = await api.optimize.savePlan(result.run_id, name)
+      setSavedMsg(`План «${p.name}» сохранён (${p.orders} изделий). Откройте раздел «Планы».`)
+      setPlanName('')
+    } catch (e) {
+      setSavedMsg('Ошибка сохранения: ' + (e instanceof Error ? e.message : 'неизвестно'))
+    } finally {
+      setSavingPlan(false)
     }
   }
 
@@ -251,6 +271,19 @@ export function OptimizationScreen() {
               hint="«Наивно лучшее» по матожиданию — выше средняя прибыль, но хрупкое к падению цен."
               pf={result.expected} nameOf={nameOf} />
           </div>
+
+          {result.run_id && (
+            <div className="opt__save">
+              <span className="opt__save-label">Сохранить устойчивое решение как производственный план:</span>
+              <input className="opt__input opt__save-input" type="text" placeholder="Название плана…"
+                     value={planName} onChange={(e) => setPlanName(e.target.value)}
+                     onKeyDown={(e) => e.key === 'Enter' && savePlan()} />
+              <button className="btn btn--primary" onClick={savePlan} disabled={savingPlan}>
+                {savingPlan ? 'Сохраняю…' : 'Сохранить как план'}
+              </button>
+              {savedMsg && <span className="opt__save-msg">{savedMsg}</span>}
+            </div>
+          )}
 
           <div className="opt__por">
             <span className="opt__por-val">{money(result.price_of_robustness)}</span>

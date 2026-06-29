@@ -358,6 +358,8 @@ export const api = {
     run:  (p: OptimizeParams)  => post<OptResult>('/optimize', p),
     runs: ()                   => get<OptRunSummary[]>('/optimize/runs'),
     run_get: (id: string)      => get<OptResult>(`/optimize/runs/${id}`),
+    savePlan: (runId: string, planName: string) =>
+      post<{ id: string; name: string; orders: number }>('/optimize/save-plan', { run_id: runId, plan_name: planName }),
   },
 
   schedule: {

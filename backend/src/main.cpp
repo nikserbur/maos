@@ -1308,6 +1308,35 @@ static void migrate_v15(Database& db) {
   std::cout << "Migration v15 done.\n";
 }
 
+// v16: модель спроса — ёмкость рынка, эластичность цены, объём конкурентов.
+static void migrate_v16(Database& db) {
+  if (db.user_version() >= 16) return;
+  std::cout << "Migrating schema → v16 (модель спроса: ёмкость рынка/эластичность/конкуренты)…\n";
+  db.exec_safe("ALTER TABLE products ADD COLUMN market_capacity   REAL");  // ед., которые рынок выкупает по базе
+  db.exec_safe("ALTER TABLE products ADD COLUMN price_elasticity  REAL");  // чувствительность цены к перепроизводству
+  db.exec_safe("ALTER TABLE products ADD COLUMN competitor_supply REAL");  // объём конкурентов на рынке
+  // Дефолты от demand_max: рынок = 1.2× нашего макс-спроса, конкуренты = 0.5×, эластичность 0.5.
+  db.exec_safe("UPDATE products SET market_capacity   = demand_max * 1.2 WHERE (market_capacity   IS NULL OR market_capacity=0)   AND demand_max > 0");
+  db.exec_safe("UPDATE products SET competitor_supply = demand_max * 0.5 WHERE (competitor_supply IS NULL OR competitor_supply=0) AND demand_max > 0");
+  db.exec_safe("UPDATE products SET price_elasticity  = 0.5 WHERE price_elasticity IS NULL OR price_elasticity=0");
+  db.set_user_version(16);
+  std::cout << "Migration v16 done.\n";
+}
+
+// v17: усиливаем модель спроса, чтобы ПЕРЕпроизводство было невыгодным (внутренний
+// оптимум объёма ниже потолка) — тогда objective/доли реально меняют решение.
+// Оптимум выручки q* = cap·(1+e)/(2e) − competitor/2. При cap=demand_max, e=1.2,
+// competitor=0.4·demand_max → q*≈0.72·demand_max (производить «всё» невыгодно).
+static void migrate_v17(Database& db) {
+  if (db.user_version() >= 17) return;
+  std::cout << "Migrating schema → v17 (усиление модели спроса: внутренний оптимум объёма)…\n";
+  db.exec_safe("UPDATE products SET market_capacity   = demand_max       WHERE demand_max > 0");
+  db.exec_safe("UPDATE products SET competitor_supply = demand_max * 0.4 WHERE demand_max > 0");
+  db.exec_safe("UPDATE products SET price_elasticity  = 1.2              WHERE demand_max > 0");
+  db.set_user_version(17);
+  std::cout << "Migration v17 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1483,7 +1512,7 @@ static void persist_run(Database& db, const std::string& runId, const maos::Opti
                         const json& result) {
   db.exec("INSERT INTO optimization_runs"
           "(id,scenario_id,objective,samples,alpha,lambda,seed,status,result_json) "
-          "VALUES(?,?,?,?,?,?,?,?,?)",
+          "VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?)",   // пустой scenario_id → NULL (иначе нарушение FK)
           { runId, pr.scenarioId, pr.objective, std::to_string(pr.samples),
             std::to_string(pr.alpha), std::to_string(pr.lambda), std::to_string(pr.seed),
             "done", result.dump() });
@@ -1964,6 +1993,36 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       ok(res, json::parse(jstr(row, "result_json")));
     } catch (...) { err(res, 404, "not found"); }
   });
+
+  // Сохранить устойчивое решение как именованный производственный план (виден в «Планах»).
+  svr.Post("/api/optimize/save-plan", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      const std::string runId = jstr(body, "run_id");
+      std::string name = jstr(body, "plan_name");
+      if (runId.empty()) { err(res, 400, "run_id required"); return; }
+      if (name.empty()) name = "План из оптимизации";
+      auto row = db.query_one("SELECT result_json FROM optimization_runs WHERE id=?", { runId });
+      json result = json::parse(jstr(row, "result_json"));
+      const json& robust = result.value("robust", json::object());
+
+      const std::string planId = gen_uuid();
+      db.exec("INSERT INTO production_plans(id,name,description) VALUES(?,?,?)",
+              { planId, name, "Устойчивый портфель оптимизации (run " + runId + ")" });
+      int n = 0;
+      for (auto& it : robust.value("items", json::array())) {
+        const std::string pid = it.value("product_id", std::string());
+        const double qty = it.value("qty", 0.0);
+        if (pid.empty() || qty <= 0) continue;
+        db.exec("INSERT INTO demand_orders(id,plan_id,product_id,quantity,due_hours,priority,status) "
+                "VALUES(?,?,?,?,?,?,'planned')",
+                { gen_uuid(), planId, pid, std::to_string(qty), "720", "5" });
+        ++n;
+      }
+      audit(db, "production_plan", planId, "CREATE", { {"from_run", runId}, {"orders", n} });
+      ok(res, { {"id", planId}, {"name", name}, {"orders", n} });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
 }
 
 /* ── Стадия 1: расписание (план исполнения) ──────────────────────────────── */
@@ -2217,6 +2276,8 @@ int main(int argc, char* argv[]) {
     migrate_v13(db);
     migrate_v14(db);
     migrate_v15(db);
+    migrate_v16(db);
+    migrate_v17(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -2233,7 +2294,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.28.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.29.0"} });
   });
 
   // Auth

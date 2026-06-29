@@ -35,6 +35,9 @@ struct Prod {
   double baseCost    = 0;         // цена закупки (для purchased)
   double basePrice   = 0;         // ориентир цены реализации
   double demandMax   = 0;
+  double marketCapacity   = 0;    // ёмкость рынка (ед., которые рынок выкупает по базе)
+  double priceElasticity  = 0.5;  // эластичность цены по перепроизводству
+  double competitorSupply = 0;    // объём конкурентов на рынке
 };
 
 struct OpInput { std::string productId; double qty = 1; };
@@ -95,6 +98,9 @@ Model load_model(Database& db) {
     pr.baseCost  = num(p, "base_cost");
     pr.basePrice = num(p, "base_price");
     pr.demandMax = num(p, "demand_max");
+    pr.marketCapacity   = num(p, "market_capacity");
+    pr.priceElasticity  = num(p, "price_elasticity", 0.5);
+    pr.competitorSupply = num(p, "competitor_supply");
     m.prods[pr.id] = pr;
     if (pr.sellable) m.sellables.push_back(pr.id);
   }
@@ -561,6 +567,18 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     for (size_t s = 0; s < S; ++s) w[s] = pos(margin[s] - lam * stdMargin[s]);
     add(proportional_fill(m, hpu, cap, w));
   }
+  // Объёмно-масштабированные варианты структурных портфелей: меньше произвести ⇒ выше
+  // цена (модель спроса). Даёт оптимизатору выбор «объём vs цена» — иначе все кандидаты
+  // у потолка спроса/мощности, и objective/max_share почти не влияют на результат.
+  {
+    const size_t base = cand.size();
+    for (double scale : { 0.5, 0.7 })
+      for (size_t b = 0; b < base; ++b) {
+        Portfolio x = cand[b];
+        for (double& v : x) v *= scale;
+        add(std::move(x));
+      }
+  }
   // Случайные диверсифицированные смеси → разнообразие портфелей.
   std::uniform_real_distribution<double> uw(0.0, 1.0);
   for (int r = 0; r < 80; ++r) {
@@ -576,16 +594,30 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     cand.push_back(x);
   }
 
+  // ЭНДОГЕННАЯ ЦЕНА (модель спроса): свой объём q + конкуренты относительно ёмкости рынка.
+  // Перепроизводство (предложение > ёмкости) → цена ВНИЗ; дефицит → цена ВВЕРХ. mul∈[0.4,1.6].
+  auto priceMul = [&](double q, size_t s) -> double {
+    const Prod& pr = m.prods.at(m.sellables[s]);
+    const double capM = pr.marketCapacity > 0 ? pr.marketCapacity
+                       : (pr.demandMax > 0 ? pr.demandMax * 1.2 : 0.0);
+    if (capM <= 0) return 1.0;
+    const double fill = (pr.competitorSupply + q) / capM;          // насыщение рынка
+    return std::max(0.4, std::min(1.6, 1.0 + pr.priceElasticity * (1.0 - fill)));
+  };
+
   // ── Оценка кандидатов по прогонам (общие случайные числа уже зафиксированы) ─
   size_t K = cand.size();
   std::vector<std::vector<double>> profit(K, std::vector<double>(N, 0));
-  for (size_t c = 0; c < K; ++c)
+  for (size_t c = 0; c < K; ++c) {
+    std::vector<double> mul(S);
+    for (size_t s = 0; s < S; ++s) mul[s] = priceMul(cand[c][s], s);  // зависит от объёма портфеля
     for (int i = 0; i < N; ++i) {
       double pr = 0;
       for (size_t s = 0; s < S; ++s)
-        pr += cand[c][s] * (price[i][s] - cost[i][s]);
+        pr += cand[c][s] * (price[i][s] * mul[s] - cost[i][s]);
       profit[c][i] = pr;
     }
+  }
   // Регрет: для каждого прогона лучший среди кандидатов.
   std::vector<double> bestPer(N, -1e300);
   for (int i = 0; i < N; ++i)
@@ -627,19 +659,20 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   // ── Сборка результата ────────────────────────────────────────────────────
   auto portfolioJson = [&](size_t c) {
     const Portfolio& x = cand[c];
+    std::vector<double> mul(S); for (size_t s = 0; s < S; ++s) mul[s] = priceMul(x[s], s);  // эндогенная цена
     // Профиль прибыли портфеля и вклад каждого изделия в риск (доля ковариации
     // с прибылью портфеля). Сумма вкладов = 1 — видно, что «гонит» риск.
     std::vector<double> P(N, 0.0);
     for (int i = 0; i < N; ++i) { double pr = 0;
-      for (size_t s = 0; s < S; ++s) pr += x[s] * (price[i][s] - cost[i][s]); P[i] = pr; }
+      for (size_t s = 0; s < S; ++s) pr += x[s] * (price[i][s] * mul[s] - cost[i][s]); P[i] = pr; }
     double meanP = 0; for (double v : P) meanP += v; meanP /= N;
     double varP = 0; for (double v : P) varP += (v - meanP) * (v - meanP); varP /= N;
     if (varP < 1e-6) varP = 1e-6;
     auto riskContrib = [&](size_t s) -> double {
       if (x[s] <= 0) return 0;
-      double mc = 0; for (int i = 0; i < N; ++i) mc += x[s] * (price[i][s] - cost[i][s]); mc /= N;
+      double mc = 0; for (int i = 0; i < N; ++i) mc += x[s] * (price[i][s] * mul[s] - cost[i][s]); mc /= N;
       double cov = 0; for (int i = 0; i < N; ++i)
-        cov += (x[s] * (price[i][s] - cost[i][s]) - mc) * (P[i] - meanP);
+        cov += (x[s] * (price[i][s] * mul[s] - cost[i][s]) - mc) * (P[i] - meanP);
       return (cov / N) / varP;
     };
 
@@ -649,13 +682,15 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     for (size_t s = 0; s < S; ++s) {
       if (x[s] <= 0) continue;
       ++nProd;
-      double unitMargin = meanPrice[s] - meanCost[s];
+      const double effPrice = meanPrice[s] * mul[s];   // цена с учётом модели спроса
+      double unitMargin = effPrice - meanCost[s];
       items.push_back({
         {"product_id", m.sellables[s]},
         {"qty", x[s]},
-        {"unit_price", meanPrice[s]},
+        {"unit_price", effPrice},
         {"unit_cost", meanCost[s]},
         {"unit_margin", unitMargin},
+        {"price_mult", mul[s]},
         {"contribution", unitMargin * x[s]},
         {"risk_contribution", riskContrib(s)},
       });
