@@ -150,3 +150,10 @@
   width: 100%; background: var(--surface, #161a20); border: 1px solid var(--accent, #2d72d2);
   border-radius: 5px; color: var(--text, #e6e9ee); font: inherit; padding: 3px 6px; text-align: right;
 }
+
+/* Распределение цены в полноэкранной настройке */
+.forecast__distrow { flex-wrap: wrap; }
+.forecast__distf { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted, #8a929c); }
+.forecast__distf input { width: 90px; }
+.forecast__distrow select { background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37); border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 5px 7px; }
+.forecast__dist-note { font-size: 10px; color: var(--text-muted, #6a7079); flex-basis: 100%; }

@@ -228,7 +228,7 @@ export function PlanScreen() {
 
       <div className="plan__controls">
         <div className="plan__ctl">
-          <span className="plan__ctl-label">Программа</span>
+          <span className="plan__ctl-label" title="Производственная программа — ЧТО и сколько производить (набор заказов). Источник: общий реестр заказов или портфель, сохранённый из оптимизации.">Программа (что производить)</span>
           <select className="plan__select" value={runId} onChange={(e) => setRunId(e.target.value)}>
             <option value="">Реестр заказов ({orders.length})</option>
             {runs.map((r) => <option key={r.id} value={r.id}>Портфель Стадии 2 · {r.objective} · {r.created_at?.slice(5, 16)}</option>)}

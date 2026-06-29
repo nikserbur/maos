@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { api, type ForecastResult, type ForecastProduct, type PriceScenario } from '../../lib/api'
+import { api, type ForecastResult, type ForecastProduct, type PriceScenario, type PriceDistribution, type DistType } from '../../lib/api'
 import './forecast.css'
 
 const W = 340, CH = 150, PADL = 6, PADR = 6, PADT = 12, PADB = 22
@@ -42,8 +42,12 @@ function PriceFan({ p }: { p: ForecastProduct }) {
 
 const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
 
-export function ForecastScreen({ scenarioId: fixed, onOverride, refreshKey }:
-  { scenarioId?: string; onOverride?: (productId: string, price: string) => Promise<void> | void; refreshKey?: number } = {}) {
+export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distributions, refreshKey }:
+  { scenarioId?: string
+    onOverride?: (productId: string, price: string) => Promise<void> | void
+    onSetDist?: (productId: string, patch: Partial<PriceDistribution>) => void
+    distributions?: PriceDistribution[]
+    refreshKey?: number } = {}) {
   const [months, setMonths]     = useState(6)
   const [inflation, setInfl]    = useState(1.5)   // %/мес
   const [fx, setFx]             = useState(1.0)
@@ -180,7 +184,9 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, refreshKey }:
       </div>
 
       {zoom && <ZoomModal p={zoom} pct={zoom.role === 'rate'}
-        onOverride={onOverride ? applyOverride : undefined} onClose={() => setZoom(null)} />}
+        onOverride={onOverride ? applyOverride : undefined}
+        onSetDist={onSetDist} dist={distributions?.find((d) => d.product_id === zoom.id)}
+        onClose={() => setZoom(null)} />}
     </div>
   )
 }
@@ -215,14 +221,19 @@ function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: 
   )
 }
 
-/** Полноэкранный график + детальная таблица + НАСТРОЙКА (оверрайд базовой цены, только здесь). */
-function ZoomModal({ p, pct, onOverride, onClose }: {
+/** Полноэкранный график + детальная таблица + НАСТРОЙКА: оверрайд базовой цены и
+ *  стохастического распределения (тип/СКО/коридор) — только здесь. */
+function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
   p: ForecastProduct; pct?: boolean
-  onOverride?: (productId: string, price: string) => void; onClose: () => void
+  onOverride?: (productId: string, price: string) => void
+  onSetDist?: (productId: string, patch: Partial<PriceDistribution>) => void
+  dist?: PriceDistribution
+  onClose: () => void
 }) {
   const fmtVal = (v: number) => (pct ? `${v.toFixed(2)}%` : money(v))
   const N = p.p50.length
   const canEdit = !!onOverride && p.role === 'product'
+  const canDist = !!onSetDist && p.role === 'product'
   const [base, setBase] = useState(String(Math.round(p.base)))
   const apply = () => { if (onOverride && base) { onOverride(p.id, base); onClose() } }
   return (
@@ -240,6 +251,28 @@ function ZoomModal({ p, pct, onOverride, onClose }: {
                    onKeyDown={(e) => e.key === 'Enter' && apply()} />
             <button className="btn btn--primary" disabled={!base} onClick={apply}>Применить и пересчитать</button>
             <button className="btn" onClick={() => { onOverride!(p.id, ''); onClose() }}>Сброс</button>
+          </div>
+        )}
+        {canDist && (
+          <div className="forecast__ovr forecast__ovr--modal forecast__distrow">
+            <span className="forecast__ovr-l">Распределение цены (форма стохастики):</span>
+            <select value={dist?.dist_type ?? 'normal'} onChange={(e) => onSetDist!(p.id, { dist_type: e.target.value as DistType })}>
+              <option value="normal">нормаль</option>
+              <option value="lognormal">логнормаль</option>
+              <option value="uniform">равномерное</option>
+              <option value="triangular">треугольное</option>
+            </select>
+            <label className="forecast__distf">СКО
+              <input type="number" value={dist?.stddev ?? ''} placeholder={String(Math.round(p.base * 0.12))}
+                     onChange={(e) => onSetDist!(p.id, { stddev: e.target.value })} />
+            </label>
+            <label className="forecast__distf">мин
+              <input type="number" value={dist?.min_val ?? ''} placeholder="—" onChange={(e) => onSetDist!(p.id, { min_val: e.target.value })} />
+            </label>
+            <label className="forecast__distf">макс
+              <input type="number" value={dist?.max_val ?? ''} placeholder="—" onChange={(e) => onSetDist!(p.id, { max_val: e.target.value })} />
+            </label>
+            <span className="forecast__dist-note">центр = базовая цена выше · волатильность сценария масштабирует · затем «Применить и пересчитать»</span>
           </div>
         )}
         <table className="forecast__vtable mono">

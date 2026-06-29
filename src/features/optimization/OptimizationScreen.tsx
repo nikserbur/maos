@@ -274,7 +274,7 @@ export function OptimizationScreen() {
 
           {result.run_id && (
             <div className="opt__save">
-              <span className="opt__save-label">Сохранить устойчивое решение как производственный план:</span>
+              <span className="opt__save-label" title="Портфель (что и сколько производить) сохранится как производственная ПРОГРАММА — её можно открыть и спланировать по срокам в разделе «План».">Сохранить как производственную программу (для раздела «План»):</span>
               <input className="opt__input opt__save-input" type="text" placeholder="Название плана…"
                      value={planName} onChange={(e) => setPlanName(e.target.value)}
                      onKeyDown={(e) => e.key === 'Enter' && savePlan()} />
