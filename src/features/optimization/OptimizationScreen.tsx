@@ -125,6 +125,7 @@ export function OptimizationScreen() {
   const [samples, setSamples]       = useState('3000')
   const [alpha, setAlpha]           = useState('0.10')
   const [maxShare, setMaxShare]     = useState('0.35')
+  const [horizonMonths, setHorizon] = useState('12')   // горизонт плана (мес) → ёмкость → объёмы
 
   const [result, setResult]   = useState<OptResult | null>(null)
   const [running, setRunning] = useState(false)
@@ -147,6 +148,12 @@ export function OptimizationScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // По умолчанию горизонт плана = горизонт выбранного сценария (months).
+  useEffect(() => {
+    const sc = scenarios.find((s) => s.id === scenarioId)
+    if (sc?.months) setHorizon(String(sc.months))
+  }, [scenarioId, scenarios])
+
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
     products.forEach((p) => map.set(p.id, `${p.name}`))
@@ -164,6 +171,7 @@ export function OptimizationScreen() {
         samples: Number(samples) || 3000,
         alpha: Number(alpha) || 0.1,
         max_share: Number(maxShare) || 0.35,
+        horizon_hours: (Number(horizonMonths) || 12) * 720,   // мес → часы (720ч ≈ 1 мес)
       })
       setResult(r)
       setSavedMsg(null)
@@ -238,6 +246,12 @@ export function OptimizationScreen() {
           <span className="opt__ctl-label">Макс. доля 1 изделия</span>
           <input className="opt__input" type="number" min="0.1" max="1" step="0.05" value={maxShare}
                  onChange={(e) => setMaxShare(e.target.value)} title="Ограничение концентрации — «не ставить всё на одно»" />
+        </div>
+        <div className="opt__ctl">
+          <span className="opt__ctl-label">Горизонт плана, мес</span>
+          <input className="opt__input" type="number" min="1" max="36" step="1" value={horizonMonths}
+                 onChange={(e) => setHorizon(e.target.value)}
+                 title="На сколько создаём план: задаёт ёмкость (станки × часы) → объёмы выпуска и длину плана. 1 мес ≈ 720 ч." />
         </div>
         <button className="btn btn--primary opt__run" onClick={run} disabled={running}>
           {running ? 'Моделируем…' : 'Найти устойчивое решение'}

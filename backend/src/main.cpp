@@ -2030,18 +2030,23 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       json result = json::parse(jstr(row, "result_json"));
       const json& robust = result.value("robust", json::object());
 
-      // Горизонт плана — ИЗ СЦЕНАРИЯ (месяцы × 720ч ≈ 1 мес), а не фикс. 720ч (= всего 1 мес).
-      int months = 12;
-      const std::string scId = jstr(row, "scenario_id");
-      if (!scId.empty()) {
-        try {
-          auto sc = db.query_one("SELECT months FROM price_scenarios WHERE id=?", { scId });
-          if (!jstr(sc, "months").empty()) months = std::max(1, std::min(36, (int)std::stod(jstr(sc, "months"))));
-        } catch (...) {}
+      // Горизонт плана = ГОРИЗОНТ ПРОГОНА (тот же, что задавал ёмкость/объёмы оптимизации),
+      // а не фикс. 720ч. Берём из result_json (horizon_hours), затем сценарий, затем дефолт.
+      double planHours = result.value("horizon_hours", 0.0);
+      if (planHours <= 0) {
+        int months = 12;
+        const std::string scId = jstr(row, "scenario_id");
+        if (!scId.empty()) {
+          try {
+            auto sc = db.query_one("SELECT months FROM price_scenarios WHERE id=?", { scId });
+            if (!jstr(sc, "months").empty()) months = std::max(1, std::min(36, (int)std::stod(jstr(sc, "months"))));
+          } catch (...) {}
+        }
+        planHours = months * 720.0;
       }
       if (body.contains("horizon_months") && !jstr(body, "horizon_months").empty())
-        months = std::max(1, std::min(36, (int)std::stod(jstr(body, "horizon_months"))));
-      const double planHours = months * 720.0;
+        planHours = std::max(1.0, std::min(36.0, std::stod(jstr(body, "horizon_months")))) * 720.0;
+      const int months = std::max(1, (int)std::lround(planHours / 720.0));
       const std::string dueStr = std::to_string(planHours);
 
       const std::string planId = gen_uuid();
@@ -2333,7 +2338,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.33.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.34.0"} });
   });
 
   // Auth
