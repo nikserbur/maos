@@ -1,7 +1,7 @@
 {
   "name": "maos",
   "private": true,
-  "version": "0.22.0",
+  "version": "0.23.0",
   "type": "module",
   "description": "MAOS — Monitoring & Optimization System. Цифровой двойник производственного предприятия (3D-схема, мониторинг, планирование, оптимизация).",
   "scripts": {
