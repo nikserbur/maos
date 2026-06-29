@@ -110,6 +110,13 @@ export function ForecastScreen() {
         </div>
       )}
 
+      {res?.rate && (
+        <>
+          <h2 className="forecast__group">Внешнее условие — ключевая ставка (тот же движок)</h2>
+          <div className="forecast__grid"><Card p={res.rate} pct /></div>
+        </>
+      )}
+
       {goods.length > 0 && <h2 className="forecast__group">Изделия (цены сбыта)</h2>}
       <div className="forecast__grid">
         {goods.map((p) => <Card key={p.id} p={p} />)}
@@ -123,9 +130,10 @@ export function ForecastScreen() {
   )
 }
 
-function Card({ p }: { p: ForecastProduct }) {
+function Card({ p, pct }: { p: ForecastProduct; pct?: boolean }) {
   const last = p.p50.length - 1
   const delta = ((p.p50[last] - p.base) / p.base) * 100
+  const fmtVal = (v: number) => (pct ? `${v.toFixed(1)}%` : money(v))
   return (
     <div className="forecast__card">
       <div className="forecast__card-head">
@@ -139,8 +147,8 @@ function Card({ p }: { p: ForecastProduct }) {
         </div>
       )}
       <div className="forecast__card-foot mono">
-        через {last} мес: <b>{money(p.p50[last])}</b>
-        <span className="forecast__range"> ({money(p.p10[last])} – {money(p.p90[last])})</span>
+        через {last} мес: <b>{fmtVal(p.p50[last])}</b>
+        <span className="forecast__range"> ({fmtVal(p.p10[last])} – {fmtVal(p.p90[last])})</span>
       </div>
     </div>
   )

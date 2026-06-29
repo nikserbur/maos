@@ -1164,6 +1164,41 @@ static void migrate_v9(Database& db) {
   std::cout << "Migration v9 done.\n";
 }
 
+// v10 (Стадия F): макро-ряды `macro_ts` (ключевая ставка и пр.) — внешнее условие,
+// прогнозируемое ТЕМ ЖЕ движком, что и цены (канон из CB_models_stohastic). Сид:
+// ~30 помесячных точек ключевой ставки как лог-нормальное блуждание, последняя = текущая.
+static void migrate_v10(Database& db) {
+  if (db.user_version() >= 10) return;
+  std::cout << "Migrating schema → v10 (макро-ряды macro_ts: ключевая ставка)…\n";
+  db.exec("CREATE TABLE IF NOT EXISTS macro_ts ("
+          "  id TEXT PRIMARY KEY,"
+          "  series TEXT NOT NULL,"            // 'keyrate' | 'inflation' | …
+          "  month_idx INTEGER NOT NULL,"
+          "  value REAL NOT NULL)");
+  db.exec("CREATE INDEX IF NOT EXISTS ix_macro_ts ON macro_ts(series, month_idx)");
+
+  const int N = 30;
+  const double last = 21.0;                    // текущая ключевая ставка, %
+  const double drift = 0.004, sigma = 0.05;
+  std::mt19937 rng(987654u);
+  std::normal_distribution<double> nd(0.0, 1.0);
+  std::vector<double> logv(N, 0.0);
+  logv[N - 1] = std::log(last);
+  for (int t = N - 1; t > 0; --t) logv[t - 1] = logv[t] - (drift + sigma * nd(rng));
+  std::ostringstream sql;
+  sql << "INSERT OR IGNORE INTO macro_ts(id,series,month_idx,value) VALUES";
+  for (int t = 0; t < N; ++t) {
+    if (t) sql << ",";
+    sql << "('keyrate#" << t << "','keyrate'," << t << "," << std::exp(logv[t]) << ")";
+  }
+  db.exec("BEGIN");
+  try { db.exec(sql.str()); }
+  catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(10);
+  std::cout << "Migration v10 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1338,65 +1373,51 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       auto lapQ = [](double u, double b) {
         return u < 0.5 ? b * std::log(2.0 * u) : -b * std::log(2.0 * (1.0 - u));
       };
+      auto numOf = [](const json& row) -> double {
+        if (!row.contains("value") || row["value"].is_null()) return 0.0;
+        if (row["value"].is_number()) return row["value"].get<double>();
+        if (row["value"].is_string()) { try { return std::stod(row["value"].get<std::string>()); } catch (...) { return 0.0; } }
+        return 0.0;
+      };
 
-      json products = json::array();
-      for (auto& p : rows) {
-        const bool sellable = jstr(p, "sellable") == "1";
-        const std::string kind = sellable ? "price" : "cost";
-        const std::string bs = sellable ? jstr(p, "base_price") : jstr(p, "base_cost");
-        if (bs.empty()) continue;
-        double base = std::stod(bs);
-        if (base <= 0) continue;
-        const std::string pid = jstr(p, "id");
-
-        // F2: оценка μ,σ из лог-доходностей истории + F1: выбор распределения по AIC.
-        auto hist = db.query_json(
-          "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx",
-          { pid, kind });
-        auto numOf = [](const json& row) -> double {
-          if (!row.contains("value") || row["value"].is_null()) return 0.0;
-          if (row["value"].is_number()) return row["value"].get<double>();
-          if (row["value"].is_string()) { try { return std::stod(row["value"].get<std::string>()); } catch (...) { return 0.0; } }
-          return 0.0;
-        };
+      // КАНОНИЧЕСКИЙ движок прогноза ряда (общий для цен и ключевой ставки):
+      // μ/σ из лог-доходностей истории → выбор распределения шага по AIC (нормаль↔Лаплас)
+      // → Монте-Карло с общим рыночным фактором (корреляция) → веер P10/P50/P90.
+      auto fanFromHistory = [&](double base, const std::vector<double>& vals,
+                                double extraDrift, double macroMul) -> json {
         std::vector<double> rets;
-        for (size_t k = 1; k < hist.size(); ++k) {
-          double a = numOf(hist[k - 1]), b2 = numOf(hist[k]);
-          if (a > 0 && b2 > 0) rets.push_back(std::log(b2 / a));
-        }
-        bool dataDriven = rets.size() >= 4;
-        double histMu = 0, histSigma = vol, aicN = 0, aicL = 0;
+        for (size_t k = 1; k < vals.size(); ++k)
+          if (vals[k - 1] > 0 && vals[k] > 0) rets.push_back(std::log(vals[k] / vals[k - 1]));
+        bool dd = rets.size() >= 4;
+        double mu = 0, sg = vol, aicN = 0, aicL = 0;
         std::string dist = "normal"; double lapB = vol / std::sqrt(2.0);
-        if (dataDriven) {
-          double s = 0; for (double r : rets) s += r; histMu = s / rets.size();
-          double v2 = 0; for (double r : rets) v2 += (r - histMu) * (r - histMu);
-          histSigma = std::max(1e-4, std::sqrt(v2 / rets.size()));
-          // Лаплас: медиана + средн. абс. отклонение
+        if (dd) {
+          double s = 0; for (double r : rets) s += r; mu = s / rets.size();
+          double v2 = 0; for (double r : rets) v2 += (r - mu) * (r - mu);
+          sg = std::max(1e-4, std::sqrt(v2 / rets.size()));
           std::vector<double> sr = rets; std::sort(sr.begin(), sr.end());
-          double med = sr[sr.size() / 2];
-          double mad = 0; for (double r : rets) mad += std::fabs(r - med);
+          double med = sr[sr.size() / 2], mad = 0;
+          for (double r : rets) mad += std::fabs(r - med);
           mad = std::max(1e-4, mad / rets.size());
-          // log-правдоподобия и AIC (k=2)
           double llN = 0, llL = 0;
           for (double r : rets) {
-            llN += -0.5 * std::log(2 * M_PI * histSigma * histSigma) - (r - histMu) * (r - histMu) / (2 * histSigma * histSigma);
+            llN += -0.5 * std::log(2 * M_PI * sg * sg) - (r - mu) * (r - mu) / (2 * sg * sg);
             llL += -std::log(2 * mad) - std::fabs(r - med) / mad;
           }
           aicN = 4 - 2 * llN; aicL = 4 - 2 * llL;
           if (aicL < aicN) { dist = "laplace"; lapB = mad; }
         }
-        const double drift_p = (dataDriven ? histMu : 0.0) + driftStep;  // история + макро-инфляция
-        const double vol_p = dataDriven ? histSigma : vol;
-
+        const double drift_p = (dd ? mu : 0.0) + extraDrift;
+        const double vol_p = dd ? sg : vol;
         std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
         for (int r = 0; r < runs; ++r) {
           double logp = std::log(base);
-          px[0][r] = base * fx * demand;
+          px[0][r] = base * macroMul;
           for (int t = 1; t <= months; ++t) {
-            const double z = beta * M[r][t] + idio * nd(rng);   // коррелир. стд. нормаль
+            const double z = beta * M[r][t] + idio * nd(rng);
             const double innov = dist == "laplace" ? lapQ(Phi(z), lapB) : vol_p * z;
             logp += drift_p + innov - 0.5 * vol_p * vol_p;
-            px[t][r] = std::exp(logp) * fx * demand;
+            px[t][r] = std::exp(logp) * macroMul;
           }
         }
         json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
@@ -1408,13 +1429,42 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           p10.push_back(q(0.10)); p50.push_back(q(0.50)); p90.push_back(q(0.90));
           mean.push_back(s / runs);
         }
-        products.push_back({
-          {"id", pid}, {"name", jstr(p, "name")},
-          {"role", sellable ? "product" : "raw"}, {"base", base},
-          {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
-          {"fit", { {"data_driven", dataDriven}, {"dist", dist}, {"n_obs", (int)rets.size()},
-                    {"mu", histMu}, {"sigma", vol_p}, {"aic_normal", aicN}, {"aic_laplace", aicL} }},
-        });
+        return json{
+          {"base", base}, {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
+          {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)rets.size()},
+                    {"mu", mu}, {"sigma", vol_p}, {"aic_normal", aicN}, {"aic_laplace", aicL} }},
+        };
+      };
+
+      json products = json::array();
+      for (auto& p : rows) {
+        const bool sellable = jstr(p, "sellable") == "1";
+        const std::string kind = sellable ? "price" : "cost";
+        const std::string bs = sellable ? jstr(p, "base_price") : jstr(p, "base_cost");
+        if (bs.empty()) continue;
+        double base = std::stod(bs);
+        if (base <= 0) continue;
+        const std::string pid = jstr(p, "id");
+
+        auto hist = db.query_json(
+          "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { pid, kind });
+        std::vector<double> vals; for (auto& row : hist) vals.push_back(numOf(row));
+
+        json j = fanFromHistory(base, vals, driftStep, fx * demand);   // цены: история+инфляция, fx·demand
+        j["id"] = pid; j["name"] = jstr(p, "name"); j["role"] = sellable ? "product" : "raw";
+        products.push_back(j);
+      }
+
+      // Прогноз КЛЮЧЕВОЙ СТАВКИ тем же движком (канон: ставка и цены — единообразно).
+      json rateJson = nullptr;
+      {
+        auto rh = db.query_json("SELECT value FROM macro_ts WHERE series='keyrate' ORDER BY month_idx");
+        std::vector<double> rv; for (auto& row : rh) rv.push_back(numOf(row));
+        if (rv.size() >= 5 && rv.back() > 0) {
+          json j = fanFromHistory(rv.back(), rv, 0.0, 1.0);   // ставка: чистый исторический дрейф
+          j["id"] = "keyrate"; j["name"] = "Ключевая ставка"; j["role"] = "rate";
+          rateJson = j;
+        }
       }
 
       json inflIdx = json::array();
@@ -1423,7 +1473,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       ok(res, {
         {"months", months}, {"inflation_monthly", infl}, {"fx", fx}, {"demand", demand},
         {"volatility", vol}, {"corr", corr}, {"inflation_index", inflIdx},
-        {"products", products},
+        {"rate", rateJson}, {"products", products},
       });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
@@ -1716,6 +1766,7 @@ int main(int argc, char* argv[]) {
     migrate_v7(db);
     migrate_v8(db);
     migrate_v9(db);
+    migrate_v10(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1732,7 +1783,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.13.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.14.0"} });
   });
 
   // Auth
