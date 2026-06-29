@@ -16,6 +16,9 @@
 #include <string>
 #include <sstream>
 #include <random>
+#include <algorithm>
+#include <cmath>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
@@ -1237,6 +1240,89 @@ static void persist_run(Database& db, const std::string& runId, const maos::Opti
               std::to_string(l.value("load_hours", 0.0)) });
 }
 
+/* ── Стадия E+: внешние условия и динамика цен по времени ─────────────────────
+ * Прогноз цен изделий/сырья на горизонт в МЕСЯЦАХ под действием макрофакторов:
+ *   - inflation (мес. инфляция, дрейф вверх),
+ *   - fx (курс, множитель экспортных цен),
+ *   - demand (индекс спроса),
+ * как коррелированное лог-нормальное блуждание (общий рыночный шок + идиосинкр.).
+ * Возвращает веер P10/P50/P90 + среднее по месяцам — для графиков цен во времени. */
+static void register_forecast(httplib::Server& svr, Database& db) {
+  svr.Post("/api/forecast", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      auto getd = [&](const char* k, double d) {
+        return body.contains(k) && !jstr(body, k).empty() ? std::stod(jstr(body, k)) : d;
+      };
+      int months   = std::max(1, std::min(36, (int)getd("months", 6)));
+      double infl  = getd("inflation", 0.01);            // в месяц, доля (0.01 = +1%/мес)
+      double fx    = getd("fx", 1.0);
+      double demand = getd("demand", 1.0);
+      double vol   = std::max(0.0, getd("volatility", 0.05));   // мес. волатильность цены
+      double corr  = std::max(0.0, std::min(1.0, getd("corr", 0.5)));
+      int runs     = std::max(200, std::min(20000, (int)getd("runs", 3000)));
+      unsigned seed = (unsigned)getd("seed", 42);
+
+      auto rows = db.query_json(
+        "SELECT id,name,base_price,base_cost,sellable,purchased FROM products "
+        "WHERE sellable=1 OR purchased=1 ORDER BY sellable DESC, name");
+
+      std::mt19937 rng(seed);
+      std::normal_distribution<double> nd(0.0, 1.0);
+      const double beta = std::sqrt(corr), idio = std::sqrt(std::max(0.0, 1.0 - corr));
+      const double driftStep = std::log(1.0 + infl);
+
+      // Общий рыночный шок по (прогон, месяц) — обеспечивает корреляцию всех цен.
+      std::vector<std::vector<double>> M(runs, std::vector<double>(months + 1, 0.0));
+      for (int r = 0; r < runs; ++r)
+        for (int t = 1; t <= months; ++t) M[r][t] = nd(rng);
+
+      json products = json::array();
+      for (auto& p : rows) {
+        const bool sellable = jstr(p, "sellable") == "1";
+        const std::string bs = sellable ? jstr(p, "base_price") : jstr(p, "base_cost");
+        if (bs.empty()) continue;
+        double base = std::stod(bs);
+        if (base <= 0) continue;
+
+        std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
+        for (int r = 0; r < runs; ++r) {
+          double logp = std::log(base);
+          px[0][r] = base * fx * demand;
+          for (int t = 1; t <= months; ++t) {
+            const double z = beta * M[r][t] + idio * nd(rng);
+            logp += driftStep + vol * z - 0.5 * vol * vol;   // лог-нормальный шаг
+            px[t][r] = std::exp(logp) * fx * demand;
+          }
+        }
+        json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
+        for (int t = 0; t <= months; ++t) {
+          auto& col = px[t];
+          std::sort(col.begin(), col.end());
+          auto q = [&](double f) { return col[(size_t)std::round(f * (runs - 1))]; };
+          double s = 0; for (double v : col) s += v;
+          p10.push_back(q(0.10)); p50.push_back(q(0.50)); p90.push_back(q(0.90));
+          mean.push_back(s / runs);
+        }
+        products.push_back({
+          {"id", jstr(p, "id")}, {"name", jstr(p, "name")},
+          {"role", sellable ? "product" : "raw"}, {"base", base},
+          {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
+        });
+      }
+
+      json inflIdx = json::array();
+      for (int t = 0; t <= months; ++t) inflIdx.push_back(std::pow(1.0 + infl, t) * 100.0);
+
+      ok(res, {
+        {"months", months}, {"inflation_monthly", infl}, {"fx", fx}, {"demand", demand},
+        {"volatility", vol}, {"corr", corr}, {"inflation_index", inflIdx},
+        {"products", products},
+      });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
 static void register_optimize(httplib::Server& svr, Database& db) {
   svr.Post("/api/optimize", [&db](const httplib::Request& req, httplib::Response& res) {
     try {
@@ -1539,7 +1625,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.11.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.12.0"} });
   });
 
   // Auth
@@ -1616,6 +1702,7 @@ int main(int argc, char* argv[]) {
 
   // Устойчивая стохастическая оптимизация (Стадия 2)
   register_optimize(svr, db);
+  register_forecast(svr, db);
 
   // Расписание производства (Стадия 1)
   register_schedule(svr, db);

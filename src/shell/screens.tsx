@@ -3,6 +3,7 @@ import PlantScene from '../features/plant-scene'
 import { NsiScreen } from '../features/nsi/NsiScreen'
 import { OptimizationScreen } from '../features/optimization/OptimizationScreen'
 import { ScenariosScreen } from '../features/scenarios/ScenariosScreen'
+import { ForecastScreen } from '../features/forecast/ForecastScreen'
 import { PlanScreen } from '../features/plan/PlanScreen'
 import { AdminScreen } from '../features/admin/AdminScreen'
 
@@ -23,5 +24,6 @@ export const SCREENS: ScreenDef[] = [
   { id: 'plan', label: 'План', icon: 'plan', Component: PlanScreen },
   { id: 'optimization', label: 'Оптимизация', icon: 'optimization', Component: OptimizationScreen },
   { id: 'scenarios', label: 'Сценарии', icon: 'scenarios', Component: ScenariosScreen },
+  { id: 'forecast', label: 'Прогноз цен', icon: 'scenarios', Component: ForecastScreen },
   { id: 'admin', label: 'Администрирование', icon: 'admin', Component: AdminScreen },
 ]

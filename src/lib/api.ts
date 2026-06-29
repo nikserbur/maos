@@ -227,6 +227,21 @@ export interface DemandOrder {
 export interface ProductionPlan { id: string; name: string; description: string; created_at: string }
 
 /* ── API surface ─────────────────────────────────────────────────────────── */
+// Стадия E+: прогноз цен во времени под макрофакторами.
+export interface ForecastParams {
+  months?: number; inflation?: number; fx?: number; demand?: number
+  volatility?: number; corr?: number; runs?: number
+}
+export interface ForecastProduct {
+  id: string; name: string; role: 'product' | 'raw'; base: number
+  p10: number[]; p50: number[]; p90: number[]; mean: number[]
+}
+export interface ForecastResult {
+  months: number; inflation_monthly: number; fx: number; demand: number
+  volatility: number; corr: number; inflation_index: number[]
+  products: ForecastProduct[]
+}
+
 export const api = {
   health: () => get<{ status: string; version: string }>('/health'),
 
@@ -323,6 +338,8 @@ export const api = {
   schedule: {
     run: (p: ScheduleParams) => post<ScheduleResult>('/schedule', p),
   },
+
+  forecast: (p: ForecastParams) => post<ForecastResult>('/forecast', p),
 
   calendar: {
     get:    ()                       => get<WorkCalendar>('/calendar'),

@@ -1,0 +1,88 @@
+.forecast {
+  padding: 20px 24px;
+  overflow-y: auto;
+  height: 100%;
+}
+.forecast__head { margin-bottom: 16px; }
+.forecast__title { font-size: 20px; margin: 0 0 4px; }
+.forecast__desc { color: var(--text-muted, #8a929c); font-size: 13px; max-width: 760px; margin: 0; }
+
+.forecast__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  padding: 14px 16px;
+  background: var(--surface, #161a20);
+  border: 1px solid var(--border, #2a2f37);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.forecast__controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted, #8a929c);
+}
+.forecast__controls input {
+  width: 92px;
+  padding: 6px 8px;
+  background: var(--surface-2, #0f1318);
+  border: 1px solid var(--border, #2a2f37);
+  border-radius: 6px;
+  color: var(--text, #e6e9ee);
+  font-size: 13px;
+}
+.forecast__controls .btn { margin-left: auto; }
+
+.forecast__error {
+  color: #ff6b6b;
+  padding: 8px 12px;
+  border: 1px solid #ff6b6b55;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+.forecast__macro {
+  font-size: 12px;
+  color: var(--text-muted, #8a929c);
+  padding: 8px 12px;
+  background: var(--surface, #161a20);
+  border-radius: 8px;
+  margin-bottom: 18px;
+}
+.forecast__macro b { color: var(--text, #e6e9ee); }
+
+.forecast__group {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #8a929c);
+  margin: 6px 0 10px;
+}
+.forecast__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.forecast__card {
+  background: var(--surface, #161a20);
+  border: 1px solid var(--border, #2a2f37);
+  border-radius: 10px;
+  padding: 12px 14px 10px;
+}
+.forecast__card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.forecast__name { font-size: 13px; font-weight: 600; }
+.forecast__delta { font-size: 12px; font-variant-numeric: tabular-nums; }
+.forecast__delta.up { color: #4caf72; }
+.forecast__delta.down { color: #e0795a; }
+.forecast .fan { display: block; }
+.forecast__card-foot { font-size: 11px; color: var(--text, #e6e9ee); margin-top: 2px; }
+.forecast__range { color: var(--text-muted, #8a929c); }
