@@ -1678,7 +1678,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         std::vector<std::array<double, 3>> harm;   // {omega, A, B}
         if (dd) {
           std::vector<std::array<double, 3>> cand;
-          for (int P : { 2, 3, 4, 5, 6, 8, 10, 12 }) {
+          // Кандидаты периодов: сезонные (12/6/3 мес) + промежуточные; фильтр по длине ряда.
+          for (int P : { 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 18, 24 }) {
             if (P > Hn / 2) continue;
             const double w = 2 * M_PI / P;
             double A = 0, B = 0;
@@ -1689,7 +1690,9 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           std::sort(cand.begin(), cand.end(), [](const std::array<double, 3>& x, const std::array<double, 3>& y) {
             return x[1] * x[1] + x[2] * x[2] > y[1] * y[1] + y[2] * y[2];
           });
-          for (int i = 0; i < (int)cand.size() && i < 3; ++i) harm.push_back(cand[i]);
+          // Число гармоник адаптивно к длине истории (защита от переобучения на коротких рядах).
+          const int K = std::min(6, std::max(3, Hn / 4));
+          for (int i = 0; i < (int)cand.size() && i < K; ++i) harm.push_back(cand[i]);
           for (int t = 0; t < Hn; ++t) {
             double h = 0; for (auto& c : harm) h += c[1] * std::cos(c[0] * t) + c[2] * std::sin(c[0] * t);
             res[t] -= h;
@@ -2230,7 +2233,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.26.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.27.0"} });
   });
 
   // Auth
