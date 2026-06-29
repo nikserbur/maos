@@ -1623,7 +1623,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
 
       std::mt19937 rng(seed);
       std::normal_distribution<double> nd(0.0, 1.0);
-      const double beta = std::sqrt(corr), idio = std::sqrt(std::max(0.0, 1.0 - corr));
+      const double beta = std::sqrt(corr);   // дефолтная загрузка на общий фактор (нет данных)
       const double driftStep = std::log(1.0 + infl) + riskDrift;
 
       // Общий рыночный шок по (прогон, месяц) — обеспечивает корреляцию всех цен.
@@ -1650,7 +1650,10 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       //   3) прогноз = экстраполяция тренда + случайный остаток из подобранного распределения
       //      (Монте-Карло, общий рыночный фактор → корреляция, веер P10/P50/P90).
       auto fanFromHistory = [&](double base, const std::vector<double>& vals,
-                                double extraDrift, double macroMul) -> json {
+                                double extraDrift, double macroMul, double loading) -> json {
+        // Загрузка изделия на общий рыночный фактор (data-driven, из PCA-разложения корреляций).
+        const double betaP = std::max(-0.999, std::min(0.999, loading));
+        const double idioP = std::sqrt(std::max(0.0, 1.0 - betaP * betaP));
         std::vector<double> ly;
         for (double v : vals) if (v > 0) ly.push_back(std::log(v));
         const int Hn = (int)ly.size();
@@ -1758,7 +1761,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           for (int t = 1; t <= months; ++t) {
             double innov = 0;
             if (!deterministic) {
-              const double z = beta * M[r][t] + idio * nd(rng);
+              const double z = betaP * M[r][t] + idioP * nd(rng);
               if (dist == "laplace")   innov = lapQ(Phi(z), lapB);
               else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);
               else if (dist == "stable") {
@@ -1796,6 +1799,53 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         };
       };
 
+      // DATA-DRIVEN ВЗАИМОСВЯЗИ (МГК/PCA): однофакторная модель из эмпирической корреляции
+      // лог-доходностей историй. PC1 даёт ПЕР-ИЗДЕЛЬНЫЕ загрузки (кто с кем движется и знак),
+      // market_corr — общая сила. Заменяет единый β=√corr для всех на структуру ИЗ ДАННЫХ.
+      std::unordered_map<std::string, double> loadings;
+      {
+        std::vector<std::string> ids;
+        std::vector<std::vector<double>> rets;
+        for (auto& p : rows) {
+          const std::string kind = jstr(p, "sellable") == "1" ? "price" : "cost";
+          auto h = db.query_json(
+            "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { jstr(p, "id"), kind });
+          std::vector<double> lv; for (auto& row : h) { double x = numOf(row); if (x > 0) lv.push_back(std::log(x)); }
+          std::vector<double> r; for (size_t t = 1; t < lv.size(); ++t) r.push_back(lv[t] - lv[t - 1]);
+          if ((int)r.size() >= 3) { ids.push_back(jstr(p, "id")); rets.push_back(std::move(r)); }
+        }
+        const int P = (int)ids.size();
+        int L = P ? (int)rets[0].size() : 0;
+        for (auto& r : rets) L = std::min(L, (int)r.size());
+        if (P >= 2 && L >= 3) {
+          std::vector<std::vector<double>> Z(P, std::vector<double>(L, 0.0));   // стандартизованные хвосты
+          for (int i = 0; i < P; ++i) {
+            const auto& r = rets[i]; const int off = (int)r.size() - L;
+            double m = 0; for (int t = 0; t < L; ++t) m += r[off + t]; m /= L;
+            double s = 0; for (int t = 0; t < L; ++t) s += (r[off + t] - m) * (r[off + t] - m);
+            s = std::sqrt(s / std::max(1, L - 1)); if (s < 1e-9) s = 1.0;
+            for (int t = 0; t < L; ++t) Z[i][t] = (r[off + t] - m) / s;
+          }
+          std::vector<std::vector<double>> C(P, std::vector<double>(P, 0.0));   // корреляц. матрица
+          for (int i = 0; i < P; ++i)
+            for (int j = i; j < P; ++j) {
+              double s = 0; for (int t = 0; t < L; ++t) s += Z[i][t] * Z[j][t];
+              C[i][j] = C[j][i] = s / std::max(1, L - 1);
+            }
+          std::vector<double> u(P, 1.0 / std::sqrt((double)P));                 // PC1 степенным методом
+          for (int it = 0; it < 100; ++it) {
+            std::vector<double> w(P, 0.0);
+            for (int i = 0; i < P; ++i) { double s = 0; for (int j = 0; j < P; ++j) s += C[i][j] * u[j]; w[i] = s; }
+            double nrm = 0; for (double x : w) nrm += x * x; nrm = std::sqrt(nrm);
+            if (nrm < 1e-12) break;
+            for (int i = 0; i < P; ++i) u[i] = w[i] / nrm;
+          }
+          double umax = 1e-6; for (double x : u) umax = std::max(umax, std::fabs(x));
+          const double strength = std::sqrt(corr);                              // market_corr = общая сила
+          for (int i = 0; i < P; ++i) loadings[ids[i]] = strength * u[i] / umax; // corr(i,j)=corr·u_i·u_j/umax²
+        }
+      }
+
       json products = json::array();
       for (auto& p : rows) {
         const bool sellable = jstr(p, "sellable") == "1";
@@ -1812,8 +1862,10 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { pid, kind });
         std::vector<double> vals; for (auto& row : hist) vals.push_back(numOf(row));
 
-        json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro);   // цены: история+инфляция+риски
+        const double loading = loadings.count(pid) ? loadings[pid] : beta;
+        json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro, loading);
         j["id"] = pid; j["name"] = jstr(p, "name"); j["role"] = sellable ? "product" : "raw";
+        j["loading"] = loading;
         products.push_back(j);
       }
 
@@ -1823,7 +1875,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         auto rh = db.query_json("SELECT value FROM macro_ts WHERE series='keyrate' ORDER BY month_idx");
         std::vector<double> rv; for (auto& row : rh) rv.push_back(numOf(row));
         if (rv.size() >= 5 && rv.back() > 0) {
-          json j = fanFromHistory(rv.back(), rv, 0.0, 1.0);   // ставка: чистый исторический дрейф
+          json j = fanFromHistory(rv.back(), rv, 0.0, 1.0, beta);   // ставка: чистый исторический дрейф
           j["id"] = "keyrate"; j["name"] = "Ключевая ставка"; j["role"] = "rate";
           rateJson = j;
         }
@@ -2178,7 +2230,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.24.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.25.0"} });
   });
 
   // Auth
