@@ -1199,6 +1199,18 @@ static void migrate_v10(Database& db) {
   std::cout << "Migration v10 done.\n";
 }
 
+// v11 (Стадия E): сценарий несёт и ЦЕЛЬ ОПТИМИЗАЦИИ (objective/alpha/max_share), а не
+// только цены — чтобы сценарии реально различались в робастном решении и сравнивались.
+static void migrate_v11(Database& db) {
+  if (db.user_version() >= 11) return;
+  std::cout << "Migrating schema → v11 (сценарий: цель оптимизации)…\n";
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN objective TEXT");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN alpha REAL");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN max_share REAL");
+  db.set_user_version(11);
+  std::cout << "Migration v11 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1254,10 +1266,14 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
-      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr) VALUES(?,?,?,?,?)",
+      db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share) "
+              "VALUES(?,?,?,?,?,?,?,?)",
               { id, jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
-                jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr") });
+                jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
+                jstr(body,"objective").empty() ? "cvar" : jstr(body,"objective"),
+                jstr(body,"alpha").empty() ? "0.1" : jstr(body,"alpha"),
+                jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share") });
       writeDists(id, body);
       audit(db, "scenario", id, "CREATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
@@ -1270,15 +1286,39 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       const std::string id = req.matches[1];
       auto body = json::parse(req.body);
-      db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=?, market_corr=? WHERE id=?",
+      db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=?, market_corr=?, "
+              "objective=?, alpha=?, max_share=? WHERE id=?",
               { jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
-                jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"), id });
+                jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
+                jstr(body,"objective").empty() ? "cvar" : jstr(body,"objective"),
+                jstr(body,"alpha").empty() ? "0.1" : jstr(body,"alpha"),
+                jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"), id });
       writeDists(id, body);
       audit(db, "scenario", id, "UPDATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
       sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
       ok(res, sc);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+
+  // Клонирование сценария: копия параметров + распределений (Стадия E).
+  svr.Post("/api/scenarios/([^/]+)/clone", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const std::string src = req.matches[1];
+      const std::string nid = gen_uuid();
+      db.exec("INSERT INTO price_scenarios"
+              "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share) "
+              "SELECT ?, name || ' (копия)', description, horizon_hours, market_corr, objective, alpha, max_share "
+              "FROM price_scenarios WHERE id=?", { nid, src });
+      db.exec("INSERT INTO price_distributions"
+              "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
+              "SELECT lower(hex(randomblob(8))), ?, product_id, dist_type, mean, stddev, min_val, max_val, mode_val, beta "
+              "FROM price_distributions WHERE scenario_id=?", { nid, src });
+      audit(db, "scenario", nid, "CLONE", { {"from", src} });
+      auto out = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { nid });
+      out["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { nid });
+      res.status = 201; ok(res, out);
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 
@@ -1494,6 +1534,16 @@ static void register_optimize(httplib::Server& svr, Database& db) {
         pr.maxShare = std::stod(jstr(body, "max_share"));
       if (body.contains("horizon_hours") && !jstr(body,"horizon_hours").empty())
         pr.horizonHours = std::stod(jstr(body, "horizon_hours"));
+
+      // Сценарий несёт цель оптимизации (Стадия E): берём из него, если не задано в запросе.
+      if (!pr.scenarioId.empty()) {
+        try {
+          auto sc = db.query_one("SELECT objective,alpha,max_share FROM price_scenarios WHERE id=?", { pr.scenarioId });
+          if (!body.contains("objective") && !jstr(sc,"objective").empty()) pr.objective = jstr(sc,"objective");
+          if (!body.contains("alpha")     && !jstr(sc,"alpha").empty())     pr.alpha     = std::stod(jstr(sc,"alpha"));
+          if (!body.contains("max_share") && !jstr(sc,"max_share").empty()) pr.maxShare  = std::stod(jstr(sc,"max_share"));
+        } catch (...) {}
+      }
 
       json result = maos::run_optimization(db, pr);
       if (result.value("error_soft", false)) { ok(res, result); return; }
@@ -1767,6 +1817,7 @@ int main(int argc, char* argv[]) {
     migrate_v8(db);
     migrate_v9(db);
     migrate_v10(db);
+    migrate_v11(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1783,7 +1834,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.14.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.15.0"} });
   });
 
   // Auth

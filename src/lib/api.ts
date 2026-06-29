@@ -108,11 +108,13 @@ export interface PriceDistribution {
 }
 export interface PriceScenario {
   id: string; name: string; description: string; horizon_hours: string
-  market_corr?: string; created_at: string
+  market_corr?: string; objective?: string; alpha?: string; max_share?: string
+  created_at: string
   distributions?: PriceDistribution[]
 }
 export interface ScenarioPayload {
   name: string; description?: string; horizon_hours?: number; market_corr?: number
+  objective?: string; alpha?: number; max_share?: number
   distributions?: PriceDistribution[]
 }
 
@@ -332,6 +334,7 @@ export const api = {
     get:    (id: string)                => get<PriceScenario>(`/scenarios/${id}`),
     create: (d: ScenarioPayload)        => post<PriceScenario>('/scenarios', d),
     update: (id: string, d: ScenarioPayload) => put<PriceScenario>(`/scenarios/${id}`, d),
+    clone:  (id: string)                => post<PriceScenario>(`/scenarios/${id}/clone`, {}),
     delete: (id: string)                => del<object>(`/scenarios/${id}`),
   },
 
