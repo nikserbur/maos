@@ -124,3 +124,20 @@
 .forecast__vtable th { color: var(--text-muted, #8a929c); }
 .forecast__vtable td:first-child, .forecast__vtable th:first-child { text-align: left; color: var(--text-muted, #8a929c); }
 .forecast__vtrend { color: #caa83a; }
+
+/* ── Оверрайд цены прямо на графике (⚙) ────────────────────────────────── */
+.forecast__gear {
+  background: transparent; border: 1px solid var(--border, #2a2f37); border-radius: 6px;
+  color: var(--text-muted, #8a929c); cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px;
+}
+.forecast__gear:hover { color: var(--accent, #2d72d2); border-color: var(--accent, #2d72d2); }
+.forecast__ovr {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 8px;
+  background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37); border-radius: 8px;
+}
+.forecast__ovr-l { font-size: 11px; color: var(--text-muted, #8a929c); white-space: nowrap; }
+.forecast__ovr input {
+  flex: 1; min-width: 60px; background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37);
+  border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 5px 7px;
+}
+.forecast__ovr .btn { padding: 4px 8px; font-size: 11px; }

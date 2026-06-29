@@ -42,7 +42,8 @@ function PriceFan({ p }: { p: ForecastProduct }) {
 
 const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
 
-export function ForecastScreen({ scenarioId: fixed }: { scenarioId?: string } = {}) {
+export function ForecastScreen({ scenarioId: fixed, onOverride }:
+  { scenarioId?: string; onOverride?: (productId: string, price: string) => Promise<void> | void } = {}) {
   const [months, setMonths]     = useState(6)
   const [inflation, setInfl]    = useState(1.5)   // %/мес
   const [fx, setFx]             = useState(1.0)
@@ -81,6 +82,12 @@ export function ForecastScreen({ scenarioId: fixed }: { scenarioId?: string } = 
   // Пересчёт при смене сценария (и на старте); ручные ползунки — кнопкой.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { run() }, [scenarioId])
+
+  // Оверрайд цены прямо с графика → сохраняем в сценарий и пересчитываем веер.
+  const applyOverride = useCallback(async (pid: string, price: string) => {
+    await onOverride?.(pid, price)
+    run()
+  }, [onOverride, run])
 
   const products = res?.products ?? []
   const goods = products.filter((p) => p.role === 'product')
@@ -164,7 +171,7 @@ export function ForecastScreen({ scenarioId: fixed }: { scenarioId?: string } = 
 
       {goods.length > 0 && <h2 className="forecast__group">Изделия (цены сбыта)</h2>}
       <div className="forecast__grid">
-        {goods.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
+        {goods.map((p) => <Card key={p.id} p={p} onZoom={setZoom} onOverride={onOverride ? applyOverride : undefined} />)}
       </div>
 
       {raws.length > 0 && <h2 className="forecast__group">Сырьё (закупочные цены)</h2>}
@@ -177,19 +184,31 @@ export function ForecastScreen({ scenarioId: fixed }: { scenarioId?: string } = 
   )
 }
 
-function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: (p: ForecastProduct) => void }) {
+function Card({ p, pct, onZoom, onOverride }: { p: ForecastProduct; pct?: boolean; onZoom?: (p: ForecastProduct) => void; onOverride?: (productId: string, price: string) => void }) {
   const last = p.p50.length - 1
   const delta = ((p.p50[last] - p.base) / p.base) * 100
   const fmtVal = (v: number) => (pct ? `${v.toFixed(1)}%` : money(v))
+  const [ovOpen, setOvOpen] = useState(false)
+  const [ovPrice, setOvPrice] = useState('')
   return (
     <div className="forecast__card">
       <div className="forecast__card-head">
         <span className="forecast__name">{p.name}</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span className={`forecast__delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span>
+          {onOverride && <button className="forecast__gear" title="Оверрайд цены прямо на графике"
+            onClick={() => { setOvPrice(String(Math.round(p.base))); setOvOpen((o) => !o) }}>⚙</button>}
           {onZoom && <button className="forecast__zoom" title="Увеличить · детальные значения" onClick={() => onZoom(p)}>⛶</button>}
         </span>
       </div>
+      {ovOpen && onOverride && (
+        <div className="forecast__ovr">
+          <span className="forecast__ovr-l">Базовая цена →</span>
+          <input type="number" value={ovPrice} placeholder="новая цена" onChange={(e) => setOvPrice(e.target.value)} />
+          <button className="btn" disabled={!ovPrice} onClick={() => { onOverride(p.id, ovPrice); setOvOpen(false) }}>Применить</button>
+          <button className="btn" onClick={() => { onOverride(p.id, ''); setOvOpen(false) }}>Сброс</button>
+        </div>
+      )}
       <PriceFan p={p} />
       {p.fit?.data_driven && (
         <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}${p.fit.aic_t != null ? ` · t ${p.fit.aic_t.toFixed(1)}` : ''}${p.fit.aic_stable != null ? ` · α-stable ${p.fit.aic_stable.toFixed(1)}` : ''}`}>

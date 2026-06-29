@@ -260,8 +260,8 @@ function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides
       </div>
 
       <section className="scn__card scn__card--chart">
-        <h3 className="scn__card-h">Прогноз цен по сценарию</h3>
-        <ForecastScreen scenarioId={sc.id} />
+        <h3 className="scn__card-h">Прогноз цен по сценарию <i className="scn__card-hint">— ⚙ на графике: оверрайд базовой цены</i></h3>
+        <ForecastScreen scenarioId={sc.id} onOverride={(pid, price) => onSetOverride(sc, pid, price)} />
       </section>
     </div>
   )
