@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type PriceScenario, type OptResult } from '../../lib/api'
+import { api, type PriceScenario, type OptResult, type ProductionPlan, type Product, type ScenarioPayload } from '../../lib/api'
 import './scenario-compare.css'
 
 const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
@@ -32,29 +32,59 @@ const ROWS: Row[] = [
 
 export function ScenarioCompareScreen() {
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
+  const [plans, setPlans]         = useState<ProductionPlan[]>([])
+  const [products, setProducts]   = useState<Product[]>([])
   const [sel, setSel]             = useState<string[]>([])
   const [results, setResults]     = useState<Record<string, OptResult>>({})
   const [busy, setBusy]           = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
-  const load = () => api.scenarios.list().then(setScenarios).catch(() => {})
-  useEffect(() => { load() }, [])
+  // Грузим полные сценарии (с оверрайдами), а также планы и изделия для редактора.
+  const load = async () => {
+    const list = await api.scenarios.list().catch(() => [] as PriceScenario[])
+    const full = await Promise.all(list.map((s) => api.scenarios.get(s.id).catch(() => s)))
+    setScenarios(full)
+  }
+  useEffect(() => {
+    load()
+    api.plans.list().then(setPlans).catch(() => {})
+    api.products.list().then((ps) => setProducts(ps.filter((p) => p.sellable === '1' || p.purchased === '1'))).catch(() => {})
+  }, [])
 
   const toggle = (id: string) =>
     setSel((s) => s.includes(id) ? s.filter((x) => x !== id) : s.length < 2 ? [...s, id] : [s[1], id])
 
+  // Полный payload сценария + точечные изменения (overrides шлём только когда явно меняем).
+  const payloadOf = (sc: PriceScenario, extra: Partial<ScenarioPayload>): ScenarioPayload => ({
+    name: sc.name, description: sc.description,
+    horizon_hours: Number(sc.horizon_hours) || 720,
+    market_corr: Number(sc.market_corr) || 0.5,
+    objective: sc.objective || 'cvar',
+    alpha: Number(sc.alpha) || 0.1,
+    max_share: Number(sc.max_share) || 0.6,
+    mode: sc.mode || 'stochastic',
+    plan_id: sc.plan_id || '', start_date: sc.start_date || '', end_date: sc.end_date || '',
+    ...extra,
+  })
+
   const patch = async (sc: PriceScenario, p: Partial<PriceScenario>) => {
     const next = { ...sc, ...p }
     setScenarios((list) => list.map((x) => x.id === sc.id ? next : x))
-    await api.scenarios.update(sc.id, {
-      name: next.name, description: next.description,
-      horizon_hours: Number(next.horizon_hours) || 720,
-      market_corr: Number(next.market_corr) || 0.5,
-      objective: next.objective || 'cvar',
-      alpha: Number(next.alpha) || 0.1,
-      max_share: Number(next.max_share) || 0.6,
-      mode: next.mode || 'stochastic',
-    }).catch(() => {})
+    await api.scenarios.update(sc.id, payloadOf(next, {})).catch(() => {})
+  }
+
+  const setOverride = async (sc: PriceScenario, productId: string, price: string) => {
+    if (!productId) return
+    const overrides = [...(sc.overrides ?? []).filter((o) => o.product_id !== productId),
+      ...(price ? [{ product_id: productId, base_price: price }] : [])]
+    const next = { ...sc, overrides }
+    setScenarios((list) => list.map((x) => x.id === sc.id ? next : x))
+    await api.scenarios.update(sc.id, payloadOf(next, { overrides })).catch(() => {})
+  }
+  const clearOverrides = async (sc: PriceScenario) => {
+    const next = { ...sc, overrides: [] }
+    setScenarios((list) => list.map((x) => x.id === sc.id ? next : x))
+    await api.scenarios.update(sc.id, payloadOf(next, { overrides: [] })).catch(() => {})
   }
 
   const clone = async (id: string) => { await api.scenarios.clone(id).catch(() => {}); load() }
@@ -120,7 +150,21 @@ export function ScenarioCompareScreen() {
                   <option value="deterministic">детерм.</option>
                 </select>
               </label>
+              <label>План (Стадия 1)
+                <select value={sc.plan_id || ''} onChange={(e) => patch(sc, { plan_id: e.target.value })}>
+                  <option value="">— нет —</option>
+                  {plans.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                </select>
+              </label>
+              <label>С
+                <input type="date" value={sc.start_date || ''} onChange={(e) => patch(sc, { start_date: e.target.value })} />
+              </label>
+              <label>По
+                <input type="date" value={sc.end_date || ''} onChange={(e) => patch(sc, { end_date: e.target.value })} />
+              </label>
             </div>
+            <OverrideEditor sc={sc} products={products}
+              onSet={(pid, price) => setOverride(sc, pid, price)} onClear={() => clearOverrides(sc)} />
             <div className="scen__actions">
               <button className="btn" onClick={() => clone(sc.id)}>Клонировать</button>
               <button className="btn" onClick={() => remove(sc.id)}>Удалить</button>
@@ -172,6 +216,31 @@ export function ScenarioCompareScreen() {
           </tbody>
         </table>
       )}
+    </div>
+  )
+}
+
+/** Точечные оверрайды цены изделий в сценарии (без копии всего сценария). */
+function OverrideEditor({ sc, products, onSet, onClear }: {
+  sc: PriceScenario
+  products: Product[]
+  onSet: (productId: string, price: string) => void
+  onClear: () => void
+}) {
+  const [pid, setPid] = useState('')
+  const [price, setPrice] = useState('')
+  const ovr = sc.overrides ?? []
+  return (
+    <div className="scen__ovr">
+      <span className="scen__ovr-label">Оверрайды цены: {ovr.length}</span>
+      <select value={pid} onChange={(e) => setPid(e.target.value)}>
+        <option value="">— изделие —</option>
+        {products.map((p) => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+      </select>
+      <input type="number" placeholder="новая цена" value={price} onChange={(e) => setPrice(e.target.value)} />
+      <button className="btn" disabled={!pid || !price} onClick={() => { onSet(pid, price); setPid(''); setPrice('') }}>＋ оверрайд</button>
+      {ovr.length > 0 && <button className="btn" onClick={onClear}>сбросить</button>}
+      {ovr.map((o) => <span key={o.product_id} className="scen__ovr-chip">{o.product_id} = {o.base_price ?? o.base_cost}</span>)}
     </div>
   )
 }

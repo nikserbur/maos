@@ -385,6 +385,19 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   marketCorr = std::min(0.98, std::max(0.0, marketCorr));
   const double betaMarket = std::sqrt(marketCorr);  // загрузка по умолчанию на фактор
 
+  // Точечные оверрайды цены/себестоимости из сценария (Стадия E) — без копии сценария.
+  std::unordered_map<std::string, double> ovrPrice;
+  if (!p.scenarioId.empty()) {
+    for (auto& o : db.query_json(
+           "SELECT product_id,base_price,base_cost FROM scenario_overrides WHERE scenario_id=?",
+           { p.scenarioId })) {
+      const std::string pid = str(o, "product_id"), bp = str(o, "base_price"), bc = str(o, "base_cost");
+      auto it = m.prods.find(pid);
+      if (!bp.empty()) { ovrPrice[pid] = std::stod(bp); if (it != m.prods.end()) it->second.basePrice = ovrPrice[pid]; }
+      if (!bc.empty() && it != m.prods.end()) it->second.baseCost = std::stod(bc);
+    }
+  }
+
   std::unordered_map<std::string, double> cap;
   for (auto& [id, w] : m.wcts)
     cap[id] = (double)w.machineCount * horizon * w.efficiency;
@@ -429,6 +442,9 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     pd.stddev = pr.basePrice * 0.12; pd.beta = betaMarket;
     priceDist[sid] = pd;
   }
+  // Оверрайд цены сценария применяется и поверх распределений (центрируем на новой цене).
+  for (auto& [pid, mp] : ovrPrice)
+    if (priceDist.count(pid)) { priceDist[pid].mean = mp; priceDist[pid].stddev = mp * 0.12; }
 
   // ── Монте-Карло: общие случайные числа для честного сравнения портфелей ──
   const int N = std::max(200, p.samples);

@@ -23,6 +23,22 @@
 .scen__params input { width: 72px; }
 .scen__actions { display: flex; gap: 6px; }
 
+.scen__ovr {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  flex-basis: 100%; margin-top: 6px; padding-top: 8px;
+  border-top: 1px dashed var(--border, #2a2f37); font-size: 11px;
+}
+.scen__ovr-label { color: var(--text-muted, #8a929c); }
+.scen__ovr select, .scen__ovr input {
+  background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37);
+  border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 4px 6px;
+}
+.scen__ovr input { width: 110px; }
+.scen__ovr-chip {
+  background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37);
+  border-radius: 10px; padding: 2px 8px; color: var(--text, #e6e9ee);
+}
+
 .scen__bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .scen__err { color: #ff6b6b; font-size: 13px; }
 .scen__empty { color: var(--text-muted, #8a929c); }

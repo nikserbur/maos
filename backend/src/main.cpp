@@ -1227,6 +1227,24 @@ static void migrate_v12(Database& db) {
   std::cout << "Migration v12 done.\n";
 }
 
+// v13 (Стадия E, финал): сценарий → ПЛАН (Стадия 1), даты периода и ТОЧЕЧНЫЕ
+// оверрайды цены/себестоимости отдельных изделий (без копии всего сценария).
+static void migrate_v13(Database& db) {
+  if (db.user_version() >= 13) return;
+  std::cout << "Migrating schema → v13 (сценарий: оверрайды + план + даты)…\n";
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN plan_id TEXT");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN start_date TEXT");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN end_date TEXT");
+  db.exec("CREATE TABLE IF NOT EXISTS scenario_overrides ("
+          "  id TEXT PRIMARY KEY,"
+          "  scenario_id TEXT NOT NULL REFERENCES price_scenarios(id) ON DELETE CASCADE,"
+          "  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,"
+          "  base_price REAL, base_cost REAL)");
+  db.exec("CREATE INDEX IF NOT EXISTS ix_scen_ovr ON scenario_overrides(scenario_id)");
+  db.set_user_version(13);
+  std::cout << "Migration v13 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1259,9 +1277,24 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { req.matches[1] });
       sc["distributions"] = db.query_json(
         "SELECT * FROM price_distributions WHERE scenario_id=?", { std::string(req.matches[1]) });
+      sc["overrides"] = db.query_json(
+        "SELECT * FROM scenario_overrides WHERE scenario_id=?", { std::string(req.matches[1]) });
       ok(res, sc);
     } catch (...) { err(res, 404, "not found"); }
   });
+
+  // Точечные оверрайды цены/себестоимости изделий в сценарии (без копии всего сценария).
+  auto writeOverrides = [&db](const std::string& sid, const json& body) {
+    if (!body.contains("overrides") || !body["overrides"].is_array()) return;
+    db.exec("DELETE FROM scenario_overrides WHERE scenario_id=?", { sid });
+    for (auto& o : body["overrides"]) {
+      const std::string pid = jstr(o, "product_id");
+      if (pid.empty()) continue;
+      db.exec("INSERT INTO scenario_overrides(id,scenario_id,product_id,base_price,base_cost) "
+              "VALUES(?,?,?,NULLIF(?,''),NULLIF(?,''))",
+              { gen_uuid(), sid, pid, jstr(o, "base_price"), jstr(o, "base_cost") });
+    }
+  };
 
   auto writeDists = [&db](const std::string& sid, const json& body) {
     if (!body.contains("distributions") || !body["distributions"].is_array()) return;
@@ -1278,13 +1311,14 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     }
   };
 
-  svr.Post("/api/scenarios", [&db, writeDists](const httplib::Request& req, httplib::Response& res) {
+  svr.Post("/api/scenarios", [&db, writeDists, writeOverrides](const httplib::Request& req, httplib::Response& res) {
     try {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
       db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,"
-              "mode,inflation,fx,demand,volatility,months) "
-              "VALUES(?,?,?,?,?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
+              "mode,inflation,fx,demand,volatility,months,plan_id,start_date,end_date) "
+              "VALUES(?,?,?,?,?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),"
+              "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
               { id, jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
@@ -1293,16 +1327,19 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"),
                 jstr(body,"mode").empty() ? "stochastic" : jstr(body,"mode"),
                 jstr(body,"inflation"), jstr(body,"fx"), jstr(body,"demand"),
-                jstr(body,"volatility"), jstr(body,"months") });
+                jstr(body,"volatility"), jstr(body,"months"),
+                jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date") });
       writeDists(id, body);
+      writeOverrides(id, body);
       audit(db, "scenario", id, "CREATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
       sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
+      sc["overrides"] = db.query_json("SELECT * FROM scenario_overrides WHERE scenario_id=?", { id });
       res.status = 201; ok(res, sc);
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 
-  svr.Put("/api/scenarios/([^/]+)", [&db, writeDists](const httplib::Request& req, httplib::Response& res) {
+  svr.Put("/api/scenarios/([^/]+)", [&db, writeDists, writeOverrides](const httplib::Request& req, httplib::Response& res) {
     try {
       const std::string id = req.matches[1];
       auto body = json::parse(req.body);
@@ -1310,7 +1347,9 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
               "objective=?, alpha=?, max_share=?, "
               "mode=COALESCE(NULLIF(?,''),mode), inflation=COALESCE(NULLIF(?,''),inflation), "
               "fx=COALESCE(NULLIF(?,''),fx), demand=COALESCE(NULLIF(?,''),demand), "
-              "volatility=COALESCE(NULLIF(?,''),volatility), months=COALESCE(NULLIF(?,''),months) WHERE id=?",
+              "volatility=COALESCE(NULLIF(?,''),volatility), months=COALESCE(NULLIF(?,''),months), "
+              "plan_id=COALESCE(NULLIF(?,''),plan_id), start_date=COALESCE(NULLIF(?,''),start_date), "
+              "end_date=COALESCE(NULLIF(?,''),end_date) WHERE id=?",
               { jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
@@ -1318,11 +1357,14 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"alpha").empty() ? "0.1" : jstr(body,"alpha"),
                 jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"),
                 jstr(body,"mode"), jstr(body,"inflation"), jstr(body,"fx"),
-                jstr(body,"demand"), jstr(body,"volatility"), jstr(body,"months"), id });
+                jstr(body,"demand"), jstr(body,"volatility"), jstr(body,"months"),
+                jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"), id });
       writeDists(id, body);
+      writeOverrides(id, body);
       audit(db, "scenario", id, "UPDATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
       sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
+      sc["overrides"] = db.query_json("SELECT * FROM scenario_overrides WHERE scenario_id=?", { id });
       ok(res, sc);
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
@@ -1333,17 +1375,22 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       const std::string src = req.matches[1];
       const std::string nid = gen_uuid();
       db.exec("INSERT INTO price_scenarios"
-              "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months) "
+              "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months,"
+              "plan_id,start_date,end_date) "
               "SELECT ?, name || ' (копия)', description, horizon_hours, market_corr, objective, alpha, max_share,"
-              "mode, inflation, fx, demand, volatility, months "
+              "mode, inflation, fx, demand, volatility, months, plan_id, start_date, end_date "
               "FROM price_scenarios WHERE id=?", { nid, src });
       db.exec("INSERT INTO price_distributions"
               "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
               "SELECT lower(hex(randomblob(8))), ?, product_id, dist_type, mean, stddev, min_val, max_val, mode_val, beta "
               "FROM price_distributions WHERE scenario_id=?", { nid, src });
+      db.exec("INSERT INTO scenario_overrides(id,scenario_id,product_id,base_price,base_cost) "
+              "SELECT lower(hex(randomblob(8))), ?, product_id, base_price, base_cost "
+              "FROM scenario_overrides WHERE scenario_id=?", { nid, src });
       audit(db, "scenario", nid, "CLONE", { {"from", src} });
       auto out = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { nid });
       out["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { nid });
+      out["overrides"] = db.query_json("SELECT * FROM scenario_overrides WHERE scenario_id=?", { nid });
       res.status = 201; ok(res, out);
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
@@ -1436,6 +1483,17 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         } catch (...) {}
       }
       const bool deterministic = (mode == "deterministic");   // точечный прогноз (без разброса)
+
+      // Точечные оверрайды цены/себестоимости из сценария (Стадия E).
+      std::unordered_map<std::string, double> fcOvrPrice, fcOvrCost;
+      if (!scenarioId.empty()) {
+        for (auto& o : db.query_json(
+               "SELECT product_id,base_price,base_cost FROM scenario_overrides WHERE scenario_id=?", { scenarioId })) {
+          const std::string opid = jstr(o, "product_id"), bp = jstr(o, "base_price"), bc = jstr(o, "base_cost");
+          if (!bp.empty()) fcOvrPrice[opid] = std::stod(bp);
+          if (!bc.empty()) fcOvrCost[opid] = std::stod(bc);
+        }
+      }
 
       auto rows = db.query_json(
         "SELECT id,name,base_price,base_cost,sellable,purchased FROM products "
@@ -1578,6 +1636,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         double base = std::stod(bs);
         if (base <= 0) continue;
         const std::string pid = jstr(p, "id");
+        if (sellable && fcOvrPrice.count(pid)) base = fcOvrPrice[pid];
+        else if (!sellable && fcOvrCost.count(pid)) base = fcOvrCost[pid];
 
         auto hist = db.query_json(
           "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { pid, kind });
@@ -1719,6 +1779,22 @@ static void register_schedule(httplib::Server& svr, Database& db) {
           ol.dueHours = o.contains("due_hours") ? std::stod(jstr(o,"due_hours")) : 0;
           if (!ol.productId.empty()) sp.program.push_back(ol);
         }
+
+      // Стадия E: сценарий привязан к ПЛАНУ → программа из заказов этого плана.
+      if (sp.program.empty() && !jstr(body, "scenario_id").empty()) {
+        try {
+          auto sc = db.query_one("SELECT plan_id FROM price_scenarios WHERE id=?", { jstr(body, "scenario_id") });
+          const std::string planId = jstr(sc, "plan_id");
+          if (!planId.empty())
+            for (auto& o : db.query_json(
+                   "SELECT product_id,quantity,due_hours FROM demand_orders WHERE plan_id=?", { planId })) {
+              maos::OrderLine ol; ol.productId = jstr(o, "product_id");
+              ol.qty = std::stod(jstr(o, "quantity").empty() ? "1" : jstr(o, "quantity"));
+              ol.dueHours = std::stod(jstr(o, "due_hours").empty() ? "0" : jstr(o, "due_hours"));
+              if (!ol.productId.empty()) sp.program.push_back(ol);
+            }
+        } catch (...) {}
+      }
 
       json result = maos::run_schedule(db, sp);
       if (result.value("error_soft", false)) { ok(res, result); return; }
@@ -1912,6 +1988,7 @@ int main(int argc, char* argv[]) {
     migrate_v10(db);
     migrate_v11(db);
     migrate_v12(db);
+    migrate_v13(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -1928,7 +2005,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.16.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.17.0"} });
   });
 
   // Auth

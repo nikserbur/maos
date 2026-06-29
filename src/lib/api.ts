@@ -106,20 +106,27 @@ export interface PriceDistribution {
   min_val?: number | string; max_val?: number | string; mode_val?: number | string
   beta?: number | string   // загрузка на рыночный фактор (корреляция цен)
 }
+export interface ScenarioOverride {
+  product_id: string; base_price?: string; base_cost?: string
+}
 export interface PriceScenario {
   id: string; name: string; description: string; horizon_hours: string
   market_corr?: string; objective?: string; alpha?: string; max_share?: string
   mode?: string; inflation?: string; fx?: string; demand?: string
   volatility?: string; months?: string
+  plan_id?: string; start_date?: string; end_date?: string
   created_at: string
   distributions?: PriceDistribution[]
+  overrides?: ScenarioOverride[]
 }
 export interface ScenarioPayload {
   name: string; description?: string; horizon_hours?: number; market_corr?: number
   objective?: string; alpha?: number; max_share?: number
   mode?: string; inflation?: number; fx?: number; demand?: number
   volatility?: number; months?: number
+  plan_id?: string; start_date?: string; end_date?: string
   distributions?: PriceDistribution[]
+  overrides?: ScenarioOverride[]
 }
 
 /* ── Результат робастной оптимизации (зеркало Optimizer.cpp) ──────────────── */
