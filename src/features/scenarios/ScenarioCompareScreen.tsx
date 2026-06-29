@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { api, type PriceScenario, type OptResult, type ProductionPlan, type Product, type ScenarioPayload } from '../../lib/api'
+import { useEffect, useState } from 'react'
+import { api, type PriceScenario, type OptResult, type Product, type ScenarioPayload } from '../../lib/api'
 import { ForecastScreen } from '../forecast/ForecastScreen'
 import './scenario-compare.css'
 
@@ -33,7 +33,6 @@ const ROWS: Row[] = [
 
 export function ScenarioCompareScreen() {
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
-  const [plans, setPlans]         = useState<ProductionPlan[]>([])
   const [products, setProducts]   = useState<Product[]>([])
   const [sel, setSel]             = useState<string[]>([])
   const [results, setResults]     = useState<Record<string, OptResult>>({})
@@ -55,7 +54,6 @@ export function ScenarioCompareScreen() {
   }
   useEffect(() => {
     load()
-    api.plans.list().then(setPlans).catch(() => {})
     api.products.list().then((ps) => setProducts(ps.filter((p) => p.sellable === '1' || p.purchased === '1'))).catch(() => {})
   }, [])
 
@@ -74,6 +72,9 @@ export function ScenarioCompareScreen() {
     plan_id: sc.plan_id || '', start_date: sc.start_date || '', end_date: sc.end_date || '',
     inflation: Number(sc.inflation) || 0, fx: Number(sc.fx) || 1, demand: Number(sc.demand) || 1,
     volatility: Number(sc.volatility) || 0.05, months: Number(sc.months) || 6,
+    sanctions: Number(sc.sanctions) || 0, tax_change: Number(sc.tax_change) || 0,
+    energy: Number(sc.energy) || 1, logistics: Number(sc.logistics) || 1,
+    key_rate: Number(sc.key_rate) || 8,
     ...extra,
   })
 
@@ -169,7 +170,7 @@ export function ScenarioCompareScreen() {
             {ready && <CompareTable cols={cols} />}
           </div>
         ) : selected ? (
-          <ScenarioDetail key={selected.id} sc={selected} plans={plans} products={products}
+          <ScenarioDetail key={selected.id} sc={selected} products={products}
             onPatch={patch} onSetOverride={setOverride} onClearOverrides={clearOverrides}
             onClone={() => clone(selected.id)} onRemove={() => { remove(selected.id); setOpenId('') }} />
         ) : (
@@ -180,18 +181,26 @@ export function ScenarioCompareScreen() {
   )
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/** Красивый слайдер с подписью значения (Blueprint dark). */
+function Slider({ label, hint, value, min, max, step, unit = '', onChange }: {
+  label: string; hint?: string; value: number; min: number; max: number; step: number
+  unit?: string; onChange: (v: number) => void
+}) {
   return (
-    <label className="scn__field">
-      <span className="scn__field-l">{label}{hint && <i className="scn__field-h"> {hint}</i>}</span>
-      {children}
+    <label className="scn__slider">
+      <span className="scn__slider-l">{label}{hint && <i className="scn__field-h"> {hint}</i>}</span>
+      <div className="scn__slider-wrap">
+        <input type="range" className="scn__slider-input" min={min} max={max} step={step}
+               value={value} onChange={(e) => onChange(Number(e.target.value))} />
+        <span className="scn__slider-val">{(step < 1 ? value.toFixed(2) : value.toFixed(0))}{unit}</span>
+      </div>
     </label>
   )
 }
 
 /** Детальный вид сценария: красивые контролы внешних условий + графики цен. */
-function ScenarioDetail({ sc, plans, products, onPatch, onSetOverride, onClearOverrides, onClone, onRemove }: {
-  sc: PriceScenario; plans: ProductionPlan[]; products: Product[]
+function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides, onClone, onRemove }: {
+  sc: PriceScenario; products: Product[]
   onPatch: (sc: PriceScenario, p: Partial<PriceScenario>) => void
   onSetOverride: (sc: PriceScenario, pid: string, price: string) => void
   onClearOverrides: (sc: PriceScenario) => void
@@ -211,37 +220,36 @@ function ScenarioDetail({ sc, plans, products, onPatch, onSetOverride, onClearOv
         <section className="scn__card">
           <h3 className="scn__card-h">Внешние условия (рынок)</h3>
           <div className="scn__grid">
-            <Field label="Инфляция" hint="%/мес">
-              <input type="number" step={0.1} value={(Number(sc.inflation) || 0) * 100}
-                     onChange={(e) => onPatch(sc, { inflation: String((Number(e.target.value) || 0) / 100) })} />
-            </Field>
-            <Field label="Курс" hint="×"><input type="number" step={0.05} value={sc.fx ?? '1'} onChange={(e) => onPatch(sc, { fx: e.target.value })} /></Field>
-            <Field label="Спрос" hint="×"><input type="number" step={0.05} value={sc.demand ?? '1'} onChange={(e) => onPatch(sc, { demand: e.target.value })} /></Field>
-            <Field label="Волатильность" hint="%/мес">
-              <input type="number" step={0.5} value={(Number(sc.volatility) || 0.05) * 100}
-                     onChange={(e) => onPatch(sc, { volatility: String((Number(e.target.value) || 0) / 100) })} />
-            </Field>
-            <Field label="Корреляция рынка"><input type="number" step={0.05} min={0} max={1} value={sc.market_corr ?? '0.5'} onChange={(e) => onPatch(sc, { market_corr: e.target.value })} /></Field>
-            <Field label="Горизонт" hint="мес"><input type="number" min={1} max={36} value={sc.months ?? '6'} onChange={(e) => onPatch(sc, { months: e.target.value })} /></Field>
+            <Slider label="Инфляция" hint="%/мес" unit="%" min={0} max={10} step={0.1}
+                    value={(Number(sc.inflation) || 0) * 100}
+                    onChange={(v) => onPatch(sc, { inflation: String(v / 100) })} />
+            <Slider label="Волатильность" hint="%/мес" unit="%" min={0} max={20} step={0.5}
+                    value={(Number(sc.volatility) || 0.05) * 100}
+                    onChange={(v) => onPatch(sc, { volatility: String(v / 100) })} />
+            <Slider label="Курс" hint="×" unit="×" min={0.5} max={2} step={0.05}
+                    value={Number(sc.fx) || 1} onChange={(v) => onPatch(sc, { fx: String(v) })} />
+            <Slider label="Спрос" hint="×" unit="×" min={0.5} max={2} step={0.05}
+                    value={Number(sc.demand) || 1} onChange={(v) => onPatch(sc, { demand: String(v) })} />
+            <Slider label="Корреляция рынка" min={0} max={1} step={0.05}
+                    value={Number(sc.market_corr) || 0.5} onChange={(v) => onPatch(sc, { market_corr: String(v) })} />
+            <Slider label="Горизонт" hint="мес" unit=" мес" min={1} max={36} step={1}
+                    value={Number(sc.months) || 6} onChange={(v) => onPatch(sc, { months: String(v) })} />
           </div>
         </section>
 
         <section className="scn__card">
-          <h3 className="scn__card-h">Цель оптимизации</h3>
+          <h3 className="scn__card-h">Риски и макро</h3>
           <div className="scn__grid">
-            <Field label="Цель"><select value={sc.objective || 'cvar'} onChange={(e) => onPatch(sc, { objective: e.target.value })}>{Object.entries(OBJECTIVES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-            <Field label="α" hint="хвост CVaR"><input type="number" step={0.05} min={0.01} max={0.5} value={sc.alpha ?? '0.1'} onChange={(e) => onPatch(sc, { alpha: e.target.value })} /></Field>
-            <Field label="Макс. доля изделия"><input type="number" step={0.05} min={0.1} max={1} value={sc.max_share ?? '0.6'} onChange={(e) => onPatch(sc, { max_share: e.target.value })} /></Field>
-            <Field label="Режим"><select value={sc.mode || 'stochastic'} onChange={(e) => onPatch(sc, { mode: e.target.value })}><option value="stochastic">стохастический</option><option value="deterministic">детерминированный</option></select></Field>
-          </div>
-        </section>
-
-        <section className="scn__card">
-          <h3 className="scn__card-h">Период и план (Стадия 1)</h3>
-          <div className="scn__grid">
-            <Field label="План производства"><select value={sc.plan_id || ''} onChange={(e) => onPatch(sc, { plan_id: e.target.value })}><option value="">— нет —</option>{plans.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}</select></Field>
-            <Field label="Период с"><input type="date" value={sc.start_date || ''} onChange={(e) => onPatch(sc, { start_date: e.target.value })} /></Field>
-            <Field label="по"><input type="date" value={sc.end_date || ''} onChange={(e) => onPatch(sc, { end_date: e.target.value })} /></Field>
+            <Slider label="Санкции" hint="интенсивность" min={0} max={1} step={0.05}
+                    value={Number(sc.sanctions) || 0} onChange={(v) => onPatch(sc, { sanctions: String(v) })} />
+            <Slider label="Изм. налогов" hint="п.п." unit=" п.п." min={-10} max={15} step={0.5}
+                    value={Number(sc.tax_change) || 0} onChange={(v) => onPatch(sc, { tax_change: String(v) })} />
+            <Slider label="Цена энергии" hint="×" unit="×" min={0.5} max={3} step={0.05}
+                    value={Number(sc.energy) || 1} onChange={(v) => onPatch(sc, { energy: String(v) })} />
+            <Slider label="Логистика" hint="×" unit="×" min={0.5} max={3} step={0.05}
+                    value={Number(sc.logistics) || 1} onChange={(v) => onPatch(sc, { logistics: String(v) })} />
+            <Slider label="Ключевая ставка" hint="%/год" unit="%" min={0} max={30} step={0.25}
+                    value={Number(sc.key_rate) || 8} onChange={(v) => onPatch(sc, { key_rate: String(v) })} />
           </div>
         </section>
 

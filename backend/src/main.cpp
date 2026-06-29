@@ -1295,6 +1295,19 @@ static void migrate_v14(Database& db) {
   std::cout << "Migration v14 done.\n";
 }
 
+// v15: риск-факторы сценария (санкции/налоги/энергия/логистика/ключевая ставка).
+static void migrate_v15(Database& db) {
+  if (db.user_version() >= 15) return;
+  std::cout << "Migrating schema → v15 (риск-факторы сценария)…\n";
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN sanctions  REAL");   // интенсивность 0..1
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN tax_change REAL");   // изм. налогов, п.п.
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN energy     REAL");   // цена энергии, ×
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN logistics  REAL");   // логистика, ×
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN key_rate   REAL");   // ключевая ставка, %/год
+  db.set_user_version(15);
+  std::cout << "Migration v15 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1366,9 +1379,11 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
       db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,"
-              "mode,inflation,fx,demand,volatility,months,plan_id,start_date,end_date) "
+              "mode,inflation,fx,demand,volatility,months,plan_id,start_date,end_date,"
+              "sanctions,tax_change,energy,logistics,key_rate) "
               "VALUES(?,?,?,?,?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),"
-              "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
+              "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),"
+              "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
               { id, jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
@@ -1378,7 +1393,9 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"mode").empty() ? "stochastic" : jstr(body,"mode"),
                 jstr(body,"inflation"), jstr(body,"fx"), jstr(body,"demand"),
                 jstr(body,"volatility"), jstr(body,"months"),
-                jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date") });
+                jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"),
+                jstr(body,"sanctions"), jstr(body,"tax_change"), jstr(body,"energy"),
+                jstr(body,"logistics"), jstr(body,"key_rate") });
       writeDists(id, body);
       writeOverrides(id, body);
       audit(db, "scenario", id, "CREATE", body);
@@ -1399,7 +1416,10 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
               "fx=COALESCE(NULLIF(?,''),fx), demand=COALESCE(NULLIF(?,''),demand), "
               "volatility=COALESCE(NULLIF(?,''),volatility), months=COALESCE(NULLIF(?,''),months), "
               "plan_id=COALESCE(NULLIF(?,''),plan_id), start_date=COALESCE(NULLIF(?,''),start_date), "
-              "end_date=COALESCE(NULLIF(?,''),end_date) WHERE id=?",
+              "end_date=COALESCE(NULLIF(?,''),end_date), "
+              "sanctions=COALESCE(NULLIF(?,''),sanctions), tax_change=COALESCE(NULLIF(?,''),tax_change), "
+              "energy=COALESCE(NULLIF(?,''),energy), logistics=COALESCE(NULLIF(?,''),logistics), "
+              "key_rate=COALESCE(NULLIF(?,''),key_rate) WHERE id=?",
               { jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
@@ -1408,7 +1428,9 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"max_share").empty() ? "0.6" : jstr(body,"max_share"),
                 jstr(body,"mode"), jstr(body,"inflation"), jstr(body,"fx"),
                 jstr(body,"demand"), jstr(body,"volatility"), jstr(body,"months"),
-                jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"), id });
+                jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"),
+                jstr(body,"sanctions"), jstr(body,"tax_change"), jstr(body,"energy"),
+                jstr(body,"logistics"), jstr(body,"key_rate"), id });
       writeDists(id, body);
       writeOverrides(id, body);
       audit(db, "scenario", id, "UPDATE", body);
@@ -1426,9 +1448,10 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       const std::string nid = gen_uuid();
       db.exec("INSERT INTO price_scenarios"
               "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months,"
-              "plan_id,start_date,end_date) "
+              "plan_id,start_date,end_date,sanctions,tax_change,energy,logistics,key_rate) "
               "SELECT ?, name || ' (копия)', description, horizon_hours, market_corr, objective, alpha, max_share,"
-              "mode, inflation, fx, demand, volatility, months, plan_id, start_date, end_date "
+              "mode, inflation, fx, demand, volatility, months, plan_id, start_date, end_date,"
+              "sanctions, tax_change, energy, logistics, key_rate "
               "FROM price_scenarios WHERE id=?", { nid, src });
       db.exec("INSERT INTO price_distributions"
               "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
@@ -1549,6 +1572,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       double demand = getd("demand", 1.0);
       double vol   = std::max(0.0, getd("volatility", 0.05));   // мес. волатильность цены
       double corr  = std::max(0.0, std::min(1.0, getd("corr", 0.5)));
+      // Риск-факторы сценария (по умолчанию нейтральны; перекрываются из сценария ниже).
+      double sanctions = 0.0, taxChange = 0.0, energy = 1.0, logistics = 1.0, keyRate = 8.0;
       int runs     = std::max(200, std::min(20000, (int)getd("runs", 3000)));
       unsigned seed = (unsigned)getd("seed", 42);
 
@@ -1566,9 +1591,20 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           if (!body.contains("volatility") && !jstr(sc,"volatility").empty())  vol    = scd("volatility", vol);
           if (!body.contains("corr")       && !jstr(sc,"market_corr").empty()) corr   = std::max(0.0, std::min(1.0, scd("market_corr", corr)));
           if (!jstr(sc,"mode").empty()) mode = jstr(sc, "mode");
+          sanctions = std::max(0.0, std::min(1.0, scd("sanctions", sanctions)));
+          taxChange = scd("tax_change", taxChange);
+          energy    = std::max(0.1, scd("energy", energy));
+          logistics = std::max(0.1, scd("logistics", logistics));
+          keyRate   = scd("key_rate", keyRate);
         } catch (...) {}
       }
       const bool deterministic = (mode == "deterministic");   // точечный прогноз (без разброса)
+
+      // Риск-факторы → понятные макро-связи: дрейф, волатильность, уровень цен (cost-push).
+      const double riskDrift = 0.004 * sanctions - 0.0006 * (keyRate - 8.0);      // мес. лог-дрейф
+      vol *= (1.0 + 0.8 * sanctions);                                             // санкции = неопределённость
+      const double riskMacro = (1.0 + 0.6 * taxChange / 100.0)                    // налоги (passthrough 0.6)
+                             * std::pow(energy, 0.15) * std::pow(logistics, 0.08); // энергия/логистика
 
       // Точечные оверрайды цены/себестоимости из сценария (Стадия E).
       std::unordered_map<std::string, double> fcOvrPrice, fcOvrCost;
@@ -1588,7 +1624,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       std::mt19937 rng(seed);
       std::normal_distribution<double> nd(0.0, 1.0);
       const double beta = std::sqrt(corr), idio = std::sqrt(std::max(0.0, 1.0 - corr));
-      const double driftStep = std::log(1.0 + infl);
+      const double driftStep = std::log(1.0 + infl) + riskDrift;
 
       // Общий рыночный шок по (прогон, месяц) — обеспечивает корреляцию всех цен.
       std::vector<std::vector<double>> M(runs, std::vector<double>(months + 1, 0.0));
@@ -1776,7 +1812,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { pid, kind });
         std::vector<double> vals; for (auto& row : hist) vals.push_back(numOf(row));
 
-        json j = fanFromHistory(base, vals, driftStep, fx * demand);   // цены: история+инфляция, fx·demand
+        json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro);   // цены: история+инфляция+риски
         j["id"] = pid; j["name"] = jstr(p, "name"); j["role"] = sellable ? "product" : "raw";
         products.push_back(j);
       }
@@ -1799,6 +1835,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       ok(res, {
         {"months", months}, {"inflation_monthly", infl}, {"fx", fx}, {"demand", demand},
         {"volatility", vol}, {"corr", corr}, {"mode", mode}, {"scenario_id", scenarioId},
+        {"sanctions", sanctions}, {"tax_change", taxChange}, {"energy", energy},
+        {"logistics", logistics}, {"key_rate", keyRate}, {"risk_macro", riskMacro},
         {"inflation_index", inflIdx}, {"rate", rateJson}, {"products", products},
       });
     } catch (std::exception& e) { err(res, 400, e.what()); }
@@ -2123,6 +2161,7 @@ int main(int argc, char* argv[]) {
     migrate_v12(db);
     migrate_v13(db);
     migrate_v14(db);
+    migrate_v15(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -2139,7 +2178,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.23.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.24.0"} });
   });
 
   // Auth

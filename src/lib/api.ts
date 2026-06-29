@@ -115,6 +115,7 @@ export interface PriceScenario {
   mode?: string; inflation?: string; fx?: string; demand?: string
   volatility?: string; months?: string
   plan_id?: string; start_date?: string; end_date?: string
+  sanctions?: string; tax_change?: string; energy?: string; logistics?: string; key_rate?: string
   created_at: string
   distributions?: PriceDistribution[]
   overrides?: ScenarioOverride[]
@@ -125,6 +126,7 @@ export interface ScenarioPayload {
   mode?: string; inflation?: number; fx?: number; demand?: number
   volatility?: number; months?: number
   plan_id?: string; start_date?: string; end_date?: string
+  sanctions?: number; tax_change?: number; energy?: number; logistics?: number; key_rate?: number
   distributions?: PriceDistribution[]
   overrides?: ScenarioOverride[]
 }
