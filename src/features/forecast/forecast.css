@@ -84,5 +84,6 @@
 .forecast__delta.up { color: #4caf72; }
 .forecast__delta.down { color: #e0795a; }
 .forecast .fan { display: block; }
+.forecast__fit { font-size: 10px; color: var(--text-muted, #8a929c); margin-top: 2px; }
 .forecast__card-foot { font-size: 11px; color: var(--text, #e6e9ee); margin-top: 2px; }
 .forecast__range { color: var(--text-muted, #8a929c); }

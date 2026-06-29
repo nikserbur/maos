@@ -69,7 +69,8 @@ export function ForecastScreen() {
           <h1 className="forecast__title">Внешние условия и прогноз цен</h1>
           <p className="forecast__desc">
             Цены изделий и сырья во времени под действием макрофакторов (инфляция, курс, спрос).
-            Коррелированное лог-нормальное блуждание; веер — P10/P50/P90.
+            μ/σ оцениваются из истории (ts_data), распределение шага подбирается по AIC
+            (нормаль ↔ Лаплас с тяжёлыми хвостами); веер — P10/P50/P90.
           </p>
         </div>
       </header>
@@ -132,6 +133,11 @@ function Card({ p }: { p: ForecastProduct }) {
         <span className={`forecast__delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span>
       </div>
       <PriceFan p={p} />
+      {p.fit?.data_driven && (
+        <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}`}>
+          {p.fit.dist === 'laplace' ? '◆ Лаплас (тяж. хвосты)' : '○ нормаль'} · σ {(p.fit.sigma * 100).toFixed(1)}%/мес · история {p.fit.n_obs}
+        </div>
+      )}
       <div className="forecast__card-foot mono">
         через {last} мес: <b>{money(p.p50[last])}</b>
         <span className="forecast__range"> ({money(p.p10[last])} – {money(p.p90[last])})</span>

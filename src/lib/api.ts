@@ -232,9 +232,14 @@ export interface ForecastParams {
   months?: number; inflation?: number; fx?: number; demand?: number
   volatility?: number; corr?: number; runs?: number
 }
+export interface ForecastFit {
+  data_driven: boolean; dist: 'normal' | 'laplace'; n_obs: number
+  mu: number; sigma: number; aic_normal: number; aic_laplace: number
+}
 export interface ForecastProduct {
   id: string; name: string; role: 'product' | 'raw'; base: number
   p10: number[]; p50: number[]; p90: number[]; mean: number[]
+  fit?: ForecastFit
 }
 export interface ForecastResult {
   months: number; inflation_monthly: number; fx: number; demand: number
