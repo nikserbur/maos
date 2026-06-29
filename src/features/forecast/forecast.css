@@ -141,3 +141,12 @@
   border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 5px 7px;
 }
 .forecast__ovr .btn { padding: 4px 8px; font-size: 11px; }
+
+/* Настройка-оверрайд в полноэкранном режиме + редактируемая ячейка таблицы */
+.forecast__ovr--modal { margin: 10px 0; }
+.forecast__vrow-base { background: color-mix(in srgb, var(--accent, #2d72d2) 10%, transparent); }
+.forecast__vrow-base td { font-weight: 600; }
+.forecast__vedit {
+  width: 100%; background: var(--surface, #161a20); border: 1px solid var(--accent, #2d72d2);
+  border-radius: 5px; color: var(--text, #e6e9ee); font: inherit; padding: 3px 6px; text-align: right;
+}

@@ -162,7 +162,7 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, refreshKey }:
         </div>
       )}
 
-      {res?.rate && (
+      {res?.rate && !embedded && (
         <>
           <h2 className="forecast__group">Внешнее условие — ключевая ставка (тот же движок)</h2>
           <div className="forecast__grid"><Card p={res.rate} pct onZoom={setZoom} /></div>
@@ -171,7 +171,7 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, refreshKey }:
 
       {goods.length > 0 && <h2 className="forecast__group">Изделия (цены сбыта)</h2>}
       <div className="forecast__grid">
-        {goods.map((p) => <Card key={p.id} p={p} onZoom={setZoom} onOverride={onOverride ? applyOverride : undefined} />)}
+        {goods.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
       </div>
 
       {raws.length > 0 && <h2 className="forecast__group">Сырьё (закупочные цены)</h2>}
@@ -179,36 +179,25 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, refreshKey }:
         {raws.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
       </div>
 
-      {zoom && <ZoomModal p={zoom} pct={zoom.role === 'rate'} onClose={() => setZoom(null)} />}
+      {zoom && <ZoomModal p={zoom} pct={zoom.role === 'rate'}
+        onOverride={onOverride ? applyOverride : undefined} onClose={() => setZoom(null)} />}
     </div>
   )
 }
 
-function Card({ p, pct, onZoom, onOverride }: { p: ForecastProduct; pct?: boolean; onZoom?: (p: ForecastProduct) => void; onOverride?: (productId: string, price: string) => void }) {
+function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: (p: ForecastProduct) => void }) {
   const last = p.p50.length - 1
   const delta = ((p.p50[last] - p.base) / p.base) * 100
   const fmtVal = (v: number) => (pct ? `${v.toFixed(1)}%` : money(v))
-  const [ovOpen, setOvOpen] = useState(false)
-  const [ovPrice, setOvPrice] = useState('')
   return (
     <div className="forecast__card">
       <div className="forecast__card-head">
         <span className="forecast__name">{p.name}</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span className={`forecast__delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span>
-          {onOverride && <button className="forecast__gear" title="Оверрайд цены прямо на графике"
-            onClick={() => { setOvPrice(String(Math.round(p.base))); setOvOpen((o) => !o) }}>⚙</button>}
-          {onZoom && <button className="forecast__zoom" title="Увеличить · детальные значения" onClick={() => onZoom(p)}>⛶</button>}
+          {onZoom && <button className="forecast__zoom" title="Открыть на весь экран · значения · оверрайд цены" onClick={() => onZoom(p)}>⛶</button>}
         </span>
       </div>
-      {ovOpen && onOverride && (
-        <div className="forecast__ovr">
-          <span className="forecast__ovr-l">Базовая цена →</span>
-          <input type="number" value={ovPrice} placeholder="новая цена" onChange={(e) => setOvPrice(e.target.value)} />
-          <button className="btn" disabled={!ovPrice} onClick={() => { onOverride(p.id, ovPrice); setOvOpen(false) }}>Применить</button>
-          <button className="btn" onClick={() => { onOverride(p.id, ''); setOvOpen(false) }}>Сброс</button>
-        </div>
-      )}
       <PriceFan p={p} />
       {p.fit?.data_driven && (
         <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}${p.fit.aic_t != null ? ` · t ${p.fit.aic_t.toFixed(1)}` : ''}${p.fit.aic_stable != null ? ` · α-stable ${p.fit.aic_stable.toFixed(1)}` : ''}`}>
@@ -226,10 +215,16 @@ function Card({ p, pct, onZoom, onOverride }: { p: ForecastProduct; pct?: boolea
   )
 }
 
-/** Увеличенный график + детальная таблица значений прогноза по месяцам. */
-function ZoomModal({ p, pct, onClose }: { p: ForecastProduct; pct?: boolean; onClose: () => void }) {
+/** Полноэкранный график + детальная таблица + НАСТРОЙКА (оверрайд базовой цены, только здесь). */
+function ZoomModal({ p, pct, onOverride, onClose }: {
+  p: ForecastProduct; pct?: boolean
+  onOverride?: (productId: string, price: string) => void; onClose: () => void
+}) {
   const fmtVal = (v: number) => (pct ? `${v.toFixed(2)}%` : money(v))
   const N = p.p50.length
+  const canEdit = !!onOverride && p.role === 'product'
+  const [base, setBase] = useState(String(Math.round(p.base)))
+  const apply = () => { if (onOverride && base) { onOverride(p.id, base); onClose() } }
   return (
     <div className="forecast__modal" onClick={onClose}>
       <div className="forecast__modal-box" onClick={(e) => e.stopPropagation()}>
@@ -238,9 +233,27 @@ function ZoomModal({ p, pct, onClose }: { p: ForecastProduct; pct?: boolean; onC
           <button className="btn" onClick={onClose}>✕ Закрыть</button>
         </div>
         <div className="forecast__modal-chart"><PriceFan p={p} /></div>
+        {canEdit && (
+          <div className="forecast__ovr forecast__ovr--modal">
+            <span className="forecast__ovr-l">Настройка — базовая цена (ввод данных):</span>
+            <input type="number" value={base} onChange={(e) => setBase(e.target.value)}
+                   onKeyDown={(e) => e.key === 'Enter' && apply()} />
+            <button className="btn btn--primary" disabled={!base} onClick={apply}>Применить и пересчитать</button>
+            <button className="btn" onClick={() => { onOverride!(p.id, ''); onClose() }}>Сброс</button>
+          </div>
+        )}
         <table className="forecast__vtable mono">
           <thead><tr><th>Мес</th><th>P10</th><th>Медиана (P50)</th><th>P90</th><th>Тренд</th></tr></thead>
           <tbody>
+            {canEdit && (
+              <tr className="forecast__vrow-base">
+                <td>База</td><td>—</td>
+                <td><input className="forecast__vedit" type="number" value={base}
+                           onChange={(e) => setBase(e.target.value)}
+                           onKeyDown={(e) => e.key === 'Enter' && apply()} /></td>
+                <td>—</td><td>—</td>
+              </tr>
+            )}
             {Array.from({ length: N }, (_, t) => (
               <tr key={t}>
                 <td>+{t}</td>

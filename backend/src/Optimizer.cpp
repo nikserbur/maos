@@ -194,7 +194,8 @@ double unit_cost(const Model& m, const std::string& pid,
       double t   = realizedTime.count(o.id) ? realizedTime.at(o.id) : pertMean(o);
       double inf = riskInfl.count(o.id)     ? riskInfl.at(o.id)     : 1.0;
       double proc = (t / 60.0) * (o.hourRate + o.laborRate)
-                  + (o.setupRequired ? o.setupCost : 0.0) + o.cost;
+                  + (o.setupRequired ? o.setupCost / std::max(1.0, p.batchSize) : 0.0)  // наладка — на партию
+                  + o.cost;
       c += proc * inf;
       for (const OpInput& in : o.inputs)
         c += in.qty * unit_cost(m, in.productId, realizedTime, riskInfl, matFactor, memo, visiting, depth + 1);
@@ -602,7 +603,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
                        : (pr.demandMax > 0 ? pr.demandMax * 1.2 : 0.0);
     if (capM <= 0) return 1.0;
     const double fill = (pr.competitorSupply + q) / capM;          // насыщение рынка
-    return std::max(0.4, std::min(1.6, 1.0 + pr.priceElasticity * (1.0 - fill)));
+    return std::max(0.7, std::min(1.3, 1.0 + pr.priceElasticity * (1.0 - fill)));
   };
 
   // ── Оценка кандидатов по прогонам (общие случайные числа уже зафиксированы) ─

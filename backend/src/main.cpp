@@ -1337,6 +1337,19 @@ static void migrate_v17(Database& db) {
   std::cout << "Migration v17 done.\n";
 }
 
+// v18: КАЛИБРОВКА модели спроса — цена ≈ базовой при типовом (мощностно-ограниченном)
+// выпуске ~0.3·demand_max, иначе прежние дефолты вздували цену до +60% (нереалистичная
+// маржа/себестоимость). cap=0.8·dm, competitor=0.5·dm, e=0.4 ⇒ при q=0.3dm fill=1 ⇒ mul=1.
+static void migrate_v18(Database& db) {
+  if (db.user_version() >= 18) return;
+  std::cout << "Migrating schema → v18 (калибровка модели спроса)…\n";
+  db.exec_safe("UPDATE products SET market_capacity   = demand_max * 0.8 WHERE demand_max > 0");
+  db.exec_safe("UPDATE products SET competitor_supply = demand_max * 0.5 WHERE demand_max > 0");
+  db.exec_safe("UPDATE products SET price_elasticity  = 0.4              WHERE demand_max > 0");
+  db.set_user_version(18);
+  std::cout << "Migration v18 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1630,10 +1643,11 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       const bool deterministic = (mode == "deterministic");   // точечный прогноз (без разброса)
 
       // Риск-факторы → понятные макро-связи: дрейф, волатильность, уровень цен (cost-push).
-      const double riskDrift = 0.004 * sanctions - 0.0006 * (keyRate - 8.0);      // мес. лог-дрейф
-      vol *= (1.0 + 0.8 * sanctions);                                             // санкции = неопределённость
-      const double riskMacro = (1.0 + 0.6 * taxChange / 100.0)                    // налоги (passthrough 0.6)
-                             * std::pow(energy, 0.15) * std::pow(logistics, 0.08); // энергия/логистика
+      // Коэффициенты усилены, чтобы движение ползунков давало ЗАМЕТНЫЙ эффект на прогноз.
+      const double riskDrift = 0.012 * sanctions - 0.0018 * (keyRate - 8.0);      // мес. лог-дрейф
+      vol *= (1.0 + 1.6 * sanctions);                                             // санкции = неопределённость
+      const double riskMacro = (1.0 + 1.0 * taxChange / 100.0)                    // налоги (полный passthrough)
+                             * std::pow(energy, 0.32) * std::pow(logistics, 0.18); // энергия/логистика
 
       // Точечные оверрайды цены/себестоимости из сценария (Стадия E).
       std::unordered_map<std::string, double> fcOvrPrice, fcOvrCost;
@@ -2278,6 +2292,7 @@ int main(int argc, char* argv[]) {
     migrate_v15(db);
     migrate_v16(db);
     migrate_v17(db);
+    migrate_v18(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -2294,7 +2309,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.29.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.30.0"} });
   });
 
   // Auth
