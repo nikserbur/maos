@@ -5,6 +5,7 @@ import {
   type OptResult, type OptPortfolio,
 } from '../../lib/api'
 import { ProfitDistribution } from './ProfitDistribution'
+import { ParetoFrontier } from './ParetoFrontier'
 import './optimization.css'
 
 const OBJECTIVES: Array<{ id: string; label: string; hint: string }> = [
@@ -320,10 +321,9 @@ export function OptimizationScreen() {
               <div className="opt__panel">
                 <ProfitDistribution histogram={result.histogram} metrics={result.robust.metrics} />
                 <div className="opt__legend">
-                  <span><i style={{ background: 'var(--accent)' }} /> прибыль</span>
-                  <span><i style={{ background: 'var(--intent-danger)' }} /> убыток</span>
-                  <span><i style={{ background: 'var(--intent-warning)' }} /> CVaR</span>
-                  <span><i style={{ background: 'var(--intent-success)' }} /> матожидание</span>
+                  <span><i style={{ background: 'var(--accent)' }} /> устойчивый</span>
+                  <span><i style={{ background: 'var(--intent-warning)' }} /> контур «макс E» (шире, с хвостом убытка)</span>
+                  <span><i style={{ background: 'var(--intent-danger)' }} /> зона убытка</span>
                 </div>
               </div>
             </div>
@@ -334,6 +334,23 @@ export function OptimizationScreen() {
               </div>
             </div>
           </div>
+
+          {result.candidates?.length > 1 && (
+            <div className="opt__section">
+              <p className="opt__section-title">
+                Граница Парето · доходность ↔ риск ({result.candidates.filter((c) => c.is_pareto).length} недоминируемых из {result.candidates.length})
+              </p>
+              <div className="opt__panel">
+                <ParetoFrontier candidates={result.candidates} />
+                <div className="opt__legend">
+                  <span><i style={{ background: 'var(--accent)' }} /> граница Парето (недоминируемые)</span>
+                  <span><i style={{ background: 'var(--intent-success)' }} /> устойчивый выбор</span>
+                  <span><i style={{ background: 'var(--intent-warning)' }} /> макс E (хрупкий)</span>
+                  <span><i style={{ background: 'var(--text-disabled)' }} /> прочие портфели</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {result.warnings?.length > 0 && (
             <div className="opt__warn">⚠ {result.warnings.join(' · ')}</div>

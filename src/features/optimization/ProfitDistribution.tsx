@@ -25,12 +25,19 @@ export function ProfitDistribution({ histogram, metrics }: Props) {
   const lo = histogram[0].x0
   const hi = histogram[histogram.length - 1].x1
   const span = Math.max(1, hi - lo)
-  const maxCount = Math.max(1, ...histogram.map((b) => b.count))
+  const hasExp = histogram.some((b) => b.count_expected != null)
+  const maxCount = Math.max(1, ...histogram.map((b) => Math.max(b.count, b.count_expected ?? 0)))
   const plotW = W - padL - padR
   const plotH = H - padT - padB
 
   const x = (v: number) => padL + ((v - lo) / span) * plotW
   const barW = plotW / histogram.length
+  // Контур распределения наивно-лучшего (макс E) портфеля — для сравнения «ширины риска».
+  const expOutline = hasExp ? histogram.map((b, i) => {
+    const cx = padL + i * barW + barW / 2
+    const h = ((b.count_expected ?? 0) / maxCount) * plotH
+    return `${cx},${padT + (plotH - h)}`
+  }).join(' ') : ''
 
   const markers: Array<{ v: number; label: string; color: string }> = [
     { v: metrics.worst_case, label: 'худший', color: 'var(--intent-danger)' },
@@ -55,6 +62,12 @@ export function ProfitDistribution({ histogram, metrics }: Props) {
             opacity={negative ? 0.55 : 0.85} rx="1" />
         )
       })}
+
+      {/* Контур наивно-лучшего (макс E) — шире/с хвостом убытков */}
+      {hasExp && (
+        <polyline points={expOutline} fill="none" stroke="var(--intent-warning)"
+                  strokeWidth="1.5" opacity="0.9" />
+      )}
 
       {/* Базовая линия */}
       <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH}

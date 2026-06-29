@@ -150,10 +150,11 @@ export interface OptPortfolio {
   items: OptItem[]; resource_load: OptResourceLoad[]; total_load_hours: number
   diversification: OptDiversification; metrics: OptMetrics
 }
-export interface OptHistBin { x0: number; x1: number; count: number }
+export interface OptHistBin { x0: number; x1: number; count: number; count_expected?: number }
 export interface OptCandidate {
   expected: number; cvar: number; worst_case: number; std: number
   p_loss: number; max_regret: number; is_robust: boolean; is_expected: boolean
+  concentration?: number; is_pareto?: boolean
 }
 export interface OptResult {
   scenario_id: string; scenario_name: string; objective: string

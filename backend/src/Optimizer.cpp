@@ -727,18 +727,22 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     };
   };
 
-  // Гистограмма прибыли робастного портфеля.
+  // Гистограммы прибыли: робастный И ожидаемо-лучший на ОБЩЕЙ шкале (для наложения —
+  // видно, что устойчивый ýже и без «хвоста» убытков, а наивный шире/рискованнее).
   json hist = json::array();
   {
-    std::vector<double> v = profit[robustIdx];
-    std::sort(v.begin(), v.end());
-    double lo = v.front(), hi = v.back();
+    const std::vector<double>& vr = profit[robustIdx];
+    const std::vector<double>& ve = profit[expIdx];
+    double lo = std::min(*std::min_element(vr.begin(), vr.end()), *std::min_element(ve.begin(), ve.end()));
+    double hi = std::max(*std::max_element(vr.begin(), vr.end()), *std::max_element(ve.begin(), ve.end()));
     int bins = 24; double w = (hi - lo) / std::max(1, bins);
     if (w <= 0) w = 1;
-    std::vector<int> counts(bins, 0);
-    for (double x : v) { int b = (int)((x - lo) / w); if (b >= bins) b = bins-1; if (b<0) b=0; counts[b]++; }
+    std::vector<int> cr(bins, 0), ce(bins, 0);
+    auto fill = [&](const std::vector<double>& v, std::vector<int>& c) {
+      for (double x : v) { int b = (int)((x - lo) / w); if (b >= bins) b = bins - 1; if (b < 0) b = 0; c[b]++; } };
+    fill(vr, cr); fill(ve, ce);
     for (int b = 0; b < bins; ++b)
-      hist.push_back({ {"x0", lo + b*w}, {"x1", lo + (b+1)*w}, {"count", counts[b]} });
+      hist.push_back({ {"x0", lo + b*w}, {"x1", lo + (b+1)*w}, {"count", cr[b]}, {"count_expected", ce[b]} });
   }
 
   json robustPf = portfolioJson(robustIdx);
@@ -751,14 +755,34 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     return robust_score(p.objective, mts[a], regret[a], p.lambda) >
            robust_score(p.objective, mts[b], regret[b], p.lambda);
   });
+  // ГРАНИЦА ПАРЕТО: доходность (mean ↑) vs риск (std ↓). Кандидат недоминируем, если
+  // ни один другой не даёт ОДНОВРЕМЕННО ≥ доходность и ≤ риск (хотя бы строго по одному).
+  std::vector<char> pareto(K, 0);
+  for (size_t c = 0; c < K; ++c) {
+    bool dom = false;
+    for (size_t o = 0; o < K && !dom; ++o) {
+      if (o == c) continue;
+      if (mts[o].mean >= mts[c].mean && mts[o].std <= mts[c].std &&
+          (mts[o].mean > mts[c].mean || mts[o].std < mts[c].std)) dom = true;
+    }
+    pareto[c] = dom ? 0 : 1;
+  }
+  // Возвращаем ВСЕ парето-оптимальные (граница) + ДОМИНИРУЕМЫЕ по рангу (серое облако
+  // для контраста) — до 90 точек.
+  std::vector<size_t> selC; std::unordered_set<size_t> seenC;
+  for (size_t c = 0; c < K; ++c) if (pareto[c]) { selC.push_back(c); seenC.insert(c); }
+  for (size_t i = 0; i < K && selC.size() < 90; ++i) {
+    size_t c = rank[i]; if (!seenC.count(c) && !pareto[c]) { selC.push_back(c); seenC.insert(c); }
+  }
   json candList = json::array();
-  for (size_t i = 0; i < std::min<size_t>(8, K); ++i) {
-    size_t c = rank[i];
+  for (size_t c : selC) {
     candList.push_back({
       {"expected", mts[c].mean}, {"cvar", mts[c].cvar},
       {"worst_case", mts[c].worst}, {"std", mts[c].std},
       {"p_loss", mts[c].pLoss}, {"max_regret", regret[c]},
+      {"concentration", conc[c]},
       {"is_robust", c == robustIdx}, {"is_expected", c == expIdx},
+      {"is_pareto", pareto[c] != 0},
     });
   }
 
