@@ -19,15 +19,31 @@ const RULES = [
 
 function Gantt({ result }: { result: ScheduleResult }) {
   const makespan = Math.max(1, ...result.gantt.map((g) => g.end))
+  const [filter, setFilter] = useState('')   // '' = все станки
+  const [full, setFull] = useState(false)
   // дорожки = станки с работами, в порядке появления
-  const lanes = useMemo(() => {
+  const allLanes = useMemo(() => {
     const seen = new Map<string, string>()
     for (const g of result.gantt) if (g.machine_id && !seen.has(g.machine_id)) seen.set(g.machine_id, g.machine_name || g.machine_id)
     return [...seen.entries()]
   }, [result])
+  const lanes = filter ? allLanes.filter(([mid]) => mid === filter) : allLanes
   const ticks = Array.from({ length: 6 }, (_, i) => Math.round((makespan * i) / 5))
-  return (
-    <div style={{ minWidth: 620 }}>
+
+  const toolbar = (
+    <div className="gantt__toolbar">
+      <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+        <option value="">Все станки ({allLanes.length})</option>
+        {allLanes.map(([mid, mname]) => <option key={mid} value={mid}>{mname}</option>)}
+      </select>
+      <button className="btn" onClick={() => setFull((f) => !f)}>
+        {full ? '✕ Свернуть' : '⛶ На весь экран'}
+      </button>
+    </div>
+  )
+
+  const chart = (
+    <div className="gantt__chart" style={{ minWidth: full ? 0 : 620 }}>
       {lanes.map(([mid, mname]) => (
         <div className="gantt__row" key={mid}>
           <span className="gantt__lane" title={mname}>{mname}</span>
@@ -56,6 +72,17 @@ function Gantt({ result }: { result: ScheduleResult }) {
       </div>
     </div>
   )
+
+  if (full) return (
+    <div className="gantt__overlay">
+      <div className="gantt__overlay-head">
+        <b>Диаграмма Ганта{filter ? ` — ${allLanes.find(([m]) => m === filter)?.[1]}` : ''}</b>
+        {toolbar}
+      </div>
+      <div className="gantt__overlay-body">{chart}</div>
+    </div>
+  )
+  return <div>{toolbar}{chart}</div>
 }
 
 function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey: 'wc_name' | 'machine_name' }) {

@@ -1619,8 +1619,17 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           p10.push_back(q(0.10)); p50.push_back(q(0.50)); p90.push_back(q(0.90));
           mean.push_back(s / runs);
         }
+        // История (последние точки факта) + детерминированный ТРЕНД (дрейф) — для графика.
+        json history = json::array();
+        int hk = std::min((int)vals.size(), 12);
+        for (int i = (int)vals.size() - hk; i < (int)vals.size(); ++i)
+          if (i >= 0) history.push_back(vals[i] * macroMul);
+        json trend = json::array();
+        for (int t = 0; t <= months; ++t) trend.push_back(base * std::exp(drift_p * t) * macroMul);
+
         return json{
-          {"base", base}, {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
+          {"base", base}, {"history", history}, {"trend", trend},
+          {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
           {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)rets.size()},
                     {"mu", mu}, {"sigma", vol_p}, {"nu", tNu}, {"alpha", sAlpha},
                     {"aic_normal", aicN}, {"aic_laplace", aicL}, {"aic_t", aicT}, {"aic_stable", aicS} }},
@@ -2005,7 +2014,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.17.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.18.0"} });
   });
 
   // Auth

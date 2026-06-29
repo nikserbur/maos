@@ -253,6 +253,7 @@ export interface ForecastFit {
 export interface ForecastProduct {
   id: string; name: string; role: 'product' | 'raw' | 'rate'; base: number
   p10: number[]; p50: number[]; p90: number[]; mean: number[]
+  history?: number[]; trend?: number[]
   fit?: ForecastFit
 }
 export interface ForecastResult {

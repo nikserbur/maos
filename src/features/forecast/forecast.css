@@ -84,6 +84,16 @@
 .forecast__delta.up { color: #4caf72; }
 .forecast__delta.down { color: #e0795a; }
 .forecast .fan { display: block; }
+.forecast__legend {
+  display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px;
+  color: var(--text-muted, #8a929c); margin-bottom: 14px;
+}
+.forecast__legend span { display: inline-flex; align-items: center; gap: 5px; }
+.forecast__legend .lg { width: 16px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
+.forecast__legend .lg--hist  { border-top-color: var(--text, #e6e9ee); }
+.forecast__legend .lg--band  { height: 9px; border: none; background: var(--accent, #2d72d2); opacity: 0.25; border-radius: 2px; }
+.forecast__legend .lg--p50   { border-top-color: var(--accent, #2d72d2); border-top-width: 3px; }
+.forecast__legend .lg--trend { border-top-color: #caa83a; border-top-style: dashed; }
 .forecast__fit { font-size: 10px; color: var(--text-muted, #8a929c); margin-top: 2px; }
 .forecast__card-foot { font-size: 11px; color: var(--text, #e6e9ee); margin-top: 2px; }
 .forecast__range { color: var(--text-muted, #8a929c); }

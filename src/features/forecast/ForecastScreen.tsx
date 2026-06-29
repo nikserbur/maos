@@ -2,34 +2,40 @@ import { useEffect, useState, useCallback } from 'react'
 import { api, type ForecastResult, type ForecastProduct, type PriceScenario } from '../../lib/api'
 import './forecast.css'
 
-const W = 320, H = 150, PADL = 6, PADR = 6, PADT = 12, PADB = 20
+const W = 340, CH = 150, PADL = 6, PADR = 6, PADT = 12, PADB = 22
 
-/** Веер цены во времени: полоса P10–P90 + линия P50 + базовая пунктирная. */
+/** ИСТОРИЯ (факт) → «сейчас» → веер прогноза P10–P90 + медиана + линия ТРЕНДА. */
 function PriceFan({ p }: { p: ForecastProduct }) {
-  const n = p.p50.length
-  const lo = Math.min(...p.p10), hi = Math.max(...p.p90)
+  const hist = p.history ?? []
+  const H = hist.length
+  const N = p.p50.length - 1
+  const fcStart = H > 0 ? H - 1 : 0           // прогноз стыкуется с концом истории
+  const total = fcStart + N + 1
+  const all = [...hist, ...p.p10, ...p.p90, ...(p.trend ?? [])]
+  const lo = Math.min(...all), hi = Math.max(...all)
   const span = hi - lo || 1
-  const x = (i: number) => PADL + (i / (n - 1)) * (W - PADL - PADR)
-  const y = (v: number) => PADT + (1 - (v - lo) / span) * (H - PADT - PADB)
-  const line = (arr: number[]) => arr.map((v, i) => `${x(i)},${y(v)}`).join(' ')
-  const band = `${p.p90.map((v, i) => `${x(i)},${y(v)}`).join(' ')} ${[...p.p10].map((v, i) => ({ v, i })).reverse().map(({ v, i }) => `${x(i)},${y(v)}`).join(' ')}`
-  const fmt = (v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : Math.round(v).toString()
+  const X = (i: number) => PADL + (i / Math.max(1, total - 1)) * (W - PADL - PADR)
+  const Y = (v: number) => PADT + (1 - (v - lo) / span) * (CH - PADT - PADB)
+  const histLine = hist.map((v, i) => `${X(i)},${Y(v)}`).join(' ')
+  const fc = (arr: number[]) => arr.map((v, f) => `${X(fcStart + f)},${Y(v)}`).join(' ')
+  const band = `${p.p90.map((v, f) => `${X(fcStart + f)},${Y(v)}`).join(' ')} ${[...p.p10].map((v, f) => ({ v, f })).reverse().map(({ v, f }) => `${X(fcStart + f)},${Y(v)}`).join(' ')}`
+  const fmt = (v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : Math.round(v).toFixed(v < 10 ? 1 : 0)
+  const nowX = X(fcStart)
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" className="fan">
-      {/* сетка по месяцам */}
-      {Array.from({ length: n }, (_, i) => (
-        <line key={i} x1={x(i)} y1={PADT} x2={x(i)} y2={H - PADB} stroke="var(--border, #2a2f37)" strokeWidth={0.5} />
-      ))}
-      <polygon points={band} fill="var(--accent, #2d72d2)" opacity={0.16} />
-      <polyline points={line(p.p90)} fill="none" stroke="var(--accent, #2d72d2)" strokeWidth={1} opacity={0.5} strokeDasharray="3 2" />
-      <polyline points={line(p.p10)} fill="none" stroke="var(--accent, #2d72d2)" strokeWidth={1} opacity={0.5} strokeDasharray="3 2" />
-      <polyline points={line(p.p50)} fill="none" stroke="var(--accent, #2d72d2)" strokeWidth={2} />
-      <line x1={x(0)} y1={y(p.base)} x2={x(n - 1)} y2={y(p.base)} stroke="var(--text-muted, #8a929c)" strokeWidth={0.8} strokeDasharray="2 3" />
-      {/* подписи осей */}
-      <text x={PADL} y={10} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono, monospace)">{fmt(hi)}</text>
-      <text x={PADL} y={H - PADB + 12} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono, monospace)">{fmt(lo)}</text>
-      <text x={x(n - 1)} y={H - 4} fontSize={9} fill="var(--text-muted,#8a929c)" textAnchor="end" fontFamily="var(--font-mono, monospace)">мес {n - 1}</text>
-      <text x={x(0)} y={H - 4} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono, monospace)">0</text>
+    <svg viewBox={`0 0 ${W} ${CH}`} width="100%" role="img" className="fan">
+      <rect x={nowX} y={PADT} width={W - PADR - nowX} height={CH - PADT - PADB} fill="var(--accent,#2d72d2)" opacity={0.05} />
+      <line x1={nowX} y1={PADT} x2={nowX} y2={CH - PADB} stroke="var(--text-muted,#8a929c)" strokeWidth={0.8} strokeDasharray="2 2" />
+      {H > 0 && <polyline points={histLine} fill="none" stroke="var(--text,#e6e9ee)" strokeWidth={1.6} />}
+      <polygon points={band} fill="var(--accent,#2d72d2)" opacity={0.16} />
+      <polyline points={fc(p.p90)} fill="none" stroke="var(--accent,#2d72d2)" strokeWidth={0.8} opacity={0.5} strokeDasharray="3 2" />
+      <polyline points={fc(p.p10)} fill="none" stroke="var(--accent,#2d72d2)" strokeWidth={0.8} opacity={0.5} strokeDasharray="3 2" />
+      <polyline points={fc(p.p50)} fill="none" stroke="var(--accent,#2d72d2)" strokeWidth={2} />
+      {p.trend && <polyline points={fc(p.trend)} fill="none" stroke="#caa83a" strokeWidth={1.4} strokeDasharray="4 3" />}
+      <text x={PADL} y={10} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">{fmt(hi)}</text>
+      <text x={PADL} y={CH - PADB + 12} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">{fmt(lo)}</text>
+      {H > 0 && <text x={PADL} y={CH - 6} fontSize={8.5} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">−{H - 1}м</text>}
+      <text x={nowX + 2} y={CH - 6} fontSize={8.5} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">сейчас</text>
+      <text x={W - PADR} y={CH - 6} fontSize={8.5} fill="var(--text-muted,#8a929c)" textAnchor="end" fontFamily="var(--font-mono,monospace)">+{N}м</text>
     </svg>
   )
 }
@@ -128,6 +134,15 @@ export function ForecastScreen() {
           {fx !== 1 && <> · курс ×{fx.toFixed(2)}</>}
           {demand !== 1 && <> · спрос ×{demand.toFixed(2)}</>}
           {' · '}индекс: {res.inflation_index.map((v) => v.toFixed(0)).join(' → ')}
+        </div>
+      )}
+
+      {res && (
+        <div className="forecast__legend mono">
+          <span><i className="lg lg--hist" /> история (факт)</span>
+          <span><i className="lg lg--band" /> веер P10–P90 (разброс по подобранному распределению)</span>
+          <span><i className="lg lg--p50" /> медиана</span>
+          <span><i className="lg lg--trend" /> тренд (детерм. дрейф)</span>
         </div>
       )}
 
