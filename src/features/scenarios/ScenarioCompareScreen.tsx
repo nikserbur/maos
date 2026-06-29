@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type PriceScenario, type OptResult, type ProductionPlan, type Product, type ScenarioPayload } from '../../lib/api'
+import { ForecastScreen } from '../forecast/ForecastScreen'
 import './scenario-compare.css'
 
 const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
@@ -38,6 +39,7 @@ export function ScenarioCompareScreen() {
   const [results, setResults]     = useState<Record<string, OptResult>>({})
   const [busy, setBusy]           = useState(false)
   const [error, setError]         = useState<string | null>(null)
+  const [openId, setOpenId]       = useState('')   // раскрытый сценарий (условия + графики)
 
   // Грузим полные сценарии (с оверрайдами), а также планы и изделия для редактора.
   const load = async () => {
@@ -64,6 +66,8 @@ export function ScenarioCompareScreen() {
     max_share: Number(sc.max_share) || 0.6,
     mode: sc.mode || 'stochastic',
     plan_id: sc.plan_id || '', start_date: sc.start_date || '', end_date: sc.end_date || '',
+    inflation: Number(sc.inflation) || 0, fx: Number(sc.fx) || 1, demand: Number(sc.demand) || 1,
+    volatility: Number(sc.volatility) || 0.05, months: Number(sc.months) || 6,
     ...extra,
   })
 
@@ -162,13 +166,40 @@ export function ScenarioCompareScreen() {
               <label>По
                 <input type="date" value={sc.end_date || ''} onChange={(e) => patch(sc, { end_date: e.target.value })} />
               </label>
+              {/* Внешние условия (двигают прогноз цен) */}
+              <label>Инфляция %/мес
+                <input type="number" step={0.1} value={(Number(sc.inflation) || 0) * 100}
+                       onChange={(e) => patch(sc, { inflation: String((Number(e.target.value) || 0) / 100) })} />
+              </label>
+              <label>Курс ×
+                <input type="number" step={0.05} value={sc.fx ?? '1'} onChange={(e) => patch(sc, { fx: e.target.value })} />
+              </label>
+              <label>Спрос ×
+                <input type="number" step={0.05} value={sc.demand ?? '1'} onChange={(e) => patch(sc, { demand: e.target.value })} />
+              </label>
+              <label>Волат. %/мес
+                <input type="number" step={0.5} value={(Number(sc.volatility) || 0.05) * 100}
+                       onChange={(e) => patch(sc, { volatility: String((Number(e.target.value) || 0) / 100) })} />
+              </label>
             </div>
             <OverrideEditor sc={sc} products={products}
               onSet={(pid, price) => setOverride(sc, pid, price)} onClear={() => clearOverrides(sc)} />
             <div className="scen__actions">
+              <button className="btn" onClick={() => setOpenId(openId === sc.id ? '' : sc.id)}>
+                {openId === sc.id ? '▴ Скрыть прогноз' : '▾ Условия и прогноз цен'}
+              </button>
               <button className="btn" onClick={() => clone(sc.id)}>Клонировать</button>
               <button className="btn" onClick={() => remove(sc.id)}>Удалить</button>
             </div>
+            {openId === sc.id && (
+              <div className="scen__detail">
+                <div className="scen__detail-hint mono">
+                  Стартовые графики и распределения цен по этому сценарию. Меняйте внешние условия выше /
+                  оверрайды — затем «Пересчитать прогноз». Сценарий применяется в оптимизации (вкладка сравнения / экран «Оптимизация»).
+                </div>
+                <ForecastScreen scenarioId={sc.id} />
+              </div>
+            )}
           </div>
         ))}
         {!scenarios.length && <p className="scen__empty">Сценариев нет. Создайте на экране «Сценарии».</p>}

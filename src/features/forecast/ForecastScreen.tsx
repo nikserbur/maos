@@ -42,7 +42,7 @@ function PriceFan({ p }: { p: ForecastProduct }) {
 
 const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
 
-export function ForecastScreen() {
+export function ForecastScreen({ scenarioId: fixed }: { scenarioId?: string } = {}) {
   const [months, setMonths]     = useState(6)
   const [inflation, setInfl]    = useState(1.5)   // %/мес
   const [fx, setFx]             = useState(1.0)
@@ -53,10 +53,12 @@ export function ForecastScreen() {
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
-  const [scenarioId, setScenarioId] = useState('')
+  const [scenarioId, setScenarioId] = useState(fixed ?? '')
   const [zoom, setZoom] = useState<ForecastProduct | null>(null)
+  const embedded = fixed !== undefined   // встроен в карточку сценария (без выпадашки)
 
-  useEffect(() => { api.scenarios.list().then(setScenarios).catch(() => {}) }, [])
+  useEffect(() => { if (!embedded) api.scenarios.list().then(setScenarios).catch(() => {}) }, [embedded])
+  useEffect(() => { if (fixed !== undefined) setScenarioId(fixed) }, [fixed])
 
   const run = useCallback(() => {
     setLoading(true); setError(null)
@@ -76,7 +78,9 @@ export function ForecastScreen() {
       .finally(() => setLoading(false))
   }, [scenarioId, months, inflation, fx, demand, volatility, corr])
 
-  useEffect(() => { run() }, [])  // первичный расчёт; дальше — кнопкой
+  // Пересчёт при смене сценария (и на старте); ручные ползунки — кнопкой.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { run() }, [scenarioId])
 
   const products = res?.products ?? []
   const goods = products.filter((p) => p.role === 'product')
@@ -85,7 +89,7 @@ export function ForecastScreen() {
 
   return (
     <div className="forecast">
-      <header className="forecast__head">
+      {!embedded && <header className="forecast__head">
         <div>
           <h1 className="forecast__title">Внешние условия и прогноз цен</h1>
           <p className="forecast__desc">
@@ -95,15 +99,15 @@ export function ForecastScreen() {
             (инфляция/курс/спрос). Веер — P10/P50/P90. «⛶» — детальные значения по месяцам.
           </p>
         </div>
-      </header>
+      </header>}
 
       <section className="forecast__controls">
-        <label>Сценарий
+        {!embedded && <label>Сценарий
           <select value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
             <option value="">— ручные параметры —</option>
             {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-        </label>
+        </label>}
         <label>Горизонт, мес
           <input type="number" min={1} max={36} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(36, Number(e.target.value) || 6)))} />
         </label>

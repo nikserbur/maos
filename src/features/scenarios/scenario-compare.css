@@ -52,3 +52,9 @@
 .scen__cmp thead th { color: var(--text, #e6e9ee); border-bottom: 2px solid var(--border, #2a2f37); }
 .scen__best { color: #4caf72; font-weight: 600; }
 .scen__top { font-size: 11px; text-align: left; color: var(--text-muted, #8a929c); }
+
+/* Раскрытый сценарий: внешние условия + встроенный прогноз цен */
+.scen__detail { flex-basis: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border, #2a2f37); }
+.scen__detail-hint { font-size: 11px; color: var(--text-muted, #8a929c); margin-bottom: 8px; }
+.scen__detail .forecast { height: auto; padding: 0; overflow: visible; }
+.scen__detail .forecast__head { display: none; }
