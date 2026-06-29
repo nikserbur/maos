@@ -80,9 +80,36 @@ static std::string jstr(const json& j, const std::string& key) {
   return j[key].dump();  // arrays / numbers → their JSON string
 }
 
+// Заполнить operation_inputs из JSON-массива входов техкарты [{productId|product_id, qty}, …]
+// (формат редактора техкарт). Агрегирует дубли по изделию, пропускает несуществующие.
+// Удаление существующих строк — на вызывающей стороне.
+static void insert_op_inputs_json(Database& db, const std::string& opId, const std::string& jsonStr) {
+  if (jsonStr.empty()) return;
+  json arr;
+  try { arr = json::parse(jsonStr); } catch (...) { return; }
+  if (!arr.is_array()) return;
+  std::unordered_map<std::string, double> agg;
+  for (auto& in : arr) {
+    std::string pid = in.contains("productId") ? in.value("productId", std::string())
+                                               : in.value("product_id", std::string());
+    if (pid.empty()) continue;
+    double qty = 1.0;
+    if (in.contains("qty")) {
+      if (in["qty"].is_number()) qty = in["qty"].get<double>();
+      else if (in["qty"].is_string()) { try { qty = std::stod(in["qty"].get<std::string>()); } catch (...) {} }
+    }
+    agg[pid] += qty;
+  }
+  for (auto& [pid, qty] : agg)
+    db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) "
+            "SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM products WHERE id=?)",
+            { opId, pid, std::to_string(qty), pid });
+}
+
 // Записать связи операции по ID (operation_wc_types, operation_inputs) из тела:
 //   wc_type_ids: ["id1","id2"]              — допустимые типы оборудования
 //   input_products: [{product_id, qty}, …]  | ["pid", …]
+//   inputs: "[{productId,qty},…]" (JSON-строка из редактора техкарт)
 // Реестры связаны по ID — это основа расчёта себестоимости/мощности.
 static void link_operation(Database& db, const std::string& opId, const json& body) {
   db.exec("DELETE FROM operation_wc_types WHERE operation_id=?", { opId });
@@ -102,6 +129,9 @@ static void link_operation(Database& db, const std::string& opId, const json& bo
       db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) VALUES(?,?,?)",
               { opId, pid, qty });
     }
+  // Входы из редактора техкарт (JSON-строка inputs) — основной путь для UI.
+  if (body.contains("inputs") && body["inputs"].is_string())
+    insert_op_inputs_json(db, opId, body["inputs"].get<std::string>());
 }
 
 // Демо-KDF: солёный FNV-1a (не криптостойкий, но не план-текст). Формат "salt$hex".
@@ -1245,6 +1275,25 @@ static void migrate_v13(Database& db) {
   std::cout << "Migration v13 done.\n";
 }
 
+// v14: бэкфилл входов техкарт. Редактор сохранял входы в JSON operations.inputs, а
+// движок читает operation_inputs — связи терялись. Разбираем JSON в таблицу для всех
+// операций, у которых inputs — JSON-массив (операции НСИ с пустым inputs не трогаем).
+static void migrate_v14(Database& db) {
+  if (db.user_version() >= 14) return;
+  std::cout << "Migrating schema → v14 (бэкфилл входов техкарт → operation_inputs)…\n";
+  db.exec("BEGIN");
+  try {
+    for (auto& o : db.query_json("SELECT id,inputs FROM operations WHERE inputs LIKE '[%'")) {
+      const std::string opId = jstr(o, "id");
+      db.exec("DELETE FROM operation_inputs WHERE operation_id=?", { opId });
+      insert_op_inputs_json(db, opId, jstr(o, "inputs"));
+    }
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  db.exec("COMMIT");
+  db.set_user_version(14);
+  std::cout << "Migration v14 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -1998,6 +2047,7 @@ int main(int argc, char* argv[]) {
     migrate_v11(db);
     migrate_v12(db);
     migrate_v13(db);
+    migrate_v14(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -2014,7 +2064,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.18.1"} });
+    ok(res, { {"status", "ok"}, {"version", "0.18.2"} });
   });
 
   // Auth

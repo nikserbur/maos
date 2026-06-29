@@ -1,15 +1,15 @@
 import { useState, type ComponentType } from 'react'
-import { ScenariosScreen } from './ScenariosScreen'
 import { ScenarioCompareScreen } from './ScenarioCompareScreen'
 import { ForecastScreen } from '../forecast/ForecastScreen'
 import './scenarios-hub.css'
 
 interface Tab { id: string; label: string; C: ComponentType }
 
+// «Распределения цен (НСИ)» убраны: распределение теперь подбирается из истории
+// в «Прогнозе» (data-driven) — отдельный single-period редактор дублировал его.
 const TABS: Tab[] = [
   { id: 'compare',  label: 'Сценарии и сравнение', C: ScenarioCompareScreen },
   { id: 'forecast', label: 'Прогноз цен во времени', C: ForecastScreen },
-  { id: 'dist',     label: 'Распределения цен (НСИ)', C: ScenariosScreen },
 ]
 
 /**
