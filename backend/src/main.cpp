@@ -1429,33 +1429,49 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         for (size_t k = 1; k < vals.size(); ++k)
           if (vals[k - 1] > 0 && vals[k] > 0) rets.push_back(std::log(vals[k] / vals[k - 1]));
         bool dd = rets.size() >= 4;
-        double mu = 0, sg = vol, aicN = 0, aicL = 0;
+        double mu = 0, sg = vol, aicN = 0, aicL = 0, aicT = 0;
         std::string dist = "normal"; double lapB = vol / std::sqrt(2.0);
+        double tNu = 40.0, tScale = vol;     // t-Стьюдент: ст. свободы + масштаб
         if (dd) {
           double s = 0; for (double r : rets) s += r; mu = s / rets.size();
           double v2 = 0; for (double r : rets) v2 += (r - mu) * (r - mu);
           sg = std::max(1e-4, std::sqrt(v2 / rets.size()));
           std::vector<double> sr = rets; std::sort(sr.begin(), sr.end());
-          double med = sr[sr.size() / 2], mad = 0;
-          for (double r : rets) mad += std::fabs(r - med);
+          double med = sr[sr.size() / 2], mad = 0, m4 = 0;
+          for (double r : rets) { mad += std::fabs(r - med); double d = r - mu; m4 += d * d * d * d; }
           mad = std::max(1e-4, mad / rets.size());
-          double llN = 0, llL = 0;
+          m4 /= rets.size();
+          // ν из избыточного эксцесса: exKurt(t_ν)=6/(ν−4); ν=6/exKurt+4 (клампинг)
+          double exKurt = sg > 1e-9 ? m4 / (sg * sg * sg * sg) - 3.0 : 0.0;
+          tNu = exKurt > 0.05 ? std::min(40.0, std::max(3.0, 6.0 / exKurt + 4.0)) : 40.0;
+          tScale = sg / std::sqrt(tNu / (tNu - 2.0));   // дисперсия t совпадает с выборочной
+          double llN = 0, llL = 0, llT = 0;
+          const double tc = std::lgamma((tNu + 1) / 2.0) - std::lgamma(tNu / 2.0)
+                          - 0.5 * std::log(tNu * M_PI) - std::log(tScale);
           for (double r : rets) {
             llN += -0.5 * std::log(2 * M_PI * sg * sg) - (r - mu) * (r - mu) / (2 * sg * sg);
             llL += -std::log(2 * mad) - std::fabs(r - med) / mad;
+            double zt = (r - mu) / tScale;
+            llT += tc - (tNu + 1) / 2.0 * std::log(1 + zt * zt / tNu);
           }
-          aicN = 4 - 2 * llN; aicL = 4 - 2 * llL;
-          if (aicL < aicN) { dist = "laplace"; lapB = mad; }
+          aicN = 4 - 2 * llN; aicL = 4 - 2 * llL; aicT = 6 - 2 * llT;   // t: k=3
+          double bestAic = aicN;
+          if (aicL < bestAic) { dist = "laplace"; lapB = mad; bestAic = aicL; }
+          if (aicT < bestAic) { dist = "t"; bestAic = aicT; }
         }
         const double drift_p = (dd ? mu : 0.0) + extraDrift;
         const double vol_p = dd ? sg : vol;
+        std::gamma_distribution<double> gdist(tNu / 2.0, 2.0);   // χ²_ν для t-сэмплинга
         std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
         for (int r = 0; r < runs; ++r) {
           double logp = std::log(base);
           px[0][r] = base * macroMul;
           for (int t = 1; t <= months; ++t) {
-            const double z = beta * M[r][t] + idio * nd(rng);
-            const double innov = dist == "laplace" ? lapQ(Phi(z), lapB) : vol_p * z;
+            const double z = beta * M[r][t] + idio * nd(rng);   // коррелир. стд. нормаль
+            double innov;
+            if (dist == "laplace")   innov = lapQ(Phi(z), lapB);
+            else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);  // мультивар.-t
+            else                     innov = vol_p * z;
             logp += drift_p + innov - 0.5 * vol_p * vol_p;
             px[t][r] = std::exp(logp) * macroMul;
           }
@@ -1472,7 +1488,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         return json{
           {"base", base}, {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
           {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)rets.size()},
-                    {"mu", mu}, {"sigma", vol_p}, {"aic_normal", aicN}, {"aic_laplace", aicL} }},
+                    {"mu", mu}, {"sigma", vol_p}, {"nu", tNu},
+                    {"aic_normal", aicN}, {"aic_laplace", aicL}, {"aic_t", aicT} }},
         };
       };
 
@@ -1834,7 +1851,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.15.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.15.1"} });
   });
 
   // Auth

@@ -235,8 +235,9 @@ export interface ForecastParams {
   volatility?: number; corr?: number; runs?: number
 }
 export interface ForecastFit {
-  data_driven: boolean; dist: 'normal' | 'laplace'; n_obs: number
-  mu: number; sigma: number; aic_normal: number; aic_laplace: number
+  data_driven: boolean; dist: 'normal' | 'laplace' | 't'; n_obs: number
+  mu: number; sigma: number; nu?: number
+  aic_normal: number; aic_laplace: number; aic_t?: number
 }
 export interface ForecastProduct {
   id: string; name: string; role: 'product' | 'raw' | 'rate'; base: number

@@ -142,8 +142,10 @@ function Card({ p, pct }: { p: ForecastProduct; pct?: boolean }) {
       </div>
       <PriceFan p={p} />
       {p.fit?.data_driven && (
-        <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}`}>
-          {p.fit.dist === 'laplace' ? '◆ Лаплас (тяж. хвосты)' : '○ нормаль'} · σ {(p.fit.sigma * 100).toFixed(1)}%/мес · история {p.fit.n_obs}
+        <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}${p.fit.aic_t != null ? ` · t ${p.fit.aic_t.toFixed(1)}` : ''}`}>
+          {p.fit.dist === 't' ? `◆ t-Стьюдент (ν=${(p.fit.nu ?? 0).toFixed(0)}, тяж. хвосты)`
+            : p.fit.dist === 'laplace' ? '◆ Лаплас (тяж. хвосты)' : '○ нормаль'}
+          {' · σ '}{(p.fit.sigma * 100).toFixed(1)}%/мес · история {p.fit.n_obs}
         </div>
       )}
       <div className="forecast__card-foot mono">
