@@ -3,6 +3,7 @@ import {
   api, type ScheduleResult, type OptRunSummary, type DemandOrder, type Product,
   type MrpResult, type ProductionPlan,
 } from '../../lib/api'
+import { LoadTimeline } from './LoadTimeline'
 import './plan.css'
 
 const ORDER_COLORS = ['#2d72d2', '#238551', '#c87619', '#9179f2', '#149e8e', '#cd4246', '#db2c6f', '#d1980b']
@@ -98,7 +99,7 @@ export function PlanScreen() {
   const [newQty, setNewQty] = useState('100')
   const [newDue, setNewDue] = useState('120')
   const [useCalendar, setUseCalendar] = useState(true)
-  const [loadView, setLoadView] = useState<'types' | 'machines'>('types')
+  const [loadView, setLoadView] = useState<'types' | 'machines' | 'time'>('types')
 
   const [plans, setPlans] = useState<ProductionPlan[]>([])
   const [activePlan, setActivePlan] = useState('')
@@ -324,12 +325,14 @@ export function PlanScreen() {
                           onClick={() => setLoadView('types')}>по типам</button>
                   <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'machines' ? 1 : 0.55 }}
                           onClick={() => setLoadView('machines')}>по станкам</button>
+                  <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'time' ? 1 : 0.55 }}
+                          onClick={() => setLoadView('time')}>во времени</button>
                 </span>
               </p>
               <div className="plan__panel">
-                {loadView === 'types'
-                  ? <LoadBars rows={result.wc_load} nameKey="wc_name" />
-                  : <LoadBars rows={result.machine_load} nameKey="machine_name" />}
+                {loadView === 'types' && <LoadBars rows={result.wc_load} nameKey="wc_name" />}
+                {loadView === 'machines' && <LoadBars rows={result.machine_load} nameKey="machine_name" />}
+                {loadView === 'time' && <LoadTimeline gantt={result.gantt} makespan={result.kpi.makespan} />}
               </div>
             </div>
             <div>
