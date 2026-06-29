@@ -97,3 +97,30 @@
 .forecast__fit { font-size: 10px; color: var(--text-muted, #8a929c); margin-top: 2px; }
 .forecast__card-foot { font-size: 11px; color: var(--text, #e6e9ee); margin-top: 2px; }
 .forecast__range { color: var(--text-muted, #8a929c); }
+
+/* Кнопка «увеличить» + модал с детальной таблицей значений */
+.forecast__zoom {
+  background: transparent; border: 1px solid var(--border, #2a2f37); border-radius: 6px;
+  color: var(--text-muted, #8a929c); cursor: pointer; font-size: 12px; line-height: 1;
+  padding: 2px 6px;
+}
+.forecast__zoom:hover { color: var(--text, #e6e9ee); border-color: var(--accent, #2d72d2); }
+.forecast__modal {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.forecast__modal-box {
+  background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37);
+  border-radius: 12px; padding: 16px 18px; width: min(760px, 94vw);
+  max-height: 90vh; overflow: auto;
+}
+.forecast__modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.forecast__modal-chart { margin-bottom: 12px; }
+.forecast__vtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.forecast__vtable th, .forecast__vtable td {
+  text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--border, #2a2f37);
+  font-variant-numeric: tabular-nums;
+}
+.forecast__vtable th { color: var(--text-muted, #8a929c); }
+.forecast__vtable td:first-child, .forecast__vtable th:first-child { text-align: left; color: var(--text-muted, #8a929c); }
+.forecast__vtrend { color: #caa83a; }

@@ -54,6 +54,7 @@ export function ForecastScreen() {
   const [error, setError]       = useState<string | null>(null)
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
   const [scenarioId, setScenarioId] = useState('')
+  const [zoom, setZoom] = useState<ForecastProduct | null>(null)
 
   useEffect(() => { api.scenarios.list().then(setScenarios).catch(() => {}) }, [])
 
@@ -88,9 +89,10 @@ export function ForecastScreen() {
         <div>
           <h1 className="forecast__title">Внешние условия и прогноз цен</h1>
           <p className="forecast__desc">
-            Цены изделий и сырья во времени под действием макрофакторов (инфляция, курс, спрос).
-            μ/σ оцениваются из истории (ts_data), распределение шага подбирается по AIC
-            (нормаль ↔ Лаплас с тяжёлыми хвостами); веер — P10/P50/P90.
+            Методика: по истории строится <b>тренд</b> (МНК), к <b>остаткам</b> (не-тренду)
+            подбирается распределение по AIC (нормаль/Лаплас/t/α-stable), и прогноз =
+            экстраполяция тренда + случайный остаток (Монте-Карло) с учётом макрофакторов
+            (инфляция/курс/спрос). Веер — P10/P50/P90. «⛶» — детальные значения по месяцам.
           </p>
         </div>
       </header>
@@ -149,24 +151,26 @@ export function ForecastScreen() {
       {res?.rate && (
         <>
           <h2 className="forecast__group">Внешнее условие — ключевая ставка (тот же движок)</h2>
-          <div className="forecast__grid"><Card p={res.rate} pct /></div>
+          <div className="forecast__grid"><Card p={res.rate} pct onZoom={setZoom} /></div>
         </>
       )}
 
       {goods.length > 0 && <h2 className="forecast__group">Изделия (цены сбыта)</h2>}
       <div className="forecast__grid">
-        {goods.map((p) => <Card key={p.id} p={p} />)}
+        {goods.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
       </div>
 
       {raws.length > 0 && <h2 className="forecast__group">Сырьё (закупочные цены)</h2>}
       <div className="forecast__grid">
-        {raws.map((p) => <Card key={p.id} p={p} />)}
+        {raws.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
       </div>
+
+      {zoom && <ZoomModal p={zoom} pct={zoom.role === 'rate'} onClose={() => setZoom(null)} />}
     </div>
   )
 }
 
-function Card({ p, pct }: { p: ForecastProduct; pct?: boolean }) {
+function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: (p: ForecastProduct) => void }) {
   const last = p.p50.length - 1
   const delta = ((p.p50[last] - p.base) / p.base) * 100
   const fmtVal = (v: number) => (pct ? `${v.toFixed(1)}%` : money(v))
@@ -174,7 +178,10 @@ function Card({ p, pct }: { p: ForecastProduct; pct?: boolean }) {
     <div className="forecast__card">
       <div className="forecast__card-head">
         <span className="forecast__name">{p.name}</span>
-        <span className={`forecast__delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span className={`forecast__delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span>
+          {onZoom && <button className="forecast__zoom" title="Увеличить · детальные значения" onClick={() => onZoom(p)}>⛶</button>}
+        </span>
       </div>
       <PriceFan p={p} />
       {p.fit?.data_driven && (
@@ -188,6 +195,37 @@ function Card({ p, pct }: { p: ForecastProduct; pct?: boolean }) {
       <div className="forecast__card-foot mono">
         через {last} мес: <b>{fmtVal(p.p50[last])}</b>
         <span className="forecast__range"> ({fmtVal(p.p10[last])} – {fmtVal(p.p90[last])})</span>
+      </div>
+    </div>
+  )
+}
+
+/** Увеличенный график + детальная таблица значений прогноза по месяцам. */
+function ZoomModal({ p, pct, onClose }: { p: ForecastProduct; pct?: boolean; onClose: () => void }) {
+  const fmtVal = (v: number) => (pct ? `${v.toFixed(2)}%` : money(v))
+  const N = p.p50.length
+  return (
+    <div className="forecast__modal" onClick={onClose}>
+      <div className="forecast__modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="forecast__modal-head">
+          <b>{p.name} — прогноз по месяцам</b>
+          <button className="btn" onClick={onClose}>✕ Закрыть</button>
+        </div>
+        <div className="forecast__modal-chart"><PriceFan p={p} /></div>
+        <table className="forecast__vtable mono">
+          <thead><tr><th>Мес</th><th>P10</th><th>Медиана (P50)</th><th>P90</th><th>Тренд</th></tr></thead>
+          <tbody>
+            {Array.from({ length: N }, (_, t) => (
+              <tr key={t}>
+                <td>+{t}</td>
+                <td>{fmtVal(p.p10[t])}</td>
+                <td><b>{fmtVal(p.p50[t])}</b></td>
+                <td>{fmtVal(p.p90[t])}</td>
+                <td className="forecast__vtrend">{p.trend ? fmtVal(p.trend[t]) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

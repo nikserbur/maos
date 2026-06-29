@@ -1571,54 +1571,64 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         return 0.0;
       };
 
-      // КАНОНИЧЕСКИЙ движок прогноза ряда (общий для цен и ключевой ставки):
-      // μ/σ из лог-доходностей истории → выбор распределения шага по AIC (нормаль↔Лаплас)
-      // → Монте-Карло с общим рыночным фактором (корреляция) → веер P10/P50/P90.
+      // КАНОНИЧЕСКИЙ движок прогноза (как в эталонной методике):
+      //   1) строим ТРЕНД (МНК-регрессия лог-цены по времени);
+      //   2) подбираем РАСПРЕДЕЛЕНИЕ к ОСТАТКАМ (не-тренду) по AIC: нормаль/Лаплас/t/α-stable;
+      //   3) прогноз = экстраполяция тренда + случайный остаток из подобранного распределения
+      //      (Монте-Карло, общий рыночный фактор → корреляция, веер P10/P50/P90).
       auto fanFromHistory = [&](double base, const std::vector<double>& vals,
                                 double extraDrift, double macroMul) -> json {
-        std::vector<double> rets;
-        for (size_t k = 1; k < vals.size(); ++k)
-          if (vals[k - 1] > 0 && vals[k] > 0) rets.push_back(std::log(vals[k] / vals[k - 1]));
-        bool dd = rets.size() >= 4;
+        std::vector<double> ly;
+        for (double v : vals) if (v > 0) ly.push_back(std::log(v));
+        const int Hn = (int)ly.size();
+        const bool dd = Hn >= 5;
+
+        // 1) ТРЕНД: lvl + slp*t (t=0..Hn-1); остатки res_t = ly_t − тренд.
+        double lvl = std::log(base), slp = 0.0;
+        std::vector<double> res;
+        if (dd) {
+          double n = Hn, st = 0, sy = 0, stt = 0, sty = 0;
+          for (int t = 0; t < Hn; ++t) { st += t; sy += ly[t]; stt += (double)t * t; sty += (double)t * ly[t]; }
+          const double den = n * stt - st * st;
+          slp = den != 0 ? (n * sty - st * sy) / den : 0.0;
+          lvl = (sy - slp * st) / n;
+          for (int t = 0; t < Hn; ++t) res.push_back(ly[t] - (lvl + slp * t));
+        }
+
+        // 2) РАСПРЕДЕЛЕНИЕ остатков по AIC.
         double mu = 0, sg = vol, aicN = 0, aicL = 0, aicT = 0, aicS = 0;
         std::string dist = "normal"; double lapB = vol / std::sqrt(2.0);
-        double tNu = 40.0, tScale = vol;     // t-Стьюдент: ст. свободы + масштаб
-        double sAlpha = 2.0, sGamma = vol;   // α-stable: индекс устойчивости + масштаб
+        double tNu = 40.0, tScale = vol, sAlpha = 2.0, sGamma = vol;
         if (dd) {
-          double s = 0; for (double r : rets) s += r; mu = s / rets.size();
-          double v2 = 0; for (double r : rets) v2 += (r - mu) * (r - mu);
-          sg = std::max(1e-4, std::sqrt(v2 / rets.size()));
-          std::vector<double> sr = rets; std::sort(sr.begin(), sr.end());
+          double s = 0; for (double r : res) s += r; mu = s / res.size();
+          double v2 = 0; for (double r : res) v2 += (r - mu) * (r - mu);
+          sg = std::max(1e-4, std::sqrt(v2 / res.size()));
+          std::vector<double> sr = res; std::sort(sr.begin(), sr.end());
           double med = sr[sr.size() / 2], mad = 0, m4 = 0;
-          for (double r : rets) { mad += std::fabs(r - med); double d = r - mu; m4 += d * d * d * d; }
-          mad = std::max(1e-4, mad / rets.size());
-          m4 /= rets.size();
-          // ν из избыточного эксцесса: exKurt(t_ν)=6/(ν−4); ν=6/exKurt+4 (клампинг)
-          double exKurt = sg > 1e-9 ? m4 / (sg * sg * sg * sg) - 3.0 : 0.0;
+          for (double r : res) { mad += std::fabs(r - med); double d = r - mu; m4 += d * d * d * d; }
+          mad = std::max(1e-4, mad / res.size()); m4 /= res.size();
+          const double exKurt = sg > 1e-9 ? m4 / (sg * sg * sg * sg) - 3.0 : 0.0;
           tNu = exKurt > 0.05 ? std::min(40.0, std::max(3.0, 6.0 / exKurt + 4.0)) : 40.0;
-          tScale = sg / std::sqrt(tNu / (tNu - 2.0));   // дисперсия t совпадает с выборочной
+          tScale = sg / std::sqrt(tNu / (tNu - 2.0));
           double llN = 0, llL = 0, llT = 0;
           const double tc = std::lgamma((tNu + 1) / 2.0) - std::lgamma(tNu / 2.0)
                           - 0.5 * std::log(tNu * M_PI) - std::log(tScale);
-          for (double r : rets) {
+          for (double r : res) {
             llN += -0.5 * std::log(2 * M_PI * sg * sg) - (r - mu) * (r - mu) / (2 * sg * sg);
             llL += -std::log(2 * mad) - std::fabs(r - med) / mad;
-            double zt = (r - mu) / tScale;
+            const double zt = (r - mu) / tScale;
             llT += tc - (tNu + 1) / 2.0 * std::log(1 + zt * zt / tNu);
           }
-          aicN = 4 - 2 * llN; aicL = 4 - 2 * llL; aicT = 6 - 2 * llT;   // t: k=3
+          aicN = 4 - 2 * llN; aicL = 4 - 2 * llL; aicT = 6 - 2 * llT;
           double bestAic = aicN;
           if (aicL < bestAic) { dist = "laplace"; lapB = mad; bestAic = aicL; }
           if (aicT < bestAic) { dist = "t"; bestAic = aicT; }
-
-          // α-stable (симметричная, β=0, δ=μ): сетка α/γ по числовой плотности
-          // f(x)=(1/πγ)∫₀^∞ exp(−u^α)·cos(u·(x−μ)/γ)du — Фурье-обращение хар. функции.
-          const double q1 = sr[(size_t)std::round(0.25 * (rets.size() - 1))];
-          const double q3 = sr[(size_t)std::round(0.75 * (rets.size() - 1))];
+          const double q1 = sr[(size_t)std::round(0.25 * (res.size() - 1))];
+          const double q3 = sr[(size_t)std::round(0.75 * (res.size() - 1))];
           const double gam0 = std::max(1e-4, (q3 - q1) / 2.0);
           auto stableLL = [&](double a, double g) {
             double ll = 0;
-            for (double r : rets) {
+            for (double r : res) {
               double xn = (r - mu) / g, integ = 0;
               for (int j = 0; j < 160; ++j) { double u = (j + 0.5) * 0.15; integ += std::exp(-std::pow(u, a)) * std::cos(u * xn) * 0.15; }
               ll += std::log(std::max(integ / (M_PI * g), 1e-12));
@@ -1631,32 +1641,33 @@ static void register_forecast(httplib::Server& svr, Database& db) {
               double g = gam0 * gm, ll = stableLL(a, g);
               if (ll > bestSLL) { bestSLL = ll; sAlpha = a; sGamma = g; }
             }
-          aicS = 4 - 2 * bestSLL;   // k=2 (α, γ)
+          aicS = 4 - 2 * bestSLL;
           if (aicS < bestAic) { dist = "stable"; bestAic = aicS; }
         }
-        const double drift_p = (dd ? mu : 0.0) + extraDrift;
-        const double vol_p = dd ? sg : vol;
-        std::gamma_distribution<double> gdist(tNu / 2.0, 2.0);   // χ²_ν для t-сэмплинга
+
+        // 3) ПРОГНОЗ = тренд (наклон истории + макро-дрейф) + остаток из распределения.
+        //    Якорь — последнее ФАКТ. значение (непрерывность с историей), наклон — из тренда.
+        const double anchor = std::log(base);
+        const double slopeFwd = slp + extraDrift;                // наклон тренда + макро-инфляция
+        std::gamma_distribution<double> gdist(tNu / 2.0, 2.0);
         std::uniform_real_distribution<double> ud(-M_PI / 2 + 1e-6, M_PI / 2 - 1e-6);
-        std::exponential_distribution<double> ed(1.0);            // для CMS α-stable
+        std::exponential_distribution<double> ed(1.0);
         std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
         for (int r = 0; r < runs; ++r) {
-          double logp = std::log(base);
-          px[0][r] = base * macroMul;
+          px[0][r] = std::exp(anchor) * macroMul;
           for (int t = 1; t <= months; ++t) {
-            const double z = beta * M[r][t] + idio * nd(rng);   // коррелир. стд. нормаль
             double innov = 0;
             if (!deterministic) {
+              const double z = beta * M[r][t] + idio * nd(rng);
               if (dist == "laplace")   innov = lapQ(Phi(z), lapB);
-              else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);  // мультивар.-t
-              else if (dist == "stable") {                                                // симметричная α-stable (CMS)
+              else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);
+              else if (dist == "stable") {
                 const double U = ud(rng), W = ed(rng);
                 innov = sGamma * std::sin(sAlpha * U) / std::pow(std::cos(U), 1.0 / sAlpha)
                       * std::pow(std::cos((1 - sAlpha) * U) / W, (1 - sAlpha) / sAlpha);
-              } else                   innov = vol_p * z;
+              } else                   innov = sg * z;
             }
-            logp += drift_p + (deterministic ? 0.0 : innov - 0.5 * vol_p * vol_p);
-            px[t][r] = std::exp(logp) * macroMul;
+            px[t][r] = std::exp(anchor + slopeFwd * t + innov) * macroMul;  // тренд + остаток
           }
         }
         json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
@@ -1668,19 +1679,19 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           p10.push_back(q(0.10)); p50.push_back(q(0.50)); p90.push_back(q(0.90));
           mean.push_back(s / runs);
         }
-        // История (последние точки факта) + детерминированный ТРЕНД (дрейф) — для графика.
         json history = json::array();
         int hk = std::min((int)vals.size(), 12);
         for (int i = (int)vals.size() - hk; i < (int)vals.size(); ++i)
           if (i >= 0) history.push_back(vals[i] * macroMul);
         json trend = json::array();
-        for (int t = 0; t <= months; ++t) trend.push_back(base * std::exp(drift_p * t) * macroMul);
+        for (int t = 0; t <= months; ++t) trend.push_back(std::exp(anchor + slopeFwd * t) * macroMul);
 
         return json{
           {"base", base}, {"history", history}, {"trend", trend},
           {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
-          {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)rets.size()},
-                    {"mu", mu}, {"sigma", vol_p}, {"nu", tNu}, {"alpha", sAlpha},
+          {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)res.size()},
+                    {"mu", mu}, {"sigma", sg}, {"nu", tNu}, {"alpha", sAlpha},
+                    {"trend_slope", slp}, {"residual", true},
                     {"aic_normal", aicN}, {"aic_laplace", aicL}, {"aic_t", aicT}, {"aic_stable", aicS} }},
         };
       };
@@ -2064,7 +2075,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.18.2"} });
+    ok(res, { {"status", "ok"}, {"version", "0.19.0"} });
   });
 
   // Auth
