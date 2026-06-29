@@ -139,13 +139,14 @@ export default function PlantScene() {
               ? <Facility nodes={nodes} />
               : <WorkshopInterior nodes={nodes} />}
             <PlantLayout
+              graph={state.graph}
               nodes={nodes}
               edges={edges}
               selectedId={state.selectedId}
               connectFrom={state.connectFrom}
               connecting={state.connecting}
               editing={editing}
-              asBuilding={state.currentParentId == null}
+              indoor={state.currentParentId != null}
               onSelect={handleSelect}
               onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
               onMove={handleMove}

@@ -164,7 +164,8 @@ struct Expander {
   const Model& m; std::vector<Job>& jobs;
   std::unordered_map<std::string,int> lastJob;
   std::unordered_set<std::string> visiting;
-  int expand(int orderIdx, const std::string& pid, double mult, double dueMin) {
+  int expand(int orderIdx, const std::string& pid, double mult, double dueMin, int depth = 0) {
+    if (depth > 64) return -1;                                // защита от глубокой/битой вложенности
     std::string key = std::to_string(orderIdx) + "#" + pid;
     if (auto it = lastJob.find(key); it != lastJob.end()) return it->second;
     if (visiting.count(key)) return -1;                       // цикл цепочки
@@ -183,7 +184,7 @@ struct Expander {
       if (prev >= 0) j.preds.push_back(prev);
       int myIdx = (int)jobs.size(); jobs.push_back(j);
       for (auto& [q, qty] : o.inputs) {
-        int qLast = expand(orderIdx, q, mult * qty, dueMin);
+        int qLast = expand(orderIdx, q, mult * qty, dueMin, depth + 1);
         if (qLast >= 0) jobs[myIdx].preds.push_back(qLast);
       }
       prev = myIdx;
@@ -333,16 +334,17 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // операцию перед началом заказа (см. «Требования к запасам»).
   {
     std::unordered_map<std::string, double> matNeed;
-    std::function<void(const std::string&, double, std::unordered_set<std::string>&)> reqf =
-      [&](const std::string& pid, double mult, std::unordered_set<std::string>& vis) {
-        if (vis.count(pid)) return; vis.insert(pid);
+    std::function<void(const std::string&, double, std::unordered_set<std::string>&, int)> reqf =
+      [&](const std::string& pid, double mult, std::unordered_set<std::string>& vis, int depth) {
+        if (depth > 64 || vis.count(pid)) return;             // защита от глубокой/циклической вложенности
+        vis.insert(pid);
         if (auto it = m.opsOf.find(pid); it != m.opsOf.end())
           for (auto& o : it->second) for (auto& in : o.inputs) {
-            matNeed[in.first] += mult * in.second; reqf(in.first, mult * in.second, vis);
+            matNeed[in.first] += mult * in.second; reqf(in.first, mult * in.second, vis, depth + 1);
           }
         vis.erase(pid);
       };
-    for (auto& ol : program) { std::unordered_set<std::string> vis; reqf(ol.productId, std::max(1.0, ol.qty), vis); }
+    for (auto& ol : program) { std::unordered_set<std::string> vis; reqf(ol.productId, std::max(1.0, ol.qty), vis, 0); }
     double supplyLead = 0; json shortJson = json::array();
     for (auto& [mid, need] : matNeed) {
       auto pit = m.prods.find(mid);

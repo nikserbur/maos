@@ -15,8 +15,10 @@ interface StageObjectProps {
   connectSource: boolean
   /** Режим прокладки связи активен (кнопка ↔ скрыта). */
   connecting: boolean
-  /** Верхний уровень схемы — рисуем здание (цех/склад), а не модель оборудования. */
+  /** Узел-контейнер (есть вложенные узлы) — рисуем здание, а не модель оборудования. */
   asBuilding: boolean
+  /** Кол-во вложенных единиц (для подписи здания-цеха). */
+  childCount: number
   onSelect: (id: string) => void
   onEnter: (id: string) => void
   onMove: (id: string, position: [number, number]) => void
@@ -32,6 +34,7 @@ export function StageObject({
   connectSource,
   connecting,
   asBuilding,
+  childCount,
   onSelect,
   onEnter,
   onMove,
@@ -114,7 +117,7 @@ export function StageObject({
           <Html position={[0, labelY, 0]} center distanceFactor={26} className="stage-tag-wrap">
             <div className="stage-tag">
               <span className="stage-tag__dot" style={{ background: meta.color }} />
-              <span>{node.title}</span>
+              <span>{node.title}{asBuilding && childCount > 0 ? ` · ${childCount} ед.` : ''}</span>
               {editing && !connecting && (
                 <button
                   className="stage-connect-btn"

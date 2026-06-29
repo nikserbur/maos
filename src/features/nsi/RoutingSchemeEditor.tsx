@@ -1,4 +1,4 @@
-import { useReducer, useState, type JSX } from 'react'
+import { useReducer, useState, useEffect, type JSX } from 'react'
 import { api, type Product, type Operation, type WorkCenterType } from '../../lib/api'
 import { useProducts, useOperations, useWorkCenterTypes } from './useNsi'
 
@@ -45,6 +45,7 @@ type RoutingAction =
   | { type: 'DELETE_OP'; id: string }
   | { type: 'MOVE_UP'; id: string }
   | { type: 'MOVE_DOWN'; id: string }
+  | { type: 'INIT_OPS'; name: string; productId: string; ops: RoutingOp[] }
 
 const uuid = () => Math.random().toString(36).slice(2, 10)
 
@@ -119,6 +120,9 @@ function reducer(s: RoutingState, a: RoutingAction): RoutingState {
       const [cur, next] = [sorted[idx], sorted[idx + 1]]
       return { ...s, ops: s.ops.map(o => o.id === cur.id ? { ...o, order: next.order } : o.id === next.id ? { ...o, order: cur.order } : o) }
     }
+
+    case 'INIT_OPS':
+      return { ...s, name: a.name, productId: a.productId, ops: a.ops, selectedId: null }
 
     default: return s
   }
@@ -660,11 +664,49 @@ export function RoutingSchemeEditor({ onSave, onCancel, edit }: RoutingSchemeEdi
   const [saving, setSaving]       = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Редактирование: подгружаем операции существующей техкарты в редактор.
+  useEffect(() => {
+    if (!edit?.id) return
+    const parseInputs = (raw: string): InputMaterial[] => {
+      if (!raw) return []
+      try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] }
+    }
+    const split = (raw: string) => (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [])
+    api.operations.list()
+      .then(ops => {
+        const mine = ops
+          .filter(o => o.routing_id === edit.id)
+          .sort((a, b) => Number(a.order_no) - Number(b.order_no))
+        const routingOps: RoutingOp[] = mine.map(o => ({
+          id: uuid(),
+          order: Number(o.order_no) || 0,
+          title: o.name,
+          opType: o.op_type,
+          wcType: o.wc_types,
+          timeMin: Number(o.t_norm) || 0,
+          controls: split(o.controls),
+          mechanisms: split(o.mechanisms),
+          inputs: parseInputs(o.inputs),
+          outputs: split(o.outputs),
+        }))
+        dispatch({
+          type: 'INIT_OPS',
+          name: String(edit.row.name ?? ''),
+          productId: String(edit.row.product_id ?? ''),
+          ops: routingOps,
+        })
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit?.id])
+
   const handleSave = async () => {
     if (!state.name.trim()) { setSaveError('Укажите название техкарты'); return }
     setSaving(true)
     setSaveError(null)
     try {
+      // Редактирование = замена: удаляем старую техкарту (операции уходят каскадом).
+      if (edit?.id) await api.routings.delete(edit.id)
       await api.routings.create({
         name: state.name,
         product_id: state.productId || undefined,
