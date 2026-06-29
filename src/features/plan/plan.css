@@ -73,3 +73,10 @@
 .gantt__overlay-head { display: flex; align-items: center; gap: 16px; justify-content: space-between; margin-bottom: 10px; }
 .gantt__overlay-body { flex: 1; min-height: 0; overflow: auto; }
 .gantt__overlay-body .gantt__row { height: 26px; }
+
+/* Гант: легенда по изделиям + контрол масштаба */
+.gantt__legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 10px; font-size: 11px; }
+.gantt__legend-item { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted, #8a929c); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt__legend-item i { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.gantt__zoomctl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted, #8a929c); }
+.gantt__zoomctl .btn { padding: 2px 8px; }

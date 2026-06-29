@@ -21,14 +21,36 @@ function Gantt({ result }: { result: ScheduleResult }) {
   const makespan = Math.max(1, ...result.gantt.map((g) => g.end))
   const [filter, setFilter] = useState('')   // '' = все станки
   const [full, setFull] = useState(false)
-  // дорожки = станки с работами, в порядке появления
+  const [zoom, setZoom] = useState(1)         // горизонтальный масштаб (полноэкранный)
   const allLanes = useMemo(() => {
     const seen = new Map<string, string>()
     for (const g of result.gantt) if (g.machine_id && !seen.has(g.machine_id)) seen.set(g.machine_id, g.machine_name || g.machine_id)
     return [...seen.entries()]
   }, [result])
+  // Раскраска по ИЗДЕЛИЮ — одно изделие = один цвет на всех станках.
+  const products = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const g of result.gantt) if (!seen.has(g.product_id)) seen.set(g.product_id, g.product_name || g.product_id)
+    return [...seen.entries()]
+  }, [result])
+  const colorIdx = useMemo(() => {
+    const m = new Map<string, number>()
+    products.forEach(([pid], i) => m.set(pid, i))
+    return m
+  }, [products])
+  const colorOf = (pid: string) => ORDER_COLORS[(colorIdx.get(pid) ?? 0) % ORDER_COLORS.length]
   const lanes = filter ? allLanes.filter(([mid]) => mid === filter) : allLanes
   const ticks = Array.from({ length: 6 }, (_, i) => Math.round((makespan * i) / 5))
+
+  const legend = (
+    <div className="gantt__legend">
+      {products.map(([pid, pname]) => (
+        <span key={pid} className="gantt__legend-item" title={pname}>
+          <i style={{ background: colorOf(pid) }} />{pname}
+        </span>
+      ))}
+    </div>
+  )
 
   const toolbar = (
     <div className="gantt__toolbar">
@@ -36,6 +58,14 @@ function Gantt({ result }: { result: ScheduleResult }) {
         <option value="">Все станки ({allLanes.length})</option>
         {allLanes.map(([mid, mname]) => <option key={mid} value={mid}>{mname}</option>)}
       </select>
+      {full && (
+        <span className="gantt__zoomctl">
+          масштаб
+          <button className="btn" onClick={() => setZoom((z) => Math.max(1, z - 1))}>−</button>
+          {zoom}×
+          <button className="btn" onClick={() => setZoom((z) => Math.min(8, z + 1))}>＋</button>
+        </span>
+      )}
       <button className="btn" onClick={() => setFull((f) => !f)}>
         {full ? '✕ Свернуть' : '⛶ На весь экран'}
       </button>
@@ -43,7 +73,7 @@ function Gantt({ result }: { result: ScheduleResult }) {
   )
 
   const chart = (
-    <div className="gantt__chart" style={{ minWidth: full ? 0 : 620 }}>
+    <div className="gantt__chart" style={{ minWidth: full ? 900 * zoom : 620 }}>
       {lanes.map(([mid, mname]) => (
         <div className="gantt__row" key={mid}>
           <span className="gantt__lane" title={mname}>{mname}</span>
@@ -53,13 +83,13 @@ function Gantt({ result }: { result: ScheduleResult }) {
               return (
                 <span key={i}
                   className={`gantt__bar${g.late ? ' gantt__bar--late' : ''}`}
-                  title={`${g.op_name} · ${g.product_name}\nстанок: ${g.machine_name}\n${h1(g.start)}–${h1(g.end)} ч (${h1(g.end - g.start)} ч)${g.late ? ' · ПРОСРОЧКА' : ''}`}
+                  title={`${g.product_name} · ${g.op_name}\nстанок: ${g.machine_name}\n${h1(g.start)}–${h1(g.end)} ч (${h1(g.end - g.start)} ч)${g.late ? ' · ПРОСРОЧКА' : ''}`}
                   style={{
                     left: `${(g.start / makespan) * 100}%`,
                     width: `${Math.max(0.6, w)}%`,
-                    background: ORDER_COLORS[g.order_idx % ORDER_COLORS.length],
+                    background: colorOf(g.product_id),
                   }}>
-                  {w > 7 && <span className="gantt__bar-label">{g.op_name}</span>}
+                  {w > 5 && <span className="gantt__bar-label">{full ? `${g.product_name} · ${g.op_name}` : g.op_name}</span>}
                 </span>
               )
             })}
@@ -76,13 +106,14 @@ function Gantt({ result }: { result: ScheduleResult }) {
   if (full) return (
     <div className="gantt__overlay">
       <div className="gantt__overlay-head">
-        <b>Диаграмма Ганта{filter ? ` — ${allLanes.find(([m]) => m === filter)?.[1]}` : ''}</b>
+        <b>Диаграмма Ганта — по изделиям{filter ? ` · ${allLanes.find(([m]) => m === filter)?.[1]}` : ''}</b>
         {toolbar}
       </div>
+      {legend}
       <div className="gantt__overlay-body">{chart}</div>
     </div>
   )
-  return <div>{toolbar}{chart}</div>
+  return <div>{toolbar}{legend}{chart}</div>
 }
 
 function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey: 'wc_name' | 'machine_name' }) {
