@@ -109,26 +109,28 @@ export function ForecastScreen({ scenarioId: fixed }: { scenarioId?: string } = 
             {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>}
-        <label>Горизонт, мес
-          <input type="number" min={1} max={36} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(36, Number(e.target.value) || 6)))} />
-        </label>
-        <label>Инфляция, %/мес
-          <input type="number" step={0.1} value={inflation} onChange={(e) => setInfl(Number(e.target.value) || 0)} />
-        </label>
-        <label>Курс (×)
-          <input type="number" step={0.05} value={fx} onChange={(e) => setFx(Number(e.target.value) || 1)} />
-        </label>
-        <label>Спрос (×)
-          <input type="number" step={0.05} value={demand} onChange={(e) => setDemand(Number(e.target.value) || 1)} />
-        </label>
-        <label>Волатильность, %/мес
-          <input type="number" step={0.5} value={volatility} onChange={(e) => setVol(Number(e.target.value) || 0)} />
-        </label>
-        <label>Корреляция рынка
-          <input type="number" step={0.05} min={0} max={1} value={corr} onChange={(e) => setCorr(Math.max(0, Math.min(1, Number(e.target.value) || 0)))} />
-        </label>
+        {!embedded && <>
+          <label>Горизонт, мес
+            <input type="number" min={1} max={36} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(36, Number(e.target.value) || 6)))} />
+          </label>
+          <label>Инфляция, %/мес
+            <input type="number" step={0.1} value={inflation} onChange={(e) => setInfl(Number(e.target.value) || 0)} />
+          </label>
+          <label>Курс (×)
+            <input type="number" step={0.05} value={fx} onChange={(e) => setFx(Number(e.target.value) || 1)} />
+          </label>
+          <label>Спрос (×)
+            <input type="number" step={0.05} value={demand} onChange={(e) => setDemand(Number(e.target.value) || 1)} />
+          </label>
+          <label>Волатильность, %/мес
+            <input type="number" step={0.5} value={volatility} onChange={(e) => setVol(Number(e.target.value) || 0)} />
+          </label>
+          <label>Корреляция рынка
+            <input type="number" step={0.05} min={0} max={1} value={corr} onChange={(e) => setCorr(Math.max(0, Math.min(1, Number(e.target.value) || 0)))} />
+          </label>
+        </>}
         <button className="btn btn--primary" onClick={run} disabled={loading}>
-          {loading ? 'Считаем…' : 'Пересчитать прогноз'}
+          {loading ? 'Считаем…' : embedded ? 'Обновить графики по условиям' : 'Пересчитать прогноз'}
         </button>
       </section>
 
