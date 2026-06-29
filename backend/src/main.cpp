@@ -1473,9 +1473,10 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         for (size_t k = 1; k < vals.size(); ++k)
           if (vals[k - 1] > 0 && vals[k] > 0) rets.push_back(std::log(vals[k] / vals[k - 1]));
         bool dd = rets.size() >= 4;
-        double mu = 0, sg = vol, aicN = 0, aicL = 0, aicT = 0;
+        double mu = 0, sg = vol, aicN = 0, aicL = 0, aicT = 0, aicS = 0;
         std::string dist = "normal"; double lapB = vol / std::sqrt(2.0);
         double tNu = 40.0, tScale = vol;     // t-Стьюдент: ст. свободы + масштаб
+        double sAlpha = 2.0, sGamma = vol;   // α-stable: индекс устойчивости + масштаб
         if (dd) {
           double s = 0; for (double r : rets) s += r; mu = s / rets.size();
           double v2 = 0; for (double r : rets) v2 += (r - mu) * (r - mu);
@@ -1502,10 +1503,35 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           double bestAic = aicN;
           if (aicL < bestAic) { dist = "laplace"; lapB = mad; bestAic = aicL; }
           if (aicT < bestAic) { dist = "t"; bestAic = aicT; }
+
+          // α-stable (симметричная, β=0, δ=μ): сетка α/γ по числовой плотности
+          // f(x)=(1/πγ)∫₀^∞ exp(−u^α)·cos(u·(x−μ)/γ)du — Фурье-обращение хар. функции.
+          const double q1 = sr[(size_t)std::round(0.25 * (rets.size() - 1))];
+          const double q3 = sr[(size_t)std::round(0.75 * (rets.size() - 1))];
+          const double gam0 = std::max(1e-4, (q3 - q1) / 2.0);
+          auto stableLL = [&](double a, double g) {
+            double ll = 0;
+            for (double r : rets) {
+              double xn = (r - mu) / g, integ = 0;
+              for (int j = 0; j < 160; ++j) { double u = (j + 0.5) * 0.15; integ += std::exp(-std::pow(u, a)) * std::cos(u * xn) * 0.15; }
+              ll += std::log(std::max(integ / (M_PI * g), 1e-12));
+            }
+            return ll;
+          };
+          double bestSLL = -1e18;
+          for (double a : { 1.3, 1.5, 1.7, 1.9 })
+            for (double gm : { 0.7, 1.0, 1.4 }) {
+              double g = gam0 * gm, ll = stableLL(a, g);
+              if (ll > bestSLL) { bestSLL = ll; sAlpha = a; sGamma = g; }
+            }
+          aicS = 4 - 2 * bestSLL;   // k=2 (α, γ)
+          if (aicS < bestAic) { dist = "stable"; bestAic = aicS; }
         }
         const double drift_p = (dd ? mu : 0.0) + extraDrift;
         const double vol_p = dd ? sg : vol;
         std::gamma_distribution<double> gdist(tNu / 2.0, 2.0);   // χ²_ν для t-сэмплинга
+        std::uniform_real_distribution<double> ud(-M_PI / 2 + 1e-6, M_PI / 2 - 1e-6);
+        std::exponential_distribution<double> ed(1.0);            // для CMS α-stable
         std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
         for (int r = 0; r < runs; ++r) {
           double logp = std::log(base);
@@ -1516,7 +1542,11 @@ static void register_forecast(httplib::Server& svr, Database& db) {
             if (!deterministic) {
               if (dist == "laplace")   innov = lapQ(Phi(z), lapB);
               else if (dist == "t")    innov = tScale * z / std::sqrt(gdist(rng) / tNu);  // мультивар.-t
-              else                     innov = vol_p * z;
+              else if (dist == "stable") {                                                // симметричная α-stable (CMS)
+                const double U = ud(rng), W = ed(rng);
+                innov = sGamma * std::sin(sAlpha * U) / std::pow(std::cos(U), 1.0 / sAlpha)
+                      * std::pow(std::cos((1 - sAlpha) * U) / W, (1 - sAlpha) / sAlpha);
+              } else                   innov = vol_p * z;
             }
             logp += drift_p + (deterministic ? 0.0 : innov - 0.5 * vol_p * vol_p);
             px[t][r] = std::exp(logp) * macroMul;
@@ -1534,8 +1564,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         return json{
           {"base", base}, {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
           {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)rets.size()},
-                    {"mu", mu}, {"sigma", vol_p}, {"nu", tNu},
-                    {"aic_normal", aicN}, {"aic_laplace", aicL}, {"aic_t", aicT} }},
+                    {"mu", mu}, {"sigma", vol_p}, {"nu", tNu}, {"alpha", sAlpha},
+                    {"aic_normal", aicN}, {"aic_laplace", aicL}, {"aic_t", aicT}, {"aic_stable", aicS} }},
         };
       };
 
@@ -1898,7 +1928,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.15.3"} });
+    ok(res, { {"status", "ok"}, {"version", "0.16.0"} });
   });
 
   // Auth

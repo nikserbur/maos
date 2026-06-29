@@ -163,8 +163,9 @@ function Card({ p, pct }: { p: ForecastProduct; pct?: boolean }) {
       </div>
       <PriceFan p={p} />
       {p.fit?.data_driven && (
-        <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}${p.fit.aic_t != null ? ` · t ${p.fit.aic_t.toFixed(1)}` : ''}`}>
-          {p.fit.dist === 't' ? `◆ t-Стьюдент (ν=${(p.fit.nu ?? 0).toFixed(0)}, тяж. хвосты)`
+        <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}${p.fit.aic_t != null ? ` · t ${p.fit.aic_t.toFixed(1)}` : ''}${p.fit.aic_stable != null ? ` · α-stable ${p.fit.aic_stable.toFixed(1)}` : ''}`}>
+          {p.fit.dist === 'stable' ? `◆ α-stable (α=${(p.fit.alpha ?? 2).toFixed(2)}, тяж. хвосты)`
+            : p.fit.dist === 't' ? `◆ t-Стьюдент (ν=${(p.fit.nu ?? 0).toFixed(0)}, тяж. хвосты)`
             : p.fit.dist === 'laplace' ? '◆ Лаплас (тяж. хвосты)' : '○ нормаль'}
           {' · σ '}{(p.fit.sigma * 100).toFixed(1)}%/мес · история {p.fit.n_obs}
         </div>
