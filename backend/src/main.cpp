@@ -1493,13 +1493,49 @@ static void persist_run(Database& db, const std::string& runId, const maos::Opti
               std::to_string(l.value("load_hours", 0.0)) });
 }
 
+// EMD (Empirical Mode Decomposition) с линейными огибающими: сифтингом извлекаем
+// до 5 IMF (внутренних мод), возвращаем ОСТАТОК = данные-адаптивный тренд. Тогда
+// res = ряд − тренд = сумма IMF (колебания) — их и продолжаем гармониками в прогнозе.
+static std::vector<double> emd_trend(const std::vector<double>& y) {
+  const int n = (int)y.size();
+  std::vector<double> residue = y;
+  auto interpEnv = [n](const std::vector<int>& idx, const std::vector<double>& val) {
+    std::vector<double> env(n, 0.0);
+    if (idx.empty()) return env;
+    for (int t = 0; t < n; ++t) {
+      if (t <= idx.front()) { env[t] = val.front(); continue; }
+      if (t >= idx.back())  { env[t] = val.back();  continue; }
+      int k = 0; while (k + 1 < (int)idx.size() && idx[k + 1] <= t) ++k;
+      const double x0 = idx[k], x1 = idx[k + 1];
+      env[t] = val[k] + (val[k + 1] - val[k]) * (t - x0) / (x1 - x0);
+    }
+    return env;
+  };
+  for (int imf = 0; imf < 5; ++imf) {
+    std::vector<double> h = residue;
+    int extrema = 0;
+    for (int t = 1; t < n - 1; ++t)
+      if ((h[t] > h[t - 1] && h[t] > h[t + 1]) || (h[t] < h[t - 1] && h[t] < h[t + 1])) ++extrema;
+    if (extrema < 4) break;                       // остаток монотонен → это тренд
+    for (int sift = 0; sift < 10; ++sift) {
+      std::vector<int> mxi, mni; std::vector<double> mxv, mnv;
+      for (int t = 1; t < n - 1; ++t) {
+        if (h[t] > h[t - 1] && h[t] >= h[t + 1]) { mxi.push_back(t); mxv.push_back(h[t]); }
+        if (h[t] < h[t - 1] && h[t] <= h[t + 1]) { mni.push_back(t); mnv.push_back(h[t]); }
+      }
+      if ((int)mxi.size() < 2 || (int)mni.size() < 2) break;
+      const auto up = interpEnv(mxi, mxv), lo = interpEnv(mni, mnv);
+      double sd = 0, norm = 0;
+      for (int t = 0; t < n; ++t) { const double prev = h[t]; h[t] = prev - (up[t] + lo[t]) / 2; sd += (prev - h[t]) * (prev - h[t]); norm += prev * prev; }
+      if (norm > 0 && sd / norm < 0.05) break;     // критерий остановки сифтинга
+    }
+    for (int t = 0; t < n; ++t) residue[t] -= h[t];
+  }
+  return residue;
+}
+
 /* ── Стадия E+: внешние условия и динамика цен по времени ─────────────────────
- * Прогноз цен изделий/сырья на горизонт в МЕСЯЦАХ под действием макрофакторов:
- *   - inflation (мес. инфляция, дрейф вверх),
- *   - fx (курс, множитель экспортных цен),
- *   - demand (индекс спроса),
- * как коррелированное лог-нормальное блуждание (общий рыночный шок + идиосинкр.).
- * Возвращает веер P10/P50/P90 + среднее по месяцам — для графиков цен во времени. */
+ * Прогноз цен изделий/сырья: тренд (EMD) + гармоники (SD) + случайный остаток. */
 static void register_forecast(httplib::Server& svr, Database& db) {
   svr.Post("/api/forecast", [&db](const httplib::Request& req, httplib::Response& res) {
     try {
@@ -1584,16 +1620,17 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         const int Hn = (int)ly.size();
         const bool dd = Hn >= 5;
 
-        // 1) ТРЕНД: lvl + slp*t (t=0..Hn-1); остатки res_t = ly_t − тренд.
-        double lvl = std::log(base), slp = 0.0;
+        // 1) ТРЕНД через EMD (данные-адаптивный остаток, следует форме ряда);
+        //    res = ряд − тренд = сумма IMF (колебания). Наклон вперёд — МНК по тренду.
+        double slp = 0.0;
         std::vector<double> res;
         if (dd) {
+          const std::vector<double> trendVec = emd_trend(ly);
+          for (int t = 0; t < Hn; ++t) res.push_back(ly[t] - trendVec[t]);
           double n = Hn, st = 0, sy = 0, stt = 0, sty = 0;
-          for (int t = 0; t < Hn; ++t) { st += t; sy += ly[t]; stt += (double)t * t; sty += (double)t * ly[t]; }
+          for (int t = 0; t < Hn; ++t) { st += t; sy += trendVec[t]; stt += (double)t * t; sty += (double)t * trendVec[t]; }
           const double den = n * stt - st * st;
           slp = den != 0 ? (n * sty - st * sy) / den : 0.0;
-          lvl = (sy - slp * st) / n;
-          for (int t = 0; t < Hn; ++t) res.push_back(ly[t] - (lvl + slp * t));
         }
 
         // 1b) ГАРМОНИКИ (System Dynamics / EMD-подобное разложение): топ-3 синусоиды
@@ -2102,7 +2139,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.21.1"} });
+    ok(res, { {"status", "ok"}, {"version", "0.22.0"} });
   });
 
   // Auth
