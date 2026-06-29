@@ -1744,10 +1744,12 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         auto harmAt = [&](double t) { double h = 0; for (auto& c : harm) h += c[1] * std::cos(c[0] * t) + c[2] * std::sin(c[0] * t); return h; };
         const double hNow = harmAt(dd ? (Hn - 1) : 0);
 
-        // 2) РАСПРЕДЕЛЕНИЕ нерегулярного остатка по AIC.
-        double mu = 0, sg = vol, aicN = 0, aicL = 0, aicT = 0, aicS = 0;
-        std::string dist = "normal"; double lapB = vol / std::sqrt(2.0);
-        double tNu = 40.0, tScale = vol, sAlpha = 2.0, sGamma = vol;
+        // 2) РАСПРЕДЕЛЕНИЕ нерегулярного остатка по AIC. Базовая ширина 6%/мес — ниже
+        //    масштабируется ползунком волатильности (см. volMul), при наличии истории σ из неё.
+        constexpr double VOL_REF = 0.06;
+        double mu = 0, sg = VOL_REF, aicN = 0, aicL = 0, aicT = 0, aicS = 0;
+        std::string dist = "normal"; double lapB = VOL_REF / std::sqrt(2.0);
+        double tNu = 40.0, tScale = VOL_REF, sAlpha = 2.0, sGamma = VOL_REF;
         if (dd) {
           double s = 0; for (double r : res) s += r; mu = s / res.size();
           double v2 = 0; for (double r : res) v2 += (r - mu) * (r - mu);
@@ -1793,6 +1795,11 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           aicS = 4 - 2 * bestSLL;
           if (aicS < bestAic) { dist = "stable"; bestAic = aicS; }
         }
+
+        // ВОЛАТИЛЬНОСТЬ (ползунок) = МУЛЬТИПЛИКАТОР подобранного распределения относительно
+        // базовых 6%/мес. Раньше σ бралась только из истории и ползунок не влиял.
+        const double volMul = std::max(0.2, std::min(6.0, vol / VOL_REF));
+        sg *= volMul; lapB *= volMul; tScale *= volMul; sGamma *= volMul;
 
         // 3) ПРОГНОЗ = тренд (наклон истории + макро-дрейф) + остаток из распределения.
         //    Якорь — последнее ФАКТ. значение (непрерывность с историей), наклон — из тренда.
@@ -1960,10 +1967,11 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       // Сценарий несёт цель оптимизации (Стадия E): берём из него, если не задано в запросе.
       if (!pr.scenarioId.empty()) {
         try {
-          auto sc = db.query_one("SELECT objective,alpha,max_share FROM price_scenarios WHERE id=?", { pr.scenarioId });
+          auto sc = db.query_one("SELECT objective,alpha,max_share,volatility FROM price_scenarios WHERE id=?", { pr.scenarioId });
           if (!body.contains("objective") && !jstr(sc,"objective").empty()) pr.objective = jstr(sc,"objective");
           if (!body.contains("alpha")     && !jstr(sc,"alpha").empty())     pr.alpha     = std::stod(jstr(sc,"alpha"));
           if (!body.contains("max_share") && !jstr(sc,"max_share").empty()) pr.maxShare  = std::stod(jstr(sc,"max_share"));
+          if (!jstr(sc,"volatility").empty()) pr.volatility = std::stod(jstr(sc,"volatility"));
         } catch (...) {}
       }
 
@@ -2016,13 +2024,27 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       std::string name = jstr(body, "plan_name");
       if (runId.empty()) { err(res, 400, "run_id required"); return; }
       if (name.empty()) name = "План из оптимизации";
-      auto row = db.query_one("SELECT result_json FROM optimization_runs WHERE id=?", { runId });
+      auto row = db.query_one("SELECT result_json,scenario_id FROM optimization_runs WHERE id=?", { runId });
       json result = json::parse(jstr(row, "result_json"));
       const json& robust = result.value("robust", json::object());
 
+      // Горизонт плана — ИЗ СЦЕНАРИЯ (месяцы × 720ч ≈ 1 мес), а не фикс. 720ч (= всего 1 мес).
+      int months = 12;
+      const std::string scId = jstr(row, "scenario_id");
+      if (!scId.empty()) {
+        try {
+          auto sc = db.query_one("SELECT months FROM price_scenarios WHERE id=?", { scId });
+          if (!jstr(sc, "months").empty()) months = std::max(1, std::min(36, (int)std::stod(jstr(sc, "months"))));
+        } catch (...) {}
+      }
+      if (body.contains("horizon_months") && !jstr(body, "horizon_months").empty())
+        months = std::max(1, std::min(36, (int)std::stod(jstr(body, "horizon_months"))));
+      const double planHours = months * 720.0;
+      const std::string dueStr = std::to_string(planHours);
+
       const std::string planId = gen_uuid();
       db.exec("INSERT INTO production_plans(id,name,description) VALUES(?,?,?)",
-              { planId, name, "Устойчивый портфель оптимизации (run " + runId + ")" });
+              { planId, name, "Устойчивый портфель оптимизации, горизонт " + std::to_string(months) + " мес (run " + runId + ")" });
       int n = 0;
       for (auto& it : robust.value("items", json::array())) {
         const std::string pid = it.value("product_id", std::string());
@@ -2030,7 +2052,7 @@ static void register_optimize(httplib::Server& svr, Database& db) {
         if (pid.empty() || qty <= 0) continue;
         db.exec("INSERT INTO demand_orders(id,plan_id,product_id,quantity,due_hours,priority,status) "
                 "VALUES(?,?,?,?,?,?,'planned')",
-                { gen_uuid(), planId, pid, std::to_string(qty), "720", "5" });
+                { gen_uuid(), planId, pid, std::to_string(qty), dueStr, "5" });
         ++n;
       }
       audit(db, "production_plan", planId, "CREATE", { {"from_run", runId}, {"orders", n} });
@@ -2309,7 +2331,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.30.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.31.0"} });
   });
 
   // Auth

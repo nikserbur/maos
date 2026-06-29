@@ -219,22 +219,27 @@ double normal_cdf(double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }
 /* Маргиналь по стандартному нормальному шоку z (гауссова копула):
    корреляция между ценами наводится общим z через beta, см. correlated-sampling. */
 double price_from_z(const PriceDist& d, double z) {
+  double v;
   if (d.type == "uniform" && d.hasMin && d.hasMax) {
-    return d.minV + (d.maxV - d.minV) * normal_cdf(z);
-  }
-  if (d.type == "triangular" && d.hasMin && d.hasMax) {
+    v = d.minV + (d.maxV - d.minV) * normal_cdf(z);
+  } else if (d.type == "triangular" && d.hasMin && d.hasMax) {
     double mode = d.hasMode ? d.mode : d.mean;
     double r = normal_cdf(z), c = (mode - d.minV) / std::max(1e-9, d.maxV - d.minV);
-    return (r < c) ? d.minV + std::sqrt(r * (d.maxV - d.minV) * (mode - d.minV))
-                   : d.maxV - std::sqrt((1 - r) * (d.maxV - d.minV) * (d.maxV - mode));
-  }
-  if (d.type == "lognormal" && d.mean > 0) {
+    v = (r < c) ? d.minV + std::sqrt(r * (d.maxV - d.minV) * (mode - d.minV))
+                : d.maxV - std::sqrt((1 - r) * (d.maxV - d.minV) * (d.maxV - mode));
+  } else if (d.type == "lognormal" && d.mean > 0) {
     double cv = d.stddev / d.mean;
     double sigma = std::sqrt(std::log(1.0 + cv * cv));
     double mu = std::log(d.mean) - 0.5 * sigma * sigma;
-    return std::exp(mu + std::max(1e-9, sigma) * z);
+    v = std::exp(mu + std::max(1e-9, sigma) * z);
+  } else {
+    v = d.mean + std::max(0.0, d.stddev) * z;  // normal
   }
-  return std::max(0.0, d.mean + std::max(0.0, d.stddev) * z);  // normal
+  // ЖЁСТКИЙ клип по заданным границам [min,max] — иначе ошибочный mean (напр. 100 млн)
+  // даёт абсурдную цену. Границы — «коридор» цены, заданный в условиях сценария.
+  if (d.hasMin && v < d.minV) v = d.minV;
+  if (d.hasMax && v > d.maxV) v = d.maxV;
+  return std::max(0.0, v);
 }
 
 /* ── Метрики риска по эмпирическому распределению прибыли ─────────────────── */
@@ -452,6 +457,10 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   // Оверрайд цены сценария применяется и поверх распределений (центрируем на новой цене).
   for (auto& [pid, mp] : ovrPrice)
     if (priceDist.count(pid)) { priceDist[pid].mean = mp; priceDist[pid].stddev = mp * 0.12; }
+  // Волатильность сценария = МУЛЬТИПЛИКАТОР ширины всех распределений (как и в прогнозе, база 6%).
+  const double volMul = std::max(0.2, std::min(6.0, p.volatility / 0.06));
+  if (std::fabs(volMul - 1.0) > 1e-6)
+    for (auto& [pid, pd] : priceDist) pd.stddev *= volMul;
 
   // ── Монте-Карло: общие случайные числа для честного сравнения портфелей ──
   const int N = std::max(200, p.samples);
