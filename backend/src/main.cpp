@@ -1689,6 +1689,19 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           if (!bc.empty()) fcOvrCost[opid] = std::stod(bc);
         }
       }
+      // Распределение цены из сценария → ФОРМА веера прогноза (тип + относит. разброс),
+      // перекрывает авто-подбор по AIC. Иначе настройка распределения не влияла на график.
+      std::unordered_map<std::string, std::pair<std::string, double>> fcDist;   // pid → (тип, отн.СКО)
+      if (!scenarioId.empty()) {
+        for (auto& dd : db.query_json(
+               "SELECT product_id,dist_type,mean,stddev FROM price_distributions WHERE scenario_id=?", { scenarioId })) {
+          const std::string opid = jstr(dd, "product_id"), dt = jstr(dd, "dist_type");
+          const double mn = jstr(dd, "mean").empty() ? 0 : std::stod(jstr(dd, "mean"));
+          const double sd = jstr(dd, "stddev").empty() ? 0 : std::stod(jstr(dd, "stddev"));
+          if (!opid.empty() && !dt.empty() && mn > 0 && sd > 0)
+            fcDist[opid] = { dt, std::max(0.005, std::min(0.6, sd / mn)) };
+        }
+      }
 
       auto rows = db.query_json(
         "SELECT id,name,base_price,base_cost,sellable,purchased FROM products "
@@ -1723,7 +1736,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       //   3) прогноз = экстраполяция тренда + случайный остаток из подобранного распределения
       //      (Монте-Карло, общий рыночный фактор → корреляция, веер P10/P50/P90).
       auto fanFromHistory = [&](double base, const std::vector<double>& vals,
-                                double extraDrift, double macroMul, double loading) -> json {
+                                double extraDrift, double macroMul, double loading,
+                                const std::string& ovrType, double ovrRelSd) -> json {
         // Загрузка изделия на общий рыночный фактор (data-driven, из PCA-разложения корреляций).
         const double betaP = std::max(-0.999, std::min(0.999, loading));
         const double idioP = std::sqrt(std::max(0.0, 1.0 - betaP * betaP));
@@ -1830,6 +1844,16 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         // базовых 6%/мес. Раньше σ бралась только из истории и ползунок не влиял.
         const double volMul = std::max(0.2, std::min(6.0, vol / VOL_REF));
         sg *= volMul; lapB *= volMul; tScale *= volMul; sGamma *= volMul;
+
+        // ПЕРЕОПРЕДЕЛЕНИЕ из настройки распределения сценария: тип задаёт ФОРМУ хвостов,
+        // ovrRelSd — относит. разброс. Иначе настройка распределения не влияла на прогноз.
+        if (!ovrType.empty() && ovrRelSd > 0) {
+          const double s = ovrRelSd * volMul;
+          if (ovrType == "t")            { dist = "t";      tScale = s; tNu = 5.0; }
+          else if (ovrType == "pareto")  { dist = "stable"; sGamma = s; sAlpha = 1.6; }   // тяж. степ. хвост
+          else if (ovrType == "lognormal") { dist = "normal"; sg = s; }
+          else                             { dist = "normal"; sg = s; }                    // normal/uniform/triangular
+        }
 
         // 3) ПРОГНОЗ = тренд (наклон истории + макро-дрейф) + остаток из распределения.
         //    Якорь — последнее ФАКТ. значение (непрерывность с историей), наклон — из тренда.
@@ -1946,7 +1970,9 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         std::vector<double> vals; for (auto& row : hist) vals.push_back(numOf(row));
 
         const double loading = loadings.count(pid) ? loadings[pid] : beta;
-        json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro, loading);
+        const std::string ovrT = fcDist.count(pid) ? fcDist[pid].first : "";
+        const double ovrSd = fcDist.count(pid) ? fcDist[pid].second : 0.0;
+        json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro, loading, ovrT, ovrSd);
         j["id"] = pid; j["name"] = jstr(p, "name"); j["role"] = sellable ? "product" : "raw";
         j["loading"] = loading;
         products.push_back(j);
@@ -1958,7 +1984,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         auto rh = db.query_json("SELECT value FROM macro_ts WHERE series='keyrate' ORDER BY month_idx");
         std::vector<double> rv; for (auto& row : rh) rv.push_back(numOf(row));
         if (rv.size() >= 5 && rv.back() > 0) {
-          json j = fanFromHistory(rv.back(), rv, 0.0, 1.0, beta);   // ставка: чистый исторический дрейф
+          json j = fanFromHistory(rv.back(), rv, 0.0, 1.0, beta, "", 0.0);   // ставка: чистый исторический дрейф
           j["id"] = "keyrate"; j["name"] = "Ключевая ставка"; j["role"] = "rate";
           rateJson = j;
         }
@@ -2369,7 +2395,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.41.0"} });
+    ok(res, { {"status", "ok"}, {"version", "0.41.1"} });
   });
 
   // Auth
