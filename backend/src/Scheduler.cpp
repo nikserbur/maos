@@ -162,36 +162,52 @@ struct Job {
 
 struct Expander {
   const Model& m; std::vector<Job>& jobs;
-  std::unordered_map<std::string,int> lastJob;
+  std::unordered_map<std::string, std::vector<int>> lastJobs;   // key → batch-джобы последней операции
   std::unordered_set<std::string> visiting;
-  int expand(int orderIdx, const std::string& pid, double mult, double dueMin, int depth = 0) {
-    if (depth > 64) return -1;                                // защита от глубокой/битой вложенности
+
+  // Число transfer-партий (lot-streaming): большой объём дробим, чтобы операции
+  // ПЕРЕКРЫВАЛИСЬ во времени и шли на РАЗНЫХ станках параллельно (≈8 ед-экв на партию).
+  static int nBatches(double sizeFactor) {
+    int n = (int)std::ceil(sizeFactor / 8.0);
+    return std::max(1, std::min(20, n));
+  }
+
+  // Возвращает batch-джобы ПОСЛЕДНЕЙ операции изделия (для побатчевой стыковки с потребителем).
+  std::vector<int> expand(int orderIdx, const std::string& pid, double mult, double dueMin, int depth = 0) {
+    if (depth > 64) return {};
     std::string key = std::to_string(orderIdx) + "#" + pid;
-    if (auto it = lastJob.find(key); it != lastJob.end()) return it->second;
-    if (visiting.count(key)) return -1;                       // цикл цепочки
+    if (auto it = lastJobs.find(key); it != lastJobs.end()) return it->second;
+    if (visiting.count(key)) return {};                       // цикл цепочки
     auto oit = m.opsOf.find(pid);
-    if (oit == m.opsOf.end() || oit->second.empty()) { lastJob[key] = -1; return -1; }
+    if (oit == m.opsOf.end() || oit->second.empty()) { lastJobs[key] = {}; return {}; }
     visiting.insert(key);
     double batch = m.prods.count(pid) ? m.prods.at(pid).batchSize : 1;
-    // Длительность операции ПРОПОРЦИОНАЛЬНА объёму партии (без потолка) — иначе план
-    // на 36 мес «сжимался» до ~540 ч (раньше был жёсткий клип 6×, ломавший горизонт).
     double sizeFactor = std::max(1.0, mult / batch);
-    int prev = -1;
+    int N = (jobs.size() > 6000) ? 1 : nBatches(sizeFactor);   // защита от взрыва числа джобов
+
+    std::vector<int> prevBatch;                               // batch-джобы предыдущей операции
     for (const Op& o : oit->second) {
-      Job j; j.orderIdx = orderIdx; j.productId = pid; j.opId = o.id; j.opName = o.name;
-      j.wcType = o.wcType; j.durMean = o.setupTime + o.tExp * sizeFactor;
-      j.sigma = o.sigma * std::sqrt(sizeFactor); j.riskCoef = o.riskCoef;
-      j.tailWeight = o.tailWeight; j.tailIndex = o.tailIndex;
-      j.hourRate = o.hourRate; j.laborRate = o.laborRate; j.dueMin = dueMin;
-      if (prev >= 0) j.preds.push_back(prev);
-      int myIdx = (int)jobs.size(); jobs.push_back(j);
+      // Входы BOM — раскрыть один раз; стыкуем ПОБАТЧЕВО (партия k ← партия входа).
+      std::vector<std::vector<int>> ins;
       for (auto& [q, qty] : o.inputs) {
-        int qLast = expand(orderIdx, q, mult * qty, dueMin, depth + 1);
-        if (qLast >= 0) jobs[myIdx].preds.push_back(qLast);
+        auto v = expand(orderIdx, q, mult * qty, dueMin, depth + 1);
+        if (!v.empty()) ins.push_back(v);
       }
-      prev = myIdx;
+      std::vector<int> curBatch(N);
+      for (int k = 0; k < N; ++k) {
+        Job j; j.orderIdx = orderIdx; j.productId = pid; j.opId = o.id; j.opName = o.name;
+        j.wcType = o.wcType;
+        j.durMean = (k == 0 ? o.setupTime : 0.0) + o.tExp * sizeFactor / N;   // работа делится, наладка — раз
+        j.sigma = o.sigma * std::sqrt(std::max(1.0, sizeFactor / N));
+        j.riskCoef = o.riskCoef; j.tailWeight = o.tailWeight; j.tailIndex = o.tailIndex;
+        j.hourRate = o.hourRate; j.laborRate = o.laborRate; j.dueMin = dueMin;
+        if (!prevBatch.empty()) j.preds.push_back(prevBatch[k]);              // тот же batch пред. операции
+        for (auto& v : ins) j.preds.push_back(v[std::min((int)v.size() - 1, k * (int)v.size() / N)]);
+        curBatch[k] = (int)jobs.size(); jobs.push_back(j);
+      }
+      prevBatch = std::move(curBatch);
     }
-    visiting.erase(key); lastJob[key] = prev; return prev;
+    visiting.erase(key); lastJobs[key] = prevBatch; return prevBatch;
   }
 };
 
