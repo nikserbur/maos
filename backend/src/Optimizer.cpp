@@ -646,23 +646,50 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   }
   double maxShare = std::min(1.0, std::max(0.1, p.maxShare));
 
-  // Робаст — устойчивый ДИВЕРСИФИЦИРОВАННЫЙ портфель: лучший робаст-критерий среди
-  // кандидатов с концентрацией ≤ maxShare («не ставить всё на одно»). Ожидаемо-лучшее —
-  // наивный максимум матожидания БЕЗ ограничения (для контраста, обычно концентрирован).
+  // БАЛАНС ЗАГРУЗКИ оборудования: отношение мин/макс утилизации задействованных WC-типов
+  // (1 = идеально ровно). Вторичный критерий — среди одинаково устойчивых портфелей берём
+  // тот, что РОВНЕЕ грузит цеха (меньше простоя), а не перекошенный на одну стадию.
+  auto evennessOf = [&](size_t c) -> double {
+    std::unordered_map<std::string, double> load;
+    for (size_t s = 0; s < S; ++s) if (cand[c][s] > 0)
+      for (auto& [wc, h] : hpu[s]) load[wc] += cand[c][s] * h;
+    double mn = 1e300, mx = 0;
+    for (auto& [wc, capH] : cap) {
+      if (capH <= 0) continue;
+      double u = (load.count(wc) ? load.at(wc) : 0.0) / capH;
+      if (u > 1e-9) { mn = std::min(mn, u); mx = std::max(mx, u); }
+    }
+    return (mx > 0 && mn < 1e300) ? mn / mx : 0.0;
+  };
+
+  // Робаст: лучший робаст-критерий среди кандидатов с концентрацией ≤ maxShare; среди
+  // близких к нему (в пределах 3%) — самый сбалансированный по оборудованию.
   size_t robustIdx = SIZE_MAX, expIdx = 0;
   double bestRobust = -1e300, bestExp = -1e300;
   for (size_t c = 0; c < K; ++c) {
     if (conc[c] <= maxShare + 1e-9) {
       double rs = robust_score(p.objective, mts[c], regret[c], p.lambda);
-      if (rs > bestRobust) { bestRobust = rs; robustIdx = c; }
+      if (rs > bestRobust) bestRobust = rs;
     }
     if (mts[c].mean > bestExp) { bestExp = mts[c].mean; expIdx = c; }
   }
+  if (bestRobust > -1e299) {
+    const double tol = 0.03 * std::fabs(bestRobust) + 1e-6;
+    double bestEven = -1.0;
+    for (size_t c = 0; c < K; ++c) {
+      if (conc[c] > maxShare + 1e-9) continue;
+      double rs = robust_score(p.objective, mts[c], regret[c], p.lambda);
+      if (rs < bestRobust - tol) continue;
+      double ev = evennessOf(c);
+      if (ev > bestEven) { bestEven = ev; robustIdx = c; }
+    }
+  }
   if (robustIdx == SIZE_MAX) {                      // ни один не уложился в maxShare
     warnings.push_back("Слишком мало изделий для диверсификации в пределах maxShare.");
+    double br = -1e300;
     for (size_t c = 0; c < K; ++c) {
       double rs = robust_score(p.objective, mts[c], regret[c], p.lambda);
-      if (rs > bestRobust) { bestRobust = rs; robustIdx = c; }
+      if (rs > br) { br = rs; robustIdx = c; }
     }
   }
 

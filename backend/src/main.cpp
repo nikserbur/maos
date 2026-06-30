@@ -1350,6 +1350,36 @@ static void migrate_v18(Database& db) {
   std::cout << "Migration v18 done.\n";
 }
 
+// v19: техкарты ИНФРАСТРУКТУРЫ — добавляем операции на типы оборуд., которые раньше не
+// были задействованы (сырьё/энерго/электро/склад/отгрузка), иначе они вечно «простаивали».
+static void migrate_v19(Database& db) {
+  if (db.user_version() >= 19) return;
+  std::cout << "Migrating schema → v19 (техкарты инфраструктуры)…\n";
+  auto addOp = [&](const std::string& rid, const std::string& wc, const std::string& name, int ord, double t) {
+    auto ex = db.query_one("SELECT COUNT(*) AS n FROM operations o JOIN operation_wc_types w ON w.operation_id=o.id "
+                           "WHERE o.routing_id=? AND w.wc_type_id=?", { rid, wc });
+    if (std::stoi(jstr(ex, "n")) > 0) return;                 // идемпотентность
+    std::string oid = gen_uuid();
+    db.exec("INSERT INTO operations(id,routing_id,code,name,op_type,order_no,t_opt,t_norm,t_pess,risk_coef) "
+            "VALUES(?,?,?,?,?,?,?,?,?,0.03)",
+            { oid, rid, "SUP", name, "support", std::to_string(ord),
+              std::to_string(t * 0.9), std::to_string(t), std::to_string(t * 1.3) });
+    db.exec("INSERT INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)", { oid, wc });
+  };
+  // Склад + отгрузка — финальные операции КАЖДОГО товарного изделия.
+  for (auto& r : db.query_json("SELECT rt.id AS rid FROM routings rt JOIN products p ON p.id=rt.product_id WHERE p.sellable=1")) {
+    const std::string rid = jstr(r, "rid");
+    addOp(rid, "wct-wirehouse", "Складирование готовой продукции", 90, 8.0);
+    addOp(rid, "wct-sale",      "Отгрузка",                        95, 10.0);
+  }
+  // Сырьё/энерго/электро — в главную металлургическую цепочку (горячекатаный рулон).
+  addOp("route-hrc", "wct-feedstock",   "Приёмка и подготовка сырья",  5, 12.0);
+  addOp("route-hrc", "wct-boiler",      "Энергоснабжение (дутьё)",     25, 9.0);
+  addOp("route-hrc", "wct-transformer", "Электроснабжение печей",      35, 7.0);
+  db.set_user_version(19);
+  std::cout << "Migration v19 done.\n";
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -2322,6 +2352,7 @@ int main(int argc, char* argv[]) {
     migrate_v16(db);
     migrate_v17(db);
     migrate_v18(db);
+    migrate_v19(db);
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -2338,7 +2369,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.39.1"} });
+    ok(res, { {"status", "ok"}, {"version", "0.40.0"} });
   });
 
   // Auth
