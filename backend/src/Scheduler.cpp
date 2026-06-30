@@ -173,7 +173,9 @@ struct Expander {
     if (oit == m.opsOf.end() || oit->second.empty()) { lastJob[key] = -1; return -1; }
     visiting.insert(key);
     double batch = m.prods.count(pid) ? m.prods.at(pid).batchSize : 1;
-    double sizeFactor = std::min(6.0, std::max(1.0, mult / batch));
+    // Длительность операции ПРОПОРЦИОНАЛЬНА объёму партии (без потолка) — иначе план
+    // на 36 мес «сжимался» до ~540 ч (раньше был жёсткий клип 6×, ломавший горизонт).
+    double sizeFactor = std::max(1.0, mult / batch);
     int prev = -1;
     for (const Op& o : oit->second) {
       Job j; j.orderIdx = orderIdx; j.productId = pid; j.opId = o.id; j.opName = o.name;
