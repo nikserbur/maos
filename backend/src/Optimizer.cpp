@@ -232,6 +232,20 @@ double price_from_z(const PriceDist& d, double z) {
     double sigma = std::sqrt(std::log(1.0 + cv * cv));
     double mu = std::log(d.mean) - 0.5 * sigma * sigma;
     v = std::exp(mu + std::max(1e-9, sigma) * z);
+  } else if (d.type == "t") {
+    // Стьюдент: симметричные ТЯЖЁЛЫЕ хвосты — моделирует резкие скачки И падения.
+    // t-квантиль через разложение Корниша-Фишера от нормального квантиля z; ν=5.
+    const double nu = 5.0, z2 = z * z;
+    const double tq = z + (z2 + 1.0) * z / (4.0 * nu)
+                        + (5.0 * z2 * z2 + 16.0 * z2 + 3.0) * z / (96.0 * nu * nu);
+    const double scale = std::max(0.0, d.stddev) / std::sqrt(nu / (nu - 2.0));
+    v = d.mean + scale * tq;
+  } else if (d.type == "pareto") {
+    // Парето (двусторонний степенной хвост): редкие, но БОЛЬШИЕ скачки/обвалы цен. α=2.3.
+    const double a = 2.3;
+    const double q = std::min(0.9999, 2.0 * std::fabs(normal_cdf(z) - 0.5));
+    const double mag = std::pow(1.0 - q, -1.0 / a) - 1.0;     // степенная величина хвоста
+    v = d.mean + std::max(0.0, d.stddev) * (z < 0 ? -1.0 : 1.0) * mag;
   } else {
     v = d.mean + std::max(0.0, d.stddev) * z;  // normal
   }

@@ -97,7 +97,7 @@ export interface Role { id: string; name: string; permissions: string }
 export interface OrgUnit { id: string; name: string; parent_id: string; created_at: string }
 
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
-export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform'
+export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform' | 't' | 'pareto'
 
 export interface PriceDistribution {
   id?: string; scenario_id?: string; product_id: string

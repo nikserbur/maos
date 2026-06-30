@@ -258,6 +258,8 @@ function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
             <span className="forecast__ovr-l">Распределение цены (форма стохастики):</span>
             <select value={dist?.dist_type ?? 'normal'} onChange={(e) => onSetDist!(p.id, { dist_type: e.target.value as DistType })}>
               <option value="normal">нормаль</option>
+              <option value="t">Стьюдент (тяж. хвосты)</option>
+              <option value="pareto">Парето (скачки/обвалы)</option>
               <option value="lognormal">логнормаль</option>
               <option value="uniform">равномерное</option>
               <option value="triangular">треугольное</option>
