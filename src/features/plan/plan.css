@@ -80,3 +80,46 @@
 .gantt__legend-item i { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
 .gantt__zoomctl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted, #8a929c); }
 .gantt__zoomctl .btn { padding: 2px 8px; }
+
+/* ── Интерактивный Гант (зум/fit, сворачивание групп, подсказки) ──────────── */
+.gantt2 { overflow: auto; max-height: 360px; position: relative;
+  border: 1px solid var(--border, #2a2f37); border-radius: 8px; background: var(--surface, #161a20); }
+.gantt2--full { max-height: none; height: 100%; }
+.gantt2__inner { position: relative; }
+
+.gantt2__axis { display: flex; position: sticky; top: 0; z-index: 5; height: 20px;
+  background: var(--surface, #161a20); border-bottom: 1px solid var(--border, #2a2f37); }
+.gantt2__axis-sp { position: sticky; left: 0; z-index: 6; flex-shrink: 0;
+  background: var(--surface, #161a20); border-right: 1px solid var(--border, #2a2f37); }
+.gantt2__axis-track { position: relative; flex-shrink: 0; height: 20px; }
+.gantt2__tick { position: absolute; top: 4px; font-size: 9px; color: var(--text-muted, #8a929c);
+  white-space: nowrap; transform: translateX(2px); border-left: 1px solid var(--border, #2a2f37); padding-left: 3px; height: 14px; }
+
+.gantt2__row { display: flex; align-items: center; height: 21px; }
+.gantt2__lane { position: sticky; left: 0; z-index: 3; flex-shrink: 0; box-sizing: border-box;
+  font-size: 11px; color: var(--text-secondary, #c5cbd3); padding: 0 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--surface, #161a20); border-right: 1px solid var(--border, #2a2f37); height: 21px; line-height: 21px; }
+.gantt2__track { position: relative; flex-shrink: 0; height: 17px; background: var(--surface-2, #0f1318);
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #2a2f37) 50%, transparent); }
+
+.gantt2__ghead { cursor: pointer; height: 23px; background: var(--surface-2, #0f1318); }
+.gantt2__ghead:hover .gantt2__glane { color: var(--accent, #2d72d2); }
+.gantt2__glane { display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
+  color: var(--text, #e6e9ee); background: var(--surface-2, #0f1318); height: 23px; line-height: 23px; z-index: 4; }
+.gantt2__caret { width: 10px; color: var(--text-muted, #8a929c); }
+.gantt2__gmeta { font-size: 9px; color: var(--text-muted, #6a7079); margin-left: auto; }
+
+.gantt2__bar { position: absolute; top: 1px; height: 15px; border-radius: 2px; cursor: pointer;
+  overflow: hidden; opacity: 0.92; transition: opacity .1s, transform .1s; }
+.gantt2__bar:hover { opacity: 1; outline: 1px solid #fff6; }
+.gantt2__bar.is-late { box-shadow: inset 0 0 0 1.5px var(--intent-danger, #cd4246); }
+.gantt2__blabel { font-size: 9px; line-height: 15px; color: #fff; padding: 0 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; display: block; }
+
+.gantt2__tip { position: fixed; z-index: 2000; pointer-events: none; max-width: 250px;
+  background: var(--surface, #161a20); border: 1px solid var(--accent, #2d72d2); border-radius: 8px;
+  padding: 7px 10px; font-size: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+.gantt2__tip b { font-size: 12px; }
+.gantt2__tip-sub { font-size: 10px; color: var(--text-muted, #8a929c); margin-top: 2px; }
+.gantt2__tip-late { font-size: 10px; color: var(--intent-danger, #cd4246); margin-top: 3px; }

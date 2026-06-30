@@ -17,103 +17,149 @@ const RULES = [
   { id: 'LPT', label: 'LPT — длинные вперёд' }, { id: 'FIFO', label: 'FIFO' },
 ]
 
+type GBar = ScheduleResult['gantt'][number]
+const NICE_H = [1, 2, 4, 8, 12, 24, 48, 72, 168, 336, 720, 1440, 2160, 4320]
+function niceStep(makespan: number, trackW: number): number {
+  const target = makespan * (96 / Math.max(1, trackW))   // ~один тик на 96px
+  return NICE_H.find((s) => s >= target) ?? NICE_H[NICE_H.length - 1]
+}
+function fmtTick(h: number): string {
+  if (h >= 720) return +(h / 720).toFixed(h % 720 ? 1 : 0) + ' мес'
+  if (h >= 48) return Math.round(h / 24) + ' дн'
+  return Math.round(h) + ' ч'
+}
+
+/** Интерактивная диаграмма Ганта: зум/fit, сворачиваемые группы по типу оборудования,
+ *  всплывающие подсказки, подписи на полосах, ось времени (ч/дн/мес). */
 function Gantt({ result }: { result: ScheduleResult }) {
   const makespan = Math.max(1, ...result.gantt.map((g) => g.end))
-  const [filter, setFilter] = useState('')   // '' = все станки
   const [full, setFull] = useState(false)
-  const [zoom, setZoom] = useState(1)         // горизонтальный масштаб (полноэкранный)
-  const allLanes = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const g of result.gantt) if (g.machine_id && !seen.has(g.machine_id)) seen.set(g.machine_id, g.machine_name || g.machine_id)
-    return [...seen.entries()]
-  }, [result])
-  // Раскраска по ИЗДЕЛИЮ — одно изделие = один цвет на всех станках.
+  const [pxPerHour, setPx] = useState(0)     // 0 → по ширине (fit)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [hover, setHover] = useState<{ x: number; y: number; g: GBar } | null>(null)
+  const LANE_W = 168
+
+  // Раскраска по ИЗДЕЛИЮ — одно изделие = один цвет везде.
   const products = useMemo(() => {
     const seen = new Map<string, string>()
     for (const g of result.gantt) if (!seen.has(g.product_id)) seen.set(g.product_id, g.product_name || g.product_id)
     return [...seen.entries()]
   }, [result])
-  const colorIdx = useMemo(() => {
-    const m = new Map<string, number>()
-    products.forEach(([pid], i) => m.set(pid, i))
-    return m
-  }, [products])
+  const colorIdx = useMemo(() => { const m = new Map<string, number>(); products.forEach(([p], i) => m.set(p, i)); return m }, [products])
   const colorOf = (pid: string) => ORDER_COLORS[(colorIdx.get(pid) ?? 0) % ORDER_COLORS.length]
-  const lanes = filter ? allLanes.filter(([mid]) => mid === filter) : allLanes
-  const ticks = Array.from({ length: 6 }, (_, i) => Math.round((makespan * i) / 5))
+
+  // Группировка: тип оборудования → станки → полосы.
+  const groups = useMemo(() => {
+    const byWc = new Map<string, { name: string; machines: Map<string, { name: string; bars: GBar[] }> }>()
+    for (const g of result.gantt) {
+      const wc = g.wc_type_id || 'other'
+      if (!byWc.has(wc)) byWc.set(wc, { name: g.wc_name || wc, machines: new Map() })
+      const grp = byWc.get(wc)!
+      const mid = g.machine_id || '—'
+      if (!grp.machines.has(mid)) grp.machines.set(mid, { name: g.machine_name || mid, bars: [] })
+      grp.machines.get(mid)!.bars.push(g)
+    }
+    return [...byWc.entries()]
+  }, [result])
+
+  const fitPx = Math.max(0.02, (full ? 1180 : 660) / makespan)
+  const effPx = pxPerHour > 0 ? pxPerHour : fitPx
+  const trackW = Math.max(makespan * effPx, 160)
+  const step = niceStep(makespan, trackW)
+  const ticks: number[] = []; for (let t = 0; t <= makespan + 1e-6; t += step) ticks.push(t)
+
+  const toggle = (wc: string) => setCollapsed((s) => { const n = new Set(s); n.has(wc) ? n.delete(wc) : n.add(wc); return n })
+  const allCol = collapsed.size >= groups.length
+  const zoomBy = (f: number) => setPx((p) => Math.max(fitPx * 0.5, Math.min(30, (p > 0 ? p : fitPx) * f)))
+
+  const toolbar = (
+    <div className="gantt__toolbar">
+      <span className="gantt__zoomctl">масштаб
+        <button className="btn" title="Отдалить" onClick={() => zoomBy(1 / 1.7)}>−</button>
+        <button className="btn" title="Приблизить" onClick={() => zoomBy(1.7)}>＋</button>
+        <button className="btn" title="Вписать по ширине" onClick={() => setPx(0)}>⤢ fit</button>
+      </span>
+      <button className="btn" onClick={() => setCollapsed(allCol ? new Set() : new Set(groups.map(([wc]) => wc)))}>
+        {allCol ? '▸ Развернуть всё' : '▾ Свернуть всё'}
+      </button>
+      <span className="gantt__hint">⟷ {h1(makespan)} ч ≈ {(makespan / 720).toFixed(1)} мес · {result.gantt.length} операций · {groups.length} групп</span>
+      <button className="btn" onClick={() => setFull((f) => !f)}>{full ? '✕ Свернуть' : '⛶ Весь экран'}</button>
+    </div>
+  )
 
   const legend = (
     <div className="gantt__legend">
       {products.map(([pid, pname]) => (
-        <span key={pid} className="gantt__legend-item" title={pname}>
-          <i style={{ background: colorOf(pid) }} />{pname}
-        </span>
+        <span key={pid} className="gantt__legend-item" title={pname}><i style={{ background: colorOf(pid) }} />{pname}</span>
       ))}
-    </div>
-  )
-
-  const toolbar = (
-    <div className="gantt__toolbar">
-      <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-        <option value="">Все станки ({allLanes.length})</option>
-        {allLanes.map(([mid, mname]) => <option key={mid} value={mid}>{mname}</option>)}
-      </select>
-      {full && (
-        <span className="gantt__zoomctl">
-          масштаб
-          <button className="btn" onClick={() => setZoom((z) => Math.max(1, z - 1))}>−</button>
-          {zoom}×
-          <button className="btn" onClick={() => setZoom((z) => Math.min(8, z + 1))}>＋</button>
-        </span>
-      )}
-      <button className="btn" onClick={() => setFull((f) => !f)}>
-        {full ? '✕ Свернуть' : '⛶ На весь экран'}
-      </button>
     </div>
   )
 
   const chart = (
-    <div className="gantt__chart" style={{ minWidth: full ? 900 * zoom : 620 }}>
-      {lanes.map(([mid, mname]) => (
-        <div className="gantt__row" key={mid}>
-          <span className="gantt__lane" title={mname}>{mname}</span>
-          <span className="gantt__track">
-            {result.gantt.filter((g) => g.machine_id === mid).map((g, i) => {
-              const w = ((g.end - g.start) / makespan) * 100
-              return (
-                <span key={i}
-                  className={`gantt__bar${g.late ? ' gantt__bar--late' : ''}`}
-                  title={`${g.product_name} · ${g.op_name}\nстанок: ${g.machine_name}\n${h1(g.start)}–${h1(g.end)} ч (${h1(g.end - g.start)} ч)${g.late ? ' · ПРОСРОЧКА' : ''}`}
-                  style={{
-                    left: `${(g.start / makespan) * 100}%`,
-                    width: `${Math.max(0.6, w)}%`,
-                    background: colorOf(g.product_id),
-                  }}>
-                  {w > 5 && <span className="gantt__bar-label">{full ? `${g.product_name} · ${g.op_name}` : g.op_name}</span>}
-                </span>
-              )
-            })}
+    <div className={`gantt2${full ? ' gantt2--full' : ''}`} onMouseLeave={() => setHover(null)}>
+      <div className="gantt2__inner" style={{ width: LANE_W + trackW }}>
+        <div className="gantt2__axis">
+          <span className="gantt2__axis-sp" style={{ width: LANE_W }} />
+          <span className="gantt2__axis-track" style={{ width: trackW }}>
+            {ticks.map((t) => <span key={t} className="gantt2__tick" style={{ left: t * effPx }}>{fmtTick(t)}</span>)}
           </span>
         </div>
-      ))}
-      <div className="gantt__axis">
-        <span />
-        <span className="gantt__axis-ticks">{ticks.map((t) => <span key={t}>{t}ч</span>)}</span>
+        {groups.map(([wc, grp]) => {
+          const isCol = collapsed.has(wc)
+          const nOps = [...grp.machines.values()].reduce((a, m) => a + m.bars.length, 0)
+          return (
+            <div className="gantt2__group" key={wc}>
+              <div className="gantt2__row gantt2__ghead" onClick={() => toggle(wc)}>
+                <span className="gantt2__lane gantt2__glane" style={{ width: LANE_W }}>
+                  <span className="gantt2__caret">{isCol ? '▸' : '▾'}</span><b>{grp.name}</b>
+                  <span className="gantt2__gmeta">{grp.machines.size}ст·{nOps}оп</span>
+                </span>
+                <span className="gantt2__track" style={{ width: trackW, background: 'transparent' }} />
+              </div>
+              {!isCol && [...grp.machines.entries()].map(([mid, mc]) => (
+                <div className="gantt2__row" key={mid}>
+                  <span className="gantt2__lane" style={{ width: LANE_W }} title={mc.name}>{mc.name}</span>
+                  <span className="gantt2__track" style={{ width: trackW }}>
+                    {mc.bars.map((g, i) => {
+                      const w = Math.max(2, (g.end - g.start) * effPx)
+                      return (
+                        <span key={i} className={`gantt2__bar${g.late ? ' is-late' : ''}`}
+                          style={{ left: g.start * effPx, width: w, background: colorOf(g.product_id) }}
+                          onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, g })}
+                          onMouseLeave={() => setHover(null)}>
+                          {w > 34 && <span className="gantt2__blabel">{g.op_name}</span>}
+                        </span>
+                      )
+                    })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
+    </div>
+  )
+
+  const tip = hover && (
+    <div className="gantt2__tip" style={{ left: Math.min(hover.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 250), top: hover.y + 14 }}>
+      <b style={{ color: colorOf(hover.g.product_id) }}>{hover.g.product_name}</b>
+      <div>{hover.g.op_name}</div>
+      <div className="mono gantt2__tip-sub">{hover.g.wc_name} · {hover.g.machine_name}</div>
+      <div className="mono gantt2__tip-sub">{h1(hover.g.start)}–{h1(hover.g.end)} ч · длит. {h1(hover.g.end - hover.g.start)} ч</div>
+      {hover.g.late && <div className="gantt2__tip-late">⚠ просрочка (срок {h1(hover.g.due)} ч)</div>}
     </div>
   )
 
   if (full) return (
     <div className="gantt__overlay">
-      <div className="gantt__overlay-head">
-        <b>Диаграмма Ганта — по изделиям{filter ? ` · ${allLanes.find(([m]) => m === filter)?.[1]}` : ''}</b>
-        {toolbar}
-      </div>
+      <div className="gantt__overlay-head"><b>Диаграмма Ганта — по изделиям</b>{toolbar}</div>
       {legend}
       <div className="gantt__overlay-body">{chart}</div>
+      {tip}
     </div>
   )
-  return <div>{toolbar}{legend}{chart}</div>
+  return <div>{toolbar}{legend}{chart}{tip}</div>
 }
 
 function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey: 'wc_name' | 'machine_name' }) {
