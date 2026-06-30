@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   api, type ScheduleResult, type OptRunSummary, type DemandOrder, type Product,
   type MrpResult, type ProductionPlan,
@@ -63,7 +63,17 @@ function Gantt({ result }: { result: ScheduleResult }) {
     return [...byWc.entries()]
   }, [result])
 
-  const fitPx = Math.max(0.02, (full ? 1180 : 660) / makespan)
+  // Меряем ФАКТИЧЕСКУЮ ширину контейнера → «fit» заполняет панель/весь экран целиком.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [contW, setContW] = useState(660)
+  useEffect(() => {
+    const measure = () => { if (scrollRef.current) setContW(scrollRef.current.clientWidth) }
+    measure()
+    const id = window.setTimeout(measure, 60)   // после раскрытия полноэкранного
+    window.addEventListener('resize', measure)
+    return () => { window.clearTimeout(id); window.removeEventListener('resize', measure) }
+  }, [full])
+  const fitPx = Math.max(0.02, Math.max(300, contW - LANE_W - 10) / makespan)
   const effPx = pxPerHour > 0 ? pxPerHour : fitPx
   const trackW = Math.max(makespan * effPx, 160)
   const step = niceStep(makespan, trackW)
@@ -97,7 +107,7 @@ function Gantt({ result }: { result: ScheduleResult }) {
   )
 
   const chart = (
-    <div className={`gantt2${full ? ' gantt2--full' : ''}`} onMouseLeave={() => setHover(null)}>
+    <div ref={scrollRef} className={`gantt2${full ? ' gantt2--full' : ''}`} onMouseLeave={() => setHover(null)}>
       <div className="gantt2__inner" style={{ width: LANE_W + trackW }}>
         <div className="gantt2__axis">
           <span className="gantt2__axis-sp" style={{ width: LANE_W }} />
