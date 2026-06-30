@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <queue>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -170,7 +171,7 @@ struct Expander {
   // Ограничено 30 для трактуемости (при большем — одна джоба = несколько партий).
   static int nBatches(double sizeFactor) {
     int n = (int)std::lround(sizeFactor);
-    return std::max(1, std::min(30, n));
+    return std::max(1, std::min(16, n));   // потолок для трактуемости/скорости планирования
   }
 
   // Возвращает batch-джобы ПОСЛЕДНЕЙ операции изделия (для побатчевой стыковки с потребителем).
@@ -184,7 +185,7 @@ struct Expander {
     visiting.insert(key);
     double batch = m.prods.count(pid) ? m.prods.at(pid).batchSize : 1;
     double sizeFactor = std::max(1.0, mult / batch);
-    int N = (jobs.size() > 6000) ? 1 : nBatches(sizeFactor);   // защита от взрыва числа джобов
+    int N = (jobs.size() > 4000) ? 1 : nBatches(sizeFactor);   // защита от взрыва числа джобов
 
     std::vector<int> prevBatch;                               // batch-джобы предыдущей операции
     for (const Op& o : oit->second) {
@@ -254,15 +255,23 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
   o.start.assign(J,0); o.end.assign(J,0); o.machineId.assign(J,""); o.worker.assign(J,-1);
   o.busyByWorker.assign(m.workers.size(), 0);
   std::unordered_map<std::string,double> mFree; std::vector<double> wFree(m.workers.size(), 0);
-  std::vector<char> done(J,0); size_t sched = 0;
+  // Готовность через ОЧЕРЕДЬ ПРИОРИТЕТА (по key): O(J·logJ) вместо O(J²) — иначе большой
+  // план (тысячи операций × правила × сэмплы) подвисает.
+  std::vector<int> predLeft(J, 0);
+  std::vector<std::vector<int>> succ(J);
+  for (size_t i = 0; i < J; ++i) {
+    predLeft[i] = (int)jobs[i].preds.size();
+    for (int p : jobs[i].preds) if (p >= 0 && p < (int)J) succ[p].push_back((int)i);
+  }
+  using PQItem = std::pair<double,int>;
+  std::priority_queue<PQItem, std::vector<PQItem>, std::greater<PQItem>> ready;
+  for (size_t i = 0; i < J; ++i) if (predLeft[i] == 0) ready.push({ key[i], (int)i });
+  std::vector<char> done(J,0); size_t sched = 0, scan = 0;
   while (sched < J) {
-    int best = -1; double bk = 1e300;
-    for (size_t i = 0; i < J; ++i) {
-      if (done[i]) continue; bool ready = true;
-      for (int p : jobs[i].preds) if (!done[p]) { ready = false; break; }
-      if (ready && key[i] < bk) { bk = key[i]; best = (int)i; }
-    }
-    if (best < 0) for (size_t i = 0; i < J; ++i) if (!done[i]) { best = (int)i; break; }
+    int best = -1;
+    if (!ready.empty()) { best = ready.top().second; ready.pop(); }
+    else { while (scan < J && done[scan]) ++scan; if (scan < J) best = (int)scan; else break; }
+    if (best < 0 || done[best]) continue;
     const Job& j = jobs[best];
     double readyT = 0; for (int p : j.preds) readyT = std::max(readyT, o.end[p]);
     std::string chosenM; double mfree = 0;
@@ -281,6 +290,7 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
     if (!chosenM.empty()) mFree[chosenM] = en, o.busyByMachine[chosenM] += dur[best];
     if (wi >= 0) wFree[wi] = en, o.busyByWorker[wi] += dur[best];
     o.makespan = std::max(o.makespan, en); done[best] = 1; ++sched;
+    for (int s : succ[best]) if (--predLeft[s] == 0) ready.push({ key[s], s });
   }
   return o;
 }
@@ -401,7 +411,8 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // ── Перебор диспетч-правил (старт), оценка симуляцией + Монте-Карло (хвост) ──
   std::vector<std::string> rules = { "EDD", "SPT", "CR", "MWKR", "MS", "FIFO", "LPT" };
   if (p.rule != "auto") rules = { p.rule };
-  const int N = std::max(100, p.samples);
+  int N = std::max(60, p.samples);
+  if (jobs.size() > 1500) N = std::min(N, 40);   // крупный план — меньше сэмплов (скорость)
   std::mt19937 rng(p.seed);
 
   // Заранее сэмплируем длительности по прогонам (общие для всех правил — честно).
