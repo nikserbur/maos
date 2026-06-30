@@ -164,10 +164,13 @@ function Gantt({ result }: { result: ScheduleResult }) {
 }
 
 function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey: 'wc_name' | 'machine_name' }) {
-  const sorted = [...rows].sort((a, b) => b.utilization - a.utilization).slice(0, 12)
+  // Производственное оборудование (есть работа) vs ИНФРАСТРУКТУРА без операций (всегда 0% —
+  // её простой НЕ связан с выбором продукции, иначе вводит в заблуждение «огромными простоями»).
+  const used = rows.filter((l) => l.utilization > 1e-4).sort((a, b) => b.utilization - a.utilization).slice(0, 12)
+  const infra = rows.filter((l) => l.utilization <= 1e-4)
   return (
     <div>
-      {sorted.map((l, i) => {
+      {used.map((l, i) => {
         const u = Math.min(1, l.utilization)
         const cls = u >= 0.85 ? ' load-bar__fill--full' : u >= 0.6 ? ' load-bar__fill--hot' : ''
         return (
@@ -178,6 +181,12 @@ function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey:
           </div>
         )
       })}
+      {infra.length > 0 && (
+        <div className="load-infra">
+          <b>Инфраструктура без операций ({infra.length}):</b> {infra.map((l) => (l[nameKey] as string) ?? l.wc_type_id).filter(Boolean).join(', ')}
+          {' '}— ни одна операция техкарт сюда не маршрутизируется, поэтому простой 100% (это <u>не</u> следствие выбора продукции, а пробел в техкартах/НСИ).
+        </div>
+      )}
     </div>
   )
 }

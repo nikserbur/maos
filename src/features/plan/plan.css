@@ -127,3 +127,8 @@
 .gantt2__tip b { font-size: 12px; }
 .gantt2__tip-sub { font-size: 10px; color: var(--text-muted, #8a929c); margin-top: 2px; }
 .gantt2__tip-late { font-size: 10px; color: var(--intent-danger, #cd4246); margin-top: 3px; }
+
+.load-infra { margin-top: 10px; padding: 8px 10px; font-size: 11px; line-height: 1.5;
+  color: var(--text-muted, #8a929c); background: var(--bg-panel, #0f1318);
+  border: 1px dashed var(--border, #2a2f37); border-radius: 8px; }
+.load-infra b { color: var(--text-secondary, #c5cbd3); }
