@@ -165,11 +165,12 @@ struct Expander {
   std::unordered_map<std::string, std::vector<int>> lastJobs;   // key → batch-джобы последней операции
   std::unordered_set<std::string> visiting;
 
-  // Число transfer-партий (lot-streaming): большой объём дробим, чтобы операции
-  // ПЕРЕКРЫВАЛИСЬ во времени и шли на РАЗНЫХ станках параллельно (≈8 ед-экв на партию).
+  // Число transfer-партий = ОБЪЁМ / РАЗМЕР ПАРТИИ изделия (sizeFactor = mult/batchSize):
+  // каждая партия проходит операции и сразу «течёт» к следующей на свободном станке.
+  // Ограничено 30 для трактуемости (при большем — одна джоба = несколько партий).
   static int nBatches(double sizeFactor) {
-    int n = (int)std::ceil(sizeFactor / 8.0);
-    return std::max(1, std::min(20, n));
+    int n = (int)std::lround(sizeFactor);
+    return std::max(1, std::min(30, n));
   }
 
   // Возвращает batch-джобы ПОСЛЕДНЕЙ операции изделия (для побатчевой стыковки с потребителем).
@@ -462,6 +463,31 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     });
   }
 
+  // ── ОЧЕРЕДИ: сколько операций «ждут» (готовы по предшественникам, но станок занят) в
+  //    каждый момент времени и на каком оборудовании — видно, где копятся узкие места.
+  json queueTimeline = json::array();
+  {
+    const int BK = 48;
+    const double bw = std::max(1e-9, makespan / std::max(1, BK));
+    std::vector<std::unordered_map<std::string, int>> qByWc(BK + 1);
+    std::vector<int> qTot(BK + 1, 0);
+    for (size_t i = 0; i < jobs.size(); ++i) {
+      if (jobs[i].productId == "supply") continue;
+      double a = 0; for (int p : jobs[i].preds) a = std::max(a, sched.end[p]);  // готовность
+      double b = sched.start[i];                                                // старт (конец ожидания)
+      if (b <= a + 1e-6) continue;
+      int b0 = std::max(0, (int)std::floor(a / bw));
+      int b1 = std::min(BK, (int)std::floor((b - 1e-6) / bw));
+      for (int k = b0; k <= b1; ++k) { qTot[k]++; qByWc[k][jobs[i].wcType]++; }
+    }
+    for (int k = 0; k <= BK; ++k) {
+      std::string topWc; int topN = 0;
+      for (auto& [wc, n] : qByWc[k]) if (n > topN) { topN = n; topWc = wc; }
+      queueTimeline.push_back({ {"t", H(k * bw)}, {"queued", qTot[k]},
+        {"top_wc", m.wcName.count(topWc) ? m.wcName[topWc] : topWc}, {"top_wc_n", topN} });
+    }
+  }
+
   // Загрузка станков + простои. Фонд = рабочее время в [0, makespan] (без выходных/смен).
   double fond = working_span(cal, makespan);
   json machineLoad = json::array(); double totalBusy = 0, totalCap = 0;
@@ -517,7 +543,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     {"weights", { {"time", p.wTime}, {"cost", p.wCost}, {"risk", p.wRisk} }},
     {"n_orders", nOrders}, {"n_jobs", (int)jobs.size()}, {"n_machines", (int)m.machineName.size()},
     {"n_workers", (int)m.workers.size()},
-    {"program", programJson}, {"gantt", gantt},
+    {"program", programJson}, {"gantt", gantt}, {"queue_timeline", queueTimeline},
     {"machine_load", machineLoad}, {"wc_load", wcLoad}, {"worker_plan", workerPlan},
     {"bottleneck", { {"wc_type_id", bottleneck}, {"wc_name", m.wcName.count(bottleneck)?m.wcName[bottleneck]:bottleneck},
                      {"utilization", bnUtil} }},

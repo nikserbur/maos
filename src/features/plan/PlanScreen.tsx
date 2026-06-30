@@ -4,6 +4,7 @@ import {
   type MrpResult, type ProductionPlan,
 } from '../../lib/api'
 import { LoadTimeline } from './LoadTimeline'
+import { QueueChart } from './QueueChart'
 import './plan.css'
 
 const ORDER_COLORS = ['#2d72d2', '#238551', '#c87619', '#9179f2', '#149e8e', '#cd4246', '#db2c6f', '#d1980b']
@@ -419,6 +420,13 @@ export function PlanScreen() {
               <span><i style={{ background: 'transparent', outline: '1.5px solid var(--intent-danger)' }} />просрочка</span>
             </div>
           </div>
+
+          {result.queue_timeline && result.queue_timeline.length > 1 && (
+            <>
+              <p className="plan__section-title">Очереди операций · сколько ждёт свободного станка во времени (пик = узкое место)</p>
+              <div className="plan__panel"><QueueChart data={result.queue_timeline} /></div>
+            </>
+          )}
 
           <div className="plan__grid2">
             <div>

@@ -211,6 +211,7 @@ export interface ScheduleResult {
   n_orders: number; n_jobs: number; n_machines: number; n_workers: number
   program: Array<{ product_id: string; product_name: string; qty: number; due_hours: number }>
   gantt: GanttJob[]; machine_load: SchedLoad[]; wc_load: SchedLoad[]; worker_plan: WorkerPlan[]
+  queue_timeline?: Array<{ t: number; queued: number; top_wc: string; top_wc_n: number }>
   bottleneck: { wc_type_id: string; wc_name: string; utilization: number }
   idle: { machine_idle_hours: number; machine_utilization: number }
   calendar: { enabled: boolean; work_fond_hours: number }
