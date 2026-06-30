@@ -21,7 +21,8 @@
 .plan__kpi-v--bad { color: var(--intent-danger); } .plan__kpi-v--good { color: var(--intent-success); } .plan__kpi-v--warn { color: var(--intent-warning); }
 
 .plan__section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 6px 0 0; }
-.plan__panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: calc(var(--grid) * 1.1); overflow-x: auto; }
+.plan__panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: calc(var(--grid) * 1.1); overflow-x: auto; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.plan > * { min-width: 0; }
 .plan__grid2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: var(--grid); }
 @media (max-width: 980px) { .plan__grid2 { grid-template-columns: 1fr; } }
 
@@ -61,7 +62,8 @@
 .worker-row__util { font-variant-numeric: tabular-nums; color: var(--text-muted); text-align: right; }
 
 /* Гант: панель управления + полноэкранный режим */
-.gantt__toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.gantt__toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.gantt__hint { font-size: 11px; color: var(--text-muted, #8a929c); }
 .gantt__toolbar select {
   background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37);
   border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 4px 8px;
@@ -82,7 +84,9 @@
 .gantt__zoomctl .btn { padding: 2px 8px; }
 
 /* ── Интерактивный Гант (зум/fit, сворачивание групп, подсказки) ──────────── */
+.gantt-wrap { min-width: 0; max-width: 100%; }
 .gantt2 { overflow: auto; max-height: 360px; position: relative;
+  width: 100%; max-width: 100%; box-sizing: border-box;
   border: 1px solid var(--border, #2a2f37); border-radius: 8px; background: var(--surface, #161a20); }
 .gantt2--full { max-height: none; height: 100%; }
 .gantt2__inner { position: relative; }

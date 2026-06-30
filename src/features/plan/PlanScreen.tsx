@@ -159,7 +159,7 @@ function Gantt({ result }: { result: ScheduleResult }) {
       {tip}
     </div>
   )
-  return <div>{toolbar}{legend}{chart}{tip}</div>
+  return <div className="gantt-wrap">{toolbar}{legend}{chart}{tip}</div>
 }
 
 function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey: 'wc_name' | 'machine_name' }) {
