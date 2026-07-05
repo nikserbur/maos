@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import type { ScheduleResult } from '../../lib/api'
 
 const BINS = 24
@@ -15,25 +16,32 @@ function cellColor(u: number): string {
  * Профиль загрузки оборудования ВО ВРЕМЕНИ: тепловая карта «станок × время».
  * Загрузка в бине = доля времени бина, занятая операциями на этом станке (из Gantt).
  */
-export function LoadTimeline({ gantt, makespan }: { gantt: ScheduleResult['gantt']; makespan: number }) {
+export const LoadTimeline = memo(function LoadTimeline(
+  { gantt, makespan }: { gantt: ScheduleResult['gantt']; makespan: number },
+) {
   const span = Math.max(1, makespan)
   const binH = span / BINS
 
-  const rows: { id: string; name: string }[] = []
-  const index = new Map<string, number>()
-  for (const j of gantt) {
-    const id = j.machine_id || 'supply'
-    if (!index.has(id)) { index.set(id, rows.length); rows.push({ id, name: j.machine_name || j.wc_name || 'Снабжение' }) }
-  }
-  const util = rows.map(() => new Array(BINS).fill(0))
-  for (const j of gantt) {
-    const r = index.get(j.machine_id || 'supply')!
-    for (let b = 0; b < BINS; b++) {
-      const a = b * binH, c = (b + 1) * binH
-      const ov = Math.max(0, Math.min(j.end, c) - Math.max(j.start, a))
-      util[r][b] += ov
+  // Матрица «станок × бин» O(|gantt|·24) — считаем только при смене расписания,
+  // а не на каждый ререндер родителя (для больших планов это сотни тысяч итераций).
+  const { rows, util } = useMemo(() => {
+    const rows: { id: string; name: string }[] = []
+    const index = new Map<string, number>()
+    for (const j of gantt) {
+      const id = j.machine_id || 'supply'
+      if (!index.has(id)) { index.set(id, rows.length); rows.push({ id, name: j.machine_name || j.wc_name || 'Снабжение' }) }
     }
-  }
+    const util = rows.map(() => new Array(BINS).fill(0))
+    for (const j of gantt) {
+      const r = index.get(j.machine_id || 'supply')!
+      for (let b = 0; b < BINS; b++) {
+        const a = b * binH, c = (b + 1) * binH
+        const ov = Math.max(0, Math.min(j.end, c) - Math.max(j.start, a))
+        util[r][b] += ov
+      }
+    }
+    return { rows, util }
+  }, [gantt, binH])
 
   if (!rows.length) return <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>Нет данных расписания.</p>
 
@@ -64,4 +72,4 @@ export function LoadTimeline({ gantt, makespan }: { gantt: ScheduleResult['gantt
       </div>
     </div>
   )
-}
+})

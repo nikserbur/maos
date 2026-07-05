@@ -26,6 +26,10 @@ export function ProductForm({ onSuccess, edit }: Props) {
   const [basePrice, setBasePrice] = useState(sv('base_price'))
   const [baseCost, setBaseCost]   = useState(sv('base_cost'))
   const [demandMax, setDemandMax] = useState(sv('demand_max'))
+  // Модель спроса/конкуренции: выше ёмкости рынка продать НЕЛЬЗЯ; цена падает с насыщением.
+  const [mktCap, setMktCap]       = useState(sv('market_capacity'))
+  const [elast, setElast]         = useState(sv('price_elasticity'))
+  const [compSup, setCompSup]     = useState(sv('competitor_supply'))
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
@@ -45,6 +49,9 @@ export function ProductForm({ onSuccess, edit }: Props) {
         base_price: basePrice || '0',
         base_cost: baseCost || '0',
         demand_max: demandMax || '0',
+        market_capacity: mktCap || '0',
+        price_elasticity: elast || '0.5',
+        competitor_supply: compSup || '0',
       }
       if (edit) await api.products.update(edit.id, payload)
       else await api.products.create(payload)
@@ -142,6 +149,30 @@ export function ProductForm({ onSuccess, edit }: Props) {
                  onChange={(e) => setDemandMax(e.target.value)} placeholder={sellable ? '4000' : '—'} />
         </div>
       </div>
+
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">Ёмкость рынка, ед.</label>
+          <input className="form__input" type="number" min="0" value={mktCap} disabled={!sellable}
+                 onChange={(e) => setMktCap(e.target.value)} placeholder={sellable ? '5000' : '—'} />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Эластичность цены</label>
+          <input className="form__input" type="number" min="0" max="2" step="0.1" value={elast} disabled={!sellable}
+                 onChange={(e) => setElast(e.target.value)} placeholder="0.5" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Предложение конкурентов, ед.</label>
+          <input className="form__input" type="number" min="0" value={compSup} disabled={!sellable}
+                 onChange={(e) => setCompSup(e.target.value)} placeholder="0" />
+        </div>
+      </div>
+      {sellable && (
+        <span className="form__hint">
+          Рынок поглотит не более (ёмкость − конкуренты) единиц — сверх этого продать нельзя;
+          чем ближе к насыщению, тем ниже цена сбыта (эластичность).
+        </span>
+      )}
 
       <div className="form__actions">
         <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>

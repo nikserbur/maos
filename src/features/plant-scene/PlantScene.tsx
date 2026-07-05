@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useReducer, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Loader } from '@react-three/drei'
 import { SceneEnvironment } from './SceneEnvironment'
@@ -55,8 +55,15 @@ export default function PlantScene() {
 
   useEffect(() => { loadGraph() }, [])
 
-  const nodes    = state.graph.nodes.filter((n) => n.parentId === state.currentParentId)
-  const edges    = state.graph.edges.filter((e) => e.parentId === state.currentParentId)
+  // useMemo обязателен: новые массивы на каждый рендер ломали useMemo в FlowLinks/
+  // Facility (deps [nodes, edges]) — сеть дорог и обвязка пересчитывались на каждый
+  // клик/hover по сцене.
+  const nodes = useMemo(
+    () => state.graph.nodes.filter((n) => n.parentId === state.currentParentId),
+    [state.graph, state.currentParentId])
+  const edges = useMemo(
+    () => state.graph.edges.filter((e) => e.parentId === state.currentParentId),
+    [state.graph, state.currentParentId])
   const selected = state.graph.nodes.find((n) => n.id === state.selectedId) ?? null
   const editing  = state.mode === 'edit'
 

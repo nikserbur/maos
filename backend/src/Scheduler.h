@@ -20,6 +20,10 @@ using nlohmann::json;
 
 struct OrderLine { std::string productId; double qty = 1; double dueHours = 0; };
 
+/** Ручная правка Ганта: операция job_idx стартует НЕ РАНЬШЕ startHours (и на
+ *  указанном станке, если задан) — drag&drop с пересчётом остального плана. */
+struct SchedPin { int jobIdx = -1; double startHours = 0; std::string machineId; };
+
 struct ScheduleParams {
   std::vector<OrderLine> program;     // что и сколько (если пусто → из run/демо)
   std::string runId;                  // optimization_runs.id → программа из портфеля
@@ -30,6 +34,12 @@ struct ScheduleParams {
   unsigned seed  = 42;
   double tailWeight = -1;             // <0 → из операций; иначе глобальный override
   bool   useCalendar = true;          // учитывать рабочий календарь (смены/выходные)
+  int    improveIters = 30;           // итераций локального поиска поверх правила (0 = выкл)
+  std::vector<SchedPin> pins;         // ручные правки Ганта (перетаскивание операций)
+  // Конструктор эвристики: взвешенная комбинация критериев (знак веса = направление).
+  // Критерии: duration | due | rem | inputs | setup. Пример «длинные раньше, из них
+  // раньше те, у кого больше входов»: [{duration,-1},{inputs,-0.2}].
+  std::vector<std::pair<std::string,double>> customRule;
 };
 
 // Строит и оптимизирует расписание; ПЕРСИСТИТ план (plans/plan_tasks) и

@@ -21,6 +21,11 @@ export function WorkCenterTypeForm({ onSuccess, edit }: Props) {
   const [kind,  setKind]  = useState(sv('kind', 'feedstock'))
   const [desc,  setDesc]  = useState(sv('description'))
   const [inter, setInter] = useState(sv('interchangeable') === '1')
+  // Надёжность/ТО — входы симуляции поломок и планового обслуживания.
+  const [mtbf,   setMtbf]   = useState(sv('mtbf_hours'))
+  const [repair, setRepair] = useState(sv('repair_hours'))
+  const [mtbm,   setMtbm]   = useState(sv('mtbm_hours'))
+  const [maint,  setMaint]  = useState(sv('maintenance_hours'))
   const [opIds, setOpIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -37,6 +42,8 @@ export function WorkCenterTypeForm({ onSuccess, edit }: Props) {
         name, group_name: group, kind,
         description: desc,
         interchangeable: inter ? '1' : '0',
+        mtbf_hours: mtbf, repair_hours: repair,
+        mtbm_hours: mtbm, maintenance_hours: maint,
       }
       if (edit) await api.workCenterTypes.update(edit.id, payload)
       else await api.workCenterTypes.create(payload)
@@ -109,6 +116,35 @@ export function WorkCenterTypeForm({ onSuccess, edit }: Props) {
         <input type="checkbox" checked={inter} onChange={(e) => setInter(e.target.checked)} />
         Взаимозаменяемость — единицы этого типа равнозначны при планировании
       </label>
+
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">Наработка на отказ (MTBF), ч</label>
+          <input className="form__input" type="number" min="0" value={mtbf}
+                 onChange={(e) => setMtbf(e.target.value)} placeholder="350" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Средний ремонт, ч</label>
+          <input className="form__input" type="number" min="0" value={repair}
+                 onChange={(e) => setRepair(e.target.value)} placeholder="6" />
+        </div>
+      </div>
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">ТО каждые (наработка), ч</label>
+          <input className="form__input" type="number" min="0" value={mtbm}
+                 onChange={(e) => setMtbm(e.target.value)} placeholder="160" />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Длительность ТО, ч</label>
+          <input className="form__input" type="number" min="0" value={maint}
+                 onChange={(e) => setMaint(e.target.value)} placeholder="4" />
+        </div>
+      </div>
+      <span className="form__hint">
+        Симуляция плана учитывает плановое ТО по наработке; вероятность поломки растёт
+        с загрузкой станка (λ = (1/MTBF)·(0.5+1.5·загрузка)), ремонт — логнормальный.
+      </span>
 
       <div className="form__field">
         <label className="form__label">Доступные операции для этого типа</label>

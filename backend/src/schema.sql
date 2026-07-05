@@ -310,7 +310,27 @@ CREATE TABLE IF NOT EXISTS users (
   role_id       TEXT REFERENCES roles(id) ON DELETE SET NULL,
   status        TEXT NOT NULL DEFAULT 'active',
   failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until  TEXT,                            -- временная блокировка после 5 неудачных попыток
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── Нормы «операция × тип оборудования» (ТЗ «Время выполнения операции» §2:
+--    норма задаётся на ПАРУ; наличие строки = допустимость операции на типе) ──
+CREATE TABLE IF NOT EXISTS time_norms (
+  operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+  wc_type_id   TEXT NOT NULL REFERENCES work_center_types(id) ON DELETE CASCADE,
+  t_opt REAL, t_norm REAL, t_pess REAL, setup_time REAL,
+  PRIMARY KEY (operation_id, wc_type_id)
+);
+
+-- ── Обратная связь Стадия 1 → Стадия 2 (recourse): фактические часы на единицу
+--    из расписания (с наладками) против наивных нормо-часов ──────────────────
+CREATE TABLE IF NOT EXISTS stage1_feedback (
+  product_id     TEXT PRIMARY KEY,
+  hours_per_unit REAL,                -- фактически по расписанию (вся цепочка)
+  naive_hours    REAL,                -- наивная сумма нормо-часов
+  factor         REAL,                -- поправка мощности (факт/наив, ≥1)
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- ── Action layer (event sourcing / audit log) ─────────────────────────────
@@ -332,3 +352,10 @@ CREATE INDEX IF NOT EXISTS idx_opwct_op          ON operation_wc_types (operatio
 CREATE INDEX IF NOT EXISTS idx_opin_op           ON operation_inputs (operation_id);
 CREATE INDEX IF NOT EXISTS idx_pricedist_scen    ON price_distributions (scenario_id);
 CREATE INDEX IF NOT EXISTS idx_portfitems_pf     ON portfolio_items (portfolio_id);
+-- FK-индексы горячих путей: load_model/MRP (routings по изделию), программа плана
+-- (заказы по плану), Гант прогона (plan_tasks по плану), портфель по прогону.
+CREATE INDEX IF NOT EXISTS idx_routings_product  ON routings (product_id);
+CREATE INDEX IF NOT EXISTS idx_demand_plan       ON demand_orders (plan_id);
+CREATE INDEX IF NOT EXISTS idx_plantasks_plan    ON plan_tasks (plan_id);
+CREATE INDEX IF NOT EXISTS idx_portfolios_run    ON portfolios (run_id);
+CREATE INDEX IF NOT EXISTS idx_optruns_created   ON optimization_runs (created_at);

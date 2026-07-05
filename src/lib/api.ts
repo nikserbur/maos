@@ -10,11 +10,23 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
+  // Bearer-токен сессии: backend проверяет его на каждом /api/* (RBAC).
+  const headers: Record<string, string> = {}
+  if (body) headers['Content-Type'] = 'application/json'
+  try {
+    const token = sessionStorage.getItem('maos.token')
+    if (token) headers['Authorization'] = `Bearer ${token}`
+  } catch { /* приватный режим и т.п. */ }
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   })
+  // Токен истёк/сервер перезапущен → чистим сессию и возвращаем на окно входа.
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    try { sessionStorage.removeItem('maos.token'); sessionStorage.removeItem('maos.session') } catch { /* noop */ }
+    window.location.reload()
+  }
   const text = await res.text()
   if (!text) throw new Error(`HTTP ${res.status}: empty response`)
   const json: ApiResponse<T> = JSON.parse(text)
@@ -33,6 +45,9 @@ export interface WorkCenterType {
   kind: string                // ObjectKind: определяет 3D-вид на схеме
   characteristics: string     // JSON [{label,value}] — фикс. характеристики типа
   description: string; interchangeable: string; created_at: string
+  hour_rate?: string; efficiency?: string
+  // Надёжность/ТО (симуляция поломок и планового обслуживания):
+  mtbf_hours?: string; repair_hours?: string; mtbm_hours?: string; maintenance_hours?: string
 }
 export interface Machine {
   id: string; name: string; wc_type_id: string; org_unit: string
@@ -52,6 +67,8 @@ export interface Product {
   stock: string; purchased: string; created_at: string
   // Экономика внешних условий / робастной оптимизации:
   sellable: string; base_cost: string; base_price: string; demand_max: string
+  // Модель спроса/конкуренции (ёмкость рынка, эластичность, конкуренты):
+  market_capacity?: string; price_elasticity?: string; competitor_supply?: string
 }
 export interface Routing {
   id: string; name: string; product_id: string; created_at: string
@@ -137,7 +154,8 @@ export interface OptMetrics {
   cvar: number; p_loss: number; downside: number; best: number; max_regret: number
 }
 export interface OptItem {
-  product_id: string; qty: number; unit_price: number; unit_cost: number
+  product_id: string; qty: number; sold_qty?: number
+  unit_price: number; unit_cost: number
   unit_margin: number; contribution: number; risk_contribution: number
 }
 export interface OptResourceLoad {
@@ -182,11 +200,14 @@ export interface SchemeAggregate {
 
 /* ── Стадия 1: расписание (план исполнения) ──────────────────────────────── */
 export interface GanttJob {
+  job_idx: number
   order_idx: number; product_id: string; product_name: string
   op_id: string; op_name: string; wc_type_id: string; wc_name: string
   machine_id: string; machine_name: string; worker: number
   start: number; end: number; due: number; late: boolean
 }
+/** Ручная правка Ганта: операция стартует не раньше start_hours (на своём станке). */
+export interface SchedPin { job_idx: number; start_hours: number; machine_id?: string }
 export interface SchedLoad {
   wc_type_id?: string; wc_name?: string; machine_id?: string; machine_name?: string
   busy_hours: number; idle_hours: number; utilization: number
@@ -204,6 +225,14 @@ export interface SchedKpi {
   makespan: number; makespan_mean: number; makespan_cvar: number; makespan_worst: number
   tardiness: number; tardiness_cvar: number; n_late: number; otd: number
   utilization: number; cost: number
+  labor_cost?: number
+  n_setups?: number; setup_hours?: number
+  maintenance_hours?: number; breakdown_hours_mean?: number
+  flow_time_mean_h?: number; wait_share?: number; wip_avg?: number; throughput_per_day?: number
+}
+export interface SchedImprover {
+  iterations: number; accepted: number
+  score_before: number; score_after: number; improvement_pct: number
 }
 export interface ScheduleResult {
   rule: string; samples: number; alpha: number
@@ -216,12 +245,17 @@ export interface ScheduleResult {
   idle: { machine_idle_hours: number; machine_utilization: number }
   calendar: { enabled: boolean; work_fond_hours: number }
   kpi: SchedKpi; rules: SchedRule[]; warnings: string[]
+  portfolio_horizon_hours?: number
+  improver?: SchedImprover | null
   plan_id?: string; error_soft?: boolean
 }
 export interface ScheduleParams {
   run_id?: string; rule?: string; w_time?: number; w_cost?: number; w_risk?: number
   samples?: number; alpha?: number; tail_weight?: number; use_calendar?: boolean
   program?: Array<{ product_id: string; qty: number; due_hours?: number }>
+  pins?: SchedPin[]; improve_iters?: number
+  /** Конструктор эвристики: критерии с весами (знак = направление, меньший key — раньше). */
+  custom_rule?: Array<{ criterion: 'duration' | 'due' | 'rem' | 'inputs' | 'setup'; weight: number }>
 }
 export interface WorkCalendar {
   schedule_id?: string; name?: string; enabled: boolean
@@ -233,6 +267,8 @@ export interface MrpMaterial {
   product_id: string; name: string; purchased: boolean
   gross_req: number; on_hand: number; safety_stock: number; net_req: number
   shortage: boolean; reorder: boolean; lead_time_hours: number; unit_cost: number
+  planned_qty?: number; level?: number
+  need_by_hours?: number; place_by_hours?: number; late?: boolean
 }
 export interface MrpResult { feasible: boolean; materials: MrpMaterial[]; n_orders: number }
 
@@ -248,17 +284,23 @@ export interface ProductionPlan { id: string; name: string; description: string;
 export interface ForecastParams {
   months?: number; inflation?: number; fx?: number; demand?: number
   volatility?: number; corr?: number; runs?: number; scenario_id?: string
+  backtest?: number   // k месяцев истории для out-of-sample проверки (0 = выкл)
 }
 export interface ForecastFit {
   data_driven: boolean; dist: 'normal' | 'laplace' | 't' | 'stable'; n_obs: number
   mu: number; sigma: number; nu?: number; alpha?: number
   aic_normal: number; aic_laplace: number; aic_t?: number; aic_stable?: number
 }
+export interface ForecastBacktest {
+  k: number; mape: number; mape_naive: number; skill: number
+  pinball10: number; pinball90: number; coverage80: number
+}
 export interface ForecastProduct {
   id: string; name: string; role: 'product' | 'raw' | 'rate'; base: number
   p10: number[]; p50: number[]; p90: number[]; mean: number[]
   history?: number[]; trend?: number[]
   fit?: ForecastFit
+  backtest?: ForecastBacktest
 }
 export interface ForecastResult {
   months: number; inflation_monthly: number; fx: number; demand: number
@@ -272,9 +314,13 @@ export const api = {
   health: () => get<{ status: string; version: string }>('/health'),
 
   auth: {
-    login: (login: string, password: string) =>
+    login: (login: string, password: string, db?: string) =>
       post<{ token: string; login: string; role: string; permissions: string[] }>(
-        '/auth/login', { login, password }),
+        '/auth/login', { login, password, db }),
+  },
+
+  projects: {
+    list: () => get<{ projects: string[]; current: string }>('/projects'),
   },
 
   workCenterTypes: {

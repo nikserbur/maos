@@ -1,10 +1,13 @@
-import type { ComponentType } from 'react'
-import PlantScene from '../features/plant-scene'
-import { NsiScreen } from '../features/nsi/NsiScreen'
-import { OptimizationScreen } from '../features/optimization/OptimizationScreen'
-import { ScenariosHub } from '../features/scenarios/ScenariosHub'
-import { PlanScreen } from '../features/plan/PlanScreen'
-import { AdminScreen } from '../features/admin/AdminScreen'
+import { lazy, type ComponentType } from 'react'
+
+/* Ленивые экраны: каждый — отдельный чанк. three.js (~1 МБ) грузится только при
+ * открытии «Схемы предприятия», а не в стартовом бандле до логина. */
+const PlantScene = lazy(() => import('../features/plant-scene'))
+const NsiScreen = lazy(() => import('../features/nsi/NsiScreen').then((m) => ({ default: m.NsiScreen })))
+const OptimizationScreen = lazy(() => import('../features/optimization/OptimizationScreen').then((m) => ({ default: m.OptimizationScreen })))
+const ScenariosHub = lazy(() => import('../features/scenarios/ScenariosHub').then((m) => ({ default: m.ScenariosHub })))
+const PlanScreen = lazy(() => import('../features/plan/PlanScreen').then((m) => ({ default: m.PlanScreen })))
+const AdminScreen = lazy(() => import('../features/admin/AdminScreen').then((m) => ({ default: m.AdminScreen })))
 
 export interface ScreenDef {
   id: string

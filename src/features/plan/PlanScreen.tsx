@@ -16,7 +16,15 @@ const RULES = [
   { id: 'SPT', label: 'SPT — короткие вперёд' }, { id: 'CR', label: 'CR — критическое отношение' },
   { id: 'MWKR', label: 'MWKR — больше работы' }, { id: 'MS', label: 'MS — мин. запас' },
   { id: 'LPT', label: 'LPT — длинные вперёд' }, { id: 'FIFO', label: 'FIFO' },
+  { id: 'custom', label: '⚙ Конструктор эвристики' },
 ]
+const CRITERIA = [
+  { id: 'duration', label: 'длительность операции' },
+  { id: 'due', label: 'срок заказа' },
+  { id: 'rem', label: 'остаточная работа по цепочке' },
+  { id: 'inputs', label: 'число входных материалов' },
+  { id: 'setup', label: 'время наладки' },
+] as const
 
 type GBar = ScheduleResult['gantt'][number]
 const NICE_H = [1, 2, 4, 8, 12, 24, 48, 72, 168, 336, 720, 1440, 2160, 4320]
@@ -31,13 +39,21 @@ function fmtTick(h: number): string {
 }
 
 /** Интерактивная диаграмма Ганта: зум/fit, сворачиваемые группы по типу оборудования,
- *  всплывающие подсказки, подписи на полосах, ось времени (ч/дн/мес). */
-function Gantt({ result }: { result: ScheduleResult }) {
+ *  всплывающие подсказки, подписи на полосах, ось времени (ч/дн/мес).
+ *  Drag&drop: перетаскивание полосы по горизонтали = ручная правка «не раньше»
+ *  (пин); «Пересчитать с правками» прогоняет план заново с этими ограничениями. */
+function Gantt({ result, pins, onPin }: {
+  result: ScheduleResult
+  pins: Map<number, number>
+  onPin?: (jobIdx: number, startHours: number) => void
+}) {
   const makespan = Math.max(1, ...result.gantt.map((g) => g.end))
   const [full, setFull] = useState(false)
   const [pxPerHour, setPx] = useState(0)     // 0 → по ширине (fit)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [hover, setHover] = useState<{ x: number; y: number; g: GBar } | null>(null)
+  const [drag, setDrag] = useState<{ idx: number; startX: number; orig: number } | null>(null)
+  const [dragDx, setDragDx] = useState(0)
   const LANE_W = 168
 
   // Раскраска по ИЗДЕЛИЮ — одно изделие = один цвет везде.
@@ -106,8 +122,22 @@ function Gantt({ result }: { result: ScheduleResult }) {
     </div>
   )
 
+  // Позиция полосы с учётом пина и текущего перетаскивания.
+  const startOf = (g: GBar) => {
+    let s = pins.get(g.job_idx) ?? g.start
+    if (drag && drag.idx === g.job_idx) s = Math.max(0, drag.orig + dragDx / effPx)
+    return s
+  }
+  const endDrag = () => {
+    if (drag && onPin) onPin(drag.idx, Math.max(0, drag.orig + dragDx / effPx))
+    setDrag(null); setDragDx(0)
+  }
+
   const chart = (
-    <div ref={scrollRef} className={`gantt2${full ? ' gantt2--full' : ''}`} onMouseLeave={() => setHover(null)}>
+    <div ref={scrollRef} className={`gantt2${full ? ' gantt2--full' : ''}`}
+         onMouseLeave={() => { setHover(null); if (drag) endDrag() }}
+         onMouseMove={(e) => { if (drag) { setDragDx(e.clientX - drag.startX); setHover(null) } }}
+         onMouseUp={() => { if (drag) endDrag() }}>
       <div className="gantt2__inner" style={{ width: LANE_W + trackW }}>
         <div className="gantt2__axis">
           <span className="gantt2__axis-sp" style={{ width: LANE_W }} />
@@ -133,12 +163,24 @@ function Gantt({ result }: { result: ScheduleResult }) {
                   <span className="gantt2__track" style={{ width: trackW }}>
                     {mc.bars.map((g, i) => {
                       const w = Math.max(2, (g.end - g.start) * effPx)
+                      const s = startOf(g)
+                      const pinned = pins.has(g.job_idx)
                       return (
                         <span key={i} className={`gantt2__bar${g.late ? ' is-late' : ''}`}
-                          style={{ left: g.start * effPx, width: w, background: colorOf(g.product_id) }}
-                          onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, g })}
+                          style={{
+                            left: s * effPx, width: w, background: colorOf(g.product_id),
+                            cursor: onPin ? 'grab' : undefined,
+                            outline: pinned ? '1.5px dashed var(--accent)' : undefined,
+                            opacity: drag && drag.idx === g.job_idx ? 0.75 : undefined,
+                          }}
+                          onMouseDown={(e) => {
+                            if (!onPin) return
+                            e.preventDefault()
+                            setDrag({ idx: g.job_idx, startX: e.clientX, orig: s })
+                          }}
+                          onMouseMove={(e) => { if (!drag) setHover({ x: e.clientX, y: e.clientY, g }) }}
                           onMouseLeave={() => setHover(null)}>
-                          {w > 34 && <span className="gantt2__blabel">{g.op_name}</span>}
+                          {w > 34 && <span className="gantt2__blabel">{pinned ? '📌 ' : ''}{g.op_name}</span>}
                         </span>
                       )
                     })}
@@ -208,6 +250,9 @@ function Kpi({ k, v, sub, tone }: { k: string; v: string; sub?: string; tone?: '
 
 export function PlanScreen() {
   const [rule, setRule] = useState('auto')
+  // Конструктор эвристики: [критерий, направление(±), вес]
+  type Crit = { criterion: 'duration' | 'due' | 'rem' | 'inputs' | 'setup'; dir: 1 | -1; weight: number }
+  const [crits, setCrits] = useState<Crit[]>([{ criterion: 'duration', dir: -1, weight: 1 }])
   const [samples, setSamples] = useState('500')
   const [wRisk, setWRisk] = useState('0.5')
   const [runs, setRuns] = useState<OptRunSummary[]>([])
@@ -229,9 +274,18 @@ export function PlanScreen() {
   const [activePlan, setActivePlan] = useState('')
   const [mrp, setMrp] = useState<MrpResult | null>(null)
 
+  // Ручные правки Ганта (drag&drop): job_idx → «не раньше», ч.
+  const [pins, setPins] = useState<Map<number, number>>(new Map())
+  const addPin = (jobIdx: number, startHours: number) =>
+    setPins((prev) => { const n = new Map(prev); n.set(jobIdx, startHours); return n })
+  useEffect(() => { setPins(new Map()) }, [runId, activePlan])  // смена программы → пины неактуальны
+
   // Заказы только активного плана.
   const planOrders = orders.filter((o) => o.plan_id === activePlan)
-  const planProgram = () => planOrders.map((o) => ({ product_id: o.product_id, qty: Number(o.quantity) || 1 }))
+  const planProgram = () => planOrders.map((o) => ({
+    product_id: o.product_id, qty: Number(o.quantity) || 1,
+    due_hours: Number(o.due_hours) || undefined,   // сроки → time-phased MRP
+  }))
   const loadMrp = (prog?: Array<{ product_id: string; qty: number }>) =>
     api.mrp.run(prog).then(setMrp).catch(() => {})
   const loadOrders = () => api.demandOrders.list().then(setOrders).catch(() => {})
@@ -267,14 +321,41 @@ export function PlanScreen() {
     setRunning(true); setError(null)
     try {
       const r = await api.schedule.run({
-        rule, samples: Number(samples) || 500, w_risk: Number(wRisk) || 0.5,
+        rule: rule === 'custom' ? 'auto' : rule,
+        custom_rule: rule === 'custom'
+          ? crits.filter((c) => c.weight > 0).map((c) => ({ criterion: c.criterion, weight: c.dir * c.weight }))
+          : undefined,
+        samples: Number(samples) || 500, w_risk: Number(wRisk) || 0.5,
         run_id: runId || undefined, use_calendar: useCalendar,
         program: runId ? undefined : planProgram(),
+        // Ручные правки: пин = «не раньше» + тот же станок, что в текущем плане.
+        pins: pins.size > 0 && result ? [...pins.entries()].map(([job_idx, start_hours]) => ({
+          job_idx, start_hours,
+          machine_id: result.gantt.find((g) => g.job_idx === job_idx)?.machine_id || undefined,
+        })) : undefined,
       })
       if (r.error_soft) setError(r.warnings?.join(' ') || 'Нет данных для плана')
       else setResult(r)
     } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка планирования') }
     finally { setRunning(false) }
+  }
+
+  /** Экспорт расписания в CSV (Excel-совместимый: BOM + «;»). */
+  const exportCsv = () => {
+    if (!result) return
+    const esc = (c: unknown) => `"${String(c ?? '').replace(/"/g, '""')}"`
+    const rows = [
+      ['Изделие', 'Операция', 'Тип РЦ', 'Станок', 'Начало, ч', 'Конец, ч', 'Срок, ч', 'Просрочка'],
+      ...result.gantt.map((g) => [
+        g.product_name, g.op_name, g.wc_name, g.machine_name,
+        g.start.toFixed(2), g.end.toFixed(2), g.due.toFixed(2), g.late ? 'да' : '',
+      ]),
+    ]
+    const csv = '﻿' + rows.map((r) => r.map(esc).join(';')).join('\r\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url; a.download = `план_расписание_${result.rule}.csv`; a.click()
+    URL.revokeObjectURL(url)
   }
 
   const k = result?.kpi
@@ -324,7 +405,50 @@ export function PlanScreen() {
         <button className="btn btn--primary" style={{ height: 'var(--control)' }} onClick={run} disabled={running}>
           {running ? 'Строим план…' : 'Построить и оптимизировать план'}
         </button>
+        {result && (
+          <button className="btn" style={{ height: 'var(--control)' }} onClick={exportCsv}
+                  title="Выгрузить расписание (Гант) в CSV для Excel">
+            ⭳ CSV
+          </button>
+        )}
       </div>
+
+      {rule === 'custom' && (
+        <div className="plan__panel">
+          <p className="plan__section-title" style={{ marginTop: 0 }}>
+            Конструктор эвристики — приоритет операции из взвешенных критериев
+            <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--text-muted)' }}>
+              {' '}· первый критерий — главный, следующие с меньшим весом уточняют порядок среди равных
+            </span>
+          </p>
+          {crits.map((c, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <select className="plan__select" value={c.criterion}
+                      onChange={(e) => setCrits((p) => p.map((x, j) => j === i ? { ...x, criterion: e.target.value as Crit['criterion'] } : x))}>
+                {CRITERIA.map((cr) => <option key={cr.id} value={cr.id}>{cr.label}</option>)}
+              </select>
+              <select className="plan__select" value={c.dir}
+                      onChange={(e) => setCrits((p) => p.map((x, j) => j === i ? { ...x, dir: Number(e.target.value) as 1 | -1 } : x))}>
+                <option value={1}>меньше — раньше</option>
+                <option value={-1}>больше — раньше</option>
+              </select>
+              <input className="plan__input" type="number" min="0" step="0.1" value={c.weight}
+                     title="Вес критерия"
+                     onChange={(e) => setCrits((p) => p.map((x, j) => j === i ? { ...x, weight: Number(e.target.value) || 0 } : x))} />
+              <button className="btn btn--danger" style={{ height: 24, padding: '0 8px' }}
+                      onClick={() => setCrits((p) => p.filter((_, j) => j !== i))} disabled={crits.length <= 1}>✕</button>
+            </div>
+          ))}
+          <button className="btn" style={{ height: 26 }}
+                  onClick={() => setCrits((p) => [...p, { criterion: 'inputs', dir: -1, weight: 0.3 }])}>
+            + критерий
+          </button>
+          <p className="plan__subtitle" style={{ marginTop: 6 }}>
+            Пример «длинные раньше, а из длинных — раньше те, у кого больше входных материалов»:
+            длительность (больше—раньше, вес 1) + входные материалы (больше—раньше, вес 0.3).
+          </p>
+        </div>
+      )}
 
       {!runId && (
         <div className="plan__panel">
@@ -377,7 +501,7 @@ export function PlanScreen() {
             </span>
           </p>
           <table className="plan__rules">
-            <thead><tr><th>Материал</th><th>Потребность</th><th>Остаток</th><th>Нетто</th><th>Срок поставки</th><th>Статус</th></tr></thead>
+            <thead><tr><th>Материал</th><th>Потребность</th><th>Остаток</th><th>Нетто</th><th>План. заказ</th><th>Поставка</th><th>Разместить к</th><th>Статус</th></tr></thead>
             <tbody>
               {mrp.materials.filter((m) => m.purchased).sort((a, b) => b.net_req - a.net_req).map((m) => (
                 <tr key={m.product_id} className={m.shortage ? 'chosen' : ''}>
@@ -385,14 +509,20 @@ export function PlanScreen() {
                   <td>{Math.round(m.gross_req).toLocaleString('ru')}</td>
                   <td>{Math.round(m.on_hand).toLocaleString('ru')}</td>
                   <td>{Math.round(m.net_req).toLocaleString('ru')}</td>
+                  <td>{m.planned_qty ? Math.round(m.planned_qty).toLocaleString('ru') : '—'}</td>
                   <td>{Math.round(m.lead_time_hours)} ч</td>
+                  <td style={{ color: m.late ? 'var(--intent-danger)' : 'var(--text-muted)' }}>
+                    {m.place_by_hours != null
+                      ? (m.place_by_hours < 0 ? 'просрочено!' : `${Math.round(m.place_by_hours)} ч`)
+                      : '—'}
+                  </td>
                   <td style={{ color: m.shortage ? 'var(--intent-danger)' : m.reorder ? 'var(--intent-warning)' : 'var(--text-muted)' }}>
                     {m.shortage ? 'дефицит — закупить' : m.reorder ? 'дозаказ' : 'ок'}
                   </td>
                 </tr>
               ))}
               {mrp.materials.filter((m) => m.purchased).length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>Закупных материалов под программу нет.</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>Закупных материалов под программу нет.</td></tr>
               )}
             </tbody>
           </table>
@@ -413,7 +543,17 @@ export function PlanScreen() {
             <Kpi k="Просрочка" v={`${h1(k.tardiness)} ч`} sub={`CVaR ${h1(k.tardiness_cvar)} ч`} tone={k.tardiness > 0 ? 'bad' : 'good'} />
             <Kpi k="OTD (в срок)" v={pct(k.otd)} sub={`опоздавших ${k.n_late}/${result.n_orders}`} tone={k.otd >= 0.99 ? 'good' : 'warn'} />
             <Kpi k="Загрузка" v={pct(k.utilization)} sub={`${result.n_machines} станков`} />
-            <Kpi k="Себестоимость работ" v={`${(k.cost / 1e3).toFixed(0)} тыс ₽`} sub={`${result.n_jobs} операций`} />
+            <Kpi k="Себестоимость работ" v={`${(k.cost / 1e3).toFixed(0)} тыс ₽`}
+                 sub={`${result.n_jobs} операций${k.labor_cost ? ` · труд ${(k.labor_cost / 1e3).toFixed(0)} тыс ₽` : ''}`} />
+          </div>
+          <div className="plan__kpis">
+            <Kpi k="Flow time (ср.)" v={`${h1(k.flow_time_mean_h ?? 0)} ч`} sub="цикл заказа: запуск→выпуск" />
+            <Kpi k="Доля ожидания" v={pct(k.wait_share ?? 0)} sub="время в очередях к станкам"
+                 tone={(k.wait_share ?? 0) > 0.5 ? 'warn' : undefined} />
+            <Kpi k="НЗП (среднее)" v={h1(k.wip_avg ?? 0)} sub="заказов одновременно в работе" />
+            <Kpi k="Проходка" v={`${h1(k.throughput_per_day ?? 0)}/дн`} sub="единиц продукции в день" />
+            <Kpi k="ТО и поломки" v={`${h1(k.maintenance_hours ?? 0)}+${h1(k.breakdown_hours_mean ?? 0)} ч`}
+                 sub="плановое ТО + ср. ремонты (МК)" />
           </div>
 
           <div className="plan__bn">
@@ -421,17 +561,36 @@ export function PlanScreen() {
             <span className="plan__bn-text">
               <strong>Узкое место</strong> — загрузка {pct(result.bottleneck.utilization)}; здесь теряется
               больше всего времени. Правило <strong>{result.rule}</strong> выбрано как устойчивое к
-              тяжёлому хвосту (минимум целевой функции время+риск). Простой станков{' '}
-              {h1(result.idle.machine_idle_hours)} ч.{' '}
+              тяжёлому хвосту (минимум целевой функции время+риск).
+              {result.improver && result.improver.accepted > 0 &&
+                ` Локальный поиск улучшил порядок ещё на ${result.improver.improvement_pct.toFixed(1)}% (${result.improver.accepted} шагов).`}
+              {(result.kpi.n_setups ?? 0) > 0 &&
+                ` Переналадок: ${result.kpi.n_setups} (${h1(result.kpi.setup_hours ?? 0)} ч).`}
+              {(result.kpi.maintenance_hours ?? 0) > 0 &&
+                ` Плановое ТО: ${h1(result.kpi.maintenance_hours ?? 0)} ч.`}
+              {(result.kpi.breakdown_hours_mean ?? 0) > 0 &&
+                ` Поломки (ср. по сценариям): ${h1(result.kpi.breakdown_hours_mean ?? 0)} ч — риск учтён в CVaR.`}
+              {' '}Простой станков {h1(result.idle.machine_idle_hours)} ч.{' '}
               {result.calendar.enabled
                 ? `Рабочий календарь учтён (фонд ${h1(result.calendar.work_fond_hours)} ч в смены).`
                 : 'Календарь выключен (24/7).'}
             </span>
           </div>
 
-          <p className="plan__section-title">Диаграмма Ганта · {result.n_jobs} операций по станкам</p>
+          <p className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>Диаграмма Ганта · {result.n_jobs} операций по станкам · полосы можно перетаскивать</span>
+            {pins.size > 0 && (
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', textTransform: 'none', letterSpacing: 0 }}>
+                <span style={{ color: 'var(--accent)' }}>📌 ручных правок: {pins.size}</span>
+                <button className="btn btn--primary" style={{ height: 24, padding: '0 10px' }}
+                        onClick={run} disabled={running}>Пересчитать с правками</button>
+                <button className="btn" style={{ height: 24, padding: '0 10px' }}
+                        onClick={() => setPins(new Map())}>Сбросить</button>
+              </span>
+            )}
+          </p>
           <div className="plan__panel">
-            <Gantt result={result} />
+            <Gantt result={result} pins={pins} onPin={addPin} />
             <div className="plan__legend">
               {result.program.map((o, i) => (
                 <span key={i}><i style={{ background: ORDER_COLORS[i % ORDER_COLORS.length] }} />{o.product_name} ×{Math.round(o.qty)}</span>

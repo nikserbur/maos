@@ -24,13 +24,18 @@
 #include <unordered_set>
 #include <functional>
 #include <cstdint>
+#include <chrono>
+#include <mutex>
+#include <filesystem>
 
 using json = nlohmann::json;
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 static std::string gen_uuid() {
-  static std::mt19937 rng(std::random_device{}());
+  // thread_local: httplib обслуживает запросы пулом потоков — общий static mt19937
+  // был data race (повреждение состояния → коллизии id).
+  thread_local std::mt19937 rng(std::random_device{}());
   std::uniform_int_distribution<uint32_t> d(0, 0xFFFFFFFF);
   std::ostringstream ss;
   ss << std::hex << d(rng) << d(rng) << d(rng) << d(rng);
@@ -56,15 +61,31 @@ static void err(httplib::Response& res, int status, const std::string& msg) {
   res.set_content(body.dump(), "application/json");
 }
 
+/* ── Сессии (RBAC): токен → пользователь + права; истекают через 12 часов ── */
+struct AuthSession {
+  std::string login;
+  std::unordered_set<std::string> perms;
+  std::chrono::steady_clock::time_point expires;
+};
+static std::mutex g_sess_mtx;
+static std::unordered_map<std::string, AuthSession> g_sessions;
+// Актор текущего запроса (устанавливается pre-routing фильтром) — попадает в аудит.
+static thread_local std::string g_actor;
+
 static void audit(Database& db, const std::string& entity, const std::string& id,
                   const std::string& action, const json& payload = nullptr) {
   try {
     db.exec(
-      "INSERT INTO actions(id,entity_type,entity_id,action_type,payload) VALUES(?,?,?,?,?)",
-      { gen_uuid(), entity, id, action, payload.is_null() ? "" : payload.dump() }
+      "INSERT INTO actions(id,actor,entity_type,entity_id,action_type,payload) VALUES(?,?,?,?,?,?)",
+      { gen_uuid(), g_actor.empty() ? "system" : g_actor,
+        entity, id, action, payload.is_null() ? "" : payload.dump() }
     );
   } catch (...) {}  // audit must never crash the main flow
 }
+
+// Полная инициализация БД проекта: схема + идемпотентные миграции + посевы.
+// Вызывается при старте и при переключении проекта (reopen). false = фатально.
+static bool setup_database(Database& db);
 
 /* ── Generic CRUD factory ────────────────────────────────────────────────── */
 
@@ -244,21 +265,60 @@ static void register_auth(httplib::Server& svr, Database& db) {
       auto body = json::parse(req.body);
       std::string login    = jstr(body, "login");
       std::string password = jstr(body, "password");
-      if (login.empty()) login = "admin";  // окно входа по умолчанию
 
+      // Мультипроектность: выбранный проект (файл БД) открывается ДО аутентификации —
+      // пользователи живут в БД проекта. Несуществующее имя = НОВЫЙ проект
+      // (авто-посев демо + миграции). Все сессии прежнего проекта сбрасываются.
+      std::string reqDb = jstr(body, "db");
+      if (!reqDb.empty()) {
+        if (reqDb.find('/') != std::string::npos || reqDb.find('\\') != std::string::npos ||
+            reqDb.find("..") != std::string::npos) { err(res, 400, "Недопустимое имя проекта"); return; }
+        if (reqDb.size() < 3 || reqDb.substr(reqDb.size() - 3) != ".db") reqDb += ".db";
+        if (reqDb != db.path()) {
+          { std::lock_guard<std::mutex> lk(g_sess_mtx); g_sessions.clear(); }
+          try { db.reopen(reqDb); } catch (std::exception& e) {
+            err(res, 500, std::string("Не удалось открыть проект: ") + e.what()); return;
+          }
+          if (!setup_database(db)) { err(res, 500, "Инициализация проекта не удалась"); return; }
+        }
+      }
+
+      // Единое сообщение об ошибке: не раскрываем, существует ли пользователь
+      // (защита от user enumeration — требование «Пользователи и роли» §4).
       json user;
       try {
         user = db.query_one("SELECT * FROM users WHERE login=?", { login });
-      } catch (...) { err(res, 401, "Пользователь не найден"); return; }
+      } catch (...) { err(res, 401, "Неверный логин или пароль"); return; }
 
       if (jstr(user, "status") != "active") { err(res, 403, "Учётная запись заблокирована"); return; }
+      // ВРЕМЕННАЯ блокировка перебора («Пользователи и роли»): после 5 неудачных
+      // попыток — отказ на 5 минут (locked_until), затем вход снова доступен.
+      const std::string lockedUntil = jstr(user, "locked_until");
+      if (!lockedUntil.empty()) {
+        try {
+          auto row = db.query_one("SELECT (datetime('now') < ?) AS locked", { lockedUntil });
+          if (jstr(row, "locked") == "1") {
+            audit(db, "auth", jstr(user, "id"), "LOGIN_LOCKED");
+            err(res, 423, "Учётная запись временно заблокирована (повторите через несколько минут)");
+            return;
+          }
+        } catch (...) {}
+      }
       if (!verify_password(password, jstr(user, "password_hash"))) {
-        db.exec_safe("UPDATE users SET failed_attempts=failed_attempts+1 WHERE id='"
-                     + jstr(user, "id") + "'");
+        int failed = 0;
+        try { failed = std::stoi(jstr(user, "failed_attempts")); } catch (...) {}
+        if (failed + 1 >= 5)
+          db.exec("UPDATE users SET failed_attempts=0, "
+                  "locked_until=datetime('now','+5 minutes') WHERE id=?", { jstr(user, "id") });
+        else
+          db.exec("UPDATE users SET failed_attempts=failed_attempts+1 WHERE id=?",
+                  { jstr(user, "id") });
+        audit(db, "auth", jstr(user, "id"), "LOGIN_FAILED");
         err(res, 401, "Неверный логин или пароль");
         return;
       }
-      db.exec_safe("UPDATE users SET failed_attempts=0 WHERE id='" + jstr(user, "id") + "'");
+      db.exec("UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=?",
+              { jstr(user, "id") });
 
       std::string roleName = "viewer", perms = "[]";
       std::string roleId = jstr(user, "role_id");
@@ -268,7 +328,18 @@ static void register_auth(httplib::Server& svr, Database& db) {
           roleName = jstr(role, "name"); perms = jstr(role, "permissions");
         } catch (...) {}
       }
-      std::string token = gen_uuid();  // локальный сессионный токен
+      // Сессионный токен регистрируется на сервере: pre-routing фильтр проверяет
+      // его на каждом запросе (deny-by-default вместо декоративного RBAC).
+      std::string token = gen_uuid() + gen_uuid();
+      {
+        AuthSession s; s.login = login;
+        s.expires = std::chrono::steady_clock::now() + std::chrono::hours(12);
+        try { for (auto& pm : json::parse(perms.empty() ? "[]" : perms))
+                if (pm.is_string()) s.perms.insert(pm.get<std::string>()); } catch (...) {}
+        std::lock_guard<std::mutex> lk(g_sess_mtx);
+        g_sessions[token] = std::move(s);
+      }
+      g_actor = login;
       audit(db, "auth", jstr(user, "id"), "LOGIN");
       ok(res, { {"token", token}, {"login", login}, {"role", roleName},
                 {"permissions", json::parse(perms.empty() ? "[]" : perms)} });
@@ -295,9 +366,23 @@ static void register_routing_routes(httplib::Server& svr, Database& db) {
 
       std::lock_guard<std::recursive_mutex> lk(db.mutex());  // атомарная транзакция
       db.exec("BEGIN");
+      // Версионирование (ТЗ «Справочник техкарт» §3.3): новая техкарта изделия
+      // становится действующей (is_default=1) с версией max+1; прежние версии
+      // сохраняются в истории (is_default=0) — планировщик/MRP берут действующую.
+      int version = 1;
+      const std::string prodId = jstr(body, "product_id");
+      if (!prodId.empty()) {
+        try {
+          auto row = db.query_one(
+            "SELECT COALESCE(MAX(version),0) AS v FROM routings WHERE product_id=?", { prodId });
+          version = (int)std::stod(jstr(row, "v")) + 1;
+        } catch (...) {}
+        db.exec("UPDATE routings SET is_default=0 WHERE product_id=?", { prodId });
+      }
       db.exec(
-        "INSERT INTO routings(id,name,product_id) VALUES(?,?,NULLIF(?,?))",
-        { id, jstr(body, "name"), jstr(body, "product_id"), "" }
+        "INSERT INTO routings(id,name,product_id,version,is_default,effective_from) "
+        "VALUES(?,?,NULLIF(?,?),?,1,datetime('now'))",
+        { id, jstr(body, "name"), prodId, "", std::to_string(version) }
       );
 
       if (body.contains("operations") && body["operations"].is_array()) {
@@ -367,10 +452,15 @@ static void register_routing_routes(httplib::Server& svr, Database& db) {
 static void register_analytics(httplib::Server& svr, Database& db) {
   svr.Get("/api/actions", [&db](const httplib::Request& req, httplib::Response& res) {
     try {
-      std::string limit = "100";
-      if (req.has_param("limit")) limit = req.get_param_value("limit");
+      // limit — параметром с клампом: конкатенация была SQL-инъекцией и
+      // позволяла неограниченную выборку.
+      int limit = 100;
+      if (req.has_param("limit")) {
+        try { limit = std::stoi(req.get_param_value("limit")); } catch (...) {}
+      }
+      limit = std::max(1, std::min(1000, limit));
       auto rows = db.query_json(
-        "SELECT * FROM actions ORDER BY ts DESC LIMIT " + limit, {}
+        "SELECT * FROM actions ORDER BY ts DESC LIMIT ?", { std::to_string(limit) }
       );
       ok(res, rows);
     } catch (std::exception& e) { err(res, 500, e.what()); }
@@ -387,6 +477,11 @@ static void register_operation_routes(httplib::Server& svr, Database& db) {
       std::string id = gen_uuid();
       std::string rid = jstr(body, "routing_id");
 
+      // Строка операции + связи (operation_wc_types/operation_inputs) — атомарно:
+      // обрыв между INSERT и link_operation оставлял операцию без связей.
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());
+      db.exec("BEGIN");
+      try {
       // Two paths: with or without routing_id (can't bind NULL via text API)
       if (rid.empty()) {
         db.exec(
@@ -426,6 +521,8 @@ static void register_operation_routes(httplib::Server& svr, Database& db) {
         );
       }
       link_operation(db, id, body);
+      db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       audit(db, "operation", id, "CREATE", body);
       auto row = db.query_one("SELECT * FROM operations WHERE id=?", { id });
       res.status = 201;
@@ -452,12 +549,16 @@ static void register_operation_routes(httplib::Server& svr, Database& db) {
         vals.push_back(jstr(body, col));
       }
       std::lock_guard<std::recursive_mutex> lk(db.mutex());  // строка + связи атомарно
-      if (!set_clause.empty()) {
-        vals.push_back(id);
-        db.exec("UPDATE operations SET " + set_clause + " WHERE id=?", vals);
-      }
-      if (body.contains("wc_type_ids") || body.contains("input_products"))
-        link_operation(db, id, body);
+      db.exec("BEGIN");
+      try {
+        if (!set_clause.empty()) {
+          vals.push_back(id);
+          db.exec("UPDATE operations SET " + set_clause + " WHERE id=?", vals);
+        }
+        if (body.contains("wc_type_ids") || body.contains("input_products"))
+          link_operation(db, id, body);
+        db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       audit(db, "operation", id, "UPDATE", body);
       auto row = db.query_one("SELECT * FROM operations WHERE id=?", { id });
       ok(res, row);
@@ -1450,6 +1551,11 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       auto body = json::parse(req.body);
       std::string id = gen_uuid();
+      // Сценарий + распределения + оверрайды — атомарно (иначе обрыв оставляет
+      // сценарий без стохастики, и оптимизация молча берёт фолбэк-нормаль).
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());
+      db.exec("BEGIN");
+      try {
       db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,"
               "mode,inflation,fx,demand,volatility,months,plan_id,start_date,end_date,"
               "sanctions,tax_change,energy,logistics,key_rate) "
@@ -1470,6 +1576,8 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"logistics"), jstr(body,"key_rate") });
       writeDists(id, body);
       writeOverrides(id, body);
+      db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       audit(db, "scenario", id, "CREATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
       sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
@@ -1482,6 +1590,9 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       const std::string id = req.matches[1];
       auto body = json::parse(req.body);
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());   // строка + dists/overrides атомарно
+      db.exec("BEGIN");
+      try {
       db.exec("UPDATE price_scenarios SET name=?, description=?, horizon_hours=?, market_corr=?, "
               "objective=?, alpha=?, max_share=?, "
               "mode=COALESCE(NULLIF(?,''),mode), inflation=COALESCE(NULLIF(?,''),inflation), "
@@ -1505,6 +1616,8 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"logistics"), jstr(body,"key_rate"), id });
       writeDists(id, body);
       writeOverrides(id, body);
+      db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       audit(db, "scenario", id, "UPDATE", body);
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { id });
       sc["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { id });
@@ -1518,6 +1631,9 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
     try {
       const std::string src = req.matches[1];
       const std::string nid = gen_uuid();
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());   // копия из 3 INSERT — атомарно
+      db.exec("BEGIN");
+      try {
       db.exec("INSERT INTO price_scenarios"
               "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months,"
               "plan_id,start_date,end_date,sanctions,tax_change,energy,logistics,key_rate) "
@@ -1532,6 +1648,8 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       db.exec("INSERT INTO scenario_overrides(id,scenario_id,product_id,base_price,base_cost) "
               "SELECT lower(hex(randomblob(8))), ?, product_id, base_price, base_cost "
               "FROM scenario_overrides WHERE scenario_id=?", { nid, src });
+      db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       audit(db, "scenario", nid, "CLONE", { {"from", src} });
       auto out = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { nid });
       out["distributions"] = db.query_json("SELECT * FROM price_distributions WHERE scenario_id=?", { nid });
@@ -1648,6 +1766,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       double sanctions = 0.0, taxChange = 0.0, energy = 1.0, logistics = 1.0, keyRate = 8.0;
       int runs     = std::max(200, std::min(20000, (int)getd("runs", 3000)));
       unsigned seed = (unsigned)getd("seed", 42);
+      // Бэктест: прогноз по истории без последних k месяцев против факта.
+      const int btK = std::max(0, std::min(12, (int)getd("backtest", 0)));
 
       // Стадия E: сценарий задаёт параметры прогноза и режим (если не заданы в запросе).
       std::string mode = "stochastic";
@@ -1777,8 +1897,11 @@ static void register_forecast(httplib::Server& svr, Database& db) {
           std::sort(cand.begin(), cand.end(), [](const std::array<double, 3>& x, const std::array<double, 3>& y) {
             return x[1] * x[1] + x[2] * x[2] > y[1] * y[1] + y[2] * y[2];
           });
-          // Число гармоник адаптивно к длине истории (защита от переобучения на коротких рядах).
-          const int K = std::min(6, std::max(3, Hn / 4));
+          // Число гармоник строго ограничено длиной ряда: на коротких историях
+          // (< 16 точек) гармоники НЕ фитим вовсе — прежний минимум «3 гармоники»
+          // (6 параметров) на 8-12 точках был переобучением, и осцилляции
+          // in-sample шума экстраполировались в прогноз.
+          const int K = Hn >= 24 ? std::min(3, Hn / 12) : (Hn >= 16 ? 1 : 0);
           for (int i = 0; i < (int)cand.size() && i < K; ++i) harm.push_back(cand[i]);
           for (int t = 0; t < Hn; ++t) {
             double h = 0; for (auto& c : harm) h += c[1] * std::cos(c[0] * t) + c[2] * std::sin(c[0] * t);
@@ -1836,7 +1959,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
               double g = gam0 * gm, ll = stableLL(a, g);
               if (ll > bestSLL) { bestSLL = ll; sAlpha = a; sGamma = g; }
             }
-          aicS = 4 - 2 * bestSLL;
+          // k=3 (μ + сеточные α, γ) — раньше 4−2ll недоштрафовывал stable на 2 ед. AIC.
+          aicS = 6 - 2 * bestSLL;
           if (aicS < bestAic) { dist = "stable"; bestAic = aicS; }
         }
 
@@ -1865,6 +1989,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
         for (int r = 0; r < runs; ++r) {
           px[0][r] = std::exp(anchor) * macroMul;
+          double cum = 0;   // НАКОПЛЕННЫЕ инновации: лог-цена — случайное блуждание
           for (int t = 1; t <= months; ++t) {
             double innov = 0;
             if (!deterministic) {
@@ -1877,7 +2002,11 @@ static void register_forecast(httplib::Server& svr, Database& db) {
                       * std::pow(std::cos((1 - sAlpha) * U) / W, (1 - sAlpha) / sAlpha);
               } else                   innov = sg * z;
             }
-            px[t][r] = std::exp(anchor + slopeFwd * t + (harmAt(Hn - 1 + t) - hNow) + innov) * macroMul;  // тренд + гармоники + остаток
+            // Random walk с дрейфом: месячные инновации СУММИРУЮТСЯ, веер растёт ~σ√t.
+            // Раньше innov рисовался заново без накопления (stationary) — ширина
+            // веера не зависела от горизонта, что занижало риск дальних месяцев.
+            cum += innov;
+            px[t][r] = std::exp(anchor + slopeFwd * t + (harmAt(Hn - 1 + t) - hNow) + cum) * macroMul;  // тренд + гармоники + Σостатков
           }
         }
         json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
@@ -1906,6 +2035,13 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         };
       };
 
+      // Истории цен ВСЕХ изделий одним запросом (раньше ts_data читался дважды
+      // на изделие: в PCA-блоке и в основном цикле прогноза).
+      std::unordered_map<std::string, std::vector<double>> histCache;   // "pid|kind" → значения
+      for (auto& row : db.query_json(
+             "SELECT product_id, kind, value FROM ts_data ORDER BY month_idx"))
+        histCache[jstr(row, "product_id") + "|" + jstr(row, "kind")].push_back(numOf(row));
+
       // DATA-DRIVEN ВЗАИМОСВЯЗИ (МГК/PCA): однофакторная модель из эмпирической корреляции
       // лог-доходностей историй. PC1 даёт ПЕР-ИЗДЕЛЬНЫЕ загрузки (кто с кем движется и знак),
       // market_corr — общая сила. Заменяет единый β=√corr для всех на структуру ИЗ ДАННЫХ.
@@ -1915,9 +2051,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         std::vector<std::vector<double>> rets;
         for (auto& p : rows) {
           const std::string kind = jstr(p, "sellable") == "1" ? "price" : "cost";
-          auto h = db.query_json(
-            "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { jstr(p, "id"), kind });
-          std::vector<double> lv; for (auto& row : h) { double x = numOf(row); if (x > 0) lv.push_back(std::log(x)); }
+          const auto& h = histCache[jstr(p, "id") + "|" + kind];
+          std::vector<double> lv; for (double x : h) if (x > 0) lv.push_back(std::log(x));
           std::vector<double> r; for (size_t t = 1; t < lv.size(); ++t) r.push_back(lv[t] - lv[t - 1]);
           if ((int)r.size() >= 3) { ids.push_back(jstr(p, "id")); rets.push_back(std::move(r)); }
         }
@@ -1965,9 +2100,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         if (sellable && fcOvrPrice.count(pid)) base = fcOvrPrice[pid];
         else if (!sellable && fcOvrCost.count(pid)) base = fcOvrCost[pid];
 
-        auto hist = db.query_json(
-          "SELECT value FROM ts_data WHERE product_id=? AND kind=? ORDER BY month_idx", { pid, kind });
-        std::vector<double> vals; for (auto& row : hist) vals.push_back(numOf(row));
+        const std::vector<double>& vals = histCache[pid + "|" + kind];
 
         const double loading = loadings.count(pid) ? loadings[pid] : beta;
         const std::string ovrT = fcDist.count(pid) ? fcDist[pid].first : "";
@@ -1975,6 +2108,42 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro, loading, ovrT, ovrSd);
         j["id"] = pid; j["name"] = jstr(p, "name"); j["role"] = sellable ? "product" : "raw";
         j["loading"] = loading;
+
+        // ── Бэктест (rolling origin, один срез): прогноз по укороченной истории
+        // против факта — MAPE по P50, pinball-loss по P10/P90, покрытие 80%-интервала,
+        // и НАИВНЫЙ бенчмарк (последнее значение). Урок M-соревнований: сложная
+        // модель обязана доказывать превосходство над наивной (skill < 1).
+        if (btK > 0 && (int)vals.size() >= btK + 8) {
+          const int Hn2 = (int)vals.size();
+          std::vector<double> trunc(vals.begin(), vals.end() - btK);
+          const double baseBt = trunc.back();
+          if (baseBt > 0) {
+            json bt = fanFromHistory(baseBt, trunc, driftStep, 1.0, loading, "", 0.0);
+            double sm = 0, smN = 0, pb10 = 0, pb90 = 0; int cover = 0, cnt = 0;
+            for (int h = 1; h <= btK; ++h) {
+              const double a = vals[Hn2 - btK - 1 + h];
+              if (a <= 0) continue;
+              const double q50 = bt["p50"][h].get<double>();
+              const double q10 = bt["p10"][h].get<double>();
+              const double q90 = bt["p90"][h].get<double>();
+              sm  += std::fabs(a - q50) / a;
+              smN += std::fabs(a - baseBt) / a;                    // naive last value
+              pb10 += std::max(0.10 * (a - q10), 0.90 * (q10 - a));
+              pb90 += std::max(0.90 * (a - q90), 0.10 * (q90 - a));
+              if (a >= q10 && a <= q90) ++cover;
+              ++cnt;
+            }
+            if (cnt > 0) {
+              const double mape = sm / cnt * 100.0, mapeN = smN / cnt * 100.0;
+              j["backtest"] = {
+                {"k", btK}, {"mape", mape}, {"mape_naive", mapeN},
+                {"skill", mapeN > 1e-9 ? mape / mapeN : 1.0},      // <1 — лучше наивного
+                {"pinball10", pb10 / cnt}, {"pinball90", pb90 / cnt},
+                {"coverage80", (double)cover / cnt},
+              };
+            }
+          }
+        }
         products.push_back(j);
       }
 
@@ -2021,15 +2190,18 @@ static void register_optimize(httplib::Server& svr, Database& db) {
         pr.volatility = std::stod(jstr(body, "volatility"));
       if (body.contains("horizon_hours") && !jstr(body,"horizon_hours").empty())
         pr.horizonHours = std::stod(jstr(body, "horizon_hours"));
+      if (body.contains("demand") && !jstr(body,"demand").empty())
+        pr.demand = std::stod(jstr(body, "demand"));
 
       // Сценарий несёт цель оптимизации (Стадия E): берём из него, если не задано в запросе.
       if (!pr.scenarioId.empty()) {
         try {
-          auto sc = db.query_one("SELECT objective,alpha,max_share,volatility FROM price_scenarios WHERE id=?", { pr.scenarioId });
+          auto sc = db.query_one("SELECT objective,alpha,max_share,volatility,demand FROM price_scenarios WHERE id=?", { pr.scenarioId });
           if (!body.contains("objective") && !jstr(sc,"objective").empty()) pr.objective = jstr(sc,"objective");
           if (!body.contains("alpha")     && !jstr(sc,"alpha").empty())     pr.alpha     = std::stod(jstr(sc,"alpha"));
           if (!body.contains("max_share") && !jstr(sc,"max_share").empty()) pr.maxShare  = std::stod(jstr(sc,"max_share"));
           if (!body.contains("volatility") && !jstr(sc,"volatility").empty()) pr.volatility = std::stod(jstr(sc,"volatility"));
+          if (!body.contains("demand") && !jstr(sc,"demand").empty()) pr.demand = std::stod(jstr(sc,"demand"));
         } catch (...) {}
       }
 
@@ -2106,17 +2278,25 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       const std::string dueStr = std::to_string(planHours);
 
       const std::string planId = gen_uuid();
-      db.exec("INSERT INTO production_plans(id,name,description) VALUES(?,?,?)",
-              { planId, name, "Устойчивый портфель оптимизации, горизонт " + std::to_string(months) + " мес (run " + runId + ")" });
       int n = 0;
-      for (auto& it : robust.value("items", json::array())) {
-        const std::string pid = it.value("product_id", std::string());
-        const double qty = it.value("qty", 0.0);
-        if (pid.empty() || qty <= 0) continue;
-        db.exec("INSERT INTO demand_orders(id,plan_id,product_id,quantity,due_hours,priority,status) "
-                "VALUES(?,?,?,?,?,?,'planned')",
-                { gen_uuid(), planId, pid, std::to_string(qty), dueStr, "5" });
-        ++n;
+      {
+        // План + заказы — атомарно: обрыв посередине оставлял план с частью заказов.
+        std::lock_guard<std::recursive_mutex> lk(db.mutex());
+        db.exec("BEGIN");
+        try {
+          db.exec("INSERT INTO production_plans(id,name,description) VALUES(?,?,?)",
+                  { planId, name, "Устойчивый портфель оптимизации, горизонт " + std::to_string(months) + " мес (run " + runId + ")" });
+          for (auto& it : robust.value("items", json::array())) {
+            const std::string pid = it.value("product_id", std::string());
+            const double qty = it.value("qty", 0.0);
+            if (pid.empty() || qty <= 0) continue;
+            db.exec("INSERT INTO demand_orders(id,plan_id,product_id,quantity,due_hours,priority,status) "
+                    "VALUES(?,?,?,?,?,?,'planned')",
+                    { gen_uuid(), planId, pid, std::to_string(qty), dueStr, "5" });
+            ++n;
+          }
+          db.exec("COMMIT");
+        } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       }
       audit(db, "production_plan", planId, "CREATE", { {"from_run", runId}, {"orders", n} });
       ok(res, { {"id", planId}, {"name", name}, {"orders", n} });
@@ -2156,6 +2336,24 @@ static void register_schedule(httplib::Server& svr, Database& db) {
         std::string uc = jstr(body, "use_calendar");
         sp.useCalendar = !(uc == "0" || uc == "false");
       }
+      if (body.contains("improve_iters") && !jstr(body, "improve_iters").empty())
+        sp.improveIters = (int)std::stod(jstr(body, "improve_iters"));
+      // Конструктор эвристики: custom_rule = [{criterion, weight}, …]
+      if (body.contains("custom_rule") && body["custom_rule"].is_array())
+        for (auto& c : body["custom_rule"]) {
+          const std::string cn = jstr(c, "criterion");
+          double w = 0; try { w = std::stod(jstr(c, "weight")); } catch (...) {}
+          if (!cn.empty() && w != 0) sp.customRule.push_back({ cn, w });
+        }
+      // Ручные правки Ганта (drag&drop): [{job_idx, start_hours, machine_id?}, …]
+      if (body.contains("pins") && body["pins"].is_array())
+        for (auto& pn : body["pins"]) {
+          maos::SchedPin sp2;
+          sp2.jobIdx = pn.contains("job_idx") ? (int)std::stod(jstr(pn, "job_idx")) : -1;
+          sp2.startHours = pn.contains("start_hours") ? std::stod(jstr(pn, "start_hours")) : 0;
+          sp2.machineId = jstr(pn, "machine_id");
+          if (sp2.jobIdx >= 0) sp.pins.push_back(sp2);
+        }
       if (body.contains("program") && body["program"].is_array())
         for (auto& o : body["program"]) {
           maos::OrderLine ol; ol.productId = jstr(o, "product_id");
@@ -2225,61 +2423,150 @@ static void register_mrp(httplib::Server& svr, Database& db) {
     try {
       auto body = req.body.empty() ? json::object() : json::parse(req.body);
 
-      // Программа: из тела / из реестра заказов.
-      std::vector<std::pair<std::string,double>> program;
+      // Программа: из тела / из реестра заказов (с due — для time-phased дат).
+      struct PLine { std::string pid; double qty = 1, due = 0; };
+      std::vector<PLine> program;
       if (body.contains("program") && body["program"].is_array())
         for (auto& o : body["program"])
           program.push_back({ jstr(o,"product_id"),
-                              o.contains("qty") ? std::stod(jstr(o,"qty")) : 1 });
+                              o.contains("qty") ? std::stod(jstr(o,"qty")) : 1,
+                              o.contains("due_hours") && !jstr(o,"due_hours").empty()
+                                ? std::stod(jstr(o,"due_hours")) : 0 });
       if (program.empty())
-        for (auto& r : db.query_json("SELECT product_id,quantity FROM demand_orders WHERE status<>'done'"))
-          program.push_back({ jstr(r,"product_id"), std::stod(jstr(r,"quantity")) });
+        for (auto& r : db.query_json(
+               "SELECT product_id,quantity,due_hours FROM demand_orders WHERE status<>'done'"))
+          program.push_back({ jstr(r,"product_id"), std::stod(jstr(r,"quantity")),
+                              jstr(r,"due_hours").empty() ? 0 : std::stod(jstr(r,"due_hours")) });
 
-      // Кэш техкарт/входов/изделий.
-      std::unordered_map<std::string, std::vector<std::pair<std::string,double>>> inputsByProduct;
-      auto chainInputs = [&](const std::string& pid) -> std::vector<std::pair<std::string,double>>& {
-        auto it = inputsByProduct.find(pid);
-        if (it != inputsByProduct.end()) return it->second;
-        std::vector<std::pair<std::string,double>> v;
-        for (auto& r : db.query_json("SELECT id FROM routings WHERE product_id=?", { pid }))
-          for (auto& o : db.query_json("SELECT id FROM operations WHERE routing_id=?", { jstr(r,"id") }))
-            for (auto& in : db.query_json("SELECT product_id,qty FROM operation_inputs WHERE operation_id=?", { jstr(o,"id") }))
-              v.push_back({ jstr(in,"product_id"), std::stod(jstr(in,"qty")) });
-        return inputsByProduct[pid] = v;
+      // BOM целиком двумя запросами (было N+1 по каждому уровню):
+      // parent → [(child, qty)] через routings → operations → operation_inputs.
+      std::unordered_map<std::string, std::vector<std::pair<std::string,double>>> bom;
+      for (auto& r : db.query_json(
+             "SELECT r.product_id AS parent, oi.product_id AS child, SUM(oi.qty) AS q "
+             "FROM routings r "
+             "JOIN operations o ON o.routing_id = r.id "
+             "JOIN operation_inputs oi ON oi.operation_id = o.id "
+             "WHERE r.product_id IS NOT NULL AND r.product_id <> '' "
+             "AND COALESCE(r.is_default,1)=1 "                 // действующая версия техкарты
+             "GROUP BY r.product_id, oi.product_id")) {
+        double q = 1; try { q = std::stod(jstr(r,"q")); } catch (...) {}
+        bom[jstr(r,"parent")].push_back({ jstr(r,"child"), q });
+      }
+      // Цикл обработки изделия (ч на единицу) — для lead-time offset потребности.
+      std::unordered_map<std::string, double> procH;
+      for (auto& r : db.query_json(
+             "SELECT r.product_id AS pid, "
+             "SUM((COALESCE(o.t_opt,o.t_norm)+4*o.t_norm+COALESCE(o.t_pess,o.t_norm))/6.0)/60.0 AS h "
+             "FROM routings r JOIN operations o ON o.routing_id=r.id "
+             "WHERE r.product_id IS NOT NULL AND r.product_id<>'' AND COALESCE(r.is_default,1)=1 "
+             "GROUP BY r.product_id")) {
+        try { procH[jstr(r,"pid")] = std::stod(jstr(r,"h")); } catch (...) {}
+      }
+      struct PInfo {
+        std::string name; bool purchased = false;
+        double stock = 0, safety = 0, reorder = 0, lead = 0, cost = 0, batch = 1;
       };
+      std::unordered_map<std::string, PInfo> pinfo;
+      for (auto& p : db.query_json(
+             "SELECT id,name,purchased,stock,safety_stock,reorder_point,"
+             "lead_time_hours,base_cost,batch_size FROM products")) {
+        PInfo pi; pi.name = jstr(p,"name");
+        auto num = [&](const char* k, double def) {
+          std::string s = jstr(p, k); if (s.empty()) return def;
+          try { return std::stod(s); } catch (...) { return def; } };
+        pi.purchased = num("purchased", 0) != 0;
+        pi.stock = num("stock", 0); pi.safety = num("safety_stock", 0);
+        pi.reorder = num("reorder_point", 0); pi.lead = num("lead_time_hours", 0);
+        pi.cost = num("base_cost", 0); pi.batch = std::max(1.0, num("batch_size", 1));
+        pinfo[jstr(p,"id")] = pi;
+      }
 
-      // Рекурсивное разузлование: накапливаем потребность по изделиям.
-      std::unordered_map<std::string,double> need;
-      std::function<void(const std::string&, double, std::unordered_set<std::string>&, int)> explode =
-        [&](const std::string& pid, double mult, std::unordered_set<std::string>& vis, int depth) {
-          if (depth > 48 || vis.count(pid)) return;
+      // Low-level codes (глубина позиции в BOM) — нетто-разузлование строго по
+      // уровням: gross верхнего уровня неттуется об остаток, и вниз спускается
+      // только ПЛАНОВЫЙ запуск (после lot sizing), а не полный брутто.
+      // Иначе остатки полуфабрикатов не экономят сырьё (классическая ошибка MRP).
+      std::unordered_map<std::string,int> llc;
+      std::function<void(const std::string&, int, std::unordered_set<std::string>&)> mark =
+        [&](const std::string& pid, int lvl, std::unordered_set<std::string>& vis) {
+          if (lvl > 48 || vis.count(pid)) return;
           vis.insert(pid);
-          for (auto& [q, qty] : chainInputs(pid)) {
-            need[q] += mult * qty;
-            explode(q, mult * qty, vis, depth + 1);   // произвести/закупить вход
-          }
+          auto it = llc.find(pid);
+          if (it == llc.end() || it->second < lvl) llc[pid] = lvl;
+          if (auto b = bom.find(pid); b != bom.end())
+            for (auto& [child, q] : b->second) mark(child, lvl + 1, vis);
           vis.erase(pid);
         };
-      for (auto& [pid, qty] : program) { std::unordered_set<std::string> vis; explode(pid, qty, vis, 0); }
+      for (auto& pl : program) { std::unordered_set<std::string> vis; mark(pl.pid, 0, vis); }
 
-      // Сводка по материалам (акцент на покупном сырье).
+      std::vector<std::string> order;                       // позиции по возрастанию уровня
+      for (auto& [pid, lvl] : llc) order.push_back(pid);
+      std::sort(order.begin(), order.end(),
+                [&](const std::string& a, const std::string& b) { return llc[a] < llc[b]; });
+
+      std::unordered_map<std::string,double> gross, netQ, plannedQ;
+      // Time-phased: срок потребности позиции = min(срок родителя − цикл родителя).
+      std::unordered_map<std::string,double> needBy;       // ч от «сейчас»; нет = срок неизвестен
+      auto needMin = [&](const std::string& id, double v) {
+        auto it = needBy.find(id);
+        if (it == needBy.end() || v < it->second) needBy[id] = v;
+      };
+      for (auto& pl : program) {
+        gross[pl.pid] += pl.qty;                           // независимая потребность
+        if (pl.due > 0) needMin(pl.pid, pl.due);
+      }
+      for (const std::string& pid : order) {
+        const PInfo pi = pinfo.count(pid) ? pinfo[pid] : PInfo{};
+        double g = gross.count(pid) ? gross[pid] : 0;
+        if (g <= 0) continue;
+        // Нетто = брутто + страховой запас − остаток (классическое MRP-неттование,
+        // применяется на КАЖДОМ уровне, включая готовую продукцию программы).
+        double net = std::max(0.0, g + pi.safety - pi.stock);
+        netQ[pid] = net;
+        // Lot sizing: плановый запуск/заказ кратен партии (FOQ-кратность).
+        double planned = net > 0 ? std::ceil(net / pi.batch) * pi.batch : 0;
+        plannedQ[pid] = planned;
+        if (planned > 0 && !pi.purchased)                  // спускаем только плановый запуск
+          if (auto b = bom.find(pid); b != bom.end()) {
+            // Компоненты нужны к старту обработки родителя: срок − цикл родителя.
+            const double childDue = needBy.count(pid)
+              ? needBy[pid] - (procH.count(pid) ? procH[pid] : 0) : -1;
+            for (auto& [child, q] : b->second) {
+              gross[child] += planned * q;
+              if (childDue >= 0) needMin(child, childDue);
+            }
+          }
+      }
+
       json materials = json::array(); bool feasible = true;
-      for (auto& [pid, gross] : need) {
-        json p;
-        try { p = db.query_one("SELECT * FROM products WHERE id=?", { pid }); } catch (...) { continue; }
-        bool purchased = std::stod(jstr(p,"purchased").empty()?"0":jstr(p,"purchased")) != 0;
-        double onHand = std::stod(jstr(p,"stock").empty()?"0":jstr(p,"stock"));
-        double safety = std::stod(jstr(p,"safety_stock").empty()?"0":jstr(p,"safety_stock"));
-        double reorder= std::stod(jstr(p,"reorder_point").empty()?"0":jstr(p,"reorder_point"));
-        double lead   = std::stod(jstr(p,"lead_time_hours").empty()?"0":jstr(p,"lead_time_hours"));
-        double net = std::max(0.0, gross + safety - onHand);   // нетто с учётом страх. запаса
-        if (purchased && net > 0) feasible = false;
-        materials.push_back({
-          {"product_id", pid}, {"name", jstr(p,"name")}, {"purchased", purchased},
-          {"gross_req", gross}, {"on_hand", onHand}, {"safety_stock", safety},
-          {"net_req", net}, {"shortage", net > 0}, {"reorder", onHand < reorder && reorder > 0},
-          {"lead_time_hours", lead}, {"unit_cost", std::stod(jstr(p,"base_cost").empty()?"0":jstr(p,"base_cost"))},
-        });
+      for (const std::string& pid : order) {
+        if (!gross.count(pid) || gross[pid] <= 0) continue;
+        if (!pinfo.count(pid)) continue;
+        // Программные позиции (уровень 0) в сводку материалов не включаем.
+        bool inProgram = false;
+        for (auto& pl : program) if (pl.pid == pid) { inProgram = true; break; }
+        if (inProgram) continue;
+        const PInfo& pi = pinfo[pid];
+        double net = netQ.count(pid) ? netQ[pid] : 0;
+        if (pi.purchased && net > 0) feasible = false;
+        json mrow = {
+          {"product_id", pid}, {"name", pi.name}, {"purchased", pi.purchased},
+          {"gross_req", gross[pid]}, {"on_hand", pi.stock}, {"safety_stock", pi.safety},
+          {"net_req", net}, {"planned_qty", plannedQ.count(pid) ? plannedQ[pid] : 0},
+          {"level", llc.count(pid) ? llc[pid] : 0},
+          {"shortage", net > 0}, {"reorder", pi.stock < pi.reorder && pi.reorder > 0},
+          {"lead_time_hours", pi.lead}, {"unit_cost", pi.cost},
+        };
+        // Time-phased: когда нужен материал и когда РАЗМЕЩАТЬ заказ (нужен − lead).
+        // place_by < 0 → заказ надо было разместить «вчера» (просрочен старт закупки).
+        if (needBy.count(pid)) {
+          const double nb = needBy[pid];
+          mrow["need_by_hours"] = nb;
+          if (pi.purchased && net > 0) {
+            mrow["place_by_hours"] = nb - pi.lead;
+            mrow["late"] = (nb - pi.lead) < 0;
+          }
+        }
+        materials.push_back(mrow);
       }
       ok(res, { {"feasible", feasible}, {"materials", materials},
                 {"n_orders", (int)program.size()} });
@@ -2318,13 +2605,17 @@ static void register_calendar(httplib::Server& svr, Database& db) {
       int sMin = (int)(std::stod(jstr(body, "start_hour").empty() ? "6" : jstr(body, "start_hour")) * 60);
       int eMin = (int)(std::stod(jstr(body, "end_hour").empty() ? "22" : jstr(body, "end_hour")) * 60);
       std::lock_guard<std::recursive_mutex> lk(db.mutex());
-      db.exec("DELETE FROM shifts WHERE schedule_id=?", { sid });
-      if (body.contains("days") && body["days"].is_array())
-        for (auto& d : body["days"]) {
-          int dow = d.is_number() ? d.get<int>() : std::stoi(d.get<std::string>());
-          db.exec("INSERT INTO shifts(id,schedule_id,day_of_week,start_min,end_min) VALUES(?,?,?,?,?)",
-                  { gen_uuid(), sid, std::to_string(dow), std::to_string(sMin), std::to_string(eMin) });
-        }
+      db.exec("BEGIN");   // DELETE + INSERT'ы смен — атомарно (обрыв = пустой календарь)
+      try {
+        db.exec("DELETE FROM shifts WHERE schedule_id=?", { sid });
+        if (body.contains("days") && body["days"].is_array())
+          for (auto& d : body["days"]) {
+            int dow = d.is_number() ? d.get<int>() : std::stoi(d.get<std::string>());
+            db.exec("INSERT INTO shifts(id,schedule_id,day_of_week,start_min,end_min) VALUES(?,?,?,?,?)",
+                    { gen_uuid(), sid, std::to_string(dow), std::to_string(sMin), std::to_string(eMin) });
+          }
+        db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
       audit(db, "calendar", sid, "UPDATE", body);
       ok(res, { {"ok", true} });
     } catch (std::exception& e) { err(res, 400, e.what()); }
@@ -2333,15 +2624,53 @@ static void register_calendar(httplib::Server& svr, Database& db) {
 
 /* ── main ────────────────────────────────────────────────────────────────── */
 
-int main(int argc, char* argv[]) {
-  std::string db_path = "maos.db";
-  if (argc > 1) db_path = argv[1];
-
-  std::cout << "MAOS backend starting...\n";
-  std::cout << "Database: " << db_path << "\n";
-
-  Database db(db_path);
+/* ── Инициализация БД проекта (старт + переключение) ─────────────────────── */
+static bool setup_database(Database& db) {
   db.init_schema();
+  db.exec_safe("ALTER TABLE users ADD COLUMN locked_until TEXT");  // идемпотентно для старых БД
+  // Версионирование техкарт (ТЗ «Справочник техкарт» §3.3): version + is_default.
+  db.exec_safe("ALTER TABLE routings ADD COLUMN version INTEGER DEFAULT 1");
+  db.exec_safe("ALTER TABLE routings ADD COLUMN is_default INTEGER DEFAULT 1");
+  db.exec_safe("ALTER TABLE routings ADD COLUMN effective_from TEXT");
+  db.exec_safe("UPDATE routings SET version=1 WHERE version IS NULL");
+  db.exec_safe("UPDATE routings SET is_default=1 WHERE is_default IS NULL");
+  // Нормы «операция×тип»: посев из плоских норм операций (идемпотентно).
+  db.exec_safe("INSERT OR IGNORE INTO time_norms(operation_id,wc_type_id,t_opt,t_norm,t_pess,setup_time) "
+               "SELECT ow.operation_id, ow.wc_type_id, o.t_opt, o.t_norm, o.t_pess, o.setup_time "
+               "FROM operation_wc_types ow JOIN operations o ON o.id=ow.operation_id");
+  // Демо-посев компетенций (если пусто): каждый рабочий владеет ~60% типов РЦ со
+  // сдвигом — есть специализация, но каждый тип покрыт несколькими рабочими.
+  try {
+    auto ws = db.query_json("SELECT id FROM workers WHERE skills IS NULL OR skills='' ORDER BY id");
+    auto ts = db.query_json("SELECT name FROM work_center_types ORDER BY name");
+    if (!ws.empty() && ts.size() >= 2) {
+      const size_t T = ts.size(), COVER = (T * 3) / 5 + 1;
+      for (size_t i = 0; i < ws.size(); ++i) {
+        std::string sk;
+        const size_t k0 = (i * T) / ws.size();
+        for (size_t k = 0; k < COVER && k < T; ++k) {
+          if (!sk.empty()) sk += ", ";
+          sk += jstr(ts[(k0 + k) % T], "name");
+        }
+        db.exec("UPDATE workers SET skills=? WHERE id=?", { sk, jstr(ws[i], "id") });
+      }
+      std::cout << "Seeded worker skills (" << ws.size() << ").\n";
+    }
+  } catch (std::exception& e) { std::cerr << "skills seed: " << e.what() << "\n"; }
+  // Тарифные ставки по разряду (если не заданы): 350 + 100·разряд ₽/ч.
+  db.exec_safe("UPDATE workers SET cost_per_hour = 350 + 100*CAST(COALESCE(NULLIF(grade,''),'4') AS INTEGER) "
+               "WHERE cost_per_hour IS NULL OR cost_per_hour='' OR cost_per_hour='0' OR cost_per_hour=0");
+  // Надёжность/обслуживание оборудования (параметры ТИПА, как и остальной паспорт):
+  // MTBF при полной загрузке, средний ремонт, интервал ТО по наработке, длительность ТО.
+  db.exec_safe("ALTER TABLE work_center_types ADD COLUMN mtbf_hours REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE work_center_types ADD COLUMN repair_hours REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE work_center_types ADD COLUMN mtbm_hours REAL DEFAULT 0");
+  db.exec_safe("ALTER TABLE work_center_types ADD COLUMN maintenance_hours REAL DEFAULT 0");
+  // Демо-дефолты (только для незаполненных): наработка на отказ 350ч, ремонт 6ч,
+  // ТО каждые 160ч наработки по 4ч.
+  db.exec_safe("UPDATE work_center_types SET mtbf_hours=350, repair_hours=6, "
+               "mtbm_hours=160, maintenance_hours=4 "
+               "WHERE (mtbf_hours IS NULL OR mtbf_hours=0) AND hour_rate > 0");
   std::cout << "Schema ready.\n";
 
   // Авто-посев демо-данных при пустой базе: реестры и схема должны быть
@@ -2382,8 +2711,20 @@ int main(int argc, char* argv[]) {
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
-    return 1;
+    return false;
   }
+  return true;
+}
+
+int main(int argc, char* argv[]) {
+  std::string db_path = "maos.db";
+  if (argc > 1) db_path = argv[1];
+
+  std::cout << "MAOS backend starting...\n";
+  std::cout << "Database: " << db_path << "\n";
+
+  Database db(db_path);
+  if (!setup_database(db)) return 1;
 
   httplib::Server svr;
 
@@ -2392,10 +2733,68 @@ int main(int argc, char* argv[]) {
     cors(res);
   });
 
+  // ── RBAC-фильтр (deny-by-default): все /api/* требуют действующий Bearer-токен;
+  // мутации — соответствующее право роли. Раньше токен не проверялся нигде.
+  svr.set_pre_routing_handler([&db](const httplib::Request& req, httplib::Response& res)
+                                -> httplib::Server::HandlerResponse {
+    using HR = httplib::Server::HandlerResponse;
+    g_actor.clear();                                  // не наследовать актора прошлого запроса
+    const std::string& path = req.path;
+    if (req.method == "OPTIONS" || path.rfind("/api/", 0) != 0) return HR::Unhandled;
+    if (path == "/api/auth/login" || path == "/api/health") return HR::Unhandled;
+    if (path == "/api/projects" && req.method == "GET") return HR::Unhandled;  // список для окна входа
+
+    std::string auth = req.get_header_value("Authorization");
+    std::string token = auth.rfind("Bearer ", 0) == 0 ? auth.substr(7) : "";
+    AuthSession s; bool valid = false;
+    {
+      std::lock_guard<std::mutex> lk(g_sess_mtx);
+      auto it = g_sessions.find(token);
+      if (it != g_sessions.end()) {
+        if (std::chrono::steady_clock::now() < it->second.expires) { s = it->second; valid = true; }
+        else g_sessions.erase(it);                    // истёкшую сессию убираем
+      }
+    }
+    if (!valid) { err(res, 401, "Требуется вход (токен отсутствует или истёк)"); return HR::Handled; }
+    g_actor = s.login;
+
+    // Карта прав: чтение доступно любому вошедшему (READ), мутации — по зонам.
+    std::string need;
+    if (req.method != "GET") {
+      auto starts = [&](const char* p) { return path.rfind(p, 0) == 0; };
+      if (starts("/api/users") || starts("/api/roles")) need = "MANAGE_USERS";
+      else if (starts("/api/optimize") || starts("/api/schedule") ||
+               starts("/api/forecast") || starts("/api/mrp")) need = "RUN_OPTIMIZE";
+      else if (starts("/api/demand_orders") || starts("/api/production_plans") ||
+               starts("/api/scenarios") || starts("/api/calendar")) need = "WRITE_PLAN";
+      else need = "EDIT_NSI";                          // НСИ и прочие мутации
+    }
+    if (!need.empty() && !s.perms.count(need)) {
+      audit(db, "auth", s.login, "REJECTED", { {"path", path}, {"need", need} });
+      err(res, 403, "Недостаточно прав: требуется " + need);
+      return HR::Handled;
+    }
+    return HR::Unhandled;
+  });
+
   // Health
-  svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
+  svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.41.1"} });
+    ok(res, { {"status", "ok"}, {"version", "0.47.0"}, {"project", db.path()} });
+  });
+
+  // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.
+  // Открытие/создание — через окно входа (POST /api/auth/login, поле db).
+  svr.Get("/api/projects", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      json arr = json::array();
+      for (auto& e : std::filesystem::directory_iterator(".")) {
+        if (!e.is_regular_file()) continue;
+        const std::string p = e.path().filename().string();
+        if (p.size() > 3 && p.substr(p.size() - 3) == ".db") arr.push_back(p);
+      }
+      ok(res, { {"projects", arr}, {"current", db.path()} });
+    } catch (std::exception& e) { err(res, 500, e.what()); }
   });
 
   // Auth
@@ -2404,7 +2803,10 @@ int main(int argc, char* argv[]) {
   // NSI registries (simple CRUD)
   register_crud(svr, db, {
     "work_center_types", "work_center_type",
-    { "name", "group_name", "kind", "characteristics", "description", "interchangeable" }
+    { "name", "group_name", "kind", "characteristics", "description", "interchangeable",
+      "hour_rate", "efficiency",
+      // Надёжность/ТО — входы симуляции поломок и планового обслуживания:
+      "mtbf_hours", "repair_hours", "mtbm_hours", "maintenance_hours" }
   });
 
   register_crud(svr, db, {
@@ -2425,6 +2827,9 @@ int main(int argc, char* argv[]) {
       "batch_size", "stock", "purchased",
       // Экономика внешних условий — иначе товарные позиции невидимы оптимизатору:
       "sellable", "base_cost", "base_price", "demand_max",
+      // Модель спроса/конкуренции: ёмкость рынка (выше — продать НЕЛЬЗЯ),
+      // эластичность цены по насыщению, предложение конкурентов:
+      "market_capacity", "price_elasticity", "competitor_supply",
       // Запасы / MRP:
       "safety_stock", "reorder_point", "lead_time_hours" }
   });

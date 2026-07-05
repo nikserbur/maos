@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { OptCandidate } from '../../lib/api'
 
 function money(v: number): string {
@@ -18,24 +18,33 @@ interface Hover { left: number; top: number; c: OptCandidate }
  */
 export function ParetoFrontier({ candidates }: { candidates: OptCandidate[] }) {
   const W = 600, H = 250, padL = 54, padR = 16, padT = 18, padB = 36
-  const [hover, setHover] = useState<Hover | null>(null)
-  if (candidates.length < 2) return null
-
-  const xs = candidates.map((c) => c.std)
-  const ys = candidates.map((c) => c.expected)
-  const xlo = Math.min(...xs), xhi = Math.max(...xs)
-  const ylo = Math.min(...ys), yhi = Math.max(...ys)
-  const xspan = Math.max(1, xhi - xlo), yspan = Math.max(1, yhi - ylo)
   const plotW = W - padL - padR, plotH = H - padT - padB
-  const px = (v: number) => padL + ((v - xlo) / xspan) * plotW
-  const py = (v: number) => padT + (1 - (v - ylo) / yspan) * plotH
-
-  const pareto = candidates.filter((c) => c.is_pareto).sort((a, b) => a.std - b.std)
-  const line = pareto.map((c) => `${px(c.std)},${py(c.expected)}`).join(' ')
-  const area = pareto.length > 1
-    ? `${px(pareto[0].std)},${padT + plotH} ${line} ${px(pareto[pareto.length - 1].std)},${padT + plotH}` : ''
-  const robust = candidates.find((c) => c.is_robust)
-  const expected = candidates.find((c) => c.is_expected)
+  const [hover, setHover] = useState<Hover | null>(null)
+  // Геометрия зависит только от candidates: без useMemo каждый hover (setHover)
+  // заново фильтровал/сортировал фронт и пересобирал полилинию. Min/max — циклом
+  // (spread по тысячам аргументов рискует переполнить стек вызова).
+  const geom = useMemo(() => {
+    if (candidates.length < 2) return null
+    let xlo = Infinity, xhi = -Infinity, ylo = Infinity, yhi = -Infinity
+    for (const c of candidates) {
+      if (c.std < xlo) xlo = c.std; if (c.std > xhi) xhi = c.std
+      if (c.expected < ylo) ylo = c.expected; if (c.expected > yhi) yhi = c.expected
+    }
+    const xspan = Math.max(1, xhi - xlo), yspan = Math.max(1, yhi - ylo)
+    const px = (v: number) => padL + ((v - xlo) / xspan) * plotW
+    const py = (v: number) => padT + (1 - (v - ylo) / yspan) * plotH
+    const pareto = candidates.filter((c) => c.is_pareto).sort((a, b) => a.std - b.std)
+    const line = pareto.map((c) => `${px(c.std)},${py(c.expected)}`).join(' ')
+    const area = pareto.length > 1
+      ? `${px(pareto[0].std)},${padT + plotH} ${line} ${px(pareto[pareto.length - 1].std)},${padT + plotH}` : ''
+    return {
+      xlo, xhi, ylo, yhi, px, py, pareto, line, area,
+      robust: candidates.find((c) => c.is_robust),
+      expected: candidates.find((c) => c.is_expected),
+    }
+  }, [candidates]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!geom) return null
+  const { xlo, xhi, ylo, yhi, px, py, pareto, line, area, robust, expected } = geom
 
   return (
     <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>

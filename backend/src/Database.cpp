@@ -8,9 +8,26 @@ static void check(int rc, const char* op) {
     throw std::runtime_error(std::string(op) + ": " + std::to_string(rc));
 }
 
-Database::Database(const std::string& path) {
+Database::Database(const std::string& path) : path_(path) {
   check(sqlite3_open(path.c_str(), &db_), "sqlite3_open");
+  sqlite3_busy_timeout(db_, 5000);        // ждать снятия блокировки, а не падать SQLITE_BUSY
   exec("PRAGMA journal_mode = WAL");
+  // В WAL synchronous=NORMAL сохраняет целостность БД (durability — до чекпойнта),
+  // но убирает fsync на каждый автокоммит — мутационные хендлеры не ждут диск.
+  exec("PRAGMA synchronous = NORMAL");
+  exec("PRAGMA foreign_keys = ON");
+}
+
+void Database::reopen(const std::string& path) {
+  std::lock_guard<std::recursive_mutex> lk(mtx_);
+  sqlite3* fresh = nullptr;
+  check(sqlite3_open(path.c_str(), &fresh), "sqlite3_open(reopen)");
+  if (db_) sqlite3_close(db_);
+  db_ = fresh;
+  path_ = path;
+  sqlite3_busy_timeout(db_, 5000);
+  exec("PRAGMA journal_mode = WAL");
+  exec("PRAGMA synchronous = NORMAL");
   exec("PRAGMA foreign_keys = ON");
 }
 

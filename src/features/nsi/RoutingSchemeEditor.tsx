@@ -1,4 +1,4 @@
-import { useReducer, useState, useEffect, type JSX } from 'react'
+import { useReducer, useState, useEffect, useMemo, type JSX } from 'react'
 import { api, type Product, type Operation, type WorkCenterType } from '../../lib/api'
 import { useProducts, useOperations, useWorkCenterTypes } from './useNsi'
 
@@ -658,8 +658,10 @@ export function RoutingSchemeEditor({ onSave, onCancel, edit }: RoutingSchemeEdi
   const registryOps = useOperations()
   const wcTypes     = useWorkCenterTypes()
 
-  const sorted = [...state.ops].sort((a, b) => a.order - b.order)
-  const total  = sorted.reduce((s, o) => s + o.timeMin, 0)
+  // useMemo: без него каждый ввод символа (SET_NAME на каждое нажатие) пересоздавал
+  // sorted с новой идентичностью и перерисовывал всю SVG-диаграмму.
+  const sorted = useMemo(() => [...state.ops].sort((a, b) => a.order - b.order), [state.ops])
+  const total  = useMemo(() => sorted.reduce((s, o) => s + o.timeMin, 0), [sorted])
 
   const [saving, setSaving]       = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)

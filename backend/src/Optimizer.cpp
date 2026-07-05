@@ -44,9 +44,12 @@ struct OpInput { std::string productId; double qty = 1; };
 
 struct Op {
   std::string id;
+  int idx = -1;                  // сквозной индекс операции (горячий цикл МК — по векторам)
   double tOpt = 0, tNorm = 0, tPess = 0;
   double cost = 0, riskCoef = 0.05;
+  double tailWeight = 0.08, tailIndex = 2.5;   // тяжёлый хвост длительности (как в Стадии 1)
   bool   setupRequired = false;
+  double setupTime = 0;          // наладка, мин (входит в фонд мощности на партию)
   double setupCost = 0, laborRate = 0;
   std::string primaryWct;        // ведущий тип оборудования (для мощности/ставки)
   double hourRate = 0;           // ставка машино-часа ведущего типа
@@ -108,42 +111,61 @@ Model load_model(Database& db) {
     if (!pr.parentId.empty() && m.prods.count(pr.parentId))
       m.componentsOf[pr.parentId].push_back(id);
 
-  // Операции техкарт по изделию (routings.product_id → operations.routing_id).
-  // Ведущий тип оборудования и его ставка — из operation_wc_types (связь по ID).
-  auto opWct = [&](const std::string& opId) -> std::string {
-    auto rows = db.query_json(
-      "SELECT wc_type_id FROM operation_wc_types WHERE operation_id=? LIMIT 1", { opId });
-    return rows.empty() ? std::string() : str(rows[0], "wc_type_id");
-  };
-  auto opInputs = [&](const std::string& opId) -> std::vector<OpInput> {
-    std::vector<OpInput> v;
-    for (auto& r : db.query_json(
-           "SELECT product_id, qty FROM operation_inputs WHERE operation_id=?", { opId }))
-      v.push_back({ str(r, "product_id"), num(r, "qty", 1) });
-    return v;
-  };
+  // Связи операций — ДВУМЯ запросами на всю модель (было по 2 запроса на каждую
+  // операцию: сотни SQL-обращений под глобальным мьютексом на один /api/optimize).
+  std::unordered_map<std::string, std::string> wctOf;             // op → ведущий тип
+  for (auto& r : db.query_json(
+         "SELECT operation_id, wc_type_id FROM operation_wc_types ORDER BY rowid"))
+    wctOf.emplace(str(r, "operation_id"), str(r, "wc_type_id")); // первый = ведущий
+  std::unordered_map<std::string, std::vector<OpInput>> inputsOf;
+  for (auto& r : db.query_json("SELECT operation_id, product_id, qty FROM operation_inputs"))
+    inputsOf[str(r, "operation_id")].push_back({ str(r, "product_id"), num(r, "qty", 1) });
 
-  for (auto& r : db.query_json("SELECT id, product_id FROM routings")) {
-    const std::string productId = str(r, "product_id");
-    if (productId.empty()) continue;
-    for (auto& o : db.query_json(
-           "SELECT * FROM operations WHERE routing_id=? ORDER BY order_no", { str(r, "id") })) {
-      Op op;
-      op.id    = str(o, "id");
-      op.tOpt  = num(o, "t_opt");  op.tNorm = num(o, "t_norm"); op.tPess = num(o, "t_pess");
-      if (op.tOpt  <= 0) op.tOpt  = op.tNorm;
-      if (op.tPess <= 0) op.tPess = op.tNorm;
-      op.cost  = num(o, "cost");
-      op.riskCoef = num(o, "risk_coef", 0.05);
-      op.setupRequired = num(o, "setup_required") != 0;
-      op.setupCost = num(o, "setup_cost");
-      op.laborRate = num(o, "labor_rate");
-      op.primaryWct = opWct(op.id);
-      auto wit = m.wcts.find(op.primaryWct);
-      op.hourRate = (wit != m.wcts.end()) ? wit->second.hourRate : 0;
-      op.inputs = opInputs(op.id);
-      m.opsOf[productId].push_back(op);
+  // Нормы «операция × тип» — перекрывают плоскую норму операции для ведущего типа.
+  struct PairNorm { double tOpt, tNorm, tPess, setup; };
+  std::unordered_map<std::string, PairNorm> normOf;
+  for (auto& r : db.query_json("SELECT * FROM time_norms"))
+    normOf[str(r, "operation_id") + "|" + str(r, "wc_type_id")] =
+      { num(r, "t_opt"), num(r, "t_norm"), num(r, "t_pess"), num(r, "setup_time") };
+
+  // Операции техкарт по изделию — одним JOIN-запросом (ДЕЙСТВУЮЩАЯ версия техкарты).
+  int opIdx = 0;
+  for (auto& o : db.query_json(
+         "SELECT o.*, r.product_id AS product_of FROM routings r "
+         "JOIN operations o ON o.routing_id = r.id "
+         "WHERE r.product_id IS NOT NULL AND r.product_id <> '' "
+         "AND COALESCE(r.is_default,1)=1 "
+         "ORDER BY r.product_id, o.order_no")) {
+    const std::string productId = str(o, "product_of");
+    Op op;
+    op.id    = str(o, "id");
+    op.idx   = opIdx++;
+    op.tOpt  = num(o, "t_opt");  op.tNorm = num(o, "t_norm"); op.tPess = num(o, "t_pess");
+    if (op.tOpt  <= 0) op.tOpt  = op.tNorm;
+    if (op.tPess <= 0) op.tPess = op.tNorm;
+    op.cost  = num(o, "cost");
+    op.riskCoef = num(o, "risk_coef", 0.05);
+    op.tailWeight = num(o, "tail_weight", 0.08);
+    op.tailIndex  = std::max(1.2, num(o, "tail_index", 2.5));
+    op.setupRequired = num(o, "setup_required") != 0;
+    op.setupTime = num(o, "setup_time");
+    op.setupCost = num(o, "setup_cost");
+    op.laborRate = num(o, "labor_rate");
+    if (auto wit2 = wctOf.find(op.id); wit2 != wctOf.end()) op.primaryWct = wit2->second;
+    // Норма пары «операция × ведущий тип» приоритетнее плоской нормы операции.
+    if (auto nit = normOf.find(op.id + "|" + op.primaryWct); nit != normOf.end()) {
+      const PairNorm& pn = nit->second;
+      if (pn.tNorm > 0) {
+        op.tNorm = pn.tNorm;
+        op.tOpt  = pn.tOpt  > 0 ? pn.tOpt  : pn.tNorm;
+        op.tPess = pn.tPess > 0 ? pn.tPess : pn.tNorm;
+      }
+      if (pn.setup > 0) op.setupTime = pn.setup;
     }
+    auto wit = m.wcts.find(op.primaryWct);
+    op.hourRate = (wit != m.wcts.end()) ? wit->second.hourRate : 0;
+    if (auto iit = inputsOf.find(op.id); iit != inputsOf.end()) op.inputs = std::move(iit->second);
+    m.opsOf[productId].push_back(std::move(op));
   }
   return m;
 }
@@ -158,9 +180,13 @@ void hours_per_unit(const Model& m, const std::string& pid,
   if (depth > 48 || visiting.count(pid)) return;     // защита от циклов цепочки
   visiting.insert(pid);
   auto opsIt = m.opsOf.find(pid);
+  const double batch = m.prods.count(pid) ? std::max(1.0, m.prods.at(pid).batchSize) : 1.0;
   if (opsIt != m.opsOf.end())
     for (const Op& o : opsIt->second) {
-      if (!o.primaryWct.empty()) out[o.primaryWct] += pertMean(o) / 60.0;
+      // Наладка входит в фонд мощности (на партию → делим на размер партии):
+      // иначе Стадия 2 обещает мощность, которую Стадия 1 съедает переналадками.
+      if (!o.primaryWct.empty())
+        out[o.primaryWct] += (pertMean(o) + o.setupTime / batch) / 60.0;
       for (const OpInput& in : o.inputs) {            // входы операции → цепочка
         std::unordered_map<std::string, double> sub;
         hours_per_unit(m, in.productId, sub, visiting, depth + 1);
@@ -171,10 +197,12 @@ void hours_per_unit(const Model& m, const std::string& pid,
 }
 
 /* ── Себестоимость единицы изделия при конкретном прогоне (sampled) ───────── */
-// timeFactor[opId] — реализованное время (мин); riskInfl[opId] — множитель риска.
+// realizedTime[op.idx] — реализованное время (мин); riskInfl[op.idx] — множитель
+// риска. Векторы по индексу операции вместо unordered_map<string,…>: горячий цикл
+// Монте-Карло перестаёт строить хеш-таблицы на каждый прогон.
 double unit_cost(const Model& m, const std::string& pid,
-                 const std::unordered_map<std::string, double>& realizedTime,
-                 const std::unordered_map<std::string, double>& riskInfl,
+                 const std::vector<double>& realizedTime,
+                 const std::vector<double>& riskInfl,
                  const std::unordered_map<std::string, double>& matFactor,  // множитель цены сырья
                  std::unordered_map<std::string, double>& memo,
                  std::unordered_set<std::string>& visiting, int depth = 0) {
@@ -191,8 +219,9 @@ double unit_cost(const Model& m, const std::string& pid,
   // сырьё даёт base_cost, полуфабрикат — свою накопленную себестоимость.
   if (auto oit = m.opsOf.find(pid); oit != m.opsOf.end())
     for (const Op& o : oit->second) {
-      double t   = realizedTime.count(o.id) ? realizedTime.at(o.id) : pertMean(o);
-      double inf = riskInfl.count(o.id)     ? riskInfl.at(o.id)     : 1.0;
+      const bool has = o.idx >= 0 && o.idx < (int)realizedTime.size();
+      double t   = has ? realizedTime[o.idx] : pertMean(o);
+      double inf = has ? riskInfl[o.idx]     : 1.0;
       double proc = (t / 60.0) * (o.hourRate + o.laborRate)
                   + (o.setupRequired ? o.setupCost / std::max(1.0, p.batchSize) : 0.0)  // наладка — на партию
                   + o.cost;
@@ -424,17 +453,46 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     }
   }
 
+  // Доля рабочего времени по календарю смен (напр. 5×16ч ≈ 0.476): раньше Стадия 2
+  // считала фонд 24/7, а Стадия 1 планировала по сменам — портфель
+  // систематически не вписывался в реальный фонд (несогласованность стадий).
+  double calFactor = 1.0;
+  try {
+    auto sched = db.query_json("SELECT id FROM schedules WHERE is_default=1 LIMIT 1");
+    if (!sched.empty()) {
+      double workMin = 0;
+      for (auto& sh : db.query_json(
+             "SELECT start_min, end_min FROM shifts WHERE schedule_id=?", { str(sched[0], "id") }))
+        workMin += std::max(0.0, num(sh, "end_min") - num(sh, "start_min"));
+      if (workMin > 0) calFactor = std::min(1.0, workMin / (7.0 * 1440.0));
+    }
+  } catch (...) {}
+
   std::unordered_map<std::string, double> cap;
   for (auto& [id, w] : m.wcts)
-    cap[id] = (double)w.machineCount * horizon * w.efficiency;
+    cap[id] = (double)w.machineCount * horizon * w.efficiency * calFactor;
+
+  // ── RECOURSE (обратный ход Стадия 1 → Стадия 2): поправка потребления мощности
+  // из ФАКТИЧЕСКОГО расписания (stage1_feedback: наладки и пр. поверх нормо-часов).
+  // Оптимизатор перестаёт обещать мощность по наивной сумме нормо-часов.
+  std::unordered_map<std::string, double> fbFactor;
+  try {
+    for (auto& r : db.query_json("SELECT product_id, factor FROM stage1_feedback"))
+      fbFactor[str(r, "product_id")] = std::max(1.0, num(r, "factor", 1.0));
+  } catch (...) {}
 
   // Часы на единицу по типам (детерминированно) + суммарные часы.
+  int calibrated = 0;
   std::vector<std::vector<std::pair<std::string,double>>> hpu(S);
   for (size_t i = 0; i < S; ++i) {
     std::unordered_map<std::string, double> h;
     std::unordered_set<std::string> vis;
     hours_per_unit(m, m.sellables[i], h, vis);
-    for (auto& [w, v] : h) hpu[i].push_back({ w, v });
+    double fb = 1.0;
+    if (auto it = fbFactor.find(m.sellables[i]); it != fbFactor.end() && it->second > 1.0) {
+      fb = it->second; ++calibrated;
+    }
+    for (auto& [w, v] : h) hpu[i].push_back({ w, v * fb });
     if (hpu[i].empty())
       warnings.push_back("Изделие " + m.sellables[i] + " не имеет операций/мощности.");
   }
@@ -478,68 +536,85 @@ json run_optimization(Database& db, const OptimizeParams& p) {
 
   // ── Монте-Карло: общие случайные числа для честного сравнения портфелей ──
   const int N = std::max(200, p.samples);
-  std::mt19937 rng(p.seed);
 
   // Список всех операций (для сэмплирования времени/риска).
   std::vector<const Op*> allOps;
   for (auto& [pid, ops] : m.opsOf) for (const Op& o : ops) allOps.push_back(&o);
-
-  // Цены и себестоимости товарных изделий по прогонам.
-  std::vector<std::vector<double>> price(N, std::vector<double>(S, 0));
-  std::vector<std::vector<double>> cost(N, std::vector<double>(S, 0));
-  std::uniform_real_distribution<double> u01(0, 1);
+  size_t nOps = 0;
+  for (const Op* o : allOps) nOps = std::max(nOps, (size_t)o->idx + 1);
 
   // Покупное сырьё — для стохастики цены закупки (может сильно вырасти).
   std::vector<std::string> rawMats;
   for (auto& [id, pr] : m.prods) if (pr.purchased && pr.baseCost > 0) rawMats.push_back(id);
 
-  std::normal_distribution<double> nstd(0.0, 1.0);
-  for (int i = 0; i < N; ++i) {
-    // Реализованное время и инфляция риска для каждой операции.
-    std::unordered_map<std::string, double> realizedTime, riskInfl;
-    for (const Op* o : allOps) {
-      double t = pertMean(*o);
-      if (o->tPess > o->tOpt) {                    // триангулярная аппроксимация PERT
-        PriceDist td; td.type = "triangular"; td.minV = o->tOpt; td.maxV = o->tPess;
-        td.mode = o->tNorm; td.hasMin = td.hasMax = td.hasMode = true; td.mean = o->tNorm;
-        t = price_from_z(td, nstd(rng));
+  // Генератор сценариев (цены + себестоимости) при заданном сиде. Вызывается
+  // дважды: основная выборка И независимая out-of-sample проверка решения (SAA:
+  // оценка на свежих сценариях выявляет переобучение портфеля под выборку).
+  auto genScenarios = [&](unsigned seed, int n,
+                          std::vector<std::vector<double>>& price,
+                          std::vector<std::vector<double>>& cost) {
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> u01(0, 1);
+    std::normal_distribution<double> nstd(0.0, 1.0);
+    price.assign(n, std::vector<double>(S, 0));
+    cost.assign(n, std::vector<double>(S, 0));
+    // Векторы по индексу операции (не unordered_map) — без хеш-аллокаций в цикле.
+    std::vector<double> realizedTime(nOps, 0.0), riskInfl(nOps, 1.0);
+    for (int i = 0; i < n; ++i) {
+      for (const Op* o : allOps) {
+        // Длительность операции: логнормаль вокруг PERT + примесь Парето-хвоста —
+        // ТА ЖЕ модель, что в симуляции Стадии 1 (Двухстадийная модель §2).
+        // Раньше здесь была тонкохвостная триангулярная аппроксимация, и CVaR
+        // себестоимости систематически недооценивал хвостовой риск.
+        const double mean  = std::max(0.5, pertMean(*o));
+        double sigma = (o->tPess - o->tOpt) / 6.0;
+        if (sigma <= 0) sigma = mean * 0.15;
+        const double cv = sigma / mean;
+        const double sl = std::sqrt(std::log(1.0 + cv * cv));
+        const double mu = std::log(mean) - 0.5 * sl * sl;
+        double t = std::exp(mu + std::max(1e-6, sl) * nstd(rng));
+        if (u01(rng) < o->tailWeight) {
+          double f = std::pow(std::max(1e-9, 1.0 - u01(rng)), -1.0 / o->tailIndex);
+          t *= 1.0 + std::min(8.0, f - 1.0);
+        }
+        realizedTime[o->idx] = t;
+        riskInfl[o->idx] = (u01(rng) < o->riskCoef) ? 1.5 : 1.0;  // брак → +50% переделка
       }
-      realizedTime[o->id] = t;
-      double infl = 1.0;
-      if (u01(rng) < o->riskCoef) infl = 1.0 + 0.5;  // риск-событие → +50% переделка
-      riskInfl[o->id] = infl;
-    }
-    // Цены товарных изделий — КОРРЕЛИРОВАННО (гауссова копула): общий рыночный
-    // шок M роднит цены, β_s задаёт силу связи. z_s = β_s·M + √(1−β_s²)·ε_s.
-    // Корреляция цен s,t ≈ β_s·β_t — это и есть «анализ взаимосвязи цен».
-    double M = nstd(rng);
-    for (size_t s = 0; s < S; ++s) {
-      const PriceDist& pd = priceDist[m.sellables[s]];
-      double eps = nstd(rng);
-      double z = pd.beta * M + std::sqrt(std::max(0.0, 1.0 - pd.beta * pd.beta)) * eps;
-      price[i][s] = price_from_z(pd, z);
-    }
-    // Цена СЫРЬЯ — тоже стохастична и может СИЛЬНО вырасти: логнормальный множитель
-    // (CV ~20%), коррелирован с рынком (β=√market_corr) + редкий скачок (Парето).
-    std::unordered_map<std::string, double> matFactor;
-    {
-      const double rawCv = 0.20, betaRaw = std::sqrt(marketCorr);
-      const double slRaw = std::sqrt(std::log(1.0 + rawCv * rawCv));
-      for (const std::string& mid : rawMats) {
-        double zr = betaRaw * M + std::sqrt(std::max(0.0, 1.0 - betaRaw * betaRaw)) * nstd(rng);
-        double f = std::exp(slRaw * zr - 0.5 * slRaw * slRaw);
-        if (u01(rng) < 0.06)                          // редкий скачок цены сырья
-          f *= 1.0 + std::min(2.5, std::pow(std::max(1e-9, 1.0 - u01(rng)), -1.0 / 2.0) - 1.0);
-        matFactor[mid] = f;
+      // Цены товарных изделий — КОРРЕЛИРОВАННО (гауссова копула): общий рыночный
+      // шок M роднит цены, β_s задаёт силу связи. z_s = β_s·M + √(1−β_s²)·ε_s.
+      // Корреляция цен s,t ≈ β_s·β_t — это и есть «анализ взаимосвязи цен».
+      double M = nstd(rng);
+      for (size_t s = 0; s < S; ++s) {
+        const PriceDist& pd = priceDist[m.sellables[s]];
+        double eps = nstd(rng);
+        double z = pd.beta * M + std::sqrt(std::max(0.0, 1.0 - pd.beta * pd.beta)) * eps;
+        price[i][s] = price_from_z(pd, z);
+      }
+      // Цена СЫРЬЯ — тоже стохастична и может СИЛЬНО вырасти: логнормальный множитель
+      // (CV ~20%), коррелирован с рынком (β=√market_corr) + редкий скачок (Парето).
+      std::unordered_map<std::string, double> matFactor;
+      {
+        const double rawCv = 0.20, betaRaw = std::sqrt(marketCorr);
+        const double slRaw = std::sqrt(std::log(1.0 + rawCv * rawCv));
+        for (const std::string& mid : rawMats) {
+          double zr = betaRaw * M + std::sqrt(std::max(0.0, 1.0 - betaRaw * betaRaw)) * nstd(rng);
+          double f = std::exp(slRaw * zr - 0.5 * slRaw * slRaw);
+          if (u01(rng) < 0.06)                          // редкий скачок цены сырья
+            f *= 1.0 + std::min(2.5, std::pow(std::max(1e-9, 1.0 - u01(rng)), -1.0 / 2.0) - 1.0);
+          matFactor[mid] = f;
+        }
+      }
+      // Себестоимость (мемоизация в пределах прогона).
+      std::unordered_map<std::string, double> memo;
+      for (size_t s = 0; s < S; ++s) {
+        std::unordered_set<std::string> vis;
+        cost[i][s] = unit_cost(m, m.sellables[s], realizedTime, riskInfl, matFactor, memo, vis);
       }
     }
-    // Себестоимость (мемоизация в пределах прогона).
-    std::unordered_map<std::string, double> memo;
-    for (size_t s = 0; s < S; ++s) {
-      std::unordered_set<std::string> vis;
-      cost[i][s] = unit_cost(m, m.sellables[s], realizedTime, riskInfl, matFactor, memo, vis);
-    }
-  }
+  };
+
+  std::vector<std::vector<double>> price, cost;
+  genScenarios(p.seed, N, price, cost);
 
   // Средние маржа/себестоимость (для генерации кандидатов).
   std::vector<double> meanCost(S, 0), meanPrice(S, 0), stdMargin(S, 0);
@@ -549,6 +624,31 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     double mm = meanPrice[s] - meanCost[s], ss = 0;
     for (int i = 0; i < N; ++i) { double mg = price[i][s] - cost[i][s]; ss += (mg-mm)*(mg-mm); }
     stdMargin[s] = std::sqrt(ss / N);
+  }
+
+  // ── МОДЕЛЬ СПРОСА И КОНКУРЕНЦИИ ────────────────────────────────────────────
+  // Рынок поглощает НЕ БОЛЕЕ absorb = ёмкость·спрос_сценария − конкуренты единиц:
+  // всё сверх этого уровня ПРОДАТЬ НЕЛЬЗЯ (выручки нет, себестоимость понесена).
+  // Уровень пока задаётся в НСИ (products.market_capacity) и масштабируется
+  // сценарным множителем спроса — задел под вычисление из макро-данных.
+  const double demandMul = std::max(0.1, p.demand);
+  auto capOf = [&](size_t s) -> double {                 // ёмкость рынка изделия, ед.
+    const Prod& pr = m.prods.at(m.sellables[s]);
+    const double capM = pr.marketCapacity > 0 ? pr.marketCapacity
+                       : (pr.demandMax > 0 ? pr.demandMax * 1.2 : 0.0);
+    return capM > 0 ? capM * demandMul : 0.0;            // 0 = рынок не задан
+  };
+  std::vector<double> absorb(S, 1e18);                   // потолок продаж, ед.
+  for (size_t s = 0; s < S; ++s) {
+    const double capM = capOf(s);
+    if (capM > 0)
+      absorb[s] = std::max(0.0, capM - m.prods.at(m.sellables[s]).competitorSupply);
+  }
+  // Кандидаты не планируют заведомо непродаваемые объёмы: спрос = min(demand_max, absorb).
+  for (size_t s = 0; s < S; ++s) {
+    if (absorb[s] >= 1e17) continue;
+    Prod& pr = m.prods.at(m.sellables[s]);
+    pr.demandMax = pr.demandMax > 0 ? std::min(pr.demandMax, absorb[s]) : absorb[s];
   }
 
   // ── Кандидаты ────────────────────────────────────────────────────────────
@@ -604,10 +704,11 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       }
   }
   // Случайные диверсифицированные смеси → разнообразие портфелей.
+  std::mt19937 candRng(p.seed ^ 0x9e3779b9u);   // отдельный от сценарного генератора
   std::uniform_real_distribution<double> uw(0.0, 1.0);
   for (int r = 0; r < 80; ++r) {
     std::vector<double> w(S);
-    for (size_t s = 0; s < S; ++s) w[s] = (margin[s] > 0) ? std::pow(uw(rng), 1.5) : 0.0;
+    for (size_t s = 0; s < S; ++s) w[s] = (margin[s] > 0) ? std::pow(uw(candRng), 1.5) : 0.0;
     add(proportional_fill(m, hpu, cap, w));
   }
   if (cand.empty()) {                                              // на всякий случай
@@ -618,16 +719,17 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     cand.push_back(x);
   }
 
-  // ЭНДОГЕННАЯ ЦЕНА (модель спроса): свой объём q + конкуренты относительно ёмкости рынка.
-  // Перепроизводство (предложение > ёмкости) → цена ВНИЗ; дефицит → цена ВВЕРХ. mul∈[0.4,1.6].
+  // Цена падает с НАСЫЩЕНИЕМ рынка (свой объём + конкуренты к ёмкости): чем дальше
+  // от уровня поглощения, тем ниже цена сбыта. mul ∈ [0.5, 1.3].
   auto priceMul = [&](double q, size_t s) -> double {
     const Prod& pr = m.prods.at(m.sellables[s]);
-    const double capM = pr.marketCapacity > 0 ? pr.marketCapacity
-                       : (pr.demandMax > 0 ? pr.demandMax * 1.2 : 0.0);
+    const double capM = capOf(s);
     if (capM <= 0) return 1.0;
     const double fill = (pr.competitorSupply + q) / capM;          // насыщение рынка
-    return std::max(0.7, std::min(1.3, 1.0 + pr.priceElasticity * (1.0 - fill)));
+    return std::max(0.5, std::min(1.3, 1.0 + pr.priceElasticity * (1.0 - fill)));
   };
+  // Прибыль позиции: произвели q, ПРОДАЛИ min(q, absorb) по цене с насыщением.
+  auto soldOf = [&](double q, size_t s) -> double { return std::min(q, absorb[s]); };
 
   // ── Оценка кандидатов по прогонам (общие случайные числа уже зафиксированы) ─
   size_t K = cand.size();
@@ -637,8 +739,8 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     for (size_t s = 0; s < S; ++s) mul[s] = priceMul(cand[c][s], s);  // зависит от объёма портфеля
     for (int i = 0; i < N; ++i) {
       double pr = 0;
-      for (size_t s = 0; s < S; ++s)
-        pr += cand[c][s] * (price[i][s] * mul[s] - cost[i][s]);
+      for (size_t s = 0; s < S; ++s)   // продали sold, произвели (и оплатили) всё q
+        pr += soldOf(cand[c][s], s) * price[i][s] * mul[s] - cand[c][s] * cost[i][s];
       profit[c][i] = pr;
     }
   }
@@ -715,15 +817,18 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     // с прибылью портфеля). Сумма вкладов = 1 — видно, что «гонит» риск.
     std::vector<double> P(N, 0.0);
     for (int i = 0; i < N; ++i) { double pr = 0;
-      for (size_t s = 0; s < S; ++s) pr += x[s] * (price[i][s] * mul[s] - cost[i][s]); P[i] = pr; }
+      for (size_t s = 0; s < S; ++s)
+        pr += soldOf(x[s], s) * price[i][s] * mul[s] - x[s] * cost[i][s];
+      P[i] = pr; }
     double meanP = 0; for (double v : P) meanP += v; meanP /= N;
     double varP = 0; for (double v : P) varP += (v - meanP) * (v - meanP); varP /= N;
     if (varP < 1e-6) varP = 1e-6;
     auto riskContrib = [&](size_t s) -> double {
       if (x[s] <= 0) return 0;
-      double mc = 0; for (int i = 0; i < N; ++i) mc += x[s] * (price[i][s] * mul[s] - cost[i][s]); mc /= N;
+      const double sq = soldOf(x[s], s);
+      double mc = 0; for (int i = 0; i < N; ++i) mc += sq * price[i][s] * mul[s] - x[s] * cost[i][s]; mc /= N;
       double cov = 0; for (int i = 0; i < N; ++i)
-        cov += (x[s] * (price[i][s] * mul[s] - cost[i][s]) - mc) * (P[i] - meanP);
+        cov += (sq * price[i][s] * mul[s] - x[s] * cost[i][s] - mc) * (P[i] - meanP);
       return (cov / N) / varP;
     };
 
@@ -735,14 +840,16 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       ++nProd;
       const double effPrice = meanPrice[s] * mul[s];   // цена с учётом модели спроса
       double unitMargin = effPrice - meanCost[s];
+      const double sold = soldOf(x[s], s);             // рынок поглощает не всё
       items.push_back({
         {"product_id", m.sellables[s]},
         {"qty", x[s]},
+        {"sold_qty", sold},
         {"unit_price", effPrice},
         {"unit_cost", meanCost[s]},
         {"unit_margin", unitMargin},
         {"price_mult", mul[s]},
-        {"contribution", unitMargin * x[s]},
+        {"contribution", sold * effPrice - x[s] * meanCost[s]},
         {"risk_contribution", riskContrib(s)},
       });
       for (auto& [w, h] : hpu[s]) { loadByWct[w] += x[s] * h; totalHours += x[s]*h; }
@@ -790,6 +897,39 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   json expPf    = portfolioJson(expIdx);
   double priceOfRobustness = mts[expIdx].mean - mts[robustIdx].mean;
 
+  // ── Out-of-sample проверка (SAA): выбранный портфель переоценивается на
+  // НЕЗАВИСИМОЙ выборке сценариев. Большое расхождение метрик = решение
+  // переобучено под конкретную выборку (оптимизационный bias) — честная
+  // оценка качества решения вместо in-sample оптимизма.
+  json oosJson = nullptr;
+  {
+    std::vector<std::vector<double>> price2, cost2;
+    genScenarios(p.seed + 9973u, N, price2, cost2);
+    const Portfolio& xr = cand[robustIdx];
+    std::vector<double> mul(S);
+    for (size_t s = 0; s < S; ++s) mul[s] = priceMul(xr[s], s);
+    std::vector<double> prof2(N, 0.0);
+    for (int i = 0; i < N; ++i) {
+      double pr2 = 0;
+      for (size_t s = 0; s < S; ++s)
+        pr2 += soldOf(xr[s], s) * price2[i][s] * mul[s] - xr[s] * cost2[i][s];
+      prof2[i] = pr2;
+    }
+    Metrics oos = metrics_of(prof2, p.alpha);
+    const Metrics& ins = mts[robustIdx];
+    const double gapExp  = ins.mean != 0 ? (ins.mean - oos.mean) / std::fabs(ins.mean) : 0;
+    const double gapCvar = ins.cvar != 0 ? (ins.cvar - oos.cvar) / std::fabs(ins.cvar) : 0;
+    oosJson = {
+      {"expected", oos.mean}, {"cvar", oos.cvar}, {"worst_case", oos.worst},
+      {"std", oos.std}, {"p_loss", oos.pLoss},
+      {"gap_expected", gapExp}, {"gap_cvar", gapCvar},
+    };
+    if (std::fabs(gapExp) > 0.10)
+      warnings.push_back("Out-of-sample: ожидаемая прибыль на независимой выборке отличается на "
+                         + std::to_string((int)std::lround(gapExp * 100))
+                         + "% — увеличьте число сценариев (samples).");
+  }
+
   // Краткий ранжированный список кандидатов (по робастному критерию).
   std::vector<size_t> rank(K); for (size_t i = 0; i < K; ++i) rank[i] = i;
   std::sort(rank.begin(), rank.end(), [&](size_t a, size_t b) {
@@ -833,8 +973,11 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     {"lambda", p.lambda}, {"seed", (int)p.seed}, {"horizon_hours", horizon},
     {"market_corr", marketCorr}, {"max_share", maxShare},
     {"sellables", (int)S},
+    {"calendar_factor", calFactor},
+    {"stage1_calibrated", calibrated},   // изделий с recourse-поправкой из расписания
     {"robust", robustPf}, {"expected", expPf},
     {"price_of_robustness", priceOfRobustness},
+    {"oos", oosJson},
     {"histogram", hist}, {"candidates", candList},
     {"warnings", warnings},
   };

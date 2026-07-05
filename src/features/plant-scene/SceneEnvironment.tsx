@@ -59,8 +59,12 @@ export function SceneEnvironment({ indoor = false }: SceneEnvironmentProps) {
         fadeStrength={1.6}
       />
 
+      {/* resolution 512 (было 1024): ContactShadows рендерит глубину всей сцены в
+          текстуру + 2 blur-прохода КАЖДЫЙ кадр — 512² в 4 раза дешевле на GPU, а
+          мягкой размытой тени этого достаточно. frames не фиксируем: раскладку
+          двигают в редакторе, тени должны следовать за объектами. */}
       <ContactShadows position={[0, 0.04, 0]} scale={120} far={45} blur={2.2} opacity={0.45}
-                      color="#000000" resolution={1024} />
+                      color="#000000" resolution={512} />
 
       <OrbitControls makeDefault target={[1, 1, 0]} enablePan
                      minDistance={8} maxDistance={120} maxPolarAngle={Math.PI / 2.1} />

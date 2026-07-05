@@ -69,8 +69,8 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distr
     setLoading(true); setError(null)
     // Со сценарием — его параметры рулят (Стадия E); иначе ручные ползунки.
     const params = scenarioId
-      ? { scenario_id: scenarioId, runs: 3000 }
-      : { months, inflation: inflation / 100, fx, demand, volatility: volatility / 100, corr, runs: 3000 }
+      ? { scenario_id: scenarioId, runs: 3000, backtest: 6 }
+      : { months, inflation: inflation / 100, fx, demand, volatility: volatility / 100, corr, runs: 3000, backtest: 6 }
     api.forecast(params)
       .then((r) => {
         setRes(r)
@@ -211,6 +211,13 @@ function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: 
             : p.fit.dist === 't' ? `◆ t-Стьюдент (ν=${(p.fit.nu ?? 0).toFixed(0)}, тяж. хвосты)`
             : p.fit.dist === 'laplace' ? '◆ Лаплас (тяж. хвосты)' : '○ нормаль'}
           {' · σ '}{(p.fit.sigma * 100).toFixed(1)}%/мес · история {p.fit.n_obs}
+        </div>
+      )}
+      {p.backtest && (
+        <div className="forecast__fit mono"
+             title={`Out-of-sample: прогноз по истории без последних ${p.backtest.k} мес против факта. MAPE — ошибка медианы; skill<1 — лучше наивного (последнее значение); покрытие — доля фактов в веере P10–P90 (идеал 80%).`}>
+          {p.backtest.skill < 1 ? '✓' : '⚠'} бэктест {p.backtest.k}м: MAPE {p.backtest.mape.toFixed(1)}%
+          {' '}(наив {p.backtest.mape_naive.toFixed(1)}%) · покрытие {(p.backtest.coverage80 * 100).toFixed(0)}%
         </div>
       )}
       <div className="forecast__card-foot mono">

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { NavRail } from './NavRail'
 import { TopBar } from './TopBar'
 import { StatusBar } from './StatusBar'
@@ -8,6 +8,7 @@ import './shell.css'
 /**
  * Оболочка приложения: верхняя панель + рельса навигации + контент + статус-бар.
  * Контейнер для всех экранов MAOS (см. docs/ROADMAP.md, этап «Оболочка»).
+ * Экраны ленивые (React.lazy) — Suspense показывает заглушку на время загрузки чанка.
  */
 export default function AppShell() {
   const [activeId, setActiveId] = useState('scheme')
@@ -20,7 +21,9 @@ export default function AppShell() {
       <div className="shell__body">
         <NavRail activeId={active.id} onSelect={setActiveId} />
         <main className="shell__content">
-          <ActiveScreen />
+          <Suspense fallback={<div className="shell__loading">Загрузка модуля…</div>}>
+            <ActiveScreen />
+          </Suspense>
         </main>
       </div>
       <StatusBar screen={active.label} />

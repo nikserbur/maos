@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ScheduleResult } from '../../lib/api'
 
 const h0 = (v: number) => Math.round(v).toLocaleString('ru')
@@ -11,17 +11,22 @@ type QPoint = NonNullable<ScheduleResult['queue_timeline']>[number]
 export function QueueChart({ data }: { data: NonNullable<ScheduleResult['queue_timeline']> }) {
   const W = 620, H = 168, padL = 36, padR = 14, padT = 16, padB = 28
   const [hi, setHi] = useState<number | null>(null)
-  if (!data || data.length < 2) return null
-
-  const maxQ = Math.max(1, ...data.map((d) => d.queued))
-  const tMax = Math.max(1, ...data.map((d) => d.t))
   const plotW = W - padL - padR, plotH = H - padT - padB
-  const x = (t: number) => padL + (t / tMax) * plotW
-  const y = (q: number) => padT + (1 - q / maxQ) * plotH
-  const line = data.map((d) => `${x(d.t)},${y(d.queued)}`).join(' ')
-  const area = `${x(0)},${padT + plotH} ${line} ${x(tMax)},${padT + plotH}`
-  const peakIdx = data.reduce((a, _b, i) => (data[i].queued > data[a].queued ? i : a), 0)
-  const peak: QPoint = data[peakIdx]
+  // Геометрия зависит только от data: без useMemo каждое движение мыши (setHi)
+  // заново строило line/area/пик по всем точкам.
+  const geom = useMemo(() => {
+    if (!data || data.length < 2) return null
+    const maxQ = Math.max(1, ...data.map((d) => d.queued))
+    const tMax = Math.max(1, ...data.map((d) => d.t))
+    const x = (t: number) => padL + (t / tMax) * plotW
+    const y = (q: number) => padT + (1 - q / maxQ) * plotH
+    const line = data.map((d) => `${x(d.t)},${y(d.queued)}`).join(' ')
+    const area = `${x(0)},${padT + plotH} ${line} ${x(tMax)},${padT + plotH}`
+    const peakIdx = data.reduce((a, _b, i) => (data[i].queued > data[a].queued ? i : a), 0)
+    return { maxQ, tMax, x, y, line, area, peak: data[peakIdx] as QPoint }
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!geom) return null
+  const { maxQ, tMax, x, y, line, area, peak } = geom
   const hov = hi != null ? data[hi] : null
 
   return (
@@ -32,7 +37,7 @@ export function QueueChart({ data }: { data: NonNullable<ScheduleResult['queue_t
              const vx = ((e.clientX - r.left) / r.width) * W
              const t = ((vx - padL) / plotW) * tMax
              let best = 0; for (let i = 1; i < data.length; i++) if (Math.abs(data[i].t - t) < Math.abs(data[best].t - t)) best = i
-             setHi(best)
+             setHi((prev) => (prev === best ? prev : best))   // без лишних ререндеров
            }}>
         <defs>
           <linearGradient id="queue-fill" x1="0" y1="0" x2="0" y2="1">

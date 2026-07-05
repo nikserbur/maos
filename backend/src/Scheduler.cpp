@@ -5,6 +5,8 @@
 #include <functional>
 #include <queue>
 #include <random>
+#include <cctype>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -91,7 +93,8 @@ std::string str(const json& j, const char* k) {
 
 /* ── Доменные структуры ──────────────────────────────────────────────────── */
 struct Op {
-  std::string id, name, wcType;
+  std::string id, name, wcType;                        // wcType = ведущий (для отчётов)
+  std::vector<std::string> wcTypes;                    // ВСЕ допустимые типы (FJSP)
   double tExp = 0, sigma = 0, setupTime = 0, riskCoef = 0.05;
   double hourRate = 0, laborRate = 0, tailWeight = 0.08, tailIndex = 2.5;
   int orderNo = 10;
@@ -99,25 +102,51 @@ struct Op {
 };
 struct Prod { double batchSize = 1, stock = 0, leadHours = 0; bool purchased = false; };
 
+struct WorkerInfo {
+  std::string id, name;
+  std::vector<std::string> skills;   // токены компетенций (имена/ID типов РЦ), lowercase
+  double costPerHour = 0;
+};
+
 struct Model {
   std::unordered_map<std::string, Prod> prods;
   std::unordered_map<std::string, std::vector<Op>> opsOf;                 // product → ops
   std::unordered_map<std::string, std::vector<std::string>> machinesOf;  // wcType → machineIds
   std::unordered_map<std::string, std::string> machineName, machineWct, wcName, prodName;
-  std::vector<std::pair<std::string,std::string>> workers;               // (id, name)
+  std::unordered_map<std::string, std::string> machineSched;             // станок → график ('8x5'…)
+  // Надёжность/обслуживание по ТИПУ: MTBF (ч, при полной загрузке), средний
+  // ремонт (ч), интервал ТО по наработке (ч) и длительность ТО (ч).
+  struct WctRisk { double mtbf = 0, repairH = 0, mtbm = 0, maintH = 0; };
+  std::unordered_map<std::string, WctRisk> wctRisk;
+  std::vector<WorkerInfo> workers;
+  // Матрица компетенций: тип РЦ → индексы допущенных рабочих (пусто = любой).
+  std::unordered_map<std::string, std::vector<int>> eligibleWorkers;
 };
+
+static std::string lower(std::string s) {
+  for (char& c : s) c = (char)std::tolower((unsigned char)c);
+  return s;
+}
 
 Model load_model(Database& db) {
   Model m;
   std::unordered_map<std::string,double> rate;
-  for (auto& t : db.query_json("SELECT id,name,hour_rate FROM work_center_types")) {
+  for (auto& t : db.query_json(
+         "SELECT id,name,hour_rate,mtbf_hours,repair_hours,mtbm_hours,maintenance_hours "
+         "FROM work_center_types")) {
     rate[str(t,"id")] = num(t,"hour_rate"); m.wcName[str(t,"id")] = str(t,"name");
+    Model::WctRisk rk;
+    rk.mtbf = num(t,"mtbf_hours"); rk.repairH = num(t,"repair_hours");
+    rk.mtbm = num(t,"mtbm_hours"); rk.maintH  = num(t,"maintenance_hours");
+    if (rk.mtbf > 0 || rk.mtbm > 0) m.wctRisk[str(t,"id")] = rk;
   }
   for (auto& mc : db.query_json(
-         "SELECT id,name,wc_type_id FROM machines WHERE status='active' "
+         "SELECT id,name,wc_type_id,schedule FROM machines WHERE status='active' "
          "AND wc_type_id IS NOT NULL AND wc_type_id<>''")) {
     m.machinesOf[str(mc,"wc_type_id")].push_back(str(mc,"id"));
     m.machineName[str(mc,"id")] = str(mc,"name"); m.machineWct[str(mc,"id")] = str(mc,"wc_type_id");
+    const std::string sch = str(mc,"schedule");
+    if (!sch.empty()) m.machineSched[str(mc,"id")] = sch;   // индивидуальный график
   }
   for (auto& p : db.query_json("SELECT id,name,batch_size,stock,purchased,lead_time_hours FROM products")) {
     Prod pr; pr.batchSize = std::max(1.0, num(p,"batch_size",1));
@@ -125,39 +154,116 @@ Model load_model(Database& db) {
     m.prods[str(p,"id")] = pr;
     m.prodName[str(p,"id")] = str(p,"name");
   }
-  for (auto& w : db.query_json("SELECT id,first_name,last_name FROM workers"))
-    m.workers.push_back({ str(w,"id"), str(w,"last_name") + " " + str(w,"first_name") });
-
-  auto opWct = [&](const std::string& opId) {
-    auto r = db.query_json("SELECT wc_type_id FROM operation_wc_types WHERE operation_id=? LIMIT 1", { opId });
-    return r.empty() ? std::string() : str(r[0], "wc_type_id");
-  };
-  for (auto& r : db.query_json("SELECT id,product_id FROM routings")) {
-    std::string pid = str(r,"product_id"); if (pid.empty()) continue;
-    for (auto& o : db.query_json(
-           "SELECT * FROM operations WHERE routing_id=? ORDER BY order_no", { str(r,"id") })) {
-      Op op; op.id = str(o,"id"); op.name = str(o,"name");
-      double tOpt = num(o,"t_opt"), tNorm = num(o,"t_norm"), tPess = num(o,"t_pess");
-      if (tOpt <= 0) tOpt = tNorm; if (tPess <= 0) tPess = tNorm;
-      op.tExp = (tOpt + 4*tNorm + tPess) / 6.0; if (op.tExp <= 0) op.tExp = tNorm > 0 ? tNorm : 30;
-      double s = (tPess - tOpt) / 6.0; op.sigma = s > 0 ? s : op.tExp * 0.15;
-      op.setupTime = num(o,"setup_time"); op.riskCoef = num(o,"risk_coef",0.05);
-      op.tailWeight = num(o,"tail_weight",0.08); op.tailIndex = std::max(1.2, num(o,"tail_index",2.5));
-      op.orderNo = (int)num(o,"order_no",10); op.wcType = opWct(op.id);
-      auto it = rate.find(op.wcType); op.hourRate = it != rate.end() ? it->second : 0;
-      op.laborRate = num(o,"labor_rate");
-      for (auto& in : db.query_json("SELECT product_id,qty FROM operation_inputs WHERE operation_id=?", { op.id }))
-        op.inputs.push_back({ str(in,"product_id"), num(in,"qty",1) });
-      m.opsOf[pid].push_back(op);
+  for (auto& w : db.query_json("SELECT id,first_name,last_name,skills,cost_per_hour FROM workers")) {
+    WorkerInfo wi; wi.id = str(w,"id");
+    wi.name = str(w,"last_name") + " " + str(w,"first_name");
+    wi.costPerHour = num(w,"cost_per_hour");
+    // Компетенции — CSV токенов (имена/ID типов РЦ); пусто = универсал.
+    std::string raw = str(w,"skills");
+    size_t pos = 0;
+    while (pos < raw.size()) {
+      size_t c = raw.find(',', pos);
+      std::string tok = raw.substr(pos, c == std::string::npos ? std::string::npos : c - pos);
+      size_t a = tok.find_first_not_of(" \t"), b = tok.find_last_not_of(" \t");
+      if (a != std::string::npos) wi.skills.push_back(lower(tok.substr(a, b - a + 1)));
+      if (c == std::string::npos) break; pos = c + 1;
     }
+    m.workers.push_back(std::move(wi));
+  }
+
+  // Связи операций — двумя запросами на всю модель (было 2 SQL на каждую операцию).
+  // Загружаем ВСЕ допустимые типы (FJSP): операция может исполняться на любом из
+  // них — раньше брался только первый, и альтернативная мощность простаивала.
+  std::unordered_map<std::string, std::vector<std::string>> wctsOf;
+  for (auto& r : db.query_json(
+         "SELECT operation_id, wc_type_id FROM operation_wc_types ORDER BY rowid"))
+    wctsOf[str(r,"operation_id")].push_back(str(r,"wc_type_id"));
+  std::unordered_map<std::string, std::vector<std::pair<std::string,double>>> inputsOf;
+  for (auto& r : db.query_json("SELECT operation_id, product_id, qty FROM operation_inputs"))
+    inputsOf[str(r,"operation_id")].push_back({ str(r,"product_id"), num(r,"qty",1) });
+
+  // Нормы «операция × тип» (time_norms): при наличии пары норма берётся из неё,
+  // а не из плоских полей операции (ТЗ «Время выполнения операции» §2).
+  struct PairNorm { double tOpt, tNorm, tPess, setup; };
+  std::unordered_map<std::string, PairNorm> normOf;   // "opId|wctId" → норма пары
+  for (auto& r : db.query_json("SELECT * FROM time_norms"))
+    normOf[str(r,"operation_id") + "|" + str(r,"wc_type_id")] =
+      { num(r,"t_opt"), num(r,"t_norm"), num(r,"t_pess"), num(r,"setup_time") };
+
+  for (auto& o : db.query_json(
+         "SELECT o.*, r.product_id AS product_of FROM routings r "
+         "JOIN operations o ON o.routing_id = r.id "
+         "WHERE r.product_id IS NOT NULL AND r.product_id <> '' "
+         "AND COALESCE(r.is_default,1)=1 "               // действующая версия техкарты
+         "ORDER BY r.product_id, o.order_no")) {
+    std::string pid = str(o,"product_of");
+    Op op; op.id = str(o,"id"); op.name = str(o,"name");
+    double tOpt = num(o,"t_opt"), tNorm = num(o,"t_norm"), tPess = num(o,"t_pess");
+    if (tOpt <= 0) tOpt = tNorm; if (tPess <= 0) tPess = tNorm;
+    op.tExp = (tOpt + 4*tNorm + tPess) / 6.0; if (op.tExp <= 0) op.tExp = tNorm > 0 ? tNorm : 30;
+    double s = (tPess - tOpt) / 6.0; op.sigma = s > 0 ? s : op.tExp * 0.15;
+    op.setupTime = num(o,"setup_time"); op.riskCoef = num(o,"risk_coef",0.05);
+    op.tailWeight = num(o,"tail_weight",0.08); op.tailIndex = std::max(1.2, num(o,"tail_index",2.5));
+    op.orderNo = (int)num(o,"order_no",10);
+    if (auto w = wctsOf.find(op.id); w != wctsOf.end()) op.wcTypes = w->second;
+    op.wcType = op.wcTypes.empty() ? std::string() : op.wcTypes.front();
+    // Норма пары для ведущего типа перекрывает плоскую норму операции.
+    if (auto nit = normOf.find(op.id + "|" + op.wcType); nit != normOf.end()) {
+      const PairNorm& pn = nit->second;
+      double o2 = pn.tOpt > 0 ? pn.tOpt : pn.tNorm, p2 = pn.tPess > 0 ? pn.tPess : pn.tNorm;
+      if (pn.tNorm > 0) {
+        op.tExp = (o2 + 4*pn.tNorm + p2) / 6.0;
+        double s2 = (p2 - o2) / 6.0; op.sigma = s2 > 0 ? s2 : op.tExp * 0.15;
+      }
+      if (pn.setup > 0) op.setupTime = pn.setup;
+    }
+    auto it = rate.find(op.wcType); op.hourRate = it != rate.end() ? it->second : 0;
+    op.laborRate = num(o,"labor_rate");
+    if (auto i2 = inputsOf.find(op.id); i2 != inputsOf.end()) op.inputs = i2->second;
+    m.opsOf[pid].push_back(std::move(op));
+  }
+
+  // Матрица компетенций: рабочий допущен к типу РЦ, если его skills пусты
+  // (универсал) или содержат имя/ID типа. Пустой список по типу → допущены все.
+  for (auto& [wct, mids] : m.machinesOf) {
+    const std::string nm = lower(m.wcName.count(wct) ? m.wcName.at(wct) : wct);
+    const std::string idl = lower(wct);
+    std::vector<int> elig;
+    for (size_t w = 0; w < m.workers.size(); ++w) {
+      const auto& sk = m.workers[w].skills;
+      if (sk.empty()) { elig.push_back((int)w); continue; }
+      for (const std::string& t : sk)
+        if (t == nm || t == idl || (t.size() > 3 && nm.find(t) != std::string::npos)) {
+          elig.push_back((int)w); break;
+        }
+    }
+    if (!elig.empty() && elig.size() < m.workers.size())
+      m.eligibleWorkers[wct] = std::move(elig);
   }
   return m;
+}
+
+/* Индивидуальный график станка из строки machines.schedule: '8x5' (пн-пт 8ч),
+   '12x2' (ежедневно 12ч), '24x7' (круглосуточно). Пусто → общий календарь. */
+Calendar machine_calendar(const std::string& sched) {
+  Calendar c;
+  if (sched == "8x5") {
+    for (int d = 0; d < 5; ++d) c.day[d].push_back({ 480, 960 });     // 08:00–16:00
+    c.any = true;
+  } else if (sched == "12x2") {
+    for (int d = 0; d < 7; ++d) c.day[d].push_back({ 480, 1200 });    // 08:00–20:00
+    c.any = true;
+  }
+  return c;   // '24x7' и прочее → any=false (без ограничений)
 }
 
 /* ── Развёртка программы в граф операций (jobs) ───────────────────────────── */
 struct Job {
   int orderIdx; std::string productId, opId, opName, wcType;
+  std::vector<std::string> wcTypes;                    // допустимые типы станков (FJSP)
   double durMean, sigma, riskCoef, tailWeight, tailIndex, hourRate, laborRate, dueMin;
+  double setupTime = 0;                                // наладка при смене изделия на станке
+  int nInputs = 0;                                     // входных материалов у операции
   std::vector<int> preds;
 };
 
@@ -198,10 +304,12 @@ struct Expander {
       std::vector<int> curBatch(N);
       for (int k = 0; k < N; ++k) {
         Job j; j.orderIdx = orderIdx; j.productId = pid; j.opId = o.id; j.opName = o.name;
-        j.wcType = o.wcType;
-        j.durMean = (k == 0 ? o.setupTime : 0.0) + o.tExp * sizeFactor / N;   // работа делится, наладка — раз
+        j.wcType = o.wcType; j.wcTypes = o.wcTypes;
+        j.durMean = o.tExp * sizeFactor / N;          // работа делится по партиям
+        j.setupTime = o.setupTime;                    // наладка — в simulate при смене изделия
         j.sigma = o.sigma * std::sqrt(std::max(1.0, sizeFactor / N));
         j.riskCoef = o.riskCoef; j.tailWeight = o.tailWeight; j.tailIndex = o.tailIndex;
+        j.nInputs = (int)o.inputs.size();
         j.hourRate = o.hourRate; j.laborRate = o.laborRate; j.dueMin = dueMin;
         if (!prevBatch.empty()) j.preds.push_back(prevBatch[k]);              // тот же batch пред. операции
         for (auto& v : ins) j.preds.push_back(v[std::min((int)v.size() - 1, k * (int)v.size() / N)]);
@@ -225,18 +333,74 @@ double sample_dur(const Job& j, double twOverride, std::mt19937& rng) {
   return std::max(0.1, d);
 }
 
+using CustomRule = std::vector<std::pair<std::string,double>>;
+
 std::vector<double> priorities(const std::string& rule, const std::vector<Job>& jobs,
-                               const std::vector<double>& orderWork) {
+                               const std::vector<double>& orderWork,
+                               const CustomRule& custom = {}) {
   size_t J = jobs.size(); std::vector<double> key(J, 0);
+
+  // Остаточная работа ПО ЦЕПОЧКЕ (критический путь вперёд): rem = dur + max(rem succ).
+  // Раньше CR/MS считались от ПОЛНОЙ работы заказа — правила вырождались в EDD
+  // («Требования эвристики» §2: CR/MS — от оставшейся работы).
+  const bool customUsesRem = rule == "CUSTOM" &&
+    std::any_of(custom.begin(), custom.end(), [](auto& c) { return c.first == "rem"; });
+  std::vector<double> rem(J, 0);
+  if (rule == "CR" || rule == "MS" || rule == "MWKR" || customUsesRem) {
+    std::vector<std::vector<int>> succ(J);
+    std::vector<int> succLeft(J, 0);
+    for (size_t i = 0; i < J; ++i)
+      for (int p : jobs[i].preds) if (p >= 0 && p < (int)J) succ[p].push_back((int)i);
+    for (size_t i = 0; i < J; ++i) succLeft[i] = (int)succ[i].size();
+    std::vector<int> stack; std::vector<double> best(J, 0);
+    for (size_t i = 0; i < J; ++i) if (succLeft[i] == 0) stack.push_back((int)i);
+    while (!stack.empty()) {
+      int v = stack.back(); stack.pop_back();
+      rem[v] = jobs[v].durMean + best[v];
+      for (int p : jobs[v].preds) if (p >= 0 && p < (int)J) {
+        best[p] = std::max(best[p], rem[v]);
+        if (--succLeft[p] == 0) stack.push_back(p);
+      }
+    }
+  }
+
+  // ── КОНСТРУКТОР: key = Σ w_c · norm_c (минмакс-нормализация каждого критерия;
+  // меньший key = раньше, отрицательный вес = «больше — раньше»). Позволяет
+  // собирать эвристики из пресетов: «LPT, но из длинных раньше те, у кого
+  // больше входных материалов» = duration:-1 + inputs:-0.2.
+  if (rule == "CUSTOM" && !custom.empty()) {
+    auto critOf = [&](const std::string& c, size_t i) -> double {
+      const Job& j = jobs[i];
+      if (c == "duration") return j.durMean;
+      if (c == "due")      return j.dueMin;
+      if (c == "rem")      return rem[i];
+      if (c == "inputs")   return (double)j.nInputs;
+      if (c == "setup")    return j.setupTime;
+      return 0;
+    };
+    for (auto& [cname, w] : custom) {
+      if (w == 0) continue;
+      double lo = 1e300, hi = -1e300;
+      for (size_t i = 0; i < J; ++i) {
+        double v = critOf(cname, i);
+        lo = std::min(lo, v); hi = std::max(hi, v);
+      }
+      const double span = hi > lo ? hi - lo : 1.0;
+      for (size_t i = 0; i < J; ++i)
+        key[i] += w * (critOf(cname, i) - lo) / span;
+    }
+    return key;
+  }
+
   for (size_t i = 0; i < J; ++i) {
     const Job& j = jobs[i]; double ow = orderWork[j.orderIdx] > 0 ? orderWork[j.orderIdx] : 1;
     if (rule == "SPT")       key[i] = j.durMean;
     else if (rule == "LPT")  key[i] = -j.durMean;
     else if (rule == "EDD")  key[i] = j.dueMin;
-    else if (rule == "CR")   key[i] = j.dueMin / ow;
-    else if (rule == "MWKR") key[i] = -ow;
-    else if (rule == "MS")   key[i] = j.dueMin - ow;
-    else                     key[i] = j.orderIdx * 1e6 + (double)i;   // FIFO
+    else if (rule == "CR")   key[i] = j.dueMin / std::max(1.0, rem[i]);
+    else if (rule == "MWKR") key[i] = -std::max(rem[i], 1.0);
+    else if (rule == "MS")   key[i] = j.dueMin - rem[i];
+    else { (void)ow;         key[i] = j.orderIdx * 1e6 + (double)i; }  // FIFO
   }
   return key;
 }
@@ -245,16 +409,26 @@ std::vector<double> priorities(const std::string& rule, const std::vector<Job>& 
 struct SimOut {
   std::vector<double> start, end; std::vector<std::string> machineId; std::vector<int> worker;
   double makespan = 0;
+  int nSetups = 0; double setupMinutes = 0, setupCost = 0;   // переналадки при смене изделия
+  int nBreakdowns = 0; double breakdownMinutes = 0, maintMinutes = 0;   // поломки и плановое ТО
   std::unordered_map<std::string,double> busyByMachine; std::vector<double> busyByWorker;
 };
 
+using PinMap = std::unordered_map<int, std::pair<double, std::string>>;  // jobIdx → (startMin, machineId)
+
+// rng: nullptr → детерминированный прогон (без случайных поломок; плановое ТО
+// учитывается всегда). В МК-прогонах поломки сэмплируются.
 SimOut simulate(const Model& m, const std::vector<Job>& jobs,
                 const std::vector<double>& key, const std::vector<double>& dur,
-                const Calendar& cal) {
+                const Calendar& cal,
+                const std::unordered_map<std::string, Calendar>& calByM,
+                const PinMap& pins, std::mt19937* rng = nullptr) {
   size_t J = jobs.size(); SimOut o;
   o.start.assign(J,0); o.end.assign(J,0); o.machineId.assign(J,""); o.worker.assign(J,-1);
   o.busyByWorker.assign(m.workers.size(), 0);
   std::unordered_map<std::string,double> mFree; std::vector<double> wFree(m.workers.size(), 0);
+  std::unordered_map<std::string,std::string> lastProd;   // станок → последнее изделие (наладки)
+  std::unordered_map<std::string,double> usage;            // станок → наработка, мин (ТО/поломки)
   // Готовность через ОЧЕРЕДЬ ПРИОРИТЕТА (по key): O(J·logJ) вместо O(J²) — иначе большой
   // план (тысячи операций × правила × сэмплы) подвисает.
   std::vector<int> predLeft(J, 0);
@@ -274,21 +448,97 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
     if (best < 0 || done[best]) continue;
     const Job& j = jobs[best];
     double readyT = 0; for (int p : j.preds) readyT = std::max(readyT, o.end[p]);
+    // Ручная правка (pin): фиксированный станок и «не раньше» время старта.
+    const auto pinIt = pins.find(best);
+    // FJSP: станок выбирается среди ВСЕХ допустимых типов операции (раньше — только
+    // первый тип: альтернативная мощность простаивала, узкое место не разгружалось).
     std::string chosenM; double mfree = 0;
-    if (auto it = m.machinesOf.find(j.wcType); it != m.machinesOf.end() && !it->second.empty()) {
+    if (pinIt != pins.end() && !pinIt->second.second.empty()) {
+      chosenM = pinIt->second.second;
+      mfree = mFree.count(chosenM) ? mFree[chosenM] : 0;
+    } else {
       double bm = 1e300;
-      for (auto& mid : it->second) { double f = mFree.count(mid)?mFree[mid]:0; if (f < bm) { bm = f; chosenM = mid; } }
-      mfree = bm;
+      auto consider = [&](const std::string& wct) {
+        if (auto it = m.machinesOf.find(wct); it != m.machinesOf.end())
+          for (auto& mid : it->second) {
+            double f = mFree.count(mid) ? mFree[mid] : 0;
+            if (f < bm) { bm = f; chosenM = mid; }
+          }
+      };
+      if (!j.wcTypes.empty()) for (auto& w : j.wcTypes) consider(w);
+      else if (!j.wcType.empty()) consider(j.wcType);
+      if (!chosenM.empty()) mfree = bm;
     }
+    // Рабочий — наименее занятый из ДОПУЩЕННЫХ к типу выбранного станка
+    // (матрица компетенций); тип без матрицы → любой рабочий.
     int wi = -1; double wfree = 0;
-    if (!m.workers.empty()) { double bw = 1e300;
-      for (size_t w = 0; w < wFree.size(); ++w) if (wFree[w] < bw) { bw = wFree[w]; wi = (int)w; }
-      wfree = bw; }
-    double st = cal.nextWork(std::max(readyT, std::max(mfree, wfree)));  // снап к рабочему времени
-    double en = cal.advance(st, dur[best]);                              // финиш с учётом смен
+    if (!m.workers.empty()) {
+      double bw = 1e300;
+      auto scan = [&](int w) { if (wFree[w] < bw) { bw = wFree[w]; wi = w; } };
+      const std::string mwct = !chosenM.empty() && m.machineWct.count(chosenM)
+                             ? m.machineWct.at(chosenM) : j.wcType;
+      auto el = m.eligibleWorkers.find(mwct);
+      if (el != m.eligibleWorkers.end()) for (int w : el->second) scan(w);
+      else for (size_t w = 0; w < wFree.size(); ++w) scan((int)w);
+      wfree = bw;
+    }
+    // Наладка при СМЕНЕ ИЗДЕЛИЯ на станке (sequence-dependent, упрощённо: константа
+    // операции). Раньше наладка входила только в первую transfer-партию независимо
+    // от того, что стоял на станке до этого.
+    double setup = 0;
+    if (!chosenM.empty() && j.setupTime > 0) {
+      auto lp = lastProd.find(chosenM);
+      if (lp == lastProd.end() || lp->second != j.productId) setup = j.setupTime;
+    }
+    // ── Надёжность: плановое ТО по наработке + случайные поломки ──────────
+    // ТО: при пересечении наработкой границы k·mtbm станок останавливается на
+    // maintH часов. Поломка: интенсивность растёт с ЗАГРУЗКОЙ станка (чем выше
+    // утилизация — тем чаще отказ: λ = (1/MTBF)·(0.5+1.5·util)); время ремонта —
+    // логнормальное (CV 0.6) со своим распределением.
+    double downtime = 0;
+    if (!chosenM.empty() && m.machineWct.count(chosenM)) {
+      auto rkIt = m.wctRisk.find(m.machineWct.at(chosenM));
+      if (rkIt != m.wctRisk.end()) {
+        const auto& rk = rkIt->second;
+        const double u = usage.count(chosenM) ? usage.at(chosenM) : 0;
+        if (rk.mtbm > 0 && rk.maintH > 0) {
+          const double step = rk.mtbm * 60.0;
+          if (std::floor((u + dur[best]) / step) > std::floor(u / step)) {
+            downtime += rk.maintH * 60.0;
+            o.maintMinutes += rk.maintH * 60.0;
+          }
+        }
+        if (rng && rk.mtbf > 0 && rk.repairH > 0) {
+          const double t0m = std::max(mfree, 1.0);
+          const double util = std::min(1.0, u / t0m);            // загрузка станка к моменту
+          const double lam = (1.0 / (rk.mtbf * 60.0)) * (0.5 + 1.5 * util);
+          std::uniform_real_distribution<double> u01(0, 1);
+          if (u01(*rng) < 1.0 - std::exp(-lam * dur[best])) {
+            std::normal_distribution<double> nz(0, 1);
+            const double cv = 0.6, sl = std::sqrt(std::log(1.0 + cv * cv));
+            const double rep = rk.repairH * 60.0 * std::exp(sl * nz(*rng) - 0.5 * sl * sl);
+            downtime += rep; o.nBreakdowns++; o.breakdownMinutes += rep;
+          }
+        }
+      }
+    }
+    const double work = dur[best] + setup + downtime;
+    // Календарь: индивидуальный график станка (если задан) вместо общего.
+    const Calendar& mcal = (!chosenM.empty() && calByM.count(chosenM)) ? calByM.at(chosenM) : cal;
+    double t0 = std::max(readyT, std::max(mfree, wfree));
+    if (pinIt != pins.end()) t0 = std::max(t0, pinIt->second.first);     // «не раньше» из пина
+    double st = mcal.nextWork(t0);                                       // снап к рабочему времени
+    double en = mcal.advance(st, work);                                  // финиш с учётом смен
     o.start[best] = st; o.end[best] = en; o.machineId[best] = chosenM; o.worker[best] = wi;
-    if (!chosenM.empty()) mFree[chosenM] = en, o.busyByMachine[chosenM] += dur[best];
-    if (wi >= 0) wFree[wi] = en, o.busyByWorker[wi] += dur[best];
+    if (!chosenM.empty()) {
+      mFree[chosenM] = en; o.busyByMachine[chosenM] += work; lastProd[chosenM] = j.productId;
+      usage[chosenM] += work;
+      if (setup > 0) {
+        o.nSetups++; o.setupMinutes += setup;
+        o.setupCost += (setup / 60.0) * (j.hourRate + j.laborRate);
+      }
+    }
+    if (wi >= 0) wFree[wi] = en, o.busyByWorker[wi] += work;
     o.makespan = std::max(o.makespan, en); done[best] = 1; ++sched;
     for (int s : succ[best]) if (--predLeft[s] == 0) ready.push({ key[s], s });
   }
@@ -321,12 +571,23 @@ json run_schedule(Database& db, const ScheduleParams& p) {
 
   // ── Программа: из запроса / из портфеля прогона / демо ──
   std::vector<OrderLine> program = p.program;
+  double portfolioHorizon = 0;                 // горизонт прогона Стадии 2, ч
   if (program.empty() && !p.runId.empty()) {   // программа из портфеля Стадии 2
     auto rows = db.query_json(
       "SELECT pi.product_id AS pid, pi.qty AS qty FROM portfolios pf "
       "JOIN portfolio_items pi ON pi.portfolio_id=pf.id "
       "WHERE pf.run_id=? AND pf.kind='robust'", { p.runId });
     for (auto& r : rows) program.push_back({ str(r,"pid"), num(r,"qty"), 0 });
+    // Сроки заказов = горизонт прогона оптимизации: раньше due=0 → сроки
+    // выдумывались формулой, и связка стадий теряла горизонт (двухстадийная
+    // модель требует общий горизонт плана и программы).
+    try {
+      auto rr = db.query_one("SELECT result_json FROM optimization_runs WHERE id=?", { p.runId });
+      json rj = json::parse(str(rr, "result_json"));
+      portfolioHorizon = rj.value("horizon_hours", 0.0);
+    } catch (...) {}
+    if (portfolioHorizon > 0)
+      for (auto& ol : program) ol.dueHours = portfolioHorizon;
   }
   if (program.empty()) {                       // программа из реестра заказов
     for (auto& r : db.query_json(
@@ -408,9 +669,23 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   }
   for (auto& j : jobs) j.dueMin = due[j.orderIdx];
 
+  // Индивидуальные календари станков ('8x5'/'12x2'/'24x7' из паспорта ЕО).
+  std::unordered_map<std::string, Calendar> calByM;
+  if (p.useCalendar)
+    for (auto& [mid, sch] : m.machineSched) {
+      Calendar mc = machine_calendar(sch);
+      if (mc.any) calByM.emplace(mid, std::move(mc));
+    }
+  // Ручные правки Ганта (drag&drop): jobIdx → (не раньше, станок).
+  PinMap pinMap;
+  for (const SchedPin& pn : p.pins)
+    if (pn.jobIdx >= 0 && pn.jobIdx < (int)jobs.size())
+      pinMap[pn.jobIdx] = { pn.startHours * 60.0, pn.machineId };
+
   // ── Перебор диспетч-правил (старт), оценка симуляцией + Монте-Карло (хвост) ──
   std::vector<std::string> rules = { "EDD", "SPT", "CR", "MWKR", "MS", "FIFO", "LPT" };
-  if (p.rule != "auto") rules = { p.rule };
+  if (!p.customRule.empty()) rules = { "CUSTOM" };       // конструктор эвристики
+  else if (p.rule != "auto") rules = { p.rule };
   int N = std::max(60, p.samples);
   if (jobs.size() > 1500) N = std::min(N, 40);   // крупный план — меньше сэмплов (скорость)
   std::mt19937 rng(p.seed);
@@ -422,32 +697,94 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   std::vector<double> durMean(jobs.size());
   for (size_t i = 0; i < jobs.size(); ++i) durMean[i] = jobs[i].durMean;
 
-  struct RuleEval { std::string rule; double mkDet, mkMean, mkCVaR, mkWorst, tardMean, tardCVaR, score; };
-  std::vector<RuleEval> evals;
-  for (auto& rule : rules) {
-    auto key = priorities(rule, jobs, orderWork);
-    SimOut det = simulate(m, jobs, key, durMean, cal);
-    int nl; double tardDet = order_tardiness(jobs, det, nOrders, due, nl);
-    std::vector<double> mks(N), tards(N);
-    for (int s = 0; s < N; ++s) {
-      SimOut so = simulate(m, jobs, key, durMC[s], cal);
-      mks[s] = so.makespan; int nl2; tards[s] = order_tardiness(jobs, so, nOrders, due, nl2);
-    }
-    RuleEval e; e.rule = rule; e.mkDet = det.makespan;
-    e.mkMean = mean_of(mks); e.mkCVaR = cvar_upper(mks, p.alpha);
-    e.mkWorst = *std::max_element(mks.begin(), mks.end());
-    e.tardMean = mean_of(tards); e.tardCVaR = cvar_upper(tards, p.alpha);
-    // Целевая F: время (с риском по хвосту) + просрочка.
-    e.score = p.wTime * e.mkMean + p.wRisk * (e.mkCVaR - e.mkMean) + 0.5 * e.tardMean
-              + 0.001 * tardDet;
-    evals.push_back(e);
+  struct RuleEval { std::string rule; double mkDet, mkMean, mkCVaR, mkWorst, tardMean, tardCVaR, setupMin, bdMin = 0, score; };
+  std::vector<RuleEval> evals(rules.size());
+  // Правила НЕЗАВИСИМЫ (общие durMC read-only) — оцениваем параллельно по потокам:
+  // 7 правил × (1+N) симуляций раньше шли строго последовательно.
+  {
+    auto evalRule = [&](size_t ri) {
+      const std::string& rule = rules[ri];
+      auto key = priorities(rule, jobs, orderWork, p.customRule);
+      SimOut det = simulate(m, jobs, key, durMean, cal, calByM, pinMap);
+      int nl; double tardDet = order_tardiness(jobs, det, nOrders, due, nl);
+      std::vector<double> mks(N), tards(N);
+      double bdSum = 0;
+      for (int s = 0; s < N; ++s) {
+        std::mt19937 brng(p.seed + 7919u * (unsigned)s);   // одинаково для всех правил
+        SimOut so = simulate(m, jobs, key, durMC[s], cal, calByM, pinMap, &brng);
+        mks[s] = so.makespan; int nl2; tards[s] = order_tardiness(jobs, so, nOrders, due, nl2);
+        bdSum += so.breakdownMinutes;
+      }
+      RuleEval e; e.rule = rule; e.mkDet = det.makespan; e.bdMin = bdSum / N;
+      e.mkMean = mean_of(mks); e.mkCVaR = cvar_upper(mks, p.alpha);
+      e.mkWorst = *std::max_element(mks.begin(), mks.end());
+      e.tardMean = mean_of(tards); e.tardCVaR = cvar_upper(tards, p.alpha);
+      e.setupMin = det.setupMinutes;
+      // Целевая F = w_time·ВРЕМЯ + w_cost·СТОИМОСТЬ + w_risk·РИСК + просрочка
+      // («Требования к оптимизации» §3). Стоимостная компонента — минуты
+      // переналадок (единственная составляющая, зависящая от ПОРЯДКА; в одних
+      // единицах с makespan). Раньше w_cost игнорировался вовсе.
+      e.score = p.wTime * e.mkMean + p.wRisk * (e.mkCVaR - e.mkMean)
+              + p.wCost * e.setupMin + 0.5 * e.tardMean + 0.001 * tardDet;
+      evals[ri] = e;
+    };
+    std::vector<std::thread> pool;
+    pool.reserve(rules.size());
+    for (size_t ri = 0; ri < rules.size(); ++ri) pool.emplace_back(evalRule, ri);
+    for (auto& t : pool) t.join();
   }
   size_t bestR = 0; for (size_t i = 1; i < evals.size(); ++i) if (evals[i].score < evals[bestR].score) bestR = i;
   const std::string chosenRule = evals[bestR].rule;
 
   // ── Детальное расписание выбранного правила (по средним — для Ганта) ──
-  auto key = priorities(chosenRule, jobs, orderWork);
-  SimOut sched = simulate(m, jobs, key, durMean, cal);
+  auto key = priorities(chosenRule, jobs, orderWork, p.customRule);
+
+  // ── Локальный поиск ПОВЕРХ лучшего правила («Требования эвристики» §4:
+  // диспетч-правило — только стартовая точка). Возмущаем приоритеты шумом,
+  // оцениваем score на подвыборке сценариев, принимаем улучшения (hill climbing).
+  json improverJson = nullptr;
+  {
+    const int IT = ((int)jobs.size() > 3000) ? 0 : std::max(0, p.improveIters);
+    if (IT > 0) {
+      const int NS = std::min(N, 30);                    // подвыборка сценариев для оценки
+      auto scoreOf = [&](const std::vector<double>& k2) {
+        SimOut det2 = simulate(m, jobs, k2, durMean, cal, calByM, pinMap);
+        int nl2; double tardDet2 = order_tardiness(jobs, det2, nOrders, due, nl2);
+        std::vector<double> mks(NS), tards(NS);
+        for (int s = 0; s < NS; ++s) {
+          std::mt19937 brng(p.seed + 7919u * (unsigned)s);
+          SimOut so = simulate(m, jobs, k2, durMC[s], cal, calByM, pinMap, &brng);
+          mks[s] = so.makespan; int n3; tards[s] = order_tardiness(jobs, so, nOrders, due, n3);
+        }
+        double mkMean = mean_of(mks), mkCv = cvar_upper(mks, p.alpha);
+        return p.wTime * mkMean + p.wRisk * (mkCv - mkMean)
+             + p.wCost * det2.setupMinutes + 0.5 * mean_of(tards) + 0.001 * tardDet2;
+      };
+      std::mt19937 irng(p.seed + 777);
+      std::normal_distribution<double> nz(0.0, 1.0);
+      double lo = 1e300, hi = -1e300;
+      for (double v : key) { lo = std::min(lo, v); hi = std::max(hi, v); }
+      const double scale = (hi > lo ? hi - lo : 1.0) * 0.05;
+      std::vector<double> bestKey = key;
+      double cur = scoreOf(bestKey);
+      const double before = cur;
+      int accepted = 0;
+      std::uniform_int_distribution<size_t> pick(0, key.size() - 1);
+      for (int it2 = 0; it2 < IT; ++it2) {
+        std::vector<double> candK = bestKey;
+        const size_t nPerturb = std::max<size_t>(1, candK.size() / 5);
+        for (size_t q = 0; q < nPerturb; ++q) candK[pick(irng)] += nz(irng) * scale;
+        double sc = scoreOf(candK);
+        if (sc < cur) { cur = sc; bestKey = std::move(candK); ++accepted; }
+      }
+      if (accepted > 0) key = bestKey;
+      improverJson = { {"iterations", IT}, {"accepted", accepted},
+                       {"score_before", before}, {"score_after", cur},
+                       {"improvement_pct", before > 0 ? (before - cur) / before * 100.0 : 0.0} };
+    }
+  }
+
+  SimOut sched = simulate(m, jobs, key, durMean, cal, calByM, pinMap);
   double makespan = sched.makespan;
   int nLate = 0; double tardiness = order_tardiness(jobs, sched, nOrders, due, nLate);
 
@@ -462,11 +799,14 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     std::string mid = isSupply ? "supply" : sched.machineId[i];
     std::string mname = isSupply ? "Снабжение/поставка"
       : (m.machineName.count(sched.machineId[i]) ? m.machineName[sched.machineId[i]] : "");
+    // FJSP: тип в Ганте — ФАКТИЧЕСКИЙ тип выбранного станка (может отличаться от ведущего).
+    std::string wct = (!isSupply && !mid.empty() && m.machineWct.count(mid)) ? m.machineWct[mid] : j.wcType;
     gantt.push_back({
+      {"job_idx", (int)i},                       // для ручных правок (drag&drop → пин)
       {"order_idx", j.orderIdx}, {"product_id", j.productId},
       {"product_name", isSupply ? "—" : (m.prodName.count(j.productId)?m.prodName[j.productId]:j.productId)},
       {"op_id", j.opId}, {"op_name", j.opName},
-      {"wc_type_id", j.wcType}, {"wc_name", m.wcName.count(j.wcType)?m.wcName[j.wcType]:j.wcType},
+      {"wc_type_id", wct}, {"wc_name", m.wcName.count(wct)?m.wcName[wct]:wct},
       {"machine_id", mid}, {"machine_name", mname},
       {"worker", sched.worker[i]},
       {"start", H(sched.start[i])}, {"end", H(sched.end[i])},
@@ -528,10 +868,33 @@ json run_schedule(Database& db, const ScheduleParams& p) {
         {"start", H(sched.start[i])}, {"end", H(sched.end[i])} }); ++cnt;
     }
     double busy = w < sched.busyByWorker.size() ? sched.busyByWorker[w] : 0;
-    workerPlan.push_back({ {"worker_id", m.workers[w].first}, {"name", m.workers[w].second},
+    workerPlan.push_back({ {"worker_id", m.workers[w].id}, {"name", m.workers[w].name},
       {"jobs", js}, {"job_count", cnt}, {"busy_hours", H(busy)},
       {"idle_hours", H(makespan - busy)}, {"utilization", makespan>0?busy/makespan:0} });
   }
+
+  // ── Дополнительные KPI (стандарт APS: flow time, ожидание, НЗП, проходка) ──
+  double flowSum = 0, wipArea = 0, waitSum = 0, procSum = 0, qtySum = 0;
+  {
+    std::vector<double> ordStart(nOrders, 1e300), ordFin(nOrders, 0);
+    for (size_t i = 0; i < jobs.size(); ++i) {
+      ordStart[jobs[i].orderIdx] = std::min(ordStart[jobs[i].orderIdx], sched.start[i]);
+      ordFin[jobs[i].orderIdx]   = std::max(ordFin[jobs[i].orderIdx],   sched.end[i]);
+      double readyT = 0; for (int pr2 : jobs[i].preds) readyT = std::max(readyT, sched.end[pr2]);
+      waitSum += std::max(0.0, sched.start[i] - readyT);   // ожидание станка/рабочего
+      procSum += std::max(0.0, sched.end[i] - sched.start[i]);
+    }
+    for (int k2 = 0; k2 < nOrders; ++k2) {
+      if (ordFin[k2] <= 0) continue;
+      flowSum += ordFin[k2] - std::min(ordStart[k2], ordFin[k2]);
+      wipArea += ordFin[k2] - std::min(ordStart[k2], ordFin[k2]);
+      qtySum  += std::max(1.0, program[k2].qty);
+    }
+  }
+  const double flowMeanH = nOrders > 0 ? flowSum / nOrders / 60.0 : 0;
+  const double waitShare = (waitSum + procSum) > 0 ? waitSum / (waitSum + procSum) : 0;
+  const double wipAvg    = makespan > 0 ? wipArea / makespan : 0;
+  const double thruDay   = makespan > 0 ? qtySum / (makespan / 60.0 / 24.0) : 0;
 
   json rulesJson = json::array();
   for (auto& e : evals) rulesJson.push_back({
@@ -542,6 +905,46 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   const RuleEval& be = evals[bestR];
   double cost = 0; for (size_t i = 0; i < jobs.size(); ++i)
     cost += (durMean[i] / 60.0) * (jobs[i].hourRate + jobs[i].laborRate);
+  cost += sched.setupCost;                              // переналадки — тоже деньги
+  // Стоимость труда по фактическим назначениям (тарифная ставка рабочего × занятость).
+  double laborCost = 0;
+  for (size_t w = 0; w < m.workers.size() && w < sched.busyByWorker.size(); ++w)
+    laborCost += (sched.busyByWorker[w] / 60.0) * m.workers[w].costPerHour;
+
+  // ── Recourse: обратная связь Стадия 1 → Стадия 2. Фактические часы на единицу
+  // (нормо-часы + доля переналадок) пишутся в stage1_feedback — следующий прогон
+  // оптимизатора калибрует потребление мощности реализованным расписанием.
+  try {
+    std::unordered_map<std::string, std::pair<double,double>> agg;   // product → (мин, шт)
+    for (int k = 0; k < nOrders; ++k) agg[program[k].productId].second += std::max(1.0, program[k].qty);
+    for (const Job& j : jobs)
+      if (j.productId != "supply") agg[program[j.orderIdx].productId].first += j.durMean;
+    const double setupShare = totalWork > 0 ? sched.setupMinutes / totalWork : 0;
+    for (auto& [pid, pq] : agg) {
+      if (pq.first <= 0 || pq.second <= 0) continue;
+      const double naiveH  = pq.first / 60.0 / pq.second;
+      const double actualH = naiveH * (1.0 + setupShare);
+      db.exec("INSERT INTO stage1_feedback(product_id,hours_per_unit,naive_hours,factor,updated_at) "
+              "VALUES(?,?,?,?,datetime('now')) "
+              "ON CONFLICT(product_id) DO UPDATE SET hours_per_unit=excluded.hours_per_unit, "
+              "naive_hours=excluded.naive_hours, factor=excluded.factor, updated_at=excluded.updated_at",
+              { pid, std::to_string(actualH), std::to_string(naiveH),
+                std::to_string(std::max(1.0, actualH / std::max(1e-9, naiveH))) });
+    }
+  } catch (...) {}                                       // фидбэк не должен ронять план
+
+  // Осуществимость связки стадий: вписывается ли программа портфеля в горизонт,
+  // под который Стадия 2 резервировала мощность.
+  if (portfolioHorizon > 0) {
+    if (H(be.mkCVaR) > portfolioHorizon)
+      warnings.push_back("Портфель НЕ вписывается в горизонт прогона с учётом риска: CVaR makespan "
+                         + std::to_string((int)std::lround(H(be.mkCVaR))) + " ч > "
+                         + std::to_string((int)std::lround(portfolioHorizon)) + " ч.");
+    else if (H(makespan) > portfolioHorizon)
+      warnings.push_back("Детерминированный план превышает горизонт прогона ("
+                         + std::to_string((int)std::lround(H(makespan))) + " ч > "
+                         + std::to_string((int)std::lround(portfolioHorizon)) + " ч).");
+  }
 
   json programJson = json::array();
   for (int k = 0; k < nOrders; ++k) programJson.push_back({
@@ -565,7 +968,16 @@ json run_schedule(Database& db, const ScheduleParams& p) {
       {"makespan", H(makespan)}, {"makespan_mean", H(be.mkMean)}, {"makespan_cvar", H(be.mkCVaR)},
       {"makespan_worst", H(be.mkWorst)}, {"tardiness", H(tardiness)}, {"tardiness_cvar", H(be.tardCVaR)},
       {"n_late", nLate}, {"otd", nOrders>0 ? (double)(nOrders - nLate) / nOrders : 1.0},
-      {"utilization", totalCap>0?totalBusy/totalCap:0}, {"cost", cost} }},
+      {"utilization", totalCap>0?totalBusy/totalCap:0}, {"cost", cost},
+      {"labor_cost", laborCost},
+      {"n_setups", sched.nSetups}, {"setup_hours", H(sched.setupMinutes)},
+      {"maintenance_hours", H(sched.maintMinutes)},
+      {"breakdown_hours_mean", H(evals[bestR].bdMin)},
+      {"flow_time_mean_h", flowMeanH}, {"wait_share", waitShare},
+      {"wip_avg", wipAvg}, {"throughput_per_day", thruDay} }},
+    {"portfolio_horizon_hours", portfolioHorizon},
+    {"n_pins", (int)pinMap.size()},
+    {"improver", improverJson},
     {"rules", rulesJson}, {"warnings", warnings},
   };
   return result;

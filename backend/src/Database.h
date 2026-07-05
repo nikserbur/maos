@@ -15,6 +15,11 @@ public:
   explicit Database(const std::string& path);
   ~Database();
 
+  // Мультипроектность: переоткрыть БД на другом файле. Адрес объекта не меняется —
+  // все захваченные хендлерами ссылки остаются валидными; мьютекс сериализует.
+  void reopen(const std::string& path);
+  std::string path() const { std::lock_guard<std::recursive_mutex> lk(mtx_); return path_; }
+
   Database(const Database&)            = delete;
   Database& operator=(const Database&) = delete;
 
@@ -56,6 +61,7 @@ public:
 
 private:
   sqlite3* db_ = nullptr;
+  std::string path_;
   mutable std::recursive_mutex mtx_;
 
   sqlite3_stmt* prepare(const std::string& sql) const;

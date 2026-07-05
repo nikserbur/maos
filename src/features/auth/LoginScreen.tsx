@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../../lib/api'
 
 interface LoginScreenProps {
@@ -6,7 +6,14 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
-  const [db, setDb]         = useState('production.db')
+  const [db, setDb]         = useState('')
+  const [projects, setProjects] = useState<string[]>([])
+  const [newName, setNewName]   = useState('')
+  useEffect(() => {   // список проектов (файлов БД) — эндпоинт открыт для окна входа
+    api.projects.list()
+      .then((r) => { setProjects(r.projects); setDb(r.current) })
+      .catch(() => {})
+  }, [])
   const [login, setLogin]   = useState('admin')
   const [pass, setPass]     = useState('')
   const [error, setError]   = useState('')
@@ -15,21 +22,23 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-    if (!db.trim())   { setError('Укажите файл базы данных.'); return }
+    if (db === '__new__' && !newName.trim()) { setError('Укажите имя нового проекта.'); return }
     if (!login.trim()){ setError('Введите логин.'); return }
     if (!pass)        { setError('Введите пароль.'); return }
 
     setLoading(true)
     try {
       // Настоящая аутентификация против реестра пользователей (RBAC) на бэкенде.
-      const res = await api.auth.login(login, pass)
+      const dbName = db === '__new__' ? newName.trim() : db
+      const res = await api.auth.login(login, pass, dbName || undefined)
       try {
+        sessionStorage.setItem('maos.token', res.token)   // Bearer для всех запросов
         sessionStorage.setItem('maos.session',
           JSON.stringify({ login: res.login, role: res.role, permissions: res.permissions }))
       } catch { /* ignore storage errors */ }
       onLogin()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось войти. Подсказка: admin / maos2025')
+      setError(err instanceof Error ? err.message : 'Не удалось войти')
       setLoading(false)
     }
   }
@@ -69,23 +78,19 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         {/* Form */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="form__field">
-            <label className="form__label">База данных</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input
-                className="form__input"
-                value={db}
-                onChange={e => setDb(e.target.value)}
-                placeholder="path/to/maos.db"
-                style={{ flex: 1 }}
-              />
-              <button
-                type="button"
-                className="btn"
-                style={{ flexShrink: 0 }}
-                title="Выбрать файл"
-              >…</button>
-            </div>
-            <span className="form__hint">SQLite WAL · локальное подключение 127.0.0.1</span>
+            <label className="form__label">Проект (производство)</label>
+            <select className="form__input" value={db} onChange={e => setDb(e.target.value)}>
+              {projects.map((p) => <option key={p} value={p}>{p.replace(/\.db$/, '')}</option>)}
+              <option value="__new__">+ Новый проект…</option>
+            </select>
+            {db === '__new__' && (
+              <input className="form__input" style={{ marginTop: 6 }} value={newName}
+                     onChange={e => setNewName(e.target.value)}
+                     placeholder="Название нового производства" />
+            )}
+            <span className="form__hint">
+              Каждый проект — отдельная БД (SQLite WAL); новый создаётся с демо-данными
+            </span>
           </div>
 
           <div className="form__field">
@@ -132,7 +137,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         </form>
 
         <p style={{ margin: 0, fontSize: 11, color: 'var(--text-disabled)', textAlign: 'center' }}>
-          MAOS v0.41.1 · дипломная работа · {new Date().getFullYear()}
+          MAOS v0.47.0 · дипломная работа · {new Date().getFullYear()}
         </p>
       </div>
     </div>
