@@ -1,431 +1,348 @@
 import type { ObjectKind } from './types'
+import {
+  M,
+  Railing,
+  GroundPipeRack,
+  PipeBridge,
+  Valve,
+  Chimney,
+  CoolingTower,
+  HotStoves,
+  SiloGroup,
+  ConveyorGallery,
+  SteelHall,
+  Substation,
+  ControlBuilding,
+  DistillationColumn,
+  Reactor,
+  HorizontalDrum,
+  SphereVessel,
+  StorageTank,
+  TankFarm,
+} from './plantKit'
 
 interface BuildingProps {
   kind: ObjectKind
-  /** Цвет акцента по статусу (полоса на фасаде). */
+  /** Цвет акцента по статусу (полоса/маяк на кластере). */
   accent: string
 }
 
-/* Единая палитра промплощадки: приглушённые фасады, тёмные шиферные крыши,
-   стеклянные ленты с лёгкой подсветкой — аккуратный low-poly индустриальный парк. */
-const ROOF   = '#3d444d'
-const TRIM   = '#59616b'
-const PLINTH = '#6a7076'
-const GLASS  = '#274050'
-const GLOW   = '#7fb2d6'
-const DOOR   = '#38556b'
+/* ──────────────────────────────────────────────────────────────────────────
+   Building — каждый организационный «здание» теперь читается как настоящий
+   технологический КЛАСТЕР нефтепереработки/металлургии: 3–8 единиц
+   оборудования из plantKit на общей светло-бетонной подошве, с хотя бы одной
+   высокой вертикальной доминантой (колонна/труба/градирня), чтобы силуэт
+   читался как завод. Статусный `accent` выражается на каждом кластере
+   светящейся статус-полосой/маяком.
 
-/** Ленточное остекление на длинных фасадах (спереди и сзади). */
-function WinBand({ w, y, d, h = 0.7 }: { w: number; y: number; d: number; h?: number }) {
-  return (
-    <>
-      {[d / 2 + 0.04, -d / 2 - 0.04].map((z, i) => (
-        <mesh key={i} position={[0, y, z]}>
-          <boxGeometry args={[w * 0.86, h, 0.06]} />
-          <meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.16} roughness={0.35} metalness={0.2} />
-        </mesh>
-      ))}
-    </>
-  )
-}
+   Только три примитива + <meshStandardMaterial>; вся геометрия оборудования
+   импортируется из plantKit (здесь не переизобретается). Никаких текстур.
+   ────────────────────────────────────────────────────────────────────────── */
 
-/** Секционные ворота. */
-function RollerDoor({ x, z, w = 2.2, h = 2.6, ry = 0 }: { x: number; z: number; w?: number; h?: number; ry?: number }) {
+/** Светло-бетонная подошва кластера (плита с лёгкой кромкой). */
+function Pad({ w, d }: { w: number; d: number }) {
   return (
-    <group position={[x, h / 2, z]} rotation={[0, ry, 0]}>
-      <mesh><boxGeometry args={[w, h, 0.08]} /><meshStandardMaterial color={DOOR} metalness={0.35} roughness={0.55} /></mesh>
-      {[0.25, 0.5, 0.75].map((f, i) => (
-        <mesh key={i} position={[0, h * (f - 0.5), 0.05]}><boxGeometry args={[w * 0.94, 0.05, 0.02]} /><meshStandardMaterial color="#2a3d4d" /></mesh>
-      ))}
+    <group>
+      <mesh position={[0, 0.06, 0]} receiveShadow>
+        <boxGeometry args={[w, 0.12, d]} /><meshStandardMaterial {...M.concreteLt()} />
+      </mesh>
+      <mesh position={[0, 0.14, 0]} receiveShadow>
+        <boxGeometry args={[w - 0.5, 0.06, d - 0.5]} /><meshStandardMaterial {...M.concreteMd()} />
+      </mesh>
     </group>
   )
 }
 
-/** Тонкая статус-полоса над воротами/входом. */
-function Band({ w, y, d, accent }: { w: number; y: number; d: number; accent: string }) {
+/**
+ * Статусный маяк-полоса: приподнятая светящаяся полоса на столбике у кромки
+ * подошвы — единая читаемая точка статуса кластера (цвет = accent).
+ */
+function StatusBeacon({ x, z, w = 2.2, y = 1.4, accent }: { x: number; z: number; w?: number; y?: number; accent: string }) {
   return (
-    <mesh position={[0, y, d / 2 + 0.05]}>
-      <boxGeometry args={[w * 0.9, 0.22, 0.05]} />
-      <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.45} />
+    <group position={[x, 0, z]}>
+      <mesh position={[0, y / 2, 0]} castShadow>
+        <boxGeometry args={[0.12, y, 0.12]} /><meshStandardMaterial {...M.steel()} />
+      </mesh>
+      <mesh position={[0, y + 0.18, 0]}>
+        <boxGeometry args={[w, 0.32, 0.14]} />
+        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.55} roughness={0.4} metalness={0.15} />
+      </mesh>
+      <mesh position={[0, y + 0.18, 0.09]}>
+        <boxGeometry args={[w + 0.1, 0.06, 0.02]} /><meshStandardMaterial {...M.steelDark()} />
+      </mesh>
+    </group>
+  )
+}
+
+/** Штабель-конус сырья (насыпь). */
+function Stockpile({ x, z, r, color, roughness = 0.95 }: { x: number; z: number; r: number; color: string; roughness?: number }) {
+  return (
+    <mesh position={[x, r * 0.55, z]} castShadow>
+      <coneGeometry args={[r, r * 1.1, 16]} /><meshStandardMaterial color={color} roughness={roughness} />
     </mesh>
   )
 }
 
-/** Цоколь-плита под зданием (аккуратная кромка). */
-function Plinth({ w, d }: { w: number; d: number }) {
-  return (
-    <mesh position={[0, 0.12, 0]} receiveShadow>
-      <boxGeometry args={[w + 0.6, 0.24, d + 0.6]} />
-      <meshStandardMaterial color={PLINTH} roughness={0.95} />
-    </mesh>
-  )
-}
-
-/** Крышные блоки (вентустановки/кондиционеры) — оживляют плоскую кровлю. */
-function RoofUnits({ y, xs, z = 0 }: { y: number; xs: number[]; z?: number }) {
-  return (
-    <>
-      {xs.map((x, i) => (
-        <group key={i} position={[x, y, z + (i % 2 ? 1.1 : -1)]}>
-          <mesh castShadow><boxGeometry args={[1, 0.6, 1]} /><meshStandardMaterial color="#828a93" metalness={0.25} roughness={0.6} /></mesh>
-          <mesh position={[0, 0.34, 0]}><cylinderGeometry args={[0.32, 0.32, 0.1, 12]} /><meshStandardMaterial color="#4a525b" /></mesh>
-        </group>
-      ))}
-    </>
-  )
-}
-
-/** Треугольная призма (двускатная крыша / зуб шеда): цилиндр с 3 гранями. */
-function Prism({ w, h, len, y, x = 0, z = 0, color = ROOF }: {
-  w: number; h: number; len: number; y: number; x?: number; z?: number; color?: string
-}) {
-  return (
-    <mesh position={[x, y, z]} rotation={[0, 0, Math.PI / 2]} scale={[h / 0.5, 1, w / 0.866]} castShadow>
-      <cylinderGeometry args={[0.5, 0.5, len, 3]} />
-      <meshStandardMaterial color={color} roughness={0.9} flatShading />
-    </mesh>
-  )
-}
-
-/* ── Склад / логистика: светлый ангар с рампой и тремя воротами ─────────────── */
-function Warehouse({ accent }: { accent: string }) {
-  const W = 12, D = 8, H = 4.2
+/* ── Двор сырья: силосы + конвейерная галерея + насыпь + козловой портал ────── */
+function FeedstockYard({ accent }: { accent: string }) {
   return (
     <group>
-      <Plinth w={W} d={D} />
-      <mesh position={[0, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#d6d3cc" roughness={0.85} />
-      </mesh>
-      {/* парапет и кровля */}
-      <mesh position={[0, H + 0.32, 0]}><boxGeometry args={[W + 0.3, 0.28, D + 0.3]} /><meshStandardMaterial color={TRIM} /></mesh>
-      <mesh position={[0, H + 0.48, 0]}><boxGeometry args={[W - 0.4, 0.08, D - 0.4]} /><meshStandardMaterial color={ROOF} /></mesh>
-      {[-3.4, 0, 3.4].map((x, i) => <RollerDoor key={i} x={x} z={D / 2 + 0.02} />)}
-      <Band w={W} y={3.4} d={D} accent={accent} />
-      <WinBand w={W} y={3.4} d={-0.12} h={0.55} />
-      {/* погрузочная рампа */}
-      <mesh position={[0, 0.5, D / 2 + 1.1]} receiveShadow><boxGeometry args={[W - 1, 1, 1.9]} /><meshStandardMaterial color="#7b828a" roughness={0.95} /></mesh>
-      {/* офисный блок на углу */}
-      <group position={[-W / 2 + 1.6, 0, -D / 2 + 1.4]}>
-        <mesh position={[0, H + 0.9, 0]} castShadow><boxGeometry args={[3, 1.4, 2.6]} /><meshStandardMaterial color="#c2bcb2" /></mesh>
-        <mesh position={[0, H + 0.9, 1.34]}><boxGeometry args={[2.6, 0.6, 0.06]} /><meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.16} /></mesh>
+      <Pad w={13} d={9.5} />
+      <SiloGroup n={4} r={0.95} h={5} gap={0.5} position={[-2.6, 0.14, -2]} />
+      {/* конвейер подачи от штабеля к силосам */}
+      <ConveyorGallery len={7.5} rise={5.2} position={[-6, 0.14, 2.6]} />
+      {/* штабели сырья на открытой площадке */}
+      <Stockpile x={3.6} z={2.4} r={1.5} color="#6a7076" />
+      <Stockpile x={5.6} z={0.2} r={1.1} color="#6b5448" />
+      {/* козловой портал (кран) над штабелями */}
+      <group position={[4.4, 0.14, 1.2]}>
+        {[-3, 3].map((z, i) => (
+          <mesh key={i} position={[0, 2.4, z]} castShadow><boxGeometry args={[0.3, 4.8, 0.3]} /><meshStandardMaterial {...M.steel()} /></mesh>
+        ))}
+        <mesh position={[0, 4.8, 0]} castShadow><boxGeometry args={[0.4, 0.4, 6.4]} /><meshStandardMaterial {...M.steel()} /></mesh>
+        <Railing len={6.4} h={0.5} position={[0, 5, 0]} rotation={[0, Math.PI / 2, 0]} />
       </group>
-      <RoofUnits y={H + 0.75} xs={[2, 4.5]} />
+      <StatusBeacon x={-6} z={-4} accent={accent} />
     </group>
   )
 }
 
-/* ── Механосборочный корпус: шедовая (пилообразная) крыша с фонарями ────────── */
-function SawtoothMill({ accent }: { accent: string }) {
-  const W = 12, D = 8.5, H = 3.8
-  const teeth = [-4.5, -1.5, 1.5, 4.5]
+/* ── Литейный/домна: воздухонагреватели + печь-реактор + галерея + труба ────── */
+function FoundryCluster({ accent }: { accent: string }) {
   return (
     <group>
-      <Plinth w={W} d={D} />
-      <mesh position={[0, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#cfc4ae" roughness={0.85} />
-      </mesh>
-      {/* зубья шеда + стеклянные фонари на крутых гранях */}
-      {teeth.map((x, i) => (
-        <group key={i}>
-          <Prism w={2.9} h={1.35} len={D - 0.3} y={H + 0.2 + 0.62} x={x} />
-          <mesh position={[x - 1.05, H + 0.2 + 0.7, 0]} rotation={[0, 0, 0.42]}>
-            <boxGeometry args={[0.06, 1.15, D - 0.9]} />
-            <meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.22} roughness={0.3} />
-          </mesh>
-        </group>
-      ))}
-      <WinBand w={W} y={2.6} d={D} />
-      <Band w={W} y={3.55} d={D} accent={accent} />
-      <RollerDoor x={W / 2 + 0.02} z={0} w={2.4} h={2.8} ry={Math.PI / 2} />
-      {/* пара тонких вытяжных труб */}
-      {[[-5, -3], [-3.6, -3.4]].map(([x, z], i) => (
-        <mesh key={i} position={[x, H + 1.6, z]} castShadow>
-          <cylinderGeometry args={[0.16, 0.2, 2.6, 10]} /><meshStandardMaterial color={TRIM} metalness={0.4} roughness={0.5} />
-        </mesh>
-      ))}
+      <Pad w={13} d={9} />
+      {/* каупера (воздухонагреватели) */}
+      <HotStoves n={3} r={0.95} h={5.2} gap={0.6} position={[-3.4, 0.14, 2] } />
+      {/* доменная печь как высокий реактор-аппарат */}
+      <Reactor h={7.2} r={1.35} position={[2.4, 0.14, -1]} />
+      {/* наклонный конвейер загрузки шихты */}
+      <ConveyorGallery len={6.5} rise={5.4} position={[5.4, 0.14, 2.4]} />
+      {/* газоход печь → труба */}
+      <PipeBridge len={7} pipes={3} y={4.6} position={[-0.4, 0.14, -3]} />
+      {/* высокая дымовая труба (доминанта) */}
+      <Chimney h={9.5} r={0.5} striped position={[-5, 0.14, -3.2]} />
+      <StatusBeacon x={5.2} z={-3.4} accent={accent} />
     </group>
   )
 }
 
-/* ── Высокий пролёт (заготовка/сварка): двускатный корпус + пристройка ──────── */
-function HighBay({ accent }: { accent: string }) {
-  const W = 10, D = 7.5, H = 5.6
+/* ── Термический/энергоблок: котельный корпус + труба + градирня + подстанция ── */
+function BoilerCluster({ accent }: { accent: string }) {
   return (
     <group>
-      <Plinth w={W} d={D} />
-      <mesh position={[0, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#aebbc7" roughness={0.85} />
-      </mesh>
-      <Prism w={D + 0.4} h={1.5} len={W + 0.3} y={H + 0.2 + 0.68} />
-      {/* световой фонарь по коньку */}
-      <mesh position={[0, H + 1.65, 0]}><boxGeometry args={[W * 0.7, 0.5, 1.1]} /><meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.2} /></mesh>
-      {/* клересторий под карнизом + кирпичный трим */}
-      <WinBand w={W} y={H - 0.85} d={D} />
-      <mesh position={[0, 1.15, D / 2 + 0.03]}><boxGeometry args={[W * 0.98, 2.3, 0.05]} /><meshStandardMaterial color="#a86a58" roughness={0.9} /></mesh>
-      <RollerDoor x={0} z={D / 2 + 0.06} w={3} h={3.4} />
-      <Band w={W} y={4.1} d={D} accent={accent} />
-      {/* двухэтажная пристройка */}
-      <group position={[W / 2 + 1.15, 0, -1]}>
-        <mesh position={[0, 1.5, 0]} castShadow><boxGeometry args={[2.3, 3, 4.5]} /><meshStandardMaterial color="#d6d3cc" /></mesh>
-        <mesh position={[0, 3.1, 0]}><boxGeometry args={[2.4, 0.16, 4.6]} /><meshStandardMaterial color={TRIM} /></mesh>
-        {[0.9, 2.2].map((y, i) => (
-          <mesh key={i} position={[1.18, y, 0]}><boxGeometry args={[0.05, 0.6, 3.8]} /><meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.16} /></mesh>
+      <Pad w={13.5} d={9.5} />
+      {/* котельный корпус */}
+      <SteelHall w={7} d={5.5} h={5} position={[-3, 0.14, -1.4]} />
+      {/* высокая полосатая труба (доминанта) */}
+      <Chimney h={10} r={0.5} striped position={[-6, 0.14, 2.6]} />
+      {/* градирня */}
+      <CoolingTower r={2.1} h={5.4} position={[3.6, 0.14, -1]} />
+      {/* магистраль пара котёл → градирня */}
+      <PipeBridge len={7.5} pipes={4} y={3.4} position={[0.4, 0.14, 3]} />
+      {/* распределительная подстанция */}
+      <Substation w={3.6} d={2.6} n={2} position={[5.2, 0.14, 3]} />
+      <StatusBeacon x={-6} z={-3.6} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Заготовительно-сварочный: высокий пролёт + 2 трубы + эстакада + друмы ───── */
+function HighBayCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={13} d={9} />
+      {/* высокий сварочно-заготовительный пролёт */}
+      <SteelHall w={8.5} d={6} h={6.4} position={[-1.4, 0.14, -1.2]} />
+      {/* две дымовые трубы (доминанты) */}
+      <Chimney h={8.5} r={0.45} striped position={[-5.2, 0.14, 2.8]} />
+      <Chimney h={6.4} r={0.38} striped={false} position={[-4, 0.14, 3.4]} />
+      {/* наземная трубная эстакада вдоль корпуса */}
+      <GroundPipeRack len={9} pipes={4} position={[0, 0.14, 3.4]} />
+      {/* горизонтальные ресиверы */}
+      <HorizontalDrum len={3.2} r={0.6} position={[4.6, 0.14, -1]} />
+      <HorizontalDrum len={2.6} r={0.5} position={[4.6, 0.14, 1.6]} />
+      <StatusBeacon x={5.4} z={-3.4} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Механосборочный/прокат: длинный шедовый пролёт + труба + эстакада + конвейер ─ */
+function RollingMillCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={14} d={9} />
+      {/* длинный прокатный пролёт с пилообразной кровлей */}
+      <SteelHall w={11} d={5.5} h={4.6} sawtooth position={[0, 0.14, -1.4]} />
+      {/* дымовая труба (доминанта) */}
+      <Chimney h={8} r={0.42} striped position={[-6, 0.14, 2.8]} />
+      {/* наземная эстакада труб вдоль стены */}
+      <GroundPipeRack len={10} pipes={3} position={[0, 0.14, 2.6]} />
+      {/* конвейер отгрузки проката */}
+      <ConveyorGallery len={6} rise={3.6} position={[5.6, 0.14, 3]} />
+      <StatusBeacon x={-6} z={-3.6} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Печь/арочный (тонкая очистка): 2 колонны + реактор + эстакада + друмы ────── */
+function ProcessCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={13} d={9} />
+      {/* две ректификационные колонны (доминанты) */}
+      <DistillationColumn h={9} r={0.7} position={[-3.6, 0.14, -1.6]} />
+      <DistillationColumn h={7.5} r={0.6} position={[-1.6, 0.14, -2.2]} />
+      {/* реактор */}
+      <Reactor h={4.6} r={1.05} position={[2.4, 0.14, -0.8]} />
+      {/* технологическая эстакада между аппаратами */}
+      <PipeBridge len={9} pipes={5} y={3.6} position={[0, 0.14, 2.4]} />
+      {/* горизонтальные аппараты-ресиверы */}
+      <HorizontalDrum len={3} r={0.55} position={[4.6, 0.14, 2.6]} />
+      <HorizontalDrum len={2.4} r={0.45} position={[4.6, 0.14, 0.4]} />
+      <StatusBeacon x={-5.6} z={3.4} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Подстанция/энергоблок: градирня + подстанция + операторная + эстакада ───── */
+function SubstationCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={13} d={9.5} />
+      {/* градирня (доминанта) */}
+      <CoolingTower r={2.2} h={5.6} position={[-3.4, 0.14, -1]} />
+      {/* открытая подстанция */}
+      <Substation w={4.5} d={3} n={3} position={[3.4, 0.14, -1.4]} />
+      {/* здание управления энергоблоком */}
+      <ControlBuilding w={5} d={3.4} h={3.6} position={[3, 0.14, 3]} />
+      {/* магистральная эстакада */}
+      <PipeBridge len={8} pipes={4} y={3.2} position={[-1, 0.14, 3.4]} />
+      <StatusBeacon x={-5.6} z={-3.8} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Склад: чистый ангар + погрузочная рампа/навес + пара резервуаров + эстакада ─ */
+function WarehouseCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={13.5} d={9.5} />
+      {/* чистый складской корпус */}
+      <SteelHall w={9} d={6} h={5} position={[-1.6, 0.14, -1.4]} />
+      {/* погрузочная рампа + навес-козырёк перед корпусом */}
+      <group position={[-1.6, 0.14, 3]}>
+        <mesh position={[0, 0.5, 0]} receiveShadow><boxGeometry args={[8, 1, 1.8]} /><meshStandardMaterial {...M.concreteMd()} /></mesh>
+        <mesh position={[0, 3.4, 0.2]} castShadow><boxGeometry args={[8.4, 0.14, 2.4]} /><meshStandardMaterial {...M.roof()} /></mesh>
+        {[-3.6, 0, 3.6].map((x, i) => (
+          <mesh key={i} position={[x, 1.8, 1.1]} castShadow><boxGeometry args={[0.16, 3.4, 0.16]} /><meshStandardMaterial {...M.steel()} /></mesh>
         ))}
       </group>
+      {/* пара вертикальных резервуаров сбоку */}
+      <StorageTank r={1.4} h={3} position={[5, 0.14, -2]} />
+      <StorageTank r={1.2} h={2.6} position={[5, 0.14, 1]} />
+      {/* наземная эстакада к резервуарам */}
+      <GroundPipeRack len={5} pipes={3} position={[3, 0.14, -0.5]} />
+      <StatusBeacon x={-6} z={-3.6} accent={accent} />
     </group>
   )
 }
 
-/* ── Термический/гальванический: корпус + печной блок + труба + ресиверы ────── */
-function ThermalPlant({ accent }: { accent: string }) {
-  const W = 9, D = 7, H = 4.6
+/* ── Резервуарный парк/отгрузка: TankFarm + сферы в обваловке + манифольд ─────── */
+function SaleCluster({ accent }: { accent: string }) {
   return (
     <group>
-      <Plinth w={W + 2} d={D} />
-      <mesh position={[-1, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#c2bcb2" roughness={0.85} />
-      </mesh>
-      <mesh position={[-1, H + 0.32, 0]}><boxGeometry args={[W + 0.3, 0.26, D + 0.3]} /><meshStandardMaterial color={TRIM} /></mesh>
-      <WinBand w={W} y={3.2} d={D} />
-      <Band w={W - 2} y={3.9} d={D} accent={accent} />
-      {/* печной блок — кирпичный, чуть выше корпуса */}
-      <mesh position={[4.2, 2.9, -0.6]} castShadow><boxGeometry args={[3.4, 5.8, 4.2]} /><meshStandardMaterial color="#a86a58" roughness={0.92} /></mesh>
-      <mesh position={[4.2, 5.95, -0.6]}><boxGeometry args={[3.6, 0.3, 4.4]} /><meshStandardMaterial color={TRIM} /></mesh>
-      {/* бетонная труба с тёмным кольцом */}
-      <group position={[4.6, 0, 2.2]}>
-        <mesh position={[0, 4, 0]} castShadow><cylinderGeometry args={[0.42, 0.55, 8, 14]} /><meshStandardMaterial color="#9aa1a8" roughness={0.95} /></mesh>
-        <mesh position={[0, 6.4, 0]}><cylinderGeometry args={[0.46, 0.46, 0.7, 14]} /><meshStandardMaterial color="#5b616a" /></mesh>
+      <Pad w={14} d={9.5} />
+      {/* резервуарный парк (4 вертикальных резервуара в обваловке) */}
+      <TankFarm n={4} r={1.5} h={3.2} gap={1} position={[-1.4, 0.14, -1.6]} />
+      {/* пара сферических резервуаров */}
+      <SphereVessel r={1.5} position={[4.4, 0.14, -1.6]} />
+      <SphereVessel r={1.2} position={[4.4, 0.14, 2]} />
+      {/* трубный манифольд отгрузки + вентили */}
+      <GroundPipeRack len={11} pipes={4} position={[0, 0.14, 3.4]} />
+      <Valve position={[-3, 0.6, 3.4]} r={0.14} />
+      <Valve position={[0, 0.6, 3.4]} r={0.14} />
+      <Valve position={[3, 0.6, 3.4]} r={0.14} />
+      <StatusBeacon x={-6} z={-3.8} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Корпус/АСУ: операторная + входная площадь + колонны позади ──────────────── */
+function MarketingCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={13} d={9} />
+      {/* административно-управляющий корпус со светящейся сеткой окон */}
+      <ControlBuilding w={7} d={4.5} h={4.4} position={[-1, 0.14, 1.4]} />
+      {/* входная площадь перед корпусом */}
+      <mesh position={[-1, 0.2, 4.4]} receiveShadow><boxGeometry args={[7.5, 0.08, 2.4]} /><meshStandardMaterial {...M.concreteMd()} /></mesh>
+      {[-3.4, 1.4].map((x, i) => (
+        <mesh key={i} position={[x, 0.9, 4.4]} castShadow><boxGeometry args={[0.3, 1.4, 0.3]} /><meshStandardMaterial {...M.steel()} /></mesh>
+      ))}
+      {/* технологические колонны за корпусом (силуэт завода) */}
+      <DistillationColumn h={8} r={0.6} position={[3.6, 0.14, -2.6]} />
+      <DistillationColumn h={6.5} r={0.5} position={[5.2, 0.14, -2]} />
+      <StatusBeacon x={-5.6} z={-3.4} accent={accent} />
+    </group>
+  )
+}
+
+/* ── Обработка/трубная эстакада: колонны + сфера + большая сеть эстакад + реактор ─ */
+function PipeworkCluster({ accent }: { accent: string }) {
+  return (
+    <group>
+      <Pad w={13.5} d={9.5} />
+      {/* ректификационные колонны (доминанты) */}
+      <DistillationColumn h={8.5} r={0.7} position={[-4, 0.14, -1.6]} />
+      <DistillationColumn h={7} r={0.55} position={[-2.2, 0.14, -2.4]} />
+      {/* сферический резервуар */}
+      <SphereVessel r={1.5} position={[4.2, 0.14, -1.4]} />
+      {/* реактор */}
+      <Reactor h={4.4} r={1} position={[1.2, 0.14, 1] } />
+      {/* большая сеть трубных эстакад (крест) */}
+      <PipeBridge len={10} pipes={5} y={3.8} position={[0, 0.14, 3.2]} />
+      <group position={[-4.4, 0.14, 1.4]} rotation={[0, Math.PI / 2, 0]}>
+        <PipeBridge len={7} pipes={3} y={3} />
       </group>
-      {/* газоход печь→труба */}
-      <mesh position={[4.4, 4.6, 0.9]} rotation={[0.5, 0, 0]}><cylinderGeometry args={[0.24, 0.24, 2.8, 10]} /><meshStandardMaterial color={TRIM} metalness={0.4} /></mesh>
-      {/* горизонтальные ресиверы на опорах */}
-      {[-0.4, 1.6].map((z, i) => (
-        <group key={i} position={[-4.6, 0.85, z]}>
-          <mesh rotation={[0, 0, Math.PI / 2]} castShadow><cylinderGeometry args={[0.55, 0.55, 2.6, 14]} /><meshStandardMaterial color="#b9c4cf" metalness={0.35} roughness={0.45} /></mesh>
-          {[-0.8, 0.8].map((x, j) => (
-            <mesh key={j} position={[x, -0.45, 0]}><boxGeometry args={[0.2, 0.8, 0.9]} /><meshStandardMaterial color={PLINTH} /></mesh>
-          ))}
-        </group>
-      ))}
-    </group>
-  )
-}
-
-/* ── Литейный: корпус + башня печи + наклонная галерея ──────────────────────── */
-function FoundryTower({ accent }: { accent: string }) {
-  const W = 9, D = 7, H = 4.8
-  return (
-    <group>
-      <Plinth w={W} d={D} />
-      <mesh position={[-0.8, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#c2bcb2" roughness={0.85} />
-      </mesh>
-      <Prism w={D + 0.3} h={1.2} len={W + 0.2} y={H + 0.2 + 0.55} x={-0.8} />
-      <WinBand w={W - 1.5} y={3.3} d={D} />
-      <Band w={W - 2} y={4} d={D} accent={accent} />
-      {/* башня печи */}
-      <group position={[4.1, 0, -0.8]}>
-        <mesh position={[0, 3.6, 0]} castShadow><cylinderGeometry args={[1.15, 1.45, 7.2, 16]} /><meshStandardMaterial color="#8a6b5a" roughness={0.9} /></mesh>
-        <mesh position={[0, 7.4, 0]} castShadow><cylinderGeometry args={[0.7, 1, 1.4, 16]} /><meshStandardMaterial color="#5a4438" /></mesh>
-      </group>
-      {/* наклонная галерея подачи шихты */}
-      <mesh position={[1.4, 3.6, 2.4]} rotation={[0, 0.35, 0.62]} castShadow>
-        <boxGeometry args={[7.5, 0.7, 1]} /><meshStandardMaterial color={TRIM} metalness={0.3} roughness={0.6} />
-      </mesh>
-    </group>
-  )
-}
-
-/* ── Производственно-административный корпус: 2 этажа, ленточные окна ───────── */
-function OfficeBlock({ accent }: { accent: string }) {
-  const W = 10, D = 7, H = 5.6
-  return (
-    <group>
-      <Plinth w={W} d={D} />
-      <mesh position={[0, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#d6d3cc" roughness={0.85} />
-      </mesh>
-      <mesh position={[0, H + 0.32, 0]}><boxGeometry args={[W + 0.3, 0.26, D + 0.3]} /><meshStandardMaterial color={TRIM} /></mesh>
-      <WinBand w={W} y={1.9} d={D} h={0.85} />
-      <WinBand w={W} y={4.1} d={D} h={0.85} />
-      {/* межэтажный пояс */}
-      <mesh position={[0, 3, D / 2 + 0.03]}><boxGeometry args={[W * 0.98, 0.35, 0.04]} /><meshStandardMaterial color={TRIM} /></mesh>
-      {/* вход с козырьком */}
-      <mesh position={[0, 1.1, D / 2 + 0.06]}><boxGeometry args={[1.6, 2.2, 0.08]} /><meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.25} /></mesh>
-      <mesh position={[0, 2.4, D / 2 + 0.55]} castShadow><boxGeometry args={[2.6, 0.14, 1.2]} /><meshStandardMaterial color={TRIM} /></mesh>
-      <Band w={W} y={H - 0.35} d={D} accent={accent} />
-      {/* техэтаж на крыше */}
-      <mesh position={[-2.4, H + 1, -1]} castShadow><boxGeometry args={[2.6, 1.3, 2.6]} /><meshStandardMaterial color="#b6b0a6" /></mesh>
-      <RoofUnits y={H + 0.75} xs={[1.6, 3.4]} />
-    </group>
-  )
-}
-
-/* ── Резервуарный парк: вертикальные ёмкости в обваловке + трубная обвязка ──── */
-function TankFarm({ accent }: { accent: string }) {
-  const tanks: Array<[number, number, number, number, string]> = [
-    [-3.2, -1.6, 1.9, 4.6, '#b9c4cf'], [1.2, -1.6, 1.9, 4.6, '#c9cfd6'],
-    [-3.2, 2.6, 1.5, 3.6, '#d6d3cc'], [0.9, 2.6, 1.5, 3.6, '#b9c4cf'],
-  ]
-  return (
-    <group>
-      <Plinth w={11.4} d={8.4} />
-      {/* обваловка по периметру */}
-      {[[-0, -4.5, 11.6, 0.5], [0, 4.5, 11.6, 0.5]].map(([x, z, w, d], i) => (
-        <mesh key={`h${i}`} position={[x, 0.5, z]} castShadow><boxGeometry args={[w, 0.7, d]} /><meshStandardMaterial color={PLINTH} roughness={1} /></mesh>
-      ))}
-      {[[-5.8, 0, 0.5, 9.4], [5.8, 0, 0.5, 9.4]].map(([x, z, w, d], i) => (
-        <mesh key={`v${i}`} position={[x, 0.5, z]} castShadow><boxGeometry args={[w, 0.7, d]} /><meshStandardMaterial color={PLINTH} roughness={1} /></mesh>
-      ))}
-      {tanks.map(([x, z, r, h, c], i) => (
-        <group key={i} position={[x, 0, z]}>
-          <mesh position={[0, h / 2 + 0.24, 0]} castShadow>
-            <cylinderGeometry args={[r, r, h, 20]} /><meshStandardMaterial color={c} metalness={0.3} roughness={0.5} />
-          </mesh>
-          <mesh position={[0, h + 0.28, 0]}><cylinderGeometry args={[r * 0.99, r * 0.99, 0.16, 20]} /><meshStandardMaterial color={TRIM} /></mesh>
-          {/* лестница-полоса */}
-          <mesh position={[r - 0.02, h / 2 + 0.24, 0]}><boxGeometry args={[0.1, h, 0.4]} /><meshStandardMaterial color={TRIM} /></mesh>
-        </group>
-      ))}
-      {/* трубная обвязка между ёмкостями */}
-      <mesh position={[-1, 0.7, -1.6]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[0.14, 0.14, 4.4, 10]} /><meshStandardMaterial color={accent} metalness={0.4} /></mesh>
-      <mesh position={[-1.1, 0.7, 2.6]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[0.14, 0.14, 4.2, 10]} /><meshStandardMaterial color={TRIM} metalness={0.4} /></mesh>
-    </group>
-  )
-}
-
-/* ── Энергоблок: корпус + градирня (гиперболоид) + тонкая труба ─────────────── */
-function CoolingPlant({ accent }: { accent: string }) {
-  const W = 8, D = 6.5, H = 4.4
-  return (
-    <group>
-      <Plinth w={W + 3} d={D} />
-      <mesh position={[-1.8, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#aebbc7" roughness={0.85} />
-      </mesh>
-      <mesh position={[-1.8, H + 0.3, 0]}><boxGeometry args={[W + 0.3, 0.24, D + 0.3]} /><meshStandardMaterial color={TRIM} /></mesh>
-      <WinBand w={W} y={3} d={D} />
-      <Band w={W - 2} y={3.7} d={D} accent={accent} />
-      {/* градирня */}
-      <group position={[4.1, 0, 0.4]}>
-        <mesh position={[0, 2.3, 0]} castShadow><cylinderGeometry args={[1.6, 2.5, 4.6, 24, 1, true]} /><meshStandardMaterial color="#aeb4ba" roughness={1} side={2} /></mesh>
-        <mesh position={[0, 5.6, 0]} castShadow><cylinderGeometry args={[2.1, 1.6, 2, 24, 1, true]} /><meshStandardMaterial color="#aeb4ba" roughness={1} side={2} /></mesh>
-      </group>
-      {/* тонкая бетонная труба */}
-      <group position={[-5.2, 0, -2]}>
-        <mesh position={[0, 3.4, 0]} castShadow><cylinderGeometry args={[0.35, 0.46, 6.8, 12]} /><meshStandardMaterial color="#9aa1a8" roughness={0.95} /></mesh>
-        <mesh position={[0, 5.4, 0]}><cylinderGeometry args={[0.38, 0.38, 0.55, 12]} /><meshStandardMaterial color="#5b616a" /></mesh>
-      </group>
-    </group>
-  )
-}
-
-/* ── Арочный ангар: полуцилиндрический свод, без труб ───────────────────────── */
-function ArchHangar({ accent }: { accent: string }) {
-  const R = 3.4, L = 11
-  return (
-    <group>
-      <Plinth w={L} d={R * 2} />
-      {/* свод: половина цилиндра осью вдоль X */}
-      <mesh position={[0, 0.24, 0]} rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow>
-        <cylinderGeometry args={[R, R, L, 26, 1, true, 0, Math.PI]} />
-        <meshStandardMaterial color="#cfc4ae" roughness={0.85} side={2} />
-      </mesh>
-      {/* торцы */}
-      {[L / 2, -L / 2].map((x, i) => (
-        <mesh key={i} position={[x, 0.24, 0]} rotation={[0, (i ? -1 : 1) * Math.PI / 2, 0]}>
-          <circleGeometry args={[R, 26, 0, Math.PI]} />
-          <meshStandardMaterial color="#c2bcb2" roughness={0.9} side={2} />
-        </mesh>
-      ))}
-      {/* ворота на торце + статус-полоса */}
-      <RollerDoor x={L / 2 + 0.04} z={0} w={2.6} h={2.6} ry={Math.PI / 2} />
-      <mesh position={[L / 2 + 0.06, 3.1, 0]} rotation={[0, Math.PI / 2, 0]}>
-        <boxGeometry args={[2.4, 0.22, 0.05]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.45} />
-      </mesh>
-      {/* световой гребень по коньку */}
-      <mesh position={[0, R + 0.14, 0]}><boxGeometry args={[L * 0.72, 0.24, 0.7]} /><meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.2} /></mesh>
-    </group>
-  )
-}
-
-/* ── Ангар с трубами: двускатный корпус + три заводские трубы ───────────────── */
-function PipeShed({ accent }: { accent: string }) {
-  const W = 10.5, D = 7.5, H = 4
-  return (
-    <group>
-      <Plinth w={W} d={D} />
-      <mesh position={[0, H / 2 + 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, H, D]} /><meshStandardMaterial color="#c2bcb2" roughness={0.85} />
-      </mesh>
-      <Prism w={D + 0.3} h={1.25} len={W + 0.25} y={H + 0.2 + 0.56} />
-      <WinBand w={W} y={2.7} d={D} />
-      <Band w={W} y={3.5} d={D} accent={accent} />
-      <RollerDoor x={-2.8} z={D / 2 + 0.03} w={2.4} h={2.7} />
-      {/* три трубы разной высоты с тёмными кольцами */}
-      {[[3.4, -2.2, 4.2], [2.2, -2.6, 3.4], [4.4, -1.2, 2.8]].map(([x, z, h], i) => (
-        <group key={i} position={[x, H + 0.2, z]}>
-          <mesh position={[0, h / 2, 0]} castShadow><cylinderGeometry args={[0.3, 0.38, h, 12]} /><meshStandardMaterial color="#8b929a" metalness={0.35} roughness={0.6} /></mesh>
-          <mesh position={[0, h * 0.8, 0]}><cylinderGeometry args={[0.33, 0.33, 0.3, 12]} /><meshStandardMaterial color="#4a525b" /></mesh>
-        </group>
-      ))}
-    </group>
-  )
-}
-
-/* ── Сырьевой двор: штабели + козловой кран ─────────────────────────────────── */
-function RawYard({ accent }: { accent: string }) {
-  return (
-    <group>
-      <mesh position={[0, 0.25, 0]} receiveShadow><boxGeometry args={[10, 0.5, 7]} /><meshStandardMaterial color="#5a5f63" roughness={1} /></mesh>
-      {[-3.4, 3.4].map((z, i) => (
-        <mesh key={i} position={[0, 1, z]}><boxGeometry args={[10, 1.6, 0.4]} /><meshStandardMaterial color="#9aa1a8" /></mesh>
-      ))}
-      {[[-3, 0, 1.6, '#6b5448'], [0.2, 0, 2, '#3c3a38'], [3.2, 0, 1.5, '#7a6a52']].map(([x, z, r, c], i) => (
-        <mesh key={i} position={[x as number, (r as number) * 0.6, z as number]} castShadow>
-          <coneGeometry args={[r as number, (r as number) * 1.3, 14]} /><meshStandardMaterial color={c as string} roughness={1} />
-        </mesh>
-      ))}
-      {[-4.2, 4.2].map((x, i) => (
-        <mesh key={i} position={[x, 2.4, 0]}><boxGeometry args={[0.3, 4.8, 0.3]} /><meshStandardMaterial color={TRIM} metalness={0.4} /></mesh>
-      ))}
-      <mesh position={[0, 4.7, 0]} castShadow><boxGeometry args={[9, 0.4, 0.5]} /><meshStandardMaterial color={accent} metalness={0.3} /></mesh>
+      <StatusBeacon x={5.2} z={3.4} accent={accent} />
     </group>
   )
 }
 
 /** Каталог моделей зданий цеха — для выбора в панели редактора схемы. */
 export const SHOP_MODELS: Array<{ kind: ObjectKind; label: string }> = [
-  { kind: 'pileizer',     label: 'Шедовый корпус (пилообразная крыша)' },
-  { kind: 'briquettes',   label: 'Высокий пролёт (двускатный)' },
-  { kind: 'wirehouse',    label: 'Склад-ангар (без труб)' },
-  { kind: 'cleaningarea', label: 'Ангар с трубами' },
-  { kind: 'finecleaning', label: 'Арочный ангар' },
-  { kind: 'marketing',    label: 'Административно-произв. корпус' },
-  { kind: 'boiler',       label: 'Термический корпус (печь + труба)' },
-  { kind: 'transformer',  label: 'Энергоблок (градирня)' },
-  { kind: 'dryer',        label: 'Литейная башня' },
-  { kind: 'sale',         label: 'Резервуарный парк' },
-  { kind: 'feedstock',    label: 'Сырьевой двор (штабели + кран)' },
+  { kind: 'pileizer',     label: 'Механосборочный/прокат (длинный шедовый пролёт)' },
+  { kind: 'briquettes',   label: 'Заготовительно-сварочный (высокий пролёт)' },
+  { kind: 'wirehouse',    label: 'Склад (ангар + рампа + резервуары)' },
+  { kind: 'cleaningarea', label: 'Обработка (колонны + трубная эстакада)' },
+  { kind: 'finecleaning', label: 'Тонкая очистка (колонны + реактор)' },
+  { kind: 'marketing',    label: 'Административный корпус / АСУ' },
+  { kind: 'boiler',       label: 'Термический/энергоблок (котёл + труба + градирня)' },
+  { kind: 'transformer',  label: 'Подстанция/энергоблок (градирня + РУ)' },
+  { kind: 'dryer',        label: 'Литейный/домна (каупера + печь + труба)' },
+  { kind: 'sale',         label: 'Резервуарный парк / отгрузка' },
+  { kind: 'feedstock',    label: 'Двор сырья (силосы + конвейер + кран)' },
 ]
 
 /**
- * Здание промплощадки. Все 11 видов различимы: ангары с трубами и без, шед,
- * арочный свод, резервуары, градирня, печные корпуса. Вид цеха выбирается
- * в редакторе схемы (org_units.kind) или назначается по роли из названия.
+ * Здание промплощадки. Каждый вид — самостоятельный технологический кластер из
+ * оборудования plantKit на светло-бетонной подошве, с высокой вертикальной
+ * доминантой и светящимся статусным маяком (accent). Вид цеха выбирается в
+ * редакторе схемы (org_units.kind) или назначается по роли из названия.
  */
 export function Building({ kind, accent }: BuildingProps) {
   switch (kind) {
-    case 'feedstock':    return <RawYard accent={accent} />
-    case 'dryer':        return <FoundryTower accent={accent} />
-    case 'briquettes':   return <HighBay accent={accent} />
-    case 'pileizer':     return <SawtoothMill accent={accent} />
-    case 'boiler':       return <ThermalPlant accent={accent} />
-    case 'wirehouse':    return <Warehouse accent={accent} />
-    case 'sale':         return <TankFarm accent={accent} />
-    case 'transformer':  return <CoolingPlant accent={accent} />
-    case 'finecleaning': return <ArchHangar accent={accent} />
-    case 'cleaningarea': return <PipeShed accent={accent} />
-    default:             return <OfficeBlock accent={accent} />
+    case 'feedstock':    return <FeedstockYard accent={accent} />
+    case 'dryer':        return <FoundryCluster accent={accent} />
+    case 'briquettes':   return <HighBayCluster accent={accent} />
+    case 'pileizer':     return <RollingMillCluster accent={accent} />
+    case 'boiler':       return <BoilerCluster accent={accent} />
+    case 'wirehouse':    return <WarehouseCluster accent={accent} />
+    case 'sale':         return <SaleCluster accent={accent} />
+    case 'transformer':  return <SubstationCluster accent={accent} />
+    case 'finecleaning': return <ProcessCluster accent={accent} />
+    case 'cleaningarea': return <PipeworkCluster accent={accent} />
+    default:             return <MarketingCluster accent={accent} />
   }
 }

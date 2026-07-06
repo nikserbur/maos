@@ -25,6 +25,7 @@
 #include <set>
 #include <functional>
 #include <cstdint>
+#include <cctype>
 #include <chrono>
 #include <mutex>
 #include <filesystem>
@@ -487,6 +488,126 @@ static void register_analytics(httplib::Server& svr, Database& db) {
       ok(res, rows);
     } catch (std::exception& e) { err(res, 500, e.what()); }
   });
+
+  // Полный KPI-блок плана (makespan/CVaR, сроки/OTD, загрузка, наладки, поломки,
+  // ТО, себестоимость, flow-time, очереди, WIP, проходка) + загрузка по типам и
+  // узкое место. Сохранён при построении расписания (plans.kpi_json).
+  svr.Get("/api/analytics/kpi", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const std::string want = req.has_param("plan_id") ? req.get_param_value("plan_id") : "";
+      json plan;
+      try {
+        plan = want.empty()
+          ? db.query_one(
+              "SELECT id, created_at, kpi_json FROM plans pl WHERE kpi_json IS NOT NULL AND EXISTS("
+              "  SELECT 1 FROM plan_tasks pt WHERE pt.plan_id=pl.id"
+              "  AND pt.machine_id<>'supply' AND pt.machine_id<>'') ORDER BY pl.rowid DESC LIMIT 1")
+          : db.query_one("SELECT id, created_at, kpi_json FROM plans WHERE id=?", { want });
+      } catch (...) { ok(res, { {"plan_id", nullptr}, {"kpi", json::object()} }); return; }
+      json bundle = json::object();
+      const std::string kj = jstr(plan, "kpi_json");
+      if (!kj.empty()) { try { bundle = json::parse(kj); } catch (...) {} }
+      bundle["plan_id"] = jstr(plan, "id");
+      bundle["created_at"] = jstr(plan, "created_at");
+      ok(res, bundle);
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  // Инвестпроект: докупка N станков типа T → прирост прибыли (через рыночную
+  // модель + производительность) → окупаемость/NPV/IRR/ROI. Считается как разница
+  // ДВУХ прогонов оптимизатора (база vs +N станков) — reuse всей модели, без записи в БД.
+  svr.Post("/api/analytics/investment", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      const std::string wct = jstr(body, "wc_type_id");
+      if (wct.empty()) { err(res, 400, "Не указан тип оборудования"); return; }
+      auto bnum = [&](const char* k, double d) {
+        return body.contains(k) && !jstr(body, k).empty() ? std::stod(jstr(body, k)) : d; };
+      const int addN = std::max(1, std::min(50, (int)bnum("add_machines", 1)));
+      const double capexPer = std::max(0.0, bnum("machine_capex", 0));
+      double discAnnual = bnum("discount_rate", 0.18);          // годовая ставка дисконта
+      if (discAnnual > 1.5) discAnnual /= 100.0;                // «18» → 0.18
+
+      // Базовые параметры (как в /api/optimize): из сценария, если задан.
+      maos::OptimizeParams base;
+      base.scenarioId = jstr(body, "scenario_id");
+      base.samples = std::max(200, std::min(4000, (int)bnum("samples", 800)));
+      if (body.contains("horizon_hours") && !jstr(body, "horizon_hours").empty())
+        base.horizonHours = std::stod(jstr(body, "horizon_hours"));
+      if (!base.scenarioId.empty()) {
+        try {
+          auto sc = db.query_one("SELECT objective,alpha,max_share,volatility,demand FROM price_scenarios WHERE id=?", { base.scenarioId });
+          if (!jstr(sc,"objective").empty())  base.objective  = jstr(sc,"objective");
+          if (!jstr(sc,"alpha").empty())      base.alpha      = std::stod(jstr(sc,"alpha"));
+          if (!jstr(sc,"max_share").empty())  base.maxShare   = std::stod(jstr(sc,"max_share"));
+          if (!jstr(sc,"volatility").empty()) base.volatility = std::stod(jstr(sc,"volatility"));
+          if (!jstr(sc,"demand").empty())     base.demand     = std::stod(jstr(sc,"demand"));
+        } catch (...) {}
+      }
+      maos::OptimizeParams bonus = base;
+      bonus.machineBonus[wct] = addN;
+
+      json r0 = maos::run_optimization(db, base);
+      json r1 = maos::run_optimization(db, bonus);
+      if (r0.value("error_soft", false) || r1.value("error_soft", false)) {
+        err(res, 400, "Нет товарных изделий — оценивать нечего"); return;
+      }
+      auto profitOf = [](const json& r) {
+        return (r.contains("robust") && r["robust"].contains("metrics"))
+             ? r["robust"]["metrics"].value("expected", 0.0) : 0.0; };
+      auto utilOf = [](const json& r, const std::string& id) {
+        if (r.contains("robust") && r["robust"].contains("resource_load"))
+          for (auto& e : r["robust"]["resource_load"])
+            if (jstr(e, "wc_type_id") == id) return e.value("utilization", 0.0);
+        return 0.0; };
+
+      const double p0 = profitOf(r0), p1 = profitOf(r1);
+      const double dProfit = p1 - p0;                          // прирост прибыли ЗА ГОРИЗОНТ ПЛАНА
+      // Горизонт ПЛАНА (месяцы) — из него получаем месячный денежный поток…
+      double horizonH = r0.value("horizon_hours", 0.0);
+      if (horizonH <= 0) horizonH = base.horizonHours > 0 ? base.horizonHours : 720;
+      const double planMonths = std::max(1.0, horizonH / 720.0);
+      const double dCFmonth = dProfit / planMonths;            // повторяется каждый месяц
+      // …а окупаемость/NPV/IRR считаем на СРОК СЛУЖБЫ оборудования (не на горизонт плана!).
+      const int lifeMonths = std::max(1, std::min(600, (int)bnum("life_months", 60)));  // по умолч. 5 лет
+      const double capex = capexPer * addN;
+
+      // Следующее узкое место после снятия текущего (макс. загрузка в прогоне «+N»).
+      std::string nbId, nbName; double nbU = 0;
+      if (r1.contains("robust") && r1["robust"].contains("resource_load"))
+        for (auto& e : r1["robust"]["resource_load"]) {
+          double u = e.value("utilization", 0.0);
+          if (u > nbU && jstr(e, "wc_type_id") != wct) { nbU = u; nbId = jstr(e, "wc_type_id"); }
+        }
+      if (!nbId.empty()) { try { nbName = jstr(db.query_one("SELECT name FROM work_center_types WHERE id=?", { nbId }), "name"); } catch (...) {} }
+
+      // NPV / IRR / payback / ROI по месячному ΔCF за СРОК СЛУЖБЫ (lifeMonths).
+      const double rm = discAnnual / 12.0;
+      auto npvAt = [&](double r) { double v = -capex; for (int t = 1; t <= lifeMonths; ++t) v += dCFmonth / std::pow(1.0 + r, t); return v; };
+      const double npv = npvAt(rm);
+      double irrM = 0;
+      if (dCFmonth > 0 && capex > 0) {
+        double lo = -0.9, hi = 5.0;
+        if (npvAt(hi) > 0) irrM = hi;                          // всегда выгодно
+        else if (npvAt(lo) < 0) irrM = 0;                      // не окупается
+        else { for (int i = 0; i < 80; ++i) { double mid = (lo + hi) / 2; (npvAt(mid) > 0 ? lo : hi) = mid; } irrM = (lo + hi) / 2; }
+      }
+      const double irrAnnual = dCFmonth > 0 ? std::pow(1.0 + irrM, 12) - 1.0 : 0;
+      const double payback = dCFmonth > 1e-9 ? capex / dCFmonth : -1;   // мес; -1 = не окупается
+      const double roi = capex > 0 ? (dCFmonth * lifeMonths - capex) / capex : 0;
+
+      ok(res, {
+        {"wc_type_id", wct}, {"add_machines", addN},
+        {"capex", capex}, {"plan_months", planMonths}, {"life_months", lifeMonths},
+        {"discount_annual", discAnnual},
+        {"profit_before", p0}, {"profit_after", p1},
+        {"delta_profit_horizon", dProfit}, {"delta_cf_month", dCFmonth},
+        {"payback_months", payback}, {"npv", npv}, {"irr_annual", irrAnnual}, {"roi", roi},
+        {"util_before", utilOf(r0, wct)}, {"util_after", utilOf(r1, wct)},
+        {"next_bottleneck", { {"wc_type_id", nbId}, {"wc_name", nbName}, {"utilization", nbU} }},
+      });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
 }
 
 /* ── Standalone operations (routing_id nullable) ─────────────────────────── */
@@ -821,6 +942,118 @@ static void seed_demo(Database& db) {
   }
 
   db.exec("COMMIT");
+}
+
+// ── Демо-посев холдинга (3 завода + центральный склад) ──────────────────────
+// Триггер: имя файла проекта (db.path()) содержит подстроку «холдинг», «3-завода»
+// ИЛИ «холдинг-3» (регистронезависимо; поиск ведём по строчной копии). Такой
+// проект открывается/создаётся через окно входа как обычно, но при ПУСТОЙ
+// таблице org_units засевается структура холдинга: 3 завода + склад на мировой
+// карте, у каждого завода — цеха на площадке со станками, плюс межзаводские
+// «дороги» (flows на верхнем уровне). Всё идемпотентно (INSERT OR IGNORE) и с
+// детерминированными id, поэтому повторный вход ничего не дублирует.
+static bool holding_trigger(const std::string& dbPath) {
+  std::string low = dbPath;
+  for (auto& c : low) c = (char)std::tolower((unsigned char)c);
+  // Русские подстроки в UTF-8 не трогает tolower(), но байтовый поиск точной
+  // подстроки работает и так; латиница уже приведена к нижнему регистру.
+  return low.find("холдинг") != std::string::npos ||
+         low.find("холдинг-3") != std::string::npos ||
+         low.find("3-завода") != std::string::npos;
+}
+
+// Засевает холдинг из 3 заводов + центрального склада. Вызывается только когда
+// сработал holding_trigger() И org_units пуста (не трогаем существующие проекты).
+static void seed_holding(Database& db) {
+  // Заводы и склад — на МИРОВОЙ карте (parent_id = NULL), pos_x/pos_z = мировые
+  // координаты. Треугольник вокруг начала координат, стороны ~80 ед.
+  struct WorldUnit { std::string id, name, kind, unitType; double posX, posZ; };
+  const std::vector<WorldUnit> world = {
+    {"holding-factory-1", "Завод №1 — Металлургический", "briquettes",   "factory",   0,   -46},
+    {"holding-factory-2", "Завод №2 — Трубопрокатный",   "pileizer",     "factory",  40,    23},
+    {"holding-factory-3", "Завод №3 — Механосборочный",  "cleaningarea", "factory", -40,    23},
+    // Центральный склад — в центроиде треугольника (равноудалён от заводов).
+    {"holding-warehouse", "Центральный склад",           "wirehouse",    "warehouse", 0,     0},
+  };
+
+  // Цеха каждого завода — на его ПЛОЩАДКЕ (parent_id = <id завода>), pos_x/pos_z =
+  // координаты площадки. У каждого цеха свой набор станков (переиспользуем типы РЦ
+  // из seed_demo, они уже засеяны демо-посевом при инициализации проекта).
+  struct ShopDef { std::string id, name, kind, factoryId; double posX, posZ; };
+  struct ShopMach { std::string shopId, machId, name, wctId; double posX, posZ; };
+  const std::vector<ShopDef> shops = {
+    // Завод №1 — металлургический
+    {"holding-shop-1a", "Плавильный цех",        "finecleaning", "holding-factory-1", -10,  -6},
+    {"holding-shop-1b", "Литейный цех",          "briquettes",   "holding-factory-1",  10,  -6},
+    {"holding-shop-1c", "Склад металлопроката",  "wirehouse",    "holding-factory-1",   0,   8},
+    // Завод №2 — трубопрокатный
+    {"holding-shop-2a", "Трубопрокатный цех",    "pileizer",     "holding-factory-2", -10,  -6},
+    {"holding-shop-2b", "Термический цех",       "dryer",        "holding-factory-2",  10,  -6},
+    // Завод №3 — механосборочный
+    {"holding-shop-3a", "Механический цех",      "cleaningarea", "holding-factory-3", -10,  -6},
+    {"holding-shop-3b", "Сборочный цех",         "marketing",    "holding-factory-3",  10,  -6},
+    {"holding-shop-3c", "Цех контроля (ОТК)",    "marketing",    "holding-factory-3",   0,   8},
+  };
+  const std::vector<ShopMach> machs = {
+    {"holding-shop-1a", "holding-mach-1a1", "Доменная печь ДП-2",        "wct-finecleaning", -4, 0},
+    {"holding-shop-1a", "holding-mach-1a2", "Конвертер ККЦ-2",           "wct-briquettes",    4, 0},
+    {"holding-shop-1b", "holding-mach-1b1", "МНЛЗ №2",                   "wct-pileizer",     -4, 0},
+    {"holding-shop-1b", "holding-mach-1b2", "Разливочная машина",        "wct-briquettes",    4, 0},
+    {"holding-shop-1c", "holding-mach-1c1", "Склад проката",             "wct-wirehouse",     0, 0},
+    {"holding-shop-2a", "holding-mach-2a1", "Трубопрокатный стан ТПА-140","wct-pileizer",    -4, 0},
+    {"holding-shop-2a", "holding-mach-2a2", "Стан-редуктор",             "wct-pileizer",      4, 0},
+    {"holding-shop-2b", "holding-mach-2b1", "Печь термообработки",       "wct-dryer",        -4, 0},
+    {"holding-shop-2b", "holding-mach-2b2", "Правильная машина",         "wct-cleaning",      4, 0},
+    {"holding-shop-3a", "holding-mach-3a1", "Токарный обрабатывающий центр","wct-cleaning",  -4, 0},
+    {"holding-shop-3a", "holding-mach-3a2", "Фрезерный центр ЧПУ",       "wct-cleaning",      4, 0},
+    {"holding-shop-3b", "holding-mach-3b1", "Сборочная линия",           "wct-marketing",    -4, 0},
+    {"holding-shop-3b", "holding-mach-3b2", "Стенд испытаний",           "wct-marketing",     4, 0},
+    {"holding-shop-3c", "holding-mach-3c1", "Пост контроля (ОТК)",       "wct-marketing",     0, 0},
+  };
+
+  // Межзаводские «дороги» на верхнем уровне (parent_id = ''), эндпоинты —
+  // 'shop:<org_unit_id>' завода/склада (переиспользуем существующую конвенцию).
+  struct RoadDef { std::string from, to; };
+  const std::vector<RoadDef> roads = {
+    {"holding-warehouse", "holding-factory-1"},
+    {"holding-warehouse", "holding-factory-2"},
+    {"holding-warehouse", "holding-factory-3"},
+    {"holding-factory-1", "holding-factory-2"},
+    {"holding-factory-2", "holding-factory-3"},
+    {"holding-factory-1", "holding-factory-3"},
+  };
+
+  db.exec("BEGIN");
+
+  // Заводы + склад (мировая карта).
+  for (auto& u : world)
+    db.exec("INSERT OR IGNORE INTO org_units(id,name,parent_id,kind,pos_x,pos_z,unit_type) "
+            "VALUES(?,?,NULL,?,?,?,?)",
+            {u.id, u.name, u.kind, std::to_string(u.posX), std::to_string(u.posZ), u.unitType});
+
+  // Цеха (площадки заводов).
+  for (auto& s : shops)
+    db.exec("INSERT OR IGNORE INTO org_units(id,name,parent_id,kind,pos_x,pos_z,unit_type) "
+            "VALUES(?,?,?,?,?,?, 'shop')",
+            {s.id, s.name, s.factoryId, s.kind, std::to_string(s.posX), std::to_string(s.posZ)});
+
+  // Станки цехов (org_unit_id = id цеха, чтобы площадка была не пустой).
+  for (auto& m : machs)
+    db.exec("INSERT OR IGNORE INTO machines(id,name,wc_type_id,org_unit_id,status,pos_x,pos_z,rotation_y) "
+            "VALUES(?,?,?,?,?,?,?,0)",
+            {m.machId, m.name, m.wctId, m.shopId, "active",
+             std::to_string(m.posX), std::to_string(m.posZ)});
+
+  // Межзаводские дороги (верхний уровень мира).
+  for (auto& r : roads)
+    db.exec("INSERT OR IGNORE INTO flows(id,from_id,to_id,parent_id) VALUES(?,?,?,'')",
+            {"holding-road-" + r.from + "-" + r.to,
+             "shop:" + r.from, "shop:" + r.to});
+
+  db.exec("COMMIT");
+  std::cout << "Seeded holding: 3 factories + central warehouse ("
+            << world.size() << " world units, " << shops.size() << " shops, "
+            << machs.size() << " machines, " << roads.size() << " roads).\n";
 }
 
 static void register_demo_seed(httplib::Server& svr, Database& db) {
@@ -1205,6 +1438,15 @@ static void migrate_v7(Database& db) {
 // технологической цепочкой между цехами. Данные не теряются.
 static void migrate_v8(Database& db) {
   if (db.user_version() >= 8) return;
+  // Эта миграция ГРУППИРУЕТ станки демо-завода под 6 цехов верхнего уровня и
+  // чистит межстаночные потоки. Для НЕ-демо БД (холдинг и пр.) демо-станков нет —
+  // выполнять её нельзя: она бы создала фантомные цеха-станки (shop-*) и удалила
+  // мировые дороги холдинга (DELETE ... parent_id=''). Пропускаем тело, но
+  // помечаем версию, чтобы миграция не повторялась.
+  {
+    auto demo = db.query_one("SELECT COUNT(*) AS n FROM machines WHERE id='mach-blastfurnace'");
+    if (demo["n"].get<std::string>() == "0") { db.set_user_version(8); return; }
+  }
   std::cout << "Migrating schema → v8 (глобальные цеха: станки внутрь)…\n";
   db.exec("BEGIN");
   try {
@@ -2405,7 +2647,17 @@ static void register_optimize(httplib::Server& svr, Database& db) {
 /* ── Стадия 1: расписание (план исполнения) ──────────────────────────────── */
 
 static void persist_schedule(Database& db, const std::string& planId, const json& result) {
-  db.exec("INSERT INTO plans(id,run_id) VALUES(?,NULLIF(?,''))", { planId, "" });
+  // Сохраняем полный KPI-блок плана (+ загрузка по типам, узкое место, очереди) —
+  // чтобы «Аналитика» показывала все показатели без пересчёта расписания.
+  json bundle = {
+    {"kpi", result.value("kpi", json::object())},
+    {"wc_load", result.value("wc_load", json::array())},
+    {"machine_load", result.value("machine_load", json::array())},
+    {"bottleneck", result.value("bottleneck", json::object())},
+    {"queue_by_wc", result.value("queue_by_wc", json::array())},
+  };
+  db.exec("INSERT INTO plans(id,run_id,kpi_json) VALUES(?,NULLIF(?,''),?)",
+          { planId, "", bundle.dump() });
   for (auto& g : result.value("gantt", json::array())) {
     // supply-джобы («Поставка сырья») не ссылаются на реальные записи НСИ, а пустые
     // FK должны быть NULL, не '' — иначе транзакция падала по FK (SQLITE_CONSTRAINT)
@@ -3018,6 +3270,10 @@ static bool setup_database(Database& db) {
   db.exec_safe("ALTER TABLE users ADD COLUMN locked_until TEXT");  // идемпотентно для старых БД
   // Версионирование техкарт (ТЗ «Справочник техкарт» §3.3): version + is_default.
   db.exec_safe("ALTER TABLE org_units ADD COLUMN kind TEXT");  // 3D-модель здания цеха
+  db.exec_safe("ALTER TABLE org_units ADD COLUMN pos_x REAL"); // позиция цеха на площадке (X)
+  db.exec_safe("ALTER TABLE org_units ADD COLUMN pos_z REAL"); // позиция цеха на площадке (Z)
+  db.exec_safe("ALTER TABLE org_units ADD COLUMN unit_type TEXT"); // 'factory' | 'warehouse' | 'shop' (пусто = 'shop')
+  db.exec_safe("ALTER TABLE plans ADD COLUMN kpi_json TEXT");  // KPI-блок плана для «Аналитики»
   // flows: from/to полиморфные (станок ИЛИ 'shop:<org_unit_id>') — старый FK на
   // machines молча ронял сохранение межцеховых дорог (SQLITE_CONSTRAINT глотался
   // фронтом). Перестраиваем таблицу без FK; висячие связи чистим на старте.
@@ -3127,6 +3383,27 @@ static bool setup_database(Database& db) {
     std::cerr << "Seed check failed: " << e.what() << "\n";
   }
 
+  // Демо-холдинг: если имя проекта помечено как холдинг (см. holding_trigger)
+  // и оргструктура ещё пуста — засеваем 3 завода + центральный склад. Типы РЦ
+  // уже засеяны demo-посевом выше, поэтому станки цехов ссылаются на реальные wct.
+  try {
+    if (holding_trigger(db.path())) {
+      auto ou = db.query_one("SELECT COUNT(*) AS n FROM org_units");
+      if (ou["n"].get<std::string>() == "0") {
+        // Холдинг НЕ использует демо-завод из seed_demo: удаляем его станки/дороги
+        // (типы РЦ и изделия ОСТАВЛЯЕМ — на них по FK ссылаются станки цехов холдинга),
+        // иначе migrate вывел бы из имён демо-станков лишние «цеха» → фантомный
+        // завод «Предприятие» на мировой карте.
+        db.exec("DELETE FROM flows");
+        db.exec("DELETE FROM machines");
+        seed_holding(db);
+      }
+    }
+  } catch (std::exception& e) {
+    try { db.exec("ROLLBACK"); } catch (...) {}
+    std::cerr << "Holding seed failed: " << e.what() << "\n";
+  }
+
   // Миграция: связать реестры по ID, завести экономику/сценарии/RBAC. Идемпотентно,
   // существующие данные сохраняются (PRAGMA user_version). Данные-часть — в
   // транзакции с откатом; при ошибке НЕ стартуем с полу-мигрированной БД.
@@ -3223,7 +3500,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.56.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.58.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.
@@ -3297,7 +3574,7 @@ int main(int argc, char* argv[]) {
   // Оргструктура (подразделения/цеха) — для выпадающих списков.
   // kind — выбранная пользователем 3D-модель здания цеха на схеме.
   register_crud(svr, db, {
-    "org_units", "org_unit", { "name", "parent_id", "kind" }
+    "org_units", "org_unit", { "name", "parent_id", "kind", "pos_x", "pos_z", "unit_type" }
   });
 
   // Custom POST for operations (NULLIF routing_id) — must precede generic CRUD

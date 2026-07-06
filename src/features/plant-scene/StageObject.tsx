@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Html, TransformControls } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import { OBJECT_REGISTRY } from './registry'
+import { MachineModel } from './objects/machines'
 import { Building } from './Building'
 import { STATUS_META } from './types'
 import type { SceneNode } from './graph/sceneModel'
@@ -58,6 +59,9 @@ export function StageObject({
   }
   const handleDouble = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+    // Станок — лист (на нём висят операции): внутрь не входим — «ниже станков ничего нет».
+    // Углубляться можно только в контейнеры (цех / отдел = refType 'shop').
+    if (node.refType === 'machine') return
     onEnter(node.id)
   }
   const handleOver = (e: ThreeEvent<PointerEvent>) => {
@@ -79,11 +83,15 @@ export function StageObject({
   return (
     <>
       <group ref={groupRef} position={[x, 0, z]}>
-        {/* Бетонная площадка под объектом. */}
-        <mesh position={[0, 0.03, 0]} receiveShadow>
-          <boxGeometry args={[pad, 0.08, pad]} />
-          <meshStandardMaterial color="#565b62" roughness={0.95} metalness={0.05} />
-        </mesh>
+        {/* Бетонная площадка — ТОЛЬКО под зданиями (фундамент). Под станками её
+            убрали: сетка тёмных плит на полу цеха читалась как «глючные тени».
+            Привязку станка к полу даёт мягкое градиентное пятно в WorkshopInterior. */}
+        {asBuilding && (
+          <mesh position={[0, 0.03, 0]} receiveShadow>
+            <boxGeometry args={[pad, 0.08, pad]} />
+            <meshStandardMaterial color="#565b62" roughness={0.95} metalness={0.05} />
+          </mesh>
+        )}
 
         <group
           rotation={[0, node.rotationY ?? 0, 0]}
@@ -94,7 +102,9 @@ export function StageObject({
         >
           {asBuilding
             ? <Building kind={node.kind} accent={meta.color} />
-            : <group scale={node.scale}><Model /></group>}
+            : node.machineArch
+              ? <MachineModel arch={node.machineArch} status={node.status} />
+              : <group scale={node.scale}><Model /></group>}
         </group>
 
         {(selected || connectSource) && (

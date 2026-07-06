@@ -30,7 +30,7 @@ const _q = new THREE.Quaternion()
 const _v = new THREE.Vector3()
 const _s = new THREE.Vector3()
 
-interface SimNode { id: string; position: [number, number]; refType?: 'shop' | 'machine' }
+interface SimNode { id: string; position: [number, number]; refType?: 'shop' | 'machine' | 'factory' }
 
 /** Слой поверх 3D-схемы: подсветка занятых узлов (станков ИЛИ цехов на площадке),
  *  очереди-батчи (стопки ящиков), партии и рабочие на маршрутах. На уровне

@@ -32,6 +32,22 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
   admin: <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />,
+  analytics: (
+    <>
+      <path d="M3 3v18h18" />
+      <rect x="7" y="12" width="3" height="6" />
+      <rect x="12" y="8" width="3" height="10" />
+      <rect x="17" y="5" width="3" height="13" />
+    </>
+  ),
+  workflow: (
+    <>
+      <rect x="3" y="4" width="7" height="5" rx="1.2" />
+      <rect x="14" y="15" width="7" height="5" rx="1.2" />
+      <circle cx="18" cy="6.5" r="2.4" />
+      <path d="M10 6.5h5.2M17.5 9v3.5M6.5 9v5.5l7.5 3" />
+    </>
+  ),
 }
 
 interface IconProps {

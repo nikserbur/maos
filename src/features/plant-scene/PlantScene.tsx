@@ -4,6 +4,7 @@ import { Loader } from '@react-three/drei'
 import { SceneEnvironment } from './SceneEnvironment'
 import { Facility } from './Facility'
 import { WorkshopInterior } from './WorkshopInterior'
+import { WorldMap } from './WorldMap'
 import { PlantLayout } from './PlantLayout'
 import { EditorPanel } from './EditorPanel'
 import { SimulationLayer, createSimState } from './SimulationLayer'
@@ -63,6 +64,44 @@ export default function PlantScene() {
 
   useEffect(() => { loadGraph() }, [])
 
+  // DEV-only: детерминированный вход в цех для визуальной верификации из консоли
+  // (window.__maos.enterShop(i) / .root()). В прод-сборку не попадает.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const factories = () => state.graph.nodes.filter((n) => n.refType === 'factory')
+    // Цеха текущего завода (когда мы внутри завода) — для верификации входа.
+    const shops = () => state.graph.nodes.filter(
+      (n) => n.refType === 'shop' && n.parentId === state.currentParentId)
+    Object.assign(window, {
+      __maos: {
+        factories: () => factories().map((f, i) => `${i}: ${f.title}`),
+        enterFactory: (sel: number | string = 0) => {
+          const list = factories()
+          const f = typeof sel === 'number'
+            ? list[sel]
+            : list.find((x) => x.title.toLowerCase().includes(String(sel).toLowerCase()))
+          if (f) dispatch({ type: 'ENTER_NODE', id: f.id })
+          return f?.title ?? null
+        },
+        shops: () => shops().map((s, i) => `${i}: ${s.title}`),
+        enterShop: (sel: number | string = 0) => {
+          const list = shops()
+          const shop = typeof sel === 'number'
+            ? list[sel]
+            : list.find((s) => s.title.toLowerCase().includes(String(sel).toLowerCase()))
+          if (shop) dispatch({ type: 'ENTER_NODE', id: shop.id })
+          return shop?.title ?? null
+        },
+        selectMachine: (i = 0) => {
+          const ms = state.graph.nodes.filter((n) => n.parentId === state.currentParentId && n.refType === 'machine')
+          if (ms[i]) dispatch({ type: 'NODE_CLICK', id: ms[i].id })
+          return ms[i]?.title ?? null
+        },
+        root: () => dispatch({ type: 'GO_TO_LEVEL', index: 0 }),
+      },
+    })
+  }, [state.graph, state.currentParentId])
+
   // useMemo обязателен: новые массивы на каждый рендер ломали useMemo в FlowLinks/
   // Facility (deps [nodes, edges]) — сеть дорог и обвязка пересчитывались на каждый
   // клик/hover по сцене.
@@ -74,6 +113,16 @@ export default function PlantScene() {
     [state.graph, state.currentParentId])
   const selected = state.graph.nodes.find((n) => n.id === state.selectedId) ?? null
   const editing  = state.mode === 'edit'
+
+  // Уровень иерархии определяется типом узла в currentParentId:
+  //   null → МИР (WorldMap); refType 'factory' → ПЛОЩАДКА (Facility);
+  //   refType 'shop' → ЦЕХ (WorkshopInterior).
+  const currentNode = state.graph.nodes.find((n) => n.id === state.currentParentId) ?? null
+  const level: 'world' | 'site' | 'shop' =
+    state.currentParentId == null ? 'world'
+      : currentNode?.refType === 'shop' ? 'shop'
+        : 'site'
+  const indoor = level === 'shop'
 
   // Габарит текущего уровня (самый дальний узел от центра) → туман/тени масштабируются
   // под РАЗМЕР завода: большой кампус виден целиком, маленький цех — камернее.
@@ -100,9 +149,32 @@ export default function PlantScene() {
   // ── Мутации: локальный диспатч (мгновенный отклик) + запись в БД ───────────
 
   const handleMove = (id: string, position: [number, number]) => {
+    // position — координата гизмо в ЦЕНТРИРОВАННОМ кадре (buildGraphFromDb вычитает
+    // центроид цеха при загрузке). В БД надо писать СЫРУЮ позицию, иначе перемещение
+    // «не запоминается»: при перезагрузке центрируется повторно и станок прыгает на
+    // центроид. Инвертируем центрирование, добавляя центроид сырых позиций цеха.
     dispatch({ type: 'MOVE_NODE', id, position })
-    persistDebounced(`pos-${id}`, () =>
-      api.machines.update(id, { pos_x: String(position[0]), pos_z: String(position[1]) }))
+    // Завод/склад (мировая карта) и цех (площадка): позиция АБСОЛЮТНАЯ (не центрируется)
+    // — пишем прямо в org_units.pos_x/pos_z. Виртуальный завод (без orgUnitId) не
+    // персистим. Тот же путь используется и для 'factory', и для 'shop'.
+    const node = state.graph.nodes.find((n) => n.id === id)
+    if (node?.refType === 'shop' || node?.refType === 'factory') {
+      if (node.orgUnitId)
+        persistDebounced(`pos-${id}`, () =>
+          api.orgUnits.update(node.orgUnitId!, {
+            pos_x: String(Math.round(position[0])), pos_z: String(Math.round(position[1])),
+          }))
+      return
+    }
+    const m = machines.find((x) => x.id === id)
+    const shopMs = m ? machines.filter((x) => x.org_unit_id === m.org_unit_id) : []
+    const cx = shopMs.length ? shopMs.reduce((s, x) => s + (Number(x.pos_x) || 0), 0) / shopMs.length : 0
+    const cz = shopMs.length ? shopMs.reduce((s, x) => s + (Number(x.pos_z) || 0), 0) / shopMs.length : 0
+    const rawX = String(Math.round(position[0] + cx))
+    const rawZ = String(Math.round(position[1] + cz))
+    // Держим локальный кэш сырых позиций согласованным (центроид для следующих move).
+    setMachines((prev) => prev.map((x) => (x.id === id ? { ...x, pos_x: rawX, pos_z: rawZ } : x)))
+    persistDebounced(`pos-${id}`, () => api.machines.update(id, { pos_x: rawX, pos_z: rawZ }))
   }
 
   const handleRename = (id: string, title: string) => {
@@ -132,7 +204,9 @@ export default function PlantScene() {
   const currentShop = state.graph.nodes.find(
     (n) => n.id === state.currentParentId && n.refType === 'shop',
   )
-  const atRoot = state.currentParentId == null
+  // «Уровень площадки» (создание цехов) показываем ВНУТРИ ЗАВОДА (site), а не в
+  // мире. На мировом уровне заводы/склад приходят из НСИ (создаются отдельно).
+  const atRoot = level === 'site'
 
   /** Регистрация оборудования прямо со схемы: станок создаётся ВНУТРИ текущего цеха. */
   const handleCreateMachine = async (
@@ -163,10 +237,11 @@ export default function PlantScene() {
     const type = wcTypes.find((t) => t.id === wcTypeId)
     if (!type || !currentShop) return
     const n = machines.filter((m) => m.wc_type_id === wcTypeId).length + 1
-    // Станки цеха стоят в линию: новый — правее самого правого в этом цехе.
-    const inShop = state.graph.nodes.filter(
-      (x) => x.parentId === state.currentParentId && x.refType === 'machine')
-    const maxX = inShop.length ? Math.max(...inShop.map((x) => x.position[0])) : -8
+    // Позиция в СЫРОМ кадре (как в БД): правее самого правого станка цеха. Брать
+    // сырые pos из реестра машин, а не центрированные позиции сцены — иначе новый
+    // станок после перезагрузки прыгает на центроид (как было с перемещением).
+    const shopMs = machines.filter((m) => m.org_unit_id === currentShop.orgUnitId)
+    const maxX = shopMs.length ? Math.max(...shopMs.map((m) => Number(m.pos_x) || 0)) : 0
     await api.machines.create({
       name: `${type.name} №${n}`,
       wc_type_id: wcTypeId,
@@ -179,10 +254,16 @@ export default function PlantScene() {
     await loadGraph()
   }
 
-  /** Создать новый цех (org_unit): имя + опционально 3D-модель здания. */
+  /** Создать новый цех (org_unit): имя + опционально 3D-модель здания.
+   *  На уровне площадки цех привязывается к ТЕКУЩЕМУ заводу (parent_id). Для
+   *  виртуального завода (legacy, без orgUnitId) parent_id опускаем — модель
+   *  сама повесит его на завод по умолчанию. */
   const handleCreateShop = async (name: string, kind?: string) => {
     if (!name.trim()) return
-    await api.orgUnits.create({ name: name.trim(), kind: kind || undefined }).catch(() => {})
+    const parentId = currentNode?.refType === 'factory' ? currentNode.orgUnitId : undefined
+    await api.orgUnits.create({
+      name: name.trim(), kind: kind || undefined, parent_id: parentId || undefined,
+    }).catch(() => {})
     await loadGraph()
   }
 
@@ -214,30 +295,53 @@ export default function PlantScene() {
       <div className="scene__canvas">
         <Canvas
           shadows
-          dpr={[1, 2]}
-          camera={{ position: [46, 36, 50], fov: 44 }}
+          dpr={[1, 1.5]}
+          /* near=1.5 (было 0.1) — ГЛАВНЫЙ фикс z-fighting: точность буфера глубины
+             определяется отношением far/near. 0.1/1000 давало «частокол» мерцаний
+             на всех плоских декалях (тени, разметка, полосы, кольца) у земли;
+             1.5/1500 повышает точность на порядок. Камера не ближе 8 ед. к цели
+             (OrbitControls minDistance), поэтому near=1.5 ничего не срезает.
+             logarithmicDepthBuffer НЕ используем — он ломает polygonOffset декалей. */
+          camera={{ position: [46, 36, 50], fov: 44, near: 1.5, far: 1500 }}
           onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
         >
-          <SceneEnvironment indoor={state.currentParentId != null} extent={extent} />
+          <SceneEnvironment indoor={indoor} extent={extent} />
           <Suspense fallback={null}>
-            {state.currentParentId == null
-              ? <Facility nodes={nodes} />
-              : <WorkshopInterior nodes={nodes} />}
-            {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
-            <PlantLayout
-              graph={state.graph}
-              nodes={nodes}
-              edges={edges}
-              selectedId={state.selectedId}
-              connectFrom={state.connectFrom}
-              connecting={state.connecting}
-              editing={editing}
-              indoor={state.currentParentId != null}
-              onSelect={handleSelect}
-              onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-              onMove={handleMove}
-              onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
-            />
+            {/* Земля/окружение уровня: мир — своя карта; площадка — газон (Facility);
+                цех — интерьер. WorldMap сам рисует иконки заводов + магистрали,
+                поэтому PlantLayout на мировом уровне НЕ рисуем (иначе двойной рендер). */}
+            {level === 'world'
+              ? (
+                <WorldMap
+                  nodes={nodes}
+                  edges={edges}
+                  selectedId={state.selectedId}
+                  editing={editing}
+                  onSelect={handleSelect}
+                  onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+                  onMove={handleMove}
+                />
+              )
+              : (
+                <>
+                  {level === 'site' ? <Facility nodes={nodes} /> : <WorkshopInterior nodes={nodes} />}
+                  {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
+                  <PlantLayout
+                    graph={state.graph}
+                    nodes={nodes}
+                    edges={edges}
+                    selectedId={state.selectedId}
+                    connectFrom={state.connectFrom}
+                    connecting={state.connecting}
+                    editing={editing}
+                    indoor={indoor}
+                    onSelect={handleSelect}
+                    onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+                    onMove={handleMove}
+                    onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
+                  />
+                </>
+              )}
           </Suspense>
         </Canvas>
 

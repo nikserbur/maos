@@ -137,7 +137,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         </form>
 
         <p style={{ margin: 0, fontSize: 11, color: 'var(--text-disabled)', textAlign: 'center' }}>
-          MAOS v0.56.0 · дипломная работа · {new Date().getFullYear()}
+          MAOS v0.58.0 · дипломная работа · {new Date().getFullYear()}
         </p>
       </div>
     </div>

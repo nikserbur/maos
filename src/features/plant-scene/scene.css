@@ -353,6 +353,66 @@
 }
 .ep-machine-card__unlink:hover { color: #ff6b6b; }
 
+/* ─── Статус-бейдж ──────────────────────────────────────────────────────── */
+.ep-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 4px 0 12px; padding: 3px 11px 3px 9px;
+  font-size: 12px; font-weight: 600; line-height: 1;
+  border-radius: 999px; border: 1px solid transparent;
+}
+.ep-badge__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.ep-badge--ok   { color: #4ec27e; background: rgba(35,133,81,.14);  border-color: rgba(78,194,126,.32); }
+.ep-badge--warn { color: #e0a44a; background: rgba(200,118,25,.14); border-color: rgba(224,164,74,.32); }
+.ep-badge--off  { color: #98a2b0; background: rgba(143,153,168,.12); border-color: rgba(152,162,176,.28); }
+
+/* ─── Атрибуты: метка над значением, длинные значения переносятся ────────── */
+.ep-fields { display: flex; flex-direction: column; gap: 9px; margin-bottom: 12px; }
+.ep-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ep-field--row { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ep-field__k {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); white-space: nowrap;
+}
+.ep-field__v {
+  font-size: 13px; color: var(--text); font-weight: 500;
+  line-height: 1.35; overflow-wrap: anywhere; min-width: 0;
+}
+.ep-field--row .ep-field__k { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.ep-field--row .ep-field__v { text-align: right; }
+
+/* ─── Список операций (сгруппирован, прокручиваемый) ─────────────────────── */
+.ep-ops-wrap { margin-top: 4px; }
+.ep-ops__head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted);
+}
+.ep-ops__count {
+  font-size: 10px; font-weight: 700; letter-spacing: 0; color: var(--text-secondary);
+  background: var(--bg-input); border: 1px solid var(--border-strong);
+  border-radius: 999px; padding: 1px 7px;
+}
+.ep-ops {
+  list-style: none; margin: 0; padding: 4px;
+  max-height: 210px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-card, #17191d);
+}
+.ep-ops::-webkit-scrollbar { width: 8px; }
+.ep-ops::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+.ep-op {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  padding: 5px 8px; border-radius: 4px; font-size: 12px; color: var(--text-secondary);
+}
+.ep-op:hover { background: var(--bg-input); color: var(--text); }
+.ep-op__name { overflow-wrap: anywhere; line-height: 1.3; min-width: 0; }
+.ep-op__meta { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.ep-op__count {
+  font-size: 10px; font-weight: 700; color: var(--accent);
+  background: rgba(45,114,210,.14); border-radius: 999px; padding: 1px 6px;
+}
+.ep-op__time { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
 /* ─── Inline registration form ───────────────────────────────────────────── */
 .ep-register {
   display: flex;

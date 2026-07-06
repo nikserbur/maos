@@ -7,7 +7,9 @@ const NsiScreen = lazy(() => import('../features/nsi/NsiScreen').then((m) => ({ 
 const OptimizationScreen = lazy(() => import('../features/optimization/OptimizationScreen').then((m) => ({ default: m.OptimizationScreen })))
 const ScenariosHub = lazy(() => import('../features/scenarios/ScenariosHub').then((m) => ({ default: m.ScenariosHub })))
 const PlanScreen = lazy(() => import('../features/plan/PlanScreen').then((m) => ({ default: m.PlanScreen })))
+const AnalyticsScreen = lazy(() => import('../features/analytics/AnalyticsScreen').then((m) => ({ default: m.AnalyticsScreen })))
 const AdminScreen = lazy(() => import('../features/admin/AdminScreen').then((m) => ({ default: m.AdminScreen })))
+const WorkflowBuilder = lazy(() => import('../features/workflow-builder/WorkflowBuilder').then((m) => ({ default: m.WorkflowBuilder })))
 
 export interface ScreenDef {
   id: string
@@ -25,6 +27,8 @@ export const SCREENS: ScreenDef[] = [
   { id: 'nsi', label: 'Справочники', icon: 'nsi', Component: NsiScreen },
   { id: 'plan', label: 'План', icon: 'plan', Component: PlanScreen },
   { id: 'optimization', label: 'Оптимизация', icon: 'optimization', Component: OptimizationScreen },
+  { id: 'analytics', label: 'Аналитика', icon: 'analytics', Component: AnalyticsScreen },
   { id: 'scenarios', label: 'Сценарии', icon: 'scenarios', Component: ScenariosHub },
   { id: 'admin', label: 'Администрирование', icon: 'admin', Component: AdminScreen },
+  { id: 'aiflow', label: 'AI-воркфлоу (конструктор)', icon: 'workflow', Component: WorkflowBuilder },
 ]

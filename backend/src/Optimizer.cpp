@@ -416,6 +416,9 @@ double herfindahl(const std::vector<double>& x, const std::vector<double>& meanP
 /* ── Главная процедура ───────────────────────────────────────────────────── */
 json run_optimization(Database& db, const OptimizeParams& p) {
   Model m = load_model(db);
+  // Инвест-what-if: временно наращиваем число станков типа (мощность растёт в cap[]).
+  for (auto& [id, n] : p.machineBonus)
+    if (auto it = m.wcts.find(id); it != m.wcts.end()) it->second.machineCount += n;
   size_t S = m.sellables.size();
   json warnings = json::array();
   if (S == 0) {

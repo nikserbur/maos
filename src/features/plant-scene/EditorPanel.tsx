@@ -7,6 +7,13 @@ import { KIND_META, PALETTE } from './graph/sceneModel'
 import { SHOP_MODELS } from './Building'
 import { type Machine, type WorkCenterType, type Operation } from '../../lib/api'
 
+/** Статус станка → человекочитаемая метка + класс цветного бейджа. */
+const MACHINE_STATUS: Record<string, { label: string; cls: string }> = {
+  active:         { label: 'В работе', cls: 'ok' },
+  maintenance:    { label: 'Техобслуживание', cls: 'warn' },
+  decommissioned: { label: 'Выведено', cls: 'off' },
+}
+
 interface MachineCreateData {
   name: string
   wcTypeId: string
@@ -80,6 +87,27 @@ export function EditorPanel({
         op.wc_types.split(',').some((t) => t.trim() === linkedWcTypeName),
       )
     : []
+
+  // Операции группируем по названию (в реестре много одноимённых из разных
+  // техкарт) → компактный список: название + число + диапазон норм времени.
+  const opGroups = ((): Array<{ name: string; count: number; range: string }> => {
+    const g = new Map<string, { count: number; times: number[] }>()
+    for (const op of compatibleOps) {
+      const e = g.get(op.name) ?? { count: 0, times: [] }
+      e.count += 1
+      const t = parseFloat(op.t_norm)
+      if (!Number.isNaN(t)) e.times.push(t)
+      g.set(op.name, e)
+    }
+    return [...g.entries()]
+      .map(([name, e]) => {
+        const min = e.times.length ? Math.min(...e.times) : null
+        const max = e.times.length ? Math.max(...e.times) : null
+        const range = min === null ? '' : min === max ? `${min} мин` : `${min}–${max} мин`
+        return { name, count: e.count, range }
+      })
+      .sort((a, b) => b.count - a.count)
+  })()
 
   // Registration form state — resets when selected node changes
   const [newShopName, setNewShopName] = useState('')
@@ -175,7 +203,7 @@ export function EditorPanel({
           </p>
         </div>
       )}
-      {editing && !atRoot && (
+      {editing && !atRoot && currentShopName && (
         <div className="editor-panel__section">
           <div className="editor-panel__label">Цех: {currentShopName ?? '—'}</div>
           {wcTypes.length === 0 ? (
@@ -298,55 +326,56 @@ export function EditorPanel({
               ) : linkedWcTypeName && (
                 <div className="ep-machine-card__type">{linkedWcTypeName}</div>
               )}
-              <dl className="editor-panel__kpis" style={{ marginTop: 6 }}>
-                <div className="kpi">
-                  <dt className="kpi__label">Статус</dt>
-                  <dd className="kpi__value">{linkedMachine.status || '—'}</dd>
-                </div>
+              {/* Статус — цветной бейдж (локализованный, вместо сырого «active») */}
+              {(() => {
+                const st = MACHINE_STATUS[linkedMachine.status] ?? { label: linkedMachine.status || '—', cls: 'off' }
+                return (
+                  <span className={`ep-badge ep-badge--${st.cls}`}>
+                    <span className="ep-badge__dot" />{st.label}
+                  </span>
+                )
+              })()}
+
+              {/* Атрибуты: метка над значением — длинные (подразделение) переносятся */}
+              <div className="ep-fields">
                 {linkedMachine.org_unit && (
-                  <div className="kpi">
-                    <dt className="kpi__label">Подразделение</dt>
-                    <dd className="kpi__value">{linkedMachine.org_unit}</dd>
+                  <div className="ep-field">
+                    <span className="ep-field__k">Подразделение</span>
+                    <span className="ep-field__v">{linkedMachine.org_unit}</span>
                   </div>
                 )}
                 {linkedMachine.inv_no && (
-                  <div className="kpi">
-                    <dt className="kpi__label">Инв. №</dt>
-                    <dd className="kpi__value mono">{linkedMachine.inv_no}</dd>
+                  <div className="ep-field ep-field--row">
+                    <span className="ep-field__k">Инв. №</span>
+                    <span className="ep-field__v mono">{linkedMachine.inv_no}</span>
                   </div>
                 )}
                 {linkedMachine.schedule && (
-                  <div className="kpi">
-                    <dt className="kpi__label">Расписание</dt>
-                    <dd className="kpi__value">{linkedMachine.schedule}</dd>
+                  <div className="ep-field ep-field--row">
+                    <span className="ep-field__k">Расписание</span>
+                    <span className="ep-field__v">{linkedMachine.schedule}</span>
                   </div>
                 )}
-              </dl>
+              </div>
 
-              {/* Доступные операции */}
-              {compatibleOps.length > 0 && (
-                <>
-                  <div className="editor-panel__label" style={{ marginTop: 10 }}>
-                    Операции ({compatibleOps.length})
+              {/* Операции — сгруппированы по названию (число + диапазон времени) */}
+              {opGroups.length > 0 && (
+                <div className="ep-ops-wrap">
+                  <div className="ep-ops__head">
+                    Операции<span className="ep-ops__count">{compatibleOps.length}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {compatibleOps.map((op) => (
-                      <div key={op.id} style={{
-                        fontSize: 11, padding: '3px 6px',
-                        background: 'var(--bg-card)', borderRadius: 2,
-                        color: 'var(--text-secondary)',
-                        display: 'flex', justifyContent: 'space-between',
-                      }}>
-                        <span>{op.name}</span>
-                        {op.t_norm && (
-                          <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                            {op.t_norm} мин
-                          </span>
-                        )}
-                      </div>
+                  <ul className="ep-ops">
+                    {opGroups.map((g) => (
+                      <li className="ep-op" key={g.name}>
+                        <span className="ep-op__name" title={g.name}>{g.name}</span>
+                        <span className="ep-op__meta">
+                          {g.count > 1 && <span className="ep-op__count">×{g.count}</span>}
+                          {g.range && <span className="ep-op__time mono">{g.range}</span>}
+                        </span>
+                      </li>
                     ))}
-                  </div>
-                </>
+                  </ul>
+                </div>
               )}
               {linkedWcTypeName && compatibleOps.length === 0 && (
                 <p className="editor-panel__tip mono" style={{ marginTop: 6 }}>

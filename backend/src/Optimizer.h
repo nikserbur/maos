@@ -2,6 +2,7 @@
 #include "Database.h"
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_map>
 
 /**
  * Устойчивая стохастическая оптимизация производства под неопределённость
@@ -30,6 +31,9 @@ struct OptimizeParams {
                                       // («не ставить всё на одно» → диверсификация)
   double volatility    = 0.06;        // волатильность сценария → МУЛЬТИПЛИКАТОР ширины распределений
   double demand        = 1.0;         // сценарный множитель СПРОСА → масштабирует ёмкость рынка
+  // Инвест-what-if: временная докупка станков (wc_type_id → +N) для оценки
+  // окупаемости. Прибавляется к machineCount типа → растёт мощность. Не пишет в БД.
+  std::unordered_map<std::string, int> machineBonus;
 };
 
 /**

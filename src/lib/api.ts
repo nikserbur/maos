@@ -112,7 +112,7 @@ export interface User {
   role_id: string; role_name: string; permissions: string; created_at: string
 }
 export interface Role { id: string; name: string; permissions: string }
-export interface OrgUnit { id: string; name: string; parent_id: string; kind?: string; created_at: string }
+export interface OrgUnit { id: string; name: string; parent_id: string; unit_type?: string; kind?: string; pos_x?: string; pos_z?: string; created_at: string }
 
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
 export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform' | 't' | 'pareto'
@@ -301,6 +301,23 @@ export interface SimResults {
 export interface SimPlan {
   plan_id: string | null; created_at?: string; makespan: number; tasks: SimTaskDto[]
 }
+export interface KpiBundle {
+  plan_id: string | null; created_at?: string
+  kpi: Record<string, number>   // makespan/otd/tardiness/utilization/cost/setup/wait/wip/…
+  wc_load?: Array<{ wc_type_id: string; wc_name?: string; utilization: number; busy_hours: number; idle_hours: number }>
+  bottleneck?: { wc_type_id?: string; wc_name?: string; utilization?: number }
+  queue_by_wc?: Array<{ wc_type_id?: string; wc_name?: string; peak?: number }>
+}
+export interface InvestmentResult {
+  wc_type_id: string; add_machines: number
+  capex: number; plan_months: number; life_months: number; discount_annual: number
+  profit_before: number; profit_after: number
+  delta_profit_horizon: number; delta_cf_month: number
+  payback_months: number      // -1 = не окупается
+  npv: number; irr_annual: number; roi: number
+  util_before: number; util_after: number
+  next_bottleneck: { wc_type_id: string; wc_name: string; utilization: number }
+}
 export interface CalibRow {
   op_id: string; op_name: string; product_name: string
   t_norm: number; realized_mean: number; n: number; delta_pct: number
@@ -362,6 +379,17 @@ export const api = {
     calibration: () => get<{ plan_id: string | null; rows: CalibRow[] }>('/simulation/calibration'),
     calibrate: (items: Array<{ op_id: string; t_norm: number }>) =>
       post<{ updated: number }>('/simulation/calibrate', { items }),
+  },
+
+  analytics: {
+    /** Полный KPI-блок плана (persisted при построении расписания). */
+    kpi: (planId?: string) => get<KpiBundle>(planId ? `/analytics/kpi?plan_id=${planId}` : '/analytics/kpi'),
+    /** Инвестпроект: докупка N станков типа → окупаемость/NPV/IRR через рынок+мощность. */
+    investment: (p: {
+      wc_type_id: string; add_machines: number; machine_capex: number
+      discount_rate?: number; life_months?: number; scenario_id?: string
+      samples?: number; demand?: number; horizon_hours?: number
+    }) => post<InvestmentResult>('/analytics/investment', p),
   },
 
   workCenterTypes: {
