@@ -48,11 +48,14 @@ CREATE TABLE IF NOT EXISTS machines (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- ── Физические связи на схеме (конвейеры, трубопроводы, кабели) ────────────
+-- ── Физические связи на схеме (конвейеры, трубопроводы, дороги) ─────────────
+-- from/to — полиморфные: id станка ЛИБО узла-цеха ('shop:<org_unit_id>'),
+-- поэтому БЕЗ FK на machines (жёсткий FK молча ронял сохранение межцеховых
+-- дорог: SQLITE_CONSTRAINT глотался фронтом). Висячие связи чистятся на старте.
 CREATE TABLE IF NOT EXISTS flows (
   id         TEXT PRIMARY KEY,
-  from_id    TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
-  to_id      TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  from_id    TEXT NOT NULL,
+  to_id      TEXT NOT NULL,
   parent_id  TEXT,   -- уровень иерархии (NULL = верхний)
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -277,7 +280,8 @@ CREATE TABLE IF NOT EXISTS portfolio_items (
 -- ── План производства из портфеля (загрузка ресурсов) ──────────────────────
 CREATE TABLE IF NOT EXISTS plans (
   id         TEXT PRIMARY KEY,
-  run_id     TEXT NOT NULL REFERENCES optimization_runs(id) ON DELETE CASCADE,
+  -- run_id NULLABLE: план строится и без прогона оптимизации (из реестра заказов)
+  run_id     TEXT REFERENCES optimization_runs(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

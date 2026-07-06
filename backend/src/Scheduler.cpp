@@ -195,7 +195,7 @@ Model load_model(Database& db) {
          "JOIN operations o ON o.routing_id = r.id "
          "WHERE r.product_id IS NOT NULL AND r.product_id <> '' "
          "AND COALESCE(r.is_default,1)=1 "               // действующая версия техкарты
-         "ORDER BY r.product_id, o.order_no")) {
+         "ORDER BY r.product_id, o.order_no, o.id")) {
     std::string pid = str(o,"product_of");
     Op op; op.id = str(o,"id"); op.name = str(o,"name");
     double tOpt = num(o,"t_opt"), tNorm = num(o,"t_norm"), tPess = num(o,"t_pess");
@@ -263,6 +263,7 @@ struct Job {
   std::vector<std::string> wcTypes;                    // допустимые типы станков (FJSP)
   double durMean, sigma, riskCoef, tailWeight, tailIndex, hourRate, laborRate, dueMin;
   double setupTime = 0;                                // наладка при смене изделия на станке
+  double batches = 1;                                  // партий (batch_size) в этой джобе
   int nInputs = 0;                                     // входных материалов у операции
   std::vector<int> preds;
 };
@@ -306,6 +307,7 @@ struct Expander {
         Job j; j.orderIdx = orderIdx; j.productId = pid; j.opId = o.id; j.opName = o.name;
         j.wcType = o.wcType; j.wcTypes = o.wcTypes;
         j.durMean = o.tExp * sizeFactor / N;          // работа делится по партиям
+        j.batches = sizeFactor / N;                   // масштаб джобы (для калибровки НСИ)
         j.setupTime = o.setupTime;                    // наладка — в simulate при смене изделия
         j.sigma = o.sigma * std::sqrt(std::max(1.0, sizeFactor / N));
         j.riskCoef = o.riskCoef; j.tailWeight = o.tailWeight; j.tailIndex = o.tailIndex;
@@ -803,12 +805,17 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     std::string wct = (!isSupply && !mid.empty() && m.machineWct.count(mid)) ? m.machineWct[mid] : j.wcType;
     gantt.push_back({
       {"job_idx", (int)i},                       // для ручных правок (drag&drop → пин)
+      {"batches", j.batches},                    // партий в джобе (нормировка калибровки)
       {"order_idx", j.orderIdx}, {"product_id", j.productId},
       {"product_name", isSupply ? "—" : (m.prodName.count(j.productId)?m.prodName[j.productId]:j.productId)},
       {"op_id", j.opId}, {"op_name", j.opName},
       {"wc_type_id", wct}, {"wc_name", m.wcName.count(wct)?m.wcName[wct]:wct},
       {"machine_id", mid}, {"machine_name", mname},
       {"worker", sched.worker[i]},
+      {"worker_id", (sched.worker[i] >= 0 && sched.worker[i] < (int)m.workers.size())
+                      ? m.workers[sched.worker[i]].id : std::string()},
+      {"worker_name", (sched.worker[i] >= 0 && sched.worker[i] < (int)m.workers.size())
+                      ? m.workers[sched.worker[i]].name : std::string()},
       {"start", H(sched.start[i])}, {"end", H(sched.end[i])},
       {"due", H(j.dueMin)}, {"late", late},
     });
@@ -817,6 +824,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // ── ОЧЕРЕДИ: сколько операций «ждут» (готовы по предшественникам, но станок занят) в
   //    каждый момент времени и на каком оборудовании — видно, где копятся узкие места.
   json queueTimeline = json::array();
+  json queueByWc = json::array();
   {
     const int BK = 48;
     const double bw = std::max(1e-9, makespan / std::max(1, BK));
@@ -836,6 +844,23 @@ json run_schedule(Database& db, const ScheduleParams& p) {
       for (auto& [wc, n] : qByWc[k]) if (n > topN) { topN = n; topWc = wc; }
       queueTimeline.push_back({ {"t", H(k * bw)}, {"queued", qTot[k]},
         {"top_wc", m.wcName.count(topWc) ? m.wcName[topWc] : topWc}, {"top_wc_n", topN} });
+    }
+    // Разбивка очереди по типам РЦ: своя серия на каждый рабочий центр — чтобы в UI
+    // можно было выбрать конкретный участок и видеть его очередь во времени.
+    std::unordered_map<std::string, std::vector<int>> series;   // wc → queued по бинам
+    for (int k = 0; k <= BK; ++k)
+      for (auto& [wc, n] : qByWc[k]) {
+        auto& v = series[wc];
+        if (v.empty()) v.assign(BK + 1, 0);
+        v[k] = n;
+      }
+    for (auto& [wc, v] : series) {
+      int peak = 0; for (int n : v) peak = std::max(peak, n);
+      if (peak == 0) continue;
+      json pts = json::array();
+      for (int k = 0; k <= BK; ++k) pts.push_back({ {"t", H(k * bw)}, {"queued", v[k]} });
+      queueByWc.push_back({ {"wc_type_id", wc}, {"wc_name", m.wcName.count(wc) ? m.wcName[wc] : wc},
+                            {"peak", peak}, {"points", pts} });
     }
   }
 
@@ -957,7 +982,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     {"weights", { {"time", p.wTime}, {"cost", p.wCost}, {"risk", p.wRisk} }},
     {"n_orders", nOrders}, {"n_jobs", (int)jobs.size()}, {"n_machines", (int)m.machineName.size()},
     {"n_workers", (int)m.workers.size()},
-    {"program", programJson}, {"gantt", gantt}, {"queue_timeline", queueTimeline},
+    {"program", programJson}, {"gantt", gantt}, {"queue_timeline", queueTimeline}, {"queue_by_wc", queueByWc},
     {"machine_load", machineLoad}, {"wc_load", wcLoad}, {"worker_plan", workerPlan},
     {"bottleneck", { {"wc_type_id", bottleneck}, {"wc_name", m.wcName.count(bottleneck)?m.wcName[bottleneck]:bottleneck},
                      {"utilization", bnUtil} }},

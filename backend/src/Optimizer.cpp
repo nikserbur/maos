@@ -135,7 +135,7 @@ Model load_model(Database& db) {
          "JOIN operations o ON o.routing_id = r.id "
          "WHERE r.product_id IS NOT NULL AND r.product_id <> '' "
          "AND COALESCE(r.is_default,1)=1 "
-         "ORDER BY r.product_id, o.order_no")) {
+         "ORDER BY r.product_id, o.order_no, o.id")) {
     const std::string productId = str(o, "product_of");
     Op op;
     op.id    = str(o, "id");
@@ -437,6 +437,17 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     } catch (...) { warnings.push_back("Сценарий не найден — берутся базовые цены."); }
   }
   if (horizon <= 0) horizon = 720;
+
+  // НСИ хранит спрос/ёмкость/конкурентов как ГОДОВЫЕ объёмы (год = 12 мес × 720 ч).
+  // Планирование само «дисконтирует» их на горизонт: 6 мес → половина годового.
+  // Разброс спроса поверх этого задаёт сценарий (множитель demand в Монте-Карло).
+  const double yearFrac = horizon / 8640.0;
+  for (auto& [id, pr] : m.prods) {
+    pr.demandMax        *= yearFrac;
+    pr.marketCapacity   *= yearFrac;
+    pr.competitorSupply *= yearFrac;
+  }
+
   marketCorr = std::min(0.98, std::max(0.0, marketCorr));
   const double betaMarket = std::sqrt(marketCorr);  // загрузка по умолчанию на фактор
 

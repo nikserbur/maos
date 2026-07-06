@@ -53,6 +53,7 @@ export interface Machine {
   id: string; name: string; wc_type_id: string; org_unit: string
   inv_no: string; serial_no: string; year_made: string
   schedule: string; status: string
+  org_unit_id?: string
   // Раскладка на 3D-схеме (схема = справочник оборудования):
   subtitle: string; pos_x: string; pos_z: string; rotation_y: string
   parent_machine_id: string
@@ -111,7 +112,7 @@ export interface User {
   role_id: string; role_name: string; permissions: string; created_at: string
 }
 export interface Role { id: string; name: string; permissions: string }
-export interface OrgUnit { id: string; name: string; parent_id: string; created_at: string }
+export interface OrgUnit { id: string; name: string; parent_id: string; kind?: string; created_at: string }
 
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
 export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform' | 't' | 'pareto'
@@ -241,6 +242,7 @@ export interface ScheduleResult {
   program: Array<{ product_id: string; product_name: string; qty: number; due_hours: number }>
   gantt: GanttJob[]; machine_load: SchedLoad[]; wc_load: SchedLoad[]; worker_plan: WorkerPlan[]
   queue_timeline?: Array<{ t: number; queued: number; top_wc: string; top_wc_n: number }>
+  queue_by_wc?: Array<{ wc_type_id: string; wc_name: string; peak: number; points: Array<{ t: number; queued: number }> }>
   bottleneck: { wc_type_id: string; wc_name: string; utilization: number }
   idle: { machine_idle_hours: number; machine_utilization: number }
   calendar: { enabled: boolean; work_fond_hours: number }
@@ -279,6 +281,31 @@ export interface DemandOrder {
 }
 export interface ProductionPlan { id: string; name: string; description: string; created_at: string }
 
+/* ── Имитационный режим (3D-плеер плана + калибровка НСИ) ─────────────────── */
+export interface SimTaskDto {
+  machine_id: string; product_id: string; product_name: string
+  op_id: string; op_name: string; order_idx: number
+  worker_id?: string; worker_name?: string
+  start: number; end: number   // часы от начала плана
+}
+export interface SimPlanSummary { id: string; created_at: string; n_tasks: string; makespan: string }
+export interface SimResults {
+  plan_id: string | null; makespan: number
+  n_machines: number; n_workers: number
+  required_operators: number; avg_operators: number; avg_utilization: number
+  throughput_per_day: number; n_orders: number
+  util_series: Array<{ t: number; util: number; busy: number }>
+  workers_series: Array<{ t: number; workers: number }>
+  per_machine: Array<{ machine_id: string; name: string; busy_hours: number; utilization: number }>
+}
+export interface SimPlan {
+  plan_id: string | null; created_at?: string; makespan: number; tasks: SimTaskDto[]
+}
+export interface CalibRow {
+  op_id: string; op_name: string; product_name: string
+  t_norm: number; realized_mean: number; n: number; delta_pct: number
+}
+
 /* ── API surface ─────────────────────────────────────────────────────────── */
 // Стадия E+: прогноз цен во времени под макрофакторами.
 export interface ForecastParams {
@@ -295,12 +322,17 @@ export interface ForecastBacktest {
   k: number; mape: number; mape_naive: number; skill: number
   pinball10: number; pinball90: number; coverage80: number
 }
+export interface ForecastContrib {
+  hist_trend: number; inflation: number; risk_drift: number
+  fx: number; demand: number; macro: number; total: number
+}
 export interface ForecastProduct {
   id: string; name: string; role: 'product' | 'raw' | 'rate'; base: number
   p10: number[]; p50: number[]; p90: number[]; mean: number[]
   history?: number[]; trend?: number[]
   fit?: ForecastFit
   backtest?: ForecastBacktest
+  contrib?: ForecastContrib
 }
 export interface ForecastResult {
   months: number; inflation_monthly: number; fx: number; demand: number
@@ -321,6 +353,15 @@ export const api = {
 
   projects: {
     list: () => get<{ projects: string[]; current: string }>('/projects'),
+  },
+
+  simulation: {
+    plans: () => get<SimPlanSummary[]>('/simulation/plans'),
+    plan: (planId?: string) => get<SimPlan>(planId ? `/simulation/plan?plan_id=${planId}` : '/simulation/plan'),
+    results: (planId?: string) => get<SimResults>(planId ? `/simulation/results?plan_id=${planId}` : '/simulation/results'),
+    calibration: () => get<{ plan_id: string | null; rows: CalibRow[] }>('/simulation/calibration'),
+    calibrate: (items: Array<{ op_id: string; t_norm: number }>) =>
+      post<{ updated: number }>('/simulation/calibrate', { items }),
   },
 
   workCenterTypes: {
@@ -386,11 +427,15 @@ export const api = {
   },
 
   orgUnits: {
-    list: () => get<OrgUnit[]>('/org_units'),
+    list:   ()                          => get<OrgUnit[]>('/org_units'),
+    create: (d: { name: string; parent_id?: string; kind?: string }) => post<OrgUnit>('/org_units', d),
+    update: (id: string, d: Partial<OrgUnit>) => put<OrgUnit>(`/org_units/${id}`, d),
+    delete: (id: string)                => del<object>(`/org_units/${id}`),
   },
 
   scheme: {
     get: () => get<SchemeAggregate>('/scheme'),
+    processFlows: () => get<Array<{ from_id: string; to_id: string }>>('/scheme/process_flows'),
   },
 
   scenarios: {

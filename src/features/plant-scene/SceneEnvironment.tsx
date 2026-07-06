@@ -3,47 +3,69 @@ import { ContactShadows, Grid, OrbitControls } from '@react-three/drei'
 interface SceneEnvironmentProps {
   /** true — внутри цеха (закрытая площадка); false — открытая территория с травой. */
   indoor?: boolean
+  /** Габарит сцены (расстояние до самого дальнего объекта) — туман/тени под него. */
+  extent?: number
 }
 
 /**
  * Окружение сцены: открытая территория предприятия (трава) либо пол цеха,
  * мягкое дневное освещение и контактные тени.
  */
-export function SceneEnvironment({ indoor = false }: SceneEnvironmentProps) {
-  const sky      = indoor ? '#14181e' : '#9fb6cc'
-  const ground   = indoor ? '#2b2f36' : '#3f5d3a'   // бетон цеха / газон
-  const groundFar = indoor ? '#23272d' : '#2c4530'
+export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironmentProps) {
+  const sky    = indoor ? '#14181e' : '#b8d4e6'   // светлое небо
+  const ground = indoor ? '#2b2f36' : '#4a6d45'   // бетон цеха / газон
+
+  // Туман: завод по умолчанию чёткий (near ≈ за самым дальним цехом от камеры),
+  // а земля растворяется в небе ЗАДОЛГО до края ground-плоскости — границ карты
+  // не видно, горизонт «бесконечный».
+  const fogNear = extent * (indoor ? 1.6 : 2.1)
+  const fogFar  = extent * (indoor ? 3.6 : 4.2)
+  // Тени плотно вокруг застройки — растянутый масштаб давал радиальные «мазки».
+  const shadowScale = Math.min(200, extent * 1.7)
+  // Ортокамера тени ПЛОТНО облегает сцену: раньше огромный frustum (extent+20,
+  // far=220) при 2048² давал ~19 тексел/ед → «частокол» акне на станках в цехе.
+  // Тесный frustum + far под геометрию + 4096² резко поднимают плотность теней.
+  const shadowRange = indoor ? extent * 1.04 : extent + 20
+  const shadowFar   = 70 + extent * 1.7
 
   return (
     <>
       <color attach="background" args={[sky]} />
-      <fog attach="fog" args={[sky, 70, 190]} />
+      <fog attach="fog" args={[sky, fogNear, fogFar]} />
 
-      <hemisphereLight args={[indoor ? '#cfe0ff' : '#dff0ff', ground, indoor ? 0.5 : 0.75]} />
-      <ambientLight intensity={indoor ? 0.3 : 0.45} />
-      <directionalLight
-        position={[30, 40, 18]}
-        intensity={indoor ? 1.0 : 1.35}
-        color="#fff6e8"
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-near={0.5}
-        shadow-camera-far={180}
-        shadow-camera-left={-60}
-        shadow-camera-right={60}
-        shadow-camera-top={60}
-        shadow-camera-bottom={-60}
-      />
+      {/* В цехе — РОВНЫЙ свет (ряды верхних ламп), почти без теней: яркие
+          hemisphere+ambient. На улице — солнечный ключевой свет с тенями. */}
+      <hemisphereLight args={[indoor ? '#dfe8f5' : '#eaf4ff', ground, indoor ? 0.85 : 0.9]} />
+      <ambientLight intensity={indoor ? 0.6 : 0.45} />
+      {/* Направленный свет с картой теней — ТОЛЬКО на улице. В цехе карта теней
+          давала «частокол» акне на тёмном полу под скользящим углом; заводской
+          цех освещён равномерно, поэтому indoor тени не строим вовсе. Внутри
+          оставляем слабый направленный свет БЕЗ теней — только для объёма граней. */}
+      {indoor ? (
+        <directionalLight position={[24, 34, 16]} intensity={0.5} color="#fff6e8" />
+      ) : (
+        <directionalLight
+          position={[30, 40, 18]}
+          intensity={1.35}
+          color="#fff6e8"
+          castShadow
+          shadow-mapSize={[4096, 4096]}
+          shadow-bias={-0.0002}
+          shadow-normalBias={0.05}
+          shadow-camera-near={0.5}
+          shadow-camera-far={shadowFar}
+          shadow-camera-left={-shadowRange}
+          shadow-camera-right={shadowRange}
+          shadow-camera-top={shadowRange}
+          shadow-camera-bottom={-shadowRange}
+        />
+      )}
 
-      {/* Земля: газон территории или бетонный пол цеха */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2, -0.02, -2]} receiveShadow>
-        <planeGeometry args={[400, 400]} />
+      {/* Земля: огромная плоскость. В цехе НЕ приёмник теней (иначе два почти
+          компланарных приёмника — пол цеха и эта земля — давали муар). */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2, -0.02, -2]} receiveShadow={!indoor}>
+        <planeGeometry args={[3000, 3000]} />
         <meshStandardMaterial color={ground} roughness={1} metalness={0} />
-      </mesh>
-      {/* Дальний оттенок для глубины */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2, -0.03, -2]}>
-        <ringGeometry args={[70, 200, 64]} />
-        <meshBasicMaterial color={groundFar} />
       </mesh>
 
       <Grid
@@ -55,19 +77,21 @@ export function SceneEnvironment({ indoor = false }: SceneEnvironmentProps) {
         sectionSize={10}
         sectionThickness={1}
         sectionColor={indoor ? '#4a5562' : '#5b7a52'}
-        fadeDistance={120}
+        fadeDistance={extent * 2.2}
         fadeStrength={1.6}
       />
 
-      {/* resolution 512 (было 1024): ContactShadows рендерит глубину всей сцены в
-          текстуру + 2 blur-прохода КАЖДЫЙ кадр — 512² в 4 раза дешевле на GPU, а
-          мягкой размытой тени этого достаточно. frames не фиксируем: раскладку
-          двигают в редакторе, тени должны следовать за объектами. */}
-      <ContactShadows position={[0, 0.04, 0]} scale={120} far={45} blur={2.2} opacity={0.45}
-                      color="#000000" resolution={512} />
+      {/* Мягкая контактная тень строго под застройкой — ТОЛЬКО на улице: в цехе
+          её блюр-мазки на тёмном полу выглядели как «лаги» теней. y=0.008 — ниже
+          дорог/площадок (иначе z-fighting). */}
+      {!indoor && (
+        <ContactShadows position={[0, 0.008, 0]} scale={shadowScale} far={22} blur={1.8} opacity={0.32}
+                        color="#000000" resolution={512} />
+      )}
 
       <OrbitControls makeDefault target={[1, 1, 0]} enablePan
-                     minDistance={8} maxDistance={120} maxPolarAngle={Math.PI / 2.1} />
+                     minDistance={8} maxDistance={Math.max(indoor ? 110 : 170, extent * 2.3)}
+                     maxPolarAngle={Math.PI / 2.1} />
     </>
   )
 }

@@ -446,3 +446,110 @@
   color: var(--text);
   font-weight: 600;
 }
+
+/* ── Панель имитационного моделирования (в стиле конструктора эвристик) ────── */
+.sim {
+  position: absolute; top: 16px; right: 16px; z-index: 6;
+  width: 404px; max-height: calc(100% - 32px); overflow: auto;
+  background: linear-gradient(180deg, var(--bg-panel, #12161c), var(--surface, #161a20));
+  border: 1px solid var(--border-strong, #333a44); border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55); font-size: 12.5px;
+  animation: sim-in 160ms ease-out;
+}
+@keyframes sim-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.sim__head {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center;
+  justify-content: space-between; gap: 10px; padding: 13px 16px;
+  border-bottom: 1px solid var(--border, #2a2f37);
+  background: linear-gradient(180deg, rgba(45,114,210,.16), rgba(18,22,28,0.92));
+  backdrop-filter: blur(6px); border-radius: 16px 16px 0 0;
+}
+.sim__head h3 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+.sim__head p { margin: 2px 0 0; font-size: 11px; color: var(--text-muted, #8a929c); }
+.sim__x {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+  background: var(--bg-input, #0d1014); border: 1px solid var(--border, #2a2f37);
+  color: var(--text-muted, #8a929c); font-size: 14px; display: grid; place-items: center;
+}
+.sim__x:hover { color: var(--text, #e6e9ee); border-color: var(--accent, #2d72d2); }
+.sim__tabs {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+  margin: 12px 16px 0; padding: 4px; background: var(--bg-input, #0d1014);
+  border: 1px solid var(--border, #2a2f37); border-radius: 10px;
+}
+.sim__tab {
+  height: 28px; border: none; border-radius: 7px; cursor: pointer; font-size: 12px;
+  background: transparent; color: var(--text-muted, #8a929c);
+}
+.sim__tab:hover { color: var(--text, #e6e9ee); }
+.sim__tab--on {
+  background: color-mix(in srgb, var(--accent, #2d72d2) 26%, transparent);
+  color: var(--text, #e6e9ee); font-weight: 600;
+}
+.sim__body { padding: 12px 16px 16px; }
+.sim__kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.sim__kpi {
+  background: var(--bg-card, #12161c); border: 1px solid var(--border, #2a2f37);
+  border-radius: 10px; padding: 8px 10px;
+}
+.sim__kpi-k { font-size: 9.5px; color: var(--text-muted, #8a929c); text-transform: uppercase; letter-spacing: 0.04em; }
+.sim__kpi-v { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.sim__kpi-v small { font-size: 10.5px; color: var(--text-muted, #8a929c); font-weight: 400; }
+.sim__kpi--hero { grid-column: span 2; border-color: color-mix(in srgb, var(--accent, #2d72d2) 45%, var(--border, #2a2f37)); }
+.sim__kpi--hero .sim__kpi-v { color: var(--accent, #6aa3f0); font-size: 19px; }
+.sim__player {
+  background: var(--bg-card, #12161c); border: 1px solid var(--border, #2a2f37);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+}
+.sim__transport { display: flex; align-items: center; gap: 8px; }
+.sim__play {
+  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--accent, #2d72d2); color: #fff; font-size: 15px;
+  display: grid; place-items: center; box-shadow: 0 4px 14px rgba(45,114,210,.4);
+}
+.sim__play:hover { filter: brightness(1.12); }
+.sim__rw {
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+  background: var(--bg-input, #0d1014); border: 1px solid var(--border, #2a2f37);
+  color: var(--text-secondary, #c5cbd3); font-size: 12px;
+}
+.sim__rw:hover { border-color: var(--accent, #2d72d2); }
+.sim__clock {
+  margin-left: auto; text-align: right; font-family: var(--font-mono, monospace);
+  font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.sim__clock small { display: block; font-size: 9.5px; color: var(--text-muted, #8a929c); font-weight: 400; }
+.sim__range { width: 100%; margin-top: 10px; accent-color: var(--accent, #2d72d2); }
+.sim__chart {
+  background: var(--bg-card, #12161c); border: 1px solid var(--border, #2a2f37);
+  border-radius: 12px; padding: 8px 10px 6px; margin-bottom: 8px;
+}
+.sim__chart-t { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted, #8a929c); margin: 0 0 2px; }
+.sim__done {
+  margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--intent-success, #29a634) 10%, var(--bg-card, #12161c));
+  border: 1px solid color-mix(in srgb, var(--intent-success, #29a634) 55%, transparent);
+}
+.sim__nsi {
+  margin-top: 8px; padding: 10px 12px; border-radius: 12px;
+  background: var(--bg-card, #12161c);
+  border: 1px solid color-mix(in srgb, var(--accent, #2d72d2) 45%, var(--border, #2a2f37));
+}
+.sim__legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0 0; padding: 0; list-style: none; }
+.sim__legend li { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted, #8a929c); }
+.sim__dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.sim__mrow { display: grid; grid-template-columns: 1fr 92px 38px; gap: 6px; align-items: center; margin: 3px 0; }
+.sim__mbar { height: 9px; background: var(--bg-app, #0d1014); border-radius: 4px; overflow: hidden; }
+.sim__mbar span { display: block; height: 100%; border-radius: 4px; }
+.sim__select {
+  height: 28px; background: var(--bg-input, #0d1014); color: var(--text, #e6e9ee);
+  border: 1px solid var(--border-strong, #333a44); border-radius: 8px;
+  padding: 0 8px; font-size: 12px; max-width: 100%;
+}
+.sim__table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.sim__table th {
+  text-align: left; padding: 4px 6px; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-muted, #8a929c);
+  border-bottom: 1px solid var(--border-strong, #333a44);
+}
+.sim__table td { padding: 4px 6px; border-bottom: 1px solid var(--border, #2a2f37); font-variant-numeric: tabular-nums; }

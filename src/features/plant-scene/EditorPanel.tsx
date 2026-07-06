@@ -4,7 +4,8 @@ import { STATUS_META } from './types'
 import type { SceneMode } from './graph/graphReducer'
 import type { SceneNode } from './graph/sceneModel'
 import { KIND_META, PALETTE } from './graph/sceneModel'
-import { api, type Machine, type WorkCenterType, type Operation, type OrgUnit } from '../../lib/api'
+import { SHOP_MODELS } from './Building'
+import { type Machine, type WorkCenterType, type Operation } from '../../lib/api'
 
 interface MachineCreateData {
   name: string
@@ -22,8 +23,13 @@ interface EditorPanelProps {
   machines: Machine[]
   wcTypes: WorkCenterType[]
   operations: Operation[]
+  atRoot: boolean
+  currentShopName: string | null
+  onCreateShop: (name: string, kind?: string) => void
+  onChangeShopKind: (orgUnitId: string, kind: string) => void
   onToggleMode: () => void
-  onAddNode: (kind: ObjectKind) => void
+  /** Добавить станок выбранного типа: создаётся СРАЗУ в НСИ (авто-имя, контекст цеха). */
+  onAddMachine: (wcTypeId: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
   onEnter: (id: string) => void
@@ -42,8 +48,12 @@ export function EditorPanel({
   machines,
   wcTypes,
   operations,
+  atRoot,
+  currentShopName,
+  onCreateShop,
+  onChangeShopKind,
   onToggleMode,
-  onAddNode,
+  onAddMachine,
   onRename,
   onDelete,
   onEnter,
@@ -72,6 +82,9 @@ export function EditorPanel({
     : []
 
   // Registration form state — resets when selected node changes
+  const [newShopName, setNewShopName] = useState('')
+  const [newShopKind, setNewShopKind] = useState('')   // '' = авто по названию
+  const [addWcType,   setAddWcType]   = useState('')   // тип для нового станка
   const [regName,   setRegName]   = useState('')
   const [regKind,   setRegKind]   = useState<ObjectKind>('feedstock')
   const [regWcType, setRegWcType] = useState('')
@@ -79,9 +92,6 @@ export function EditorPanel({
   const [regStatus, setRegStatus] = useState('active')
   const [registering, setRegistering] = useState(false)
   const [regError,  setRegError]  = useState<string | null>(null)
-  const [orgUnits, setOrgUnits]   = useState<OrgUnit[]>([])
-
-  useEffect(() => { api.orgUnits.list().then(setOrgUnits).catch(() => {}) }, [])
 
   // 3D-вид объекта = вид его ТИПА оборудования: при выборе типа модель на схеме
   // подстраивается под тип (объект на схеме и тип оборудования — одно и то же).
@@ -106,6 +116,8 @@ export function EditorPanel({
 
   const handleRegister = async () => {
     if (!regName.trim()) { setRegError('Укажите название'); return }
+    // Станок без типа не связывается с операциями техкарт → «оборудование без операций».
+    if (!regWcType) { setRegError('Выберите тип оборудования — без типа станок не получит операций из техкарт'); return }
     setRegistering(true)
     setRegError(null)
     try {
@@ -137,22 +149,64 @@ export function EditorPanel({
         )}
       </div>
 
-      {/* Добавление объекта — только в редактировании. 3D-вид задаёт ТИП
-          оборудования (выбирается справа в карточке после добавления). */}
-      {editing && (
+      {/* Добавление — контекстное: на площадке создаём ЦЕХ, внутри цеха — станок.
+          Двухуровневая иерархия: станок всегда в цехе, цех не внутри цеха. */}
+      {editing && atRoot && (
         <div className="editor-panel__section">
-          <div className="editor-panel__label">Добавить объект</div>
-          <button
-            className="btn btn--primary"
-            style={{ width: '100%' }}
-            onClick={() => onAddNode((wcTypes[0]?.kind as ObjectKind) || 'marketing')}
-          >
-            + Добавить оборудование на схему
+          <div className="editor-panel__label">Уровень площадки</div>
+          <input className="ep-register__input" value={newShopName}
+                 onChange={(e) => setNewShopName(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === 'Enter' && newShopName.trim()) { onCreateShop(newShopName.trim(), newShopKind); setNewShopName('') } }}
+                 placeholder="Название цеха (напр. «Сборочный цех»)" />
+          <select className="ep-register__select" style={{ marginTop: 6 }} value={newShopKind}
+                  onChange={(e) => setNewShopKind(e.target.value)}
+                  title="3D-модель здания цеха на площадке">
+            <option value="">Модель здания — авто по названию</option>
+            {SHOP_MODELS.map((m) => <option key={m.kind} value={m.kind}>{m.label}</option>)}
+          </select>
+          <button className="btn btn--primary" style={{ width: '100%', marginTop: 6 }}
+                  disabled={!newShopName.trim()}
+                  onClick={() => { onCreateShop(newShopName.trim(), newShopKind); setNewShopName('') }}>
+            + Добавить цех
           </button>
           <p className="editor-panel__tip mono">
-            Объект появится в центре. Выберите его и задайте справа <b>тип оборудования</b>
-            (= 3D-вид), наименование и подразделение — gizmo перемещает, ↔ соединяет.
+            Создайте цех (подразделение), затем войдите в него (2×ЛКМ) и добавляйте станки.
+            Оборудование можно размещать только <b>внутри цеха</b>.
           </p>
+        </div>
+      )}
+      {editing && !atRoot && (
+        <div className="editor-panel__section">
+          <div className="editor-panel__label">Цех: {currentShopName ?? '—'}</div>
+          {wcTypes.length === 0 ? (
+            <p className="editor-panel__tip mono" style={{ color: 'var(--intent-warning)' }}>
+              Типов оборудования нет — сначала создайте тип в <b>Справочники → Типы
+              оборудования</b>, затем добавляйте станки.
+            </p>
+          ) : (
+            <>
+              <select className="ep-register__select" value={addWcType}
+                      onChange={(e) => setAddWcType(e.target.value)}>
+                <option value="">— тип оборудования —</option>
+                {wcTypes.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn--primary"
+                style={{ width: '100%', marginTop: 6 }}
+                disabled={!addWcType}
+                onClick={() => onAddMachine(addWcType)}
+              >
+                + Добавить станок
+              </button>
+              <p className="editor-panel__tip mono">
+                Станок <b>сразу создаётся в НСИ</b> (имя «Тип №N», статус «В работе») и
+                встаёт в линию цеха. 3D-модель — строго по типу оборудования.
+                Gizmo перемещает, ↔ соединяет дорожкой.
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -197,7 +251,32 @@ export function EditorPanel({
             </>
           )}
 
-          {/* ── Оборудование (НСИ) ─────────────────────────────────── */}
+          {/* ── Цех: выбор 3D-модели здания (сохраняется в НСИ) ─────── */}
+          {selectedNode.refType === 'shop' && (
+            <>
+              <div className="editor-panel__label">Модель здания</div>
+              {editing ? (
+                <>
+                  <select className="ep-register__select" value={selectedNode.kind}
+                          onChange={(e) => selectedNode.orgUnitId && onChangeShopKind(selectedNode.orgUnitId, e.target.value)}>
+                    {SHOP_MODELS.map((m) => <option key={m.kind} value={m.kind}>{m.label}</option>)}
+                  </select>
+                  <p className="editor-panel__tip mono">
+                    Вид здания на площадке: ангары с трубами и без, шед, арочный свод,
+                    резервуары, градирня, башни. Выбор сохраняется за цехом.
+                  </p>
+                </>
+              ) : (
+                <p className="editor-panel__tip mono">
+                  {SHOP_MODELS.find((m) => m.kind === selectedNode.kind)?.label ?? selectedNode.kind}
+                  {' '}· включите «Редактирование», чтобы сменить модель.
+                </p>
+              )}
+            </>
+          )}
+
+          {/* ── Оборудование (НСИ) — только для станков ─────────────── */}
+          {selectedNode.refType !== 'shop' && (<>
           <div className="editor-panel__label">Оборудование (НСИ)</div>
 
           {linkedMachine ? (
@@ -305,8 +384,10 @@ export function EditorPanel({
                 ))}
               </select>
               {wcTypes.length === 0 && (
-                <p className="ep-register__hint mono" style={{ color: 'var(--text-muted)' }}>
-                  Нет типов — создайте их в НСИ → Типы оборудования.
+                <p className="ep-register__hint mono" style={{ color: 'var(--intent-warning)' }}>
+                  Типов оборудования ещё нет — станок нельзя привязать к операциям техкарт.
+                  Откройте <b>Справочники → Типы оборудования</b>, создайте тип
+                  (например «Токарный станок ЧПУ»), затем вернитесь и выберите его здесь.
                 </p>
               )}
               {regWcType && (
@@ -315,14 +396,10 @@ export function EditorPanel({
                 </p>
               )}
 
-              <label className="ep-register__label">Подразделение / Цех</label>
-              <select className="ep-register__select" value={regOrgUnit}
-                onChange={(e) => setRegOrgUnit(e.target.value)}>
-                <option value="">— выберите подразделение —</option>
-                {orgUnits.map((o) => (
-                  <option key={o.id} value={o.name}>{o.name}</option>
-                ))}
-              </select>
+              <label className="ep-register__label">Цех (по контексту)</label>
+              <div className="ep-register__input" style={{ opacity: 0.75, cursor: 'default' }}>
+                {currentShopName ?? '— вне цеха —'}
+              </div>
 
               <label className="ep-register__label">Статус</label>
               <select className="ep-register__select" value={regStatus}
@@ -342,6 +419,7 @@ export function EditorPanel({
               Не привязано. Включите «Редактирование» чтобы зарегистрировать объект в реестре.
             </p>
           )}
+          </>)}
 
           <div className="editor-panel__actions">
             {hasChildren && (

@@ -142,6 +142,7 @@ export function graphReducer(state: GraphState, action: GraphAction): GraphState
       const node: SceneNode = {
         id: uuid(),
         parentId: state.currentParentId,
+        refType: 'machine',   // на схему добавляется станок; цех создаётся отдельным действием
         kind: action.kind,
         title: meta.label,
         subtitle: 'Новый узел',

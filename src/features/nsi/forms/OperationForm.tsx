@@ -126,7 +126,11 @@ export function OperationForm({ onSuccess, edit }: Props) {
               ))}
             </div>
           ) : (
-            <span className="form__hint">Нет типов оборудования — создайте их в реестре.</span>
+            <span className="form__hint" style={{ color: 'var(--intent-warning)' }}>
+              Типов оборудования ещё нет — операцию не к чему привязать. Сначала откройте
+              реестр <b>«Типы оборудования»</b> (вкладка слева) и создайте тип
+              (например «Токарный станок ЧПУ»), затем вернитесь к операции.
+            </span>
           )}
         </div>
         <div className="form__field">

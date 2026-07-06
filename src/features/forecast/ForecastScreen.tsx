@@ -230,6 +230,66 @@ function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: 
 
 /** Полноэкранный график + детальная таблица + НАСТРОЙКА: оверрайд базовой цены и
  *  стохастического распределения (тип/СКО/коридор) — только здесь. */
+/** Водопад вклада факторов в прогноз на горизонте: из чего сложился рост/падение цены. */
+function ContribBars({ c }: { c: NonNullable<ForecastProduct['contrib']> }) {
+  const items: Array<{ label: string; v: number; hint: string }> = [
+    { label: 'История ряда', v: c.hist_trend, hint: 'исторический тренд цены (МНК по логарифму)' },
+    { label: 'Инфляция', v: c.inflation, hint: 'накопленная месячная инфляция за горизонт' },
+    { label: 'Санкции/ставка', v: c.risk_drift, hint: 'риск-дрейф: санкции ↑, ключевая ставка ↓' },
+    { label: 'Курс', v: c.fx, hint: 'валютный множитель уровня цен' },
+    { label: 'Спрос', v: c.demand, hint: 'множитель спроса' },
+    { label: 'Энергия/логистика', v: c.macro, hint: 'налоги, энергия, логистика (cost-push)' },
+  ].filter((x) => Math.abs(x.v) > 0.0005)
+  const mx = Math.max(0.01, ...items.map((x) => Math.abs(x.v)))
+  return (
+    <div className="forecast__contrib">
+      <div className="forecast__contrib-h mono">
+        Вклад факторов в прогноз (к горизонту): итог <b>{c.total >= 0 ? '+' : ''}{(c.total * 100).toFixed(1)}%</b>
+      </div>
+      {items.map((x) => (
+        <div key={x.label} className="forecast__contrib-row" title={x.hint}>
+          <span className="forecast__contrib-l">{x.label}</span>
+          <span className="forecast__contrib-bar">
+            <span className="forecast__contrib-fill"
+                  style={{ width: `${Math.abs(x.v) / mx * 100}%`,
+                           background: x.v >= 0 ? 'var(--intent-danger)' : 'var(--intent-success)' }} />
+          </span>
+          <span className="forecast__contrib-v mono">{x.v >= 0 ? '+' : ''}{(x.v * 100).toFixed(1)}%</span>
+        </div>
+      ))}
+      <div className="forecast__contrib-note">
+        Красным — что толкает цену вверх, зелёным — вниз. Множители комбинируются мультипликативно.
+      </div>
+    </div>
+  )
+}
+
+/** Мини-предпросмотр плотности выбранного распределения (форма хвостов). */
+function DistPreview({ type, rel }: { type: DistType; rel: number }) {
+  const W = 150, H = 46
+  const s = Math.max(0.05, Math.min(0.6, rel))
+  const pdf = (x: number): number => {
+    switch (type) {
+      case 't':        return Math.pow(1 + (x * x) / (5 * s * s), -3)          // ν=5, тяжёлые хвосты
+      case 'pareto':   return Math.exp(-Math.abs(x) / (s * 2.2))               // резкие хвосты
+      case 'uniform':  return Math.abs(x) < 1.7 * s ? 1 : 0.02
+      case 'triangular': return Math.max(0.02, 1 - Math.abs(x) / (2 * s))
+      case 'lognormal': { const y = x + 2.2 * s; return y > 0 ? Math.exp(-Math.pow(Math.log(y / (2.2 * s)), 2) / (2 * s * s)) / y : 0 }
+      default:         return Math.exp(-(x * x) / (2 * s * s))                 // normal
+    }
+  }
+  const xs = Array.from({ length: 61 }, (_, i) => (i / 60 - 0.5) * 2.4)
+  const ys = xs.map(pdf)
+  const my = Math.max(...ys) || 1
+  const pts = xs.map((x, i) => `${(x / 2.4 + 0.5) * W},${H - 3 - (ys[i] / my) * (H - 8)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block' }}>
+      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={1.6} />
+      <line x1={W / 2} y1={2} x2={W / 2} y2={H - 3} stroke="var(--border)" strokeWidth={0.8} strokeDasharray="2 2" />
+    </svg>
+  )
+}
+
 function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
   p: ForecastProduct; pct?: boolean
   onOverride?: (productId: string, price: string) => void
@@ -239,8 +299,15 @@ function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
 }) {
   const fmtVal = (v: number) => (pct ? `${v.toFixed(2)}%` : money(v))
   const N = p.p50.length
+  // Настройку РАСПРЕДЕЛЕНИЯ включаем и для СЫРЬЯ (закупочные цены) — backend уже
+  // применяет price_distributions к любому product_id. Оверрайд базовой цены пока
+  // только для товарной продукции (raw-оверрайд идёт в base_cost — отдельная ветка).
   const canEdit = !!onOverride && p.role === 'product'
-  const canDist = !!onSetDist && p.role === 'product'
+  const canDist = !!onSetDist && (p.role === 'product' || p.role === 'raw')
+  const distRel = (() => {
+    const sd = Number(dist?.stddev)
+    return sd > 0 && p.base > 0 ? sd / p.base : 0.12
+  })()
   const [base, setBase] = useState(String(Math.round(p.base)))
   const apply = () => { if (onOverride && base) { onOverride(p.id, base); onClose() } }
   return (
@@ -251,6 +318,7 @@ function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
           <button className="btn" onClick={onClose}>✕ Закрыть</button>
         </div>
         <div className="forecast__modal-chart"><PriceFan p={p} /></div>
+        {p.contrib && <ContribBars c={p.contrib} />}
         {canEdit && (
           <div className="forecast__ovr forecast__ovr--modal">
             <span className="forecast__ovr-l">Настройка — базовая цена (ввод данных):</span>
@@ -281,6 +349,10 @@ function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
             <label className="forecast__distf">макс
               <input type="number" value={dist?.max_val ?? ''} placeholder="—" onChange={(e) => onSetDist!(p.id, { max_val: e.target.value })} />
             </label>
+            <div className="forecast__distprev">
+              <span className="forecast__dist-note" style={{ marginBottom: 2 }}>форма плотности:</span>
+              <DistPreview type={(dist?.dist_type ?? 'normal') as DistType} rel={distRel} />
+            </div>
             <span className="forecast__dist-note">центр = базовая цена выше · волатильность сценария масштабирует · затем «Применить и пересчитать»</span>
           </div>
         )}

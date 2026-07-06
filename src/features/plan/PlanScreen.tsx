@@ -5,6 +5,7 @@ import {
 } from '../../lib/api'
 import { LoadTimeline } from './LoadTimeline'
 import { QueueChart } from './QueueChart'
+import { LaborWarning } from '../nsi/LaborWarning'
 import './plan.css'
 
 const ORDER_COLORS = ['#2d72d2', '#238551', '#c87619', '#9179f2', '#149e8e', '#cd4246', '#db2c6f', '#d1980b']
@@ -248,11 +249,162 @@ function Kpi({ k, v, sub, tone }: { k: string; v: string; sub?: string; tone?: '
   return <div className="plan__kpi"><div className="plan__kpi-k">{k}</div><div className={`plan__kpi-v${c}`}>{v}</div>{sub && <div className="plan__kpi-sub">{sub}</div>}</div>
 }
 
+// Конструктор эвристики: [критерий, направление(±), вес]. Тип на уровне модуля,
+// чтобы использовать в сохранении/загрузке пресетов эвристик.
+type Crit = { criterion: 'duration' | 'due' | 'rem' | 'inputs' | 'setup'; dir: 1 | -1; weight: number }
+const CRIT_LABEL: Record<Crit['criterion'], string> =
+  { duration: 'длительность', due: 'срок заказа', rem: 'остаточная работа', inputs: 'входные материалы', setup: 'наладка' }
+const HEUR_LS = 'maos.heuristics'          // именованные пресеты эвристик
+const HEUR_CUR = 'maos.heuristic.current'  // текущая конфигурация
+
+/** Компактная сводка активной эвристики (что где в приоритете). */
+function HeurSummary({ crits }: { crits: Crit[] }) {
+  const active = crits.filter((c) => c.weight > 0)
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <b>Эвристика:</b>
+      {active.length === 0 && <span style={{ color: 'var(--text-muted)' }}>не задана</span>}
+      {active.map((c, i) => (
+        <span key={i} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999,
+                               background: 'var(--bg-card, #12161c)', border: '1px solid var(--border)' }}>
+          {c.dir < 0 ? '↑' : '↓'} {CRIT_LABEL[c.criterion]} <span style={{ color: 'var(--text-muted)' }}>×{c.weight}</span>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** Столбиковая визуализация вкладов критериев (знак = направление). */
+function HeurViz({ crits }: { crits: Crit[] }) {
+  const items = crits.filter((c) => c.weight > 0)
+  const mx = Math.max(0.001, ...items.map((c) => c.weight))
+  return (
+    <div style={{ margin: '8px 0' }}>
+      {items.map((c, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '150px 1fr 90px', gap: 8, alignItems: 'center', margin: '4px 0' }}>
+          <span style={{ fontSize: 12 }}>{CRIT_LABEL[c.criterion]}</span>
+          <span style={{ height: 12, background: 'var(--bg-app, #0d1014)', borderRadius: 3, overflow: 'hidden' }}>
+            <span style={{ display: 'block', height: '100%', width: `${c.weight / mx * 100}%`,
+                           background: 'var(--accent)', borderRadius: 3 }} />
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.dir < 0 ? 'больше→раньше' : 'меньше→раньше'}</span>
+        </div>
+      ))}
+      {items.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>Добавьте критерий с весом &gt; 0.</p>}
+    </div>
+  )
+}
+
+/** Модальное окно конструктора эвристик: редактор критериев + визуализация + пресеты. */
+function HeuristicModal({ crits, setCrits, saved, onSave, onDelete, onLoad, onClose }: {
+  crits: Crit[]
+  setCrits: React.Dispatch<React.SetStateAction<Crit[]>>
+  saved: Record<string, Crit[]>
+  onSave: () => void
+  onDelete: (name: string) => void
+  onLoad: (c: Crit[]) => void
+  onClose: () => void
+}) {
+  const upd = (i: number, patch: Partial<Crit>) =>
+    setCrits((p) => p.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  const savedNames = Object.keys(saved)
+  return (
+    <div className="plan__modal" onClick={onClose}>
+      <div className="plan__modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="plan__modal-head">
+          <div>
+            <h3>⚙ Конструктор эвристики</h3>
+            <p>Приоритет операции = взвешенная сумма критериев сверху вниз</p>
+          </div>
+          <button className="plan__modal-x" onClick={onClose} title="Закрыть">✕</button>
+        </div>
+
+        <div className="plan__modal-body">
+          <p className="plan__subtitle" style={{ marginTop: 0 }}>
+            Верхний критерий — главный, следующие уточняют порядок среди близких.
+            Пример «длинные раньше, а из длинных — с бо́льшим числом входов»:
+            <b> длительность</b> (больше→раньше, 1) + <b>входные материалы</b> (больше→раньше, 0.3).
+          </p>
+
+          <div className="heur__list">
+            {crits.map((c, i) => (
+              <div key={i} className="heur__crit">
+                <span className="heur__rank" title={`Приоритет ${i + 1}`}>{i + 1}</span>
+                <div className="heur__crit-ctl">
+                  <select className="plan__select" value={c.criterion}
+                          onChange={(e) => upd(i, { criterion: e.target.value as Crit['criterion'] })}>
+                    {CRITERIA.map((cr) => <option key={cr.id} value={cr.id}>{cr.label}</option>)}
+                  </select>
+                  <select className="plan__select" value={c.dir}
+                          onChange={(e) => upd(i, { dir: Number(e.target.value) as 1 | -1 })}>
+                    <option value={1}>меньше — раньше</option>
+                    <option value={-1}>больше — раньше</option>
+                  </select>
+                  <span className="heur__wrap">
+                    <label>вес</label>
+                    <input className="heur__weight" type="number" min="0" step="0.1" value={c.weight}
+                           onChange={(e) => upd(i, { weight: Number(e.target.value) || 0 })} />
+                  </span>
+                </div>
+                <button className="heur__del" title="Удалить критерий"
+                        onClick={() => setCrits((p) => p.filter((_, j) => j !== i))}
+                        disabled={crits.length <= 1}>✕</button>
+              </div>
+            ))}
+          </div>
+          <button className="heur__add"
+                  onClick={() => setCrits((p) => [...p, { criterion: 'inputs', dir: -1, weight: 0.3 }])}>
+            + добавить критерий
+          </button>
+
+          <p className="plan__section-title" style={{ marginTop: 16, marginBottom: 4 }}>Вклад весов</p>
+          <HeurViz crits={crits} />
+
+          <div className="heur__presets">
+            <button className="btn btn--primary" style={{ height: 30 }} onClick={onSave}>💾 Сохранить как…</button>
+            {savedNames.length > 0 && (
+              <>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Пресеты:</span>
+                {savedNames.map((name) => (
+                  <span key={name} className="heur__chip">
+                    <button onClick={() => onLoad(saved[name])} title="Загрузить пресет">{name}</button>
+                    <button onClick={() => onDelete(name)} title="Удалить пресет">✕</button>
+                  </span>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PlanScreen() {
   const [rule, setRule] = useState('auto')
-  // Конструктор эвристики: [критерий, направление(±), вес]
-  type Crit = { criterion: 'duration' | 'due' | 'rem' | 'inputs' | 'setup'; dir: 1 | -1; weight: number }
-  const [crits, setCrits] = useState<Crit[]>([{ criterion: 'duration', dir: -1, weight: 1 }])
+  const [crits, setCrits] = useState<Crit[]>(() => {
+    try { const s = localStorage.getItem(HEUR_CUR); if (s) return JSON.parse(s) } catch { /* noop */ }
+    return [{ criterion: 'duration', dir: -1, weight: 1 }]
+  })
+  const [heurOpen, setHeurOpen] = useState(false)
+  const [savedHeur, setSavedHeur] = useState<Record<string, Crit[]>>(() => {
+    try { const s = localStorage.getItem(HEUR_LS); if (s) return JSON.parse(s) } catch { /* noop */ }
+    return {}
+  })
+  // Персист текущей эвристики (переживает перезагрузку/смену экрана).
+  useEffect(() => { try { localStorage.setItem(HEUR_CUR, JSON.stringify(crits)) } catch { /* noop */ } }, [crits])
+  const saveHeuristic = () => {
+    const name = window.prompt('Название эвристики:')
+    if (!name || !name.trim()) return
+    const next = { ...savedHeur, [name.trim()]: crits }
+    setSavedHeur(next)
+    try { localStorage.setItem(HEUR_LS, JSON.stringify(next)) } catch { /* noop */ }
+  }
+  const deleteHeuristic = (name: string) => {
+    const next = { ...savedHeur }; delete next[name]
+    setSavedHeur(next)
+    try { localStorage.setItem(HEUR_LS, JSON.stringify(next)) } catch { /* noop */ }
+  }
   const [samples, setSamples] = useState('500')
   const [wRisk, setWRisk] = useState('0.5')
   const [runs, setRuns] = useState<OptRunSummary[]>([])
@@ -318,6 +470,16 @@ export function PlanScreen() {
   }
 
   const run = async () => {
+    // Пустая программа раньше строила «молчаливый» план из одних MRP-закупок —
+    // на схеме проигрывать нечего, пользователь не понимал, что не так.
+    if (!runId && planProgram().length === 0) {
+      setError(plans.length === 0
+        ? 'Программа пуста: создайте производственный план (кнопка «+ План» ниже) и добавьте в него заказы — что, сколько и к какому сроку производить.'
+        : products.length === 0
+          ? 'Нет товарных изделий для заказов. Откройте «Справочники → Изделия», создайте изделие и отметьте «Товарная позиция», затем добавьте заказ здесь.'
+          : 'В выбранном плане нет заказов. Добавьте их в «Производственной программе» ниже: изделие, количество, срок — иначе планировать нечего.')
+      return
+    }
     setRunning(true); setError(null)
     try {
       const r = await api.schedule.run({
@@ -413,41 +575,24 @@ export function PlanScreen() {
         )}
       </div>
 
+      <LaborWarning />
+
       {rule === 'custom' && (
-        <div className="plan__panel">
-          <p className="plan__section-title" style={{ marginTop: 0 }}>
-            Конструктор эвристики — приоритет операции из взвешенных критериев
-            <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--text-muted)' }}>
-              {' '}· первый критерий — главный, следующие с меньшим весом уточняют порядок среди равных
-            </span>
-          </p>
-          {crits.map((c, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-              <select className="plan__select" value={c.criterion}
-                      onChange={(e) => setCrits((p) => p.map((x, j) => j === i ? { ...x, criterion: e.target.value as Crit['criterion'] } : x))}>
-                {CRITERIA.map((cr) => <option key={cr.id} value={cr.id}>{cr.label}</option>)}
-              </select>
-              <select className="plan__select" value={c.dir}
-                      onChange={(e) => setCrits((p) => p.map((x, j) => j === i ? { ...x, dir: Number(e.target.value) as 1 | -1 } : x))}>
-                <option value={1}>меньше — раньше</option>
-                <option value={-1}>больше — раньше</option>
-              </select>
-              <input className="plan__input" type="number" min="0" step="0.1" value={c.weight}
-                     title="Вес критерия"
-                     onChange={(e) => setCrits((p) => p.map((x, j) => j === i ? { ...x, weight: Number(e.target.value) || 0 } : x))} />
-              <button className="btn btn--danger" style={{ height: 24, padding: '0 8px' }}
-                      onClick={() => setCrits((p) => p.filter((_, j) => j !== i))} disabled={crits.length <= 1}>✕</button>
-            </div>
-          ))}
-          <button className="btn" style={{ height: 26 }}
-                  onClick={() => setCrits((p) => [...p, { criterion: 'inputs', dir: -1, weight: 0.3 }])}>
-            + критерий
+        <div className="plan__panel" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <HeurSummary crits={crits} />
+          <button className="btn btn--primary" style={{ height: 28 }} onClick={() => setHeurOpen(true)}>
+            ⚙ Настроить эвристику
           </button>
-          <p className="plan__subtitle" style={{ marginTop: 6 }}>
-            Пример «длинные раньше, а из длинных — раньше те, у кого больше входных материалов»:
-            длительность (больше—раньше, вес 1) + входные материалы (больше—раньше, вес 0.3).
-          </p>
         </div>
+      )}
+
+      {heurOpen && (
+        <HeuristicModal
+          crits={crits} setCrits={setCrits}
+          saved={savedHeur} onSave={saveHeuristic} onDelete={deleteHeuristic}
+          onLoad={(c) => setCrits(c)}
+          onClose={() => setHeurOpen(false)}
+        />
       )}
 
       {!runId && (
@@ -463,7 +608,12 @@ export function PlanScreen() {
             </span>
           </p>
           <table className="plan__rules" style={{ marginBottom: 8 }}>
-            <thead><tr><th>Изделие</th><th>Кол-во</th><th>Срок, ч</th><th>Приоритет</th><th></th></tr></thead>
+            <thead><tr>
+              <th>Изделие</th><th>Кол-во</th>
+              <th title="Срок исполнения от начала горизонта, в часах: 24 ч = 1 день, 168 ч = неделя">Срок, ч ⓘ</th>
+              <th title="1 — высший приоритет, 9 — низший; влияет на очерёдность при конкуренции за станки">Приоритет ⓘ</th>
+              <th></th>
+            </tr></thead>
             <tbody>
               {planOrders.map((o) => (
                 <tr key={o.id}>
@@ -477,18 +627,30 @@ export function PlanScreen() {
                   <td><button className="btn btn--danger" style={{ height: 22, padding: '0 8px' }} onClick={() => delOrder(o.id)}>✕</button></td>
                 </tr>
               ))}
-              {planOrders.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>В этом плане заказов нет — добавьте ниже.</td></tr>}
+              {planOrders.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                {plans.length === 0
+                  ? 'Планов ещё нет — нажмите «+ План» выше, затем добавьте заказы.'
+                  : 'В этом плане заказов нет — добавьте ниже: изделие, количество и срок.'}
+              </td></tr>}
             </tbody>
           </table>
+          {products.length === 0 ? (
+            <p className="plan__subtitle" style={{ margin: 0 }}>
+              Нет товарных изделий — заказы добавить не из чего. Откройте <b>Справочники → Изделия</b>,
+              создайте изделие и отметьте «Товарная позиция», затем вернитесь сюда.
+            </p>
+          ) : (
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <select className="plan__select" value={newProd} onChange={(e) => setNewProd(e.target.value)}>
               <option value="">— изделие —</option>
               {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <input className="plan__input" type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} placeholder="кол-во" />
-            <input className="plan__input" type="number" min="0" value={newDue} onChange={(e) => setNewDue(e.target.value)} placeholder="срок, ч" />
-            <button className="btn btn--primary" style={{ height: 'var(--control)' }} onClick={addOrder} disabled={!newProd}>+ Добавить заказ</button>
+            <input className="plan__input" type="number" min="0" value={newDue} onChange={(e) => setNewDue(e.target.value)}
+                   placeholder="срок, ч (24=1дн)" title="Срок исполнения в часах от начала горизонта: 24 ч = 1 день" />
+            <button className="btn btn--primary" style={{ height: 'var(--control)' }} onClick={addOrder} disabled={!newProd || !activePlan}>+ Добавить заказ</button>
           </div>
+          )}
         </div>
       )}
 
@@ -602,7 +764,7 @@ export function PlanScreen() {
           {result.queue_timeline && result.queue_timeline.length > 1 && (
             <>
               <p className="plan__section-title">Очереди операций · сколько ждёт свободного станка во времени (пик = узкое место)</p>
-              <div className="plan__panel"><QueueChart data={result.queue_timeline} /></div>
+              <div className="plan__panel"><QueueChart data={result.queue_timeline} byWc={result.queue_by_wc} /></div>
             </>
           )}
 

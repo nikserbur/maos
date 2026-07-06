@@ -163,6 +163,22 @@ export function OptimizationScreen() {
   }, [products, wcTypes])
 
   const run = async () => {
+    // Проверки ДО запуска — иначе пустая база даёт молчаливый нулевой портфель.
+    const sellables = products.filter((p) => p.sellable === '1')
+    if (sellables.length === 0) {
+      setError('Нет товарных изделий для оптимизации. Откройте «Справочники → Изделия», создайте изделие и отметьте «Товарная позиция» (там же задаются цена и спрос).')
+      return
+    }
+    const noDemand = sellables.filter((p) => (Number(p.demand_max) || 0) <= 0)
+    if (noDemand.length > 0) {
+      setError(`У товарных изделий не задан спрос — оптимизация не включит их в портфель: ${noDemand.slice(0, 4).map((p) => `«${p.name}»`).join(', ')}${noDemand.length > 4 ? ` и ещё ${noDemand.length - 4}` : ''}. Заполните «Спрос в год» в карточке изделия (Справочники → Изделия) — на горизонт он пересчитается автоматически.`)
+      return
+    }
+    const noPrice = sellables.filter((p) => (Number(p.base_price) || 0) <= 0)
+    if (noPrice.length > 0) {
+      setError(`У товарных изделий не задан ориентир цены — выручка получится нулевой: ${noPrice.slice(0, 4).map((p) => `«${p.name}»`).join(', ')}${noPrice.length > 4 ? ` и ещё ${noPrice.length - 4}` : ''}. Заполните «Ориентир цены сбыта» в карточке изделия.`)
+      return
+    }
     setRunning(true)
     setError(null)
     try {
@@ -214,7 +230,8 @@ export function OptimizationScreen() {
             Цена продукции — внешнее условие, заданное распределениями в сценарии.
             Методом Монте-Карло строится распределение прибыли каждого портфеля и
             выбирается <strong>самое устойчивое</strong> решение к внешним условиям,
-            а не самое прибыльное в среднем.
+            а не самое прибыльное в среднем. Спрос/ёмкость рынка в НСИ — <strong>годовые</strong>;
+            на горизонт плана они пересчитываются автоматически.
           </p>
         </div>
       </div>
@@ -226,6 +243,12 @@ export function OptimizationScreen() {
             {scenarios.length === 0 && <option value="">— базовые цены НСИ —</option>}
             {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          {scenarios.length === 0 && (
+            <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+              Сценариев нет — будут базовые цены из реестра изделий. Сценарии с
+              распределениями цен создаются в разделе «Сценарии».
+            </span>
+          )}
         </div>
         <div className="opt__ctl">
           <span className="opt__ctl-label">Критерий устойчивости</span>

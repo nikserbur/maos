@@ -704,6 +704,13 @@ export function RoutingSchemeEditor({ onSave, onCancel, edit }: RoutingSchemeEdi
 
   const handleSave = async () => {
     if (!state.name.trim()) { setSaveError('Укажите название техкарты'); return }
+    // Пустая техкарта бессмысленна: планировщику нечего ставить на станки.
+    if (sorted.length === 0) {
+      setSaveError('Техкарта должна содержать хотя бы одну операцию — добавьте её на схему'); return
+    }
+    if (sorted.some(op => !op.wcType)) {
+      setSaveError('У каждой операции должен быть тип оборудования (РЦ) — иначе её не на чем выполнять'); return
+    }
     setSaving(true)
     setSaveError(null)
     try {
@@ -717,6 +724,10 @@ export function RoutingSchemeEditor({ onSave, onCancel, edit }: RoutingSchemeEdi
           name: op.title,
           op_type: op.opType,
           wc_types: op.wcType,
+          // Связь по ID обязательна: планировщик подбирает станки через operation_wc_types.
+          wc_type_ids: op.wcType
+            ? [wcTypes.find(t => t.name === op.wcType)?.id].filter((x): x is string => !!x)
+            : [],
           order_no: String(op.order),
           setup_required: '0',
           t_norm: String(op.timeMin),

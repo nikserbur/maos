@@ -63,12 +63,13 @@ export function WorkshopInterior({ nodes }: WorkshopInteriorProps) {
       <mesh position={[cx, 0.0, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[w, d]} /><meshStandardMaterial color={FLOOR} roughness={1} />
       </mesh>
-      {/* Жёлтая предупредительная рамка по периметру */}
+      {/* Жёлтая предупредительная рамка: приподнята над полом (0.045) — на 0.02
+          разметка «пунктирно» мерцала z-fighting'ом под острым углом камеры. */}
       {([[cx, minZ + 0.6, w, 0.3], [cx, maxZ - 0.6, w, 0.3], [minX + 0.6, cz, 0.3, d], [maxX - 0.6, cz, 0.3, d]] as const).map(([x, z, sw, sd], i) => (
-        <mesh key={i} position={[x, 0.02, z]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[sw, sd]} /><meshBasicMaterial color={HAZARD} /></mesh>
+        <mesh key={i} position={[x, 0.045, z]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[sw, sd]} /><meshBasicMaterial color={HAZARD} depthWrite={false} /></mesh>
       ))}
       {/* Транспортная полоса по центру */}
-      <mesh position={[cx, 0.02, cz]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[w - 4, 0.16]} /><meshBasicMaterial color="#c7cdd2" /></mesh>
+      <mesh position={[cx, 0.05, cz]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[w - 4, 0.16]} /><meshBasicMaterial color="#c7cdd2" depthWrite={false} /></mesh>
 
       {/* Колонны */}
       {cols.map(([x, z], i) => (
@@ -86,6 +87,17 @@ export function WorkshopInterior({ nodes }: WorkshopInteriorProps) {
 
       {/* Поддоны с грузом */}
       {pallets.map(([x, z, c], i) => <Pallet key={i} x={x} z={z} color={c} />)}
+
+      {/* Мягкие «контактные» подложки под станками: в цехе карта теней отключена
+          (давала акне), поэтому привязку к полу рисуем дешёвыми тёмными кругами —
+          глючить в них нечему. */}
+      {nodes.map((n) => (
+        <mesh key={`gs-${n.id}`} position={[n.position[0], 0.012, n.position[1]]}
+              rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+          <circleGeometry args={[3.1, 28]} />
+          <meshBasicMaterial color="#000000" transparent opacity={0.24} depthWrite={false} />
+        </mesh>
+      ))}
       {/* Погрузчики ездят по дорогам цеха — см. FlowLinks (indoor). */}
     </group>
   )

@@ -33,8 +33,34 @@ export function ProductForm({ onSuccess, edit }: Props) {
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
+  // Живая модель рынка: доступный объём = ёмкость − конкуренты (нельзя продать больше).
+  const nMkt = Number(mktCap) || 0
+  const nComp = Number(compSup) || 0
+  const nDem = Number(demandMax) || 0
+  const availMarket = nMkt > 0 ? Math.max(0, nMkt - nComp) : null
+  const compTooBig = nMkt > 0 && nComp > nMkt
+  const demandClamped = availMarket !== null && nDem > availMarket
+
+  /** Включение «Товарная позиция»: заполняем разумные значения, чтобы оптимизация
+   *  не получила молчаливый нулевой спрос (портфель из нулей без объяснений). */
+  const toggleSellable = (on: boolean) => {
+    setSellable(on)
+    if (on && !demandMax && !mktCap) {
+      setDemandMax('1000'); setMktCap('1500'); setElast('0.5'); setCompSup('0')
+    }
+  }
+
   const handleSubmit = async () => {
     if (!name.trim()) { setError('Укажите наименование'); return }
+    if (sellable && (Number(basePrice) || 0) <= 0) {
+      setError('Для товарной позиции укажите ориентир цены (> 0) — иначе оптимизация посчитает нулевую выручку'); return
+    }
+    if (sellable && nDem <= 0) {
+      setError('Для товарной позиции задайте годовой спрос (> 0) — при нуле оптимизация не включит изделие в портфель'); return
+    }
+    if (compTooBig) {
+      setError('Предложение конкурентов не может превышать ёмкость рынка'); return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -125,52 +151,71 @@ export function ProductForm({ onSuccess, edit }: Props) {
         </div>
       </div>
 
-      <div className="form__section">Экономика (внешние условия)</div>
-      <label className="form__check">
-        <input type="checkbox" checked={sellable} onChange={(e) => setSellable(e.target.checked)} />
-        Товарная позиция (участвует в портфеле и оптимизации)
-      </label>
-      <div className="form__row form__row--3">
+      <div className="form__section">Ценообразование</div>
+      <div className="form__row">
         <div className="form__field">
-          <label className="form__label">{purchased ? 'Цена закупки, ₽' : 'Себест. закупки, ₽'}</label>
+          <label className="form__label">{purchased ? 'Цена закупки, ₽' : 'Себестоимость, ₽'}</label>
           <input className="form__input" type="number" min="0" value={baseCost}
                  onChange={(e) => setBaseCost(e.target.value)} placeholder="0" />
         </div>
         <div className="form__field">
-          <label className="form__label">Ориентир цены, ₽</label>
+          <label className="form__label">Ориентир цены сбыта, ₽ {sellable ? '*' : ''}</label>
           <input className="form__input" type="number" min="0" value={basePrice}
                  disabled={!sellable}
-                 onChange={(e) => setBasePrice(e.target.value)} placeholder={sellable ? '90000' : '—'} />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Спрос на горизонт</label>
-          <input className="form__input" type="number" min="0" value={demandMax}
-                 disabled={!sellable}
-                 onChange={(e) => setDemandMax(e.target.value)} placeholder={sellable ? '4000' : '—'} />
+                 onChange={(e) => setBasePrice(e.target.value)}
+                 placeholder={sellable ? '90000' : 'только для товарных позиций'} />
         </div>
       </div>
 
-      <div className="form__row">
+      <div className="form__section">Спрос и рынок</div>
+      <label className="form__check">
+        <input type="checkbox" checked={sellable} onChange={(e) => toggleSellable(e.target.checked)} />
+        Товарная позиция — продаётся на рынке и участвует в оптимизации портфеля
+      </label>
+      {sellable && (
+        <span className="form__hint" style={{ marginTop: 2 }}>
+          Спрос задаётся <b>годовым</b> объёмом — планирование само пересчитывает его на
+          горизонт (горизонт 6 мес → половина годового), а разброс спроса добавляют
+          сценарии (Монте-Карло). Рынок в целом поглотит не более <b>ёмкость − конкуренты</b>;
+          чем ближе выпуск к насыщению, тем ниже цена сбыта (эластичность). Конкретные заказы
+          для расписания (Стадия 1) задаются отдельно: экран «План» → «Производственная программа».
+        </span>
+      )}
+      <div className="form__row form__row--3">
         <div className="form__field">
-          <label className="form__label">Ёмкость рынка, ед.</label>
-          <input className="form__input" type="number" min="0" value={mktCap} disabled={!sellable}
-                 onChange={(e) => setMktCap(e.target.value)} placeholder={sellable ? '5000' : '—'} />
+          <label className="form__label">Спрос в год, {unit} {sellable ? '*' : ''}</label>
+          <input className="form__input" type="number" min="0" value={demandMax}
+                 disabled={!sellable}
+                 onChange={(e) => setDemandMax(e.target.value)} placeholder={sellable ? '1000' : '—'} />
         </div>
         <div className="form__field">
-          <label className="form__label">Эластичность цены</label>
+          <label className="form__label">Ёмкость рынка в год, {unit}</label>
+          <input className="form__input" type="number" min="0" value={mktCap} disabled={!sellable}
+                 onChange={(e) => setMktCap(e.target.value)} placeholder={sellable ? '1500' : '—'} />
+        </div>
+        <div className="form__field">
+          <label className="form__label">Конкуренты в год, {unit}</label>
+          <input className="form__input" type="number" min="0" value={compSup} disabled={!sellable}
+                 onChange={(e) => setCompSup(e.target.value)} placeholder="0"
+                 style={compTooBig ? { borderColor: 'var(--intent-danger)' } : undefined} />
+        </div>
+      </div>
+      <div className="form__row">
+        <div className="form__field">
+          <label className="form__label">Эластичность цены (0 — спрос не зависит от цены; 0.5 — типично; 1+ — очень чувствителен)</label>
           <input className="form__input" type="number" min="0" max="2" step="0.1" value={elast} disabled={!sellable}
                  onChange={(e) => setElast(e.target.value)} placeholder="0.5" />
         </div>
-        <div className="form__field">
-          <label className="form__label">Предложение конкурентов, ед.</label>
-          <input className="form__input" type="number" min="0" value={compSup} disabled={!sellable}
-                 onChange={(e) => setCompSup(e.target.value)} placeholder="0" />
-        </div>
       </div>
-      {sellable && (
-        <span className="form__hint">
-          Рынок поглотит не более (ёмкость − конкуренты) единиц — сверх этого продать нельзя;
-          чем ближе к насыщению, тем ниже цена сбыта (эластичность).
+      {sellable && compTooBig && (
+        <span className="form__hint" style={{ color: 'var(--intent-danger)' }}>
+          Конкуренты ({nComp}) продают больше ёмкости рынка ({nMkt}) — так не бывает, поправьте значения.
+        </span>
+      )}
+      {sellable && !compTooBig && availMarket !== null && (
+        <span className="form__hint" style={demandClamped ? { color: 'var(--intent-warning)' } : undefined}>
+          Доступный вам рынок: <b>{availMarket.toLocaleString('ru')} {unit}/год</b> (ёмкость {nMkt.toLocaleString('ru')} − конкуренты {nComp.toLocaleString('ru')}).
+          {demandClamped && <> Спрос {nDem.toLocaleString('ru')} выше — фактически продастся не более {availMarket.toLocaleString('ru')}.</>}
         </span>
       )}
 

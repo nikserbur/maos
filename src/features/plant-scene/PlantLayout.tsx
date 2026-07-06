@@ -46,7 +46,8 @@ export function PlantLayout({
     <group>
       <FlowLinks nodes={nodes} edges={edges} indoor={indoor} />
       {nodes.map((node) => {
-        const isContainer = hasChildren(graph, node.id)
+        // Цех — ВСЕГДА здание (даже пустой, без станков); контейнерность отдельно.
+        const isContainer = node.refType === 'shop' || hasChildren(graph, node.id)
         return (
           <StageObject
             key={node.id}

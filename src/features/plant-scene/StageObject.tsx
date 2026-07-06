@@ -98,17 +98,21 @@ export function StageObject({
         </group>
 
         {(selected || connectSource) && (
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.11, 0]}>
             <circleGeometry args={[ringR, 56]} />
-            <meshBasicMaterial color={ringColor} transparent opacity={0.1} />
+            <meshBasicMaterial color={ringColor} transparent opacity={0.1} depthWrite={false} />
           </mesh>
         )}
 
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.07, 0]}>
+        {/* Кольцо статуса приподнято над верхней гранью площадки (0.07) и без записи
+            в depth — иначе z-fighting давал рваные «помехи» на кромке. */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.14, 0]} renderOrder={2}>
           <ringGeometry args={[ringR - 0.3, ringR, 56]} />
           <meshBasicMaterial
             color={ringColor}
             transparent
+            depthWrite={false}
+            polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2}
             opacity={selected || hovered || connectSource ? 0.95 : 0.6}
           />
         </mesh>

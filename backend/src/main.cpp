@@ -22,6 +22,7 @@
 #include <array>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include <functional>
 #include <cstdint>
 #include <chrono>
@@ -142,6 +143,27 @@ static void link_operation(Database& db, const std::string& opId, const json& bo
       db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)",
               { opId, w.get<std::string>() });
     }
+  // Фолбэк: редактор техкарт шлёт только CSV ИМЁН в wc_types (без wc_type_ids) —
+  // резолвим имена в ID, иначе operation_wc_types пуста и планировщик не находит
+  // станков для операции (machine_id='' → план не проигрывается на схеме).
+  {
+    auto linked = db.query_one("SELECT COUNT(*) AS n FROM operation_wc_types WHERE operation_id=?", { opId });
+    if (jstr(linked, "n") == "0" && body.contains("wc_types") && body["wc_types"].is_string()) {
+      const std::string csv = body["wc_types"].get<std::string>();
+      size_t pos = 0;
+      while (pos <= csv.size()) {
+        size_t comma = csv.find(',', pos);
+        std::string name = csv.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        pos = (comma == std::string::npos) ? csv.size() + 1 : comma + 1;
+        const size_t a = name.find_first_not_of(" \t");
+        if (a == std::string::npos) continue;
+        const size_t b = name.find_last_not_of(" \t");
+        name = name.substr(a, b - a + 1);
+        db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) "
+                "SELECT ?, id FROM work_center_types WHERE name=?", { opId, name });
+      }
+    }
+  }
   if (body.contains("input_products") && body["input_products"].is_array())
     for (auto& in : body["input_products"]) {
       std::string pid; std::string qty = "1";
@@ -1498,6 +1520,67 @@ static void register_scheme(httplib::Server& svr, Database& db) {
       ok(res, out);
     } catch (std::exception& e) { err(res, 500, e.what()); }
   });
+
+  // Технологические связи «станок→станок», выведенные ИЗ ТЕХКАРТ: между
+  // последовательными операциями изделия и между поставщиком BOM-входа и
+  // потребителем. Даёт дорожки/дорожки-переходы там, где реально идёт поток по
+  // операциям — а не только по вручную нарисованным flows.
+  svr.Get("/api/scheme/process_flows", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      // Представитель типа РЦ — первый активный станок этого типа.
+      std::unordered_map<std::string, std::string> repMachine;
+      for (auto& m : db.query_json(
+             "SELECT id, wc_type_id FROM machines WHERE status='active' "
+             "AND wc_type_id IS NOT NULL AND wc_type_id<>'' ORDER BY rowid")) {
+        const std::string wct = jstr(m, "wc_type_id");
+        if (!repMachine.count(wct)) repMachine[wct] = jstr(m, "id");
+      }
+      // op → ведущий тип РЦ.
+      std::unordered_map<std::string, std::string> opWct;
+      for (auto& r : db.query_json(
+             "SELECT operation_id, wc_type_id FROM operation_wc_types ORDER BY rowid"))
+        opWct.emplace(jstr(r, "operation_id"), jstr(r, "wc_type_id"));
+      auto opMachine = [&](const std::string& opId) -> std::string {
+        auto it = opWct.find(opId); if (it == opWct.end()) return "";
+        auto m = repMachine.find(it->second); return m == repMachine.end() ? "" : m->second;
+      };
+      // Операции изделия по порядку (действующая техкарта); + первый/последний станок.
+      std::unordered_map<std::string, std::vector<std::string>> opsOfProduct;  // product → op_ids (по order_no)
+      for (auto& o : db.query_json(
+             "SELECT o.id AS op_id, r.product_id AS pid FROM routings r "
+             "JOIN operations o ON o.routing_id=r.id "
+             "WHERE r.product_id IS NOT NULL AND r.product_id<>'' AND COALESCE(r.is_default,1)=1 "
+             "ORDER BY r.product_id, o.order_no, o.id"))
+        opsOfProduct[jstr(o, "pid")].push_back(jstr(o, "op_id"));
+      // Вход операции → изделия (для BOM-связей).
+      std::unordered_map<std::string, std::vector<std::string>> inputsOfOp;
+      for (auto& r : db.query_json("SELECT operation_id, product_id FROM operation_inputs"))
+        inputsOfOp[jstr(r, "operation_id")].push_back(jstr(r, "product_id"));
+
+      std::set<std::pair<std::string,std::string>> edges;
+      for (auto& [pid, ops] : opsOfProduct) {
+        // Последовательные операции изделия.
+        for (size_t k = 0; k + 1 < ops.size(); ++k) {
+          std::string a = opMachine(ops[k]), b = opMachine(ops[k + 1]);
+          if (!a.empty() && !b.empty() && a != b) edges.insert({ a, b });
+        }
+        // BOM: последний станок изделия-входа → станок операции-потребителя.
+        for (const std::string& op : ops) {
+          auto iit = inputsOfOp.find(op); if (iit == inputsOfOp.end()) continue;
+          std::string dst = opMachine(op); if (dst.empty()) continue;
+          for (const std::string& inp : iit->second) {
+            auto sit = opsOfProduct.find(inp);
+            if (sit == opsOfProduct.end() || sit->second.empty()) continue;
+            std::string src = opMachine(sit->second.back());
+            if (!src.empty() && src != dst) edges.insert({ src, dst });
+          }
+        }
+      }
+      json arr = json::array();
+      for (auto& [a, b] : edges) arr.push_back({ {"from_id", a}, {"to_id", b} });
+      ok(res, arr);
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
 }
 
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
@@ -2025,8 +2108,23 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         json trend = json::array();
         for (int t = 0; t <= months; ++t) trend.push_back(std::exp(anchor + slopeFwd * t) * macroMul);
 
+        // Разложение прогноза median на горизонте: base × Πфакторов. Мультипликативно
+        // (в лог-масштабе — слагаемые slopeFwd·t и ln(macroMul)), показываем как %-вклад:
+        // историческая динамика ряда, инфляция, риск-дрейф (санкции/ставка), курс, спрос,
+        // макро-множитель (энергия/логистика/налоги). Произведение (1+вклад) = итог/база.
+        auto pctOf = [](double mult) { return mult - 1.0; };
+        json contrib = {
+          {"hist_trend", pctOf(std::exp(slp * months))},
+          {"inflation",  pctOf(std::exp(std::log(1.0 + infl) * months))},
+          {"risk_drift", pctOf(std::exp(riskDrift * months))},
+          {"fx",         pctOf(fx)},
+          {"demand",     pctOf(demand)},
+          {"macro",      pctOf(riskMacro)},
+          {"total",      p50.empty() ? 0.0 : (p50.back().get<double>() / std::max(1e-9, base) - 1.0)},
+        };
+
         return json{
-          {"base", base}, {"history", history}, {"trend", trend},
+          {"base", base}, {"history", history}, {"trend", trend}, {"contrib", contrib},
           {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
           {"fit", { {"data_driven", dd}, {"dist", dist}, {"n_obs", (int)res.size()},
                     {"mu", mu}, {"sigma", sg}, {"nu", tNu}, {"alpha", sAlpha},
@@ -2307,15 +2405,23 @@ static void register_optimize(httplib::Server& svr, Database& db) {
 /* ── Стадия 1: расписание (план исполнения) ──────────────────────────────── */
 
 static void persist_schedule(Database& db, const std::string& planId, const json& result) {
-  db.exec("INSERT INTO plans(id,run_id) VALUES(?,?)", { planId, "" });
-  for (auto& g : result.value("gantt", json::array()))
+  db.exec("INSERT INTO plans(id,run_id) VALUES(?,NULLIF(?,''))", { planId, "" });
+  for (auto& g : result.value("gantt", json::array())) {
+    // supply-джобы («Поставка сырья») не ссылаются на реальные записи НСИ, а пустые
+    // FK должны быть NULL, не '' — иначе транзакция падала по FK (SQLITE_CONSTRAINT)
+    // и план не сохранялся вовсе (симуляции нечего было проигрывать).
+    const std::string mid = g.value("machine_id", std::string());
+    if (mid.empty() || mid == "supply") continue;
     db.exec("INSERT INTO plan_tasks(id,plan_id,product_id,operation_id,wc_type_id,machine_id,"
-            "worker_id,start_min,end_min,order_idx) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "worker_id,start_min,end_min,order_idx,qty) "
+            "VALUES(?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),?,?,?,?)",
             { gen_uuid(), planId, g.value("product_id", std::string()),
               g.value("op_id", std::string()), g.value("wc_type_id", std::string()),
-              g.value("machine_id", std::string()), "",
+              mid, g.value("worker_id", std::string()),
               std::to_string(g.value("start", 0.0) * 60.0), std::to_string(g.value("end", 0.0) * 60.0),
-              std::to_string(g.value("order_idx", 0)) });
+              std::to_string(g.value("order_idx", 0)),
+              std::to_string(g.value("batches", 1.0)) });   // партий в джобе
+  }
 }
 
 static void register_schedule(httplib::Server& svr, Database& db) {
@@ -2574,6 +2680,228 @@ static void register_mrp(httplib::Server& svr, Database& db) {
   });
 }
 
+/* ── Имитационный режим: план для проигрывания в 3D + калибровка НСИ ──────── */
+
+static void register_simulation(httplib::Server& svr, Database& db) {
+  // Список построенных расписаний — выбор плана перед прогоном симуляции.
+  svr.Get("/api/simulation/plans", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      // Только планы с реальными станочными задачами: чисто снабженческие
+      // (MRP-закупки, machine_id пуст/supply) проигрывать на схеме нечем.
+      ok(res, db.query_json(
+        "SELECT pl.id, pl.created_at, COUNT(pt.id) AS n_tasks, "
+        "       MAX(CAST(pt.end_min AS REAL))/60.0 AS makespan "
+        "FROM plans pl JOIN plan_tasks pt ON pt.plan_id=pl.id "
+        "  AND pt.machine_id<>'supply' AND pt.machine_id<>'' "
+        "GROUP BY pl.id ORDER BY pl.rowid DESC LIMIT 40"));
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  // План (лента задач) для проигрывания на 3D-схеме. ?plan_id — конкретный, иначе последний.
+  svr.Get("/api/simulation/plan", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      json plan;
+      const std::string want = req.has_param("plan_id") ? req.get_param_value("plan_id") : "";
+      try {
+        // По умолчанию — последний план, у которого ЕСТЬ станочные задачи
+        // (иначе свежий MRP-план без операций «глушил» проигрывание).
+        plan = want.empty()
+          ? db.query_one(
+              "SELECT id, created_at FROM plans pl WHERE EXISTS("
+              "  SELECT 1 FROM plan_tasks pt WHERE pt.plan_id=pl.id"
+              "  AND pt.machine_id<>'supply' AND pt.machine_id<>'') "
+              "ORDER BY pl.rowid DESC LIMIT 1")
+          : db.query_one("SELECT id, created_at FROM plans WHERE id=?", { want });
+      }
+      catch (...) { ok(res, { {"plan_id", nullptr}, {"tasks", json::array()}, {"makespan", 0} }); return; }
+      const std::string planId = jstr(plan, "id");
+      json tasks = json::array();
+      double makespan = 0;
+      for (auto& r : db.query_json(
+             "SELECT pt.machine_id, pt.product_id, pt.operation_id, pt.order_idx, pt.worker_id, "
+             "       pt.start_min, pt.end_min, "
+             "       COALESCE(p.name, pt.product_id) AS product_name, "
+             "       COALESCE(o.name, pt.operation_id) AS op_name, "
+             "       (w.last_name || ' ' || w.first_name) AS worker_name "
+             "FROM plan_tasks pt "
+             "LEFT JOIN products p ON p.id = pt.product_id "
+             "LEFT JOIN operations o ON o.id = pt.operation_id "
+             "LEFT JOIN workers w ON w.id = pt.worker_id "
+             "WHERE pt.plan_id = ? AND pt.machine_id <> 'supply' AND pt.machine_id <> ''",
+             { planId })) {
+        double st = 0, en = 0;
+        try { st = std::stod(jstr(r, "start_min")) / 60.0; } catch (...) {}
+        try { en = std::stod(jstr(r, "end_min")) / 60.0; } catch (...) {}
+        makespan = std::max(makespan, en);
+        int oi = 0; try { oi = (int)std::stod(jstr(r, "order_idx")); } catch (...) {}
+        tasks.push_back({
+          {"machine_id", jstr(r, "machine_id")}, {"product_id", jstr(r, "product_id")},
+          {"product_name", jstr(r, "product_name")}, {"op_id", jstr(r, "operation_id")},
+          {"op_name", jstr(r, "op_name")}, {"order_idx", oi},
+          {"worker_id", jstr(r, "worker_id")}, {"worker_name", jstr(r, "worker_name")},
+          {"start", st}, {"end", en},
+        });
+      }
+      ok(res, { {"plan_id", planId}, {"created_at", jstr(plan, "created_at")},
+                {"makespan", makespan}, {"tasks", tasks} });
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  // Калибровка НСИ (режим как в AnyLogic/ЕОС ИМ п.8.11): наблюдаемые в плане
+  // длительности операций (обработка + наладки + ТО на станке) против норматива.
+  svr.Get("/api/simulation/calibration", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      json plan = db.query_one(
+        "SELECT id FROM plans pl WHERE EXISTS("
+        "  SELECT 1 FROM plan_tasks pt WHERE pt.plan_id=pl.id"
+        "  AND pt.machine_id<>'supply' AND pt.machine_id<>'') "
+        "ORDER BY pl.rowid DESC LIMIT 1");
+      const std::string planId = jstr(plan, "id");
+      json rows = json::array();
+      for (auto& r : db.query_json(
+             "SELECT pt.operation_id AS op_id, COALESCE(o.name,'?') AS op_name, "
+             "       COALESCE(p.name,'') AS product_name, "
+             "       COALESCE(o.t_norm,0) AS t_norm, "
+             "       AVG((CAST(pt.end_min AS REAL) - CAST(pt.start_min AS REAL)) / MAX(pt.qty, 0.001)) AS realized_mean, "
+             "       COUNT(*) AS n "
+             "FROM plan_tasks pt "
+             "JOIN operations o ON o.id = pt.operation_id "
+             "LEFT JOIN routings rt ON rt.id = o.routing_id "
+             "LEFT JOIN products p ON p.id = rt.product_id "
+             "WHERE pt.plan_id = ? AND pt.machine_id <> 'supply' "
+             "GROUP BY pt.operation_id", { planId })) {
+        double tn = 0, rm = 0; int n = 0;
+        try { tn = std::stod(jstr(r, "t_norm")); } catch (...) {}
+        try { rm = std::stod(jstr(r, "realized_mean")); } catch (...) {}
+        try { n = (int)std::stod(jstr(r, "n")); } catch (...) {}
+        if (tn <= 0 || rm <= 0) continue;
+        rows.push_back({
+          {"op_id", jstr(r, "op_id")}, {"op_name", jstr(r, "op_name")},
+          {"product_name", jstr(r, "product_name")},
+          {"t_norm", tn}, {"realized_mean", rm}, {"n", n},
+          {"delta_pct", (rm - tn) / tn * 100.0},
+        });
+      }
+      ok(res, { {"plan_id", planId}, {"rows", rows} });
+    } catch (...) { ok(res, { {"plan_id", nullptr}, {"rows", json::array()} }); }
+  });
+
+  // Применение калибровки: новый t_norm; t_opt/t_pess масштабируются пропорционально,
+  // нормы пары (time_norms) обновляются тем же коэффициентом.
+  svr.Post("/api/simulation/calibrate", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = json::parse(req.body);
+      if (!body.contains("items") || !body["items"].is_array()) { err(res, 400, "items required"); return; }
+      int updated = 0;
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());
+      db.exec("BEGIN");
+      try {
+        for (auto& it : body["items"]) {
+          const std::string opId = jstr(it, "op_id");
+          double tn = 0; try { tn = std::stod(jstr(it, "t_norm")); } catch (...) {}
+          if (opId.empty() || tn <= 0) continue;
+          json cur;
+          try { cur = db.query_one("SELECT t_norm FROM operations WHERE id=?", { opId }); }
+          catch (...) { continue; }
+          double oldTn = 0; try { oldTn = std::stod(jstr(cur, "t_norm")); } catch (...) {}
+          const double scale = oldTn > 0 ? tn / oldTn : 1.0;
+          db.exec("UPDATE operations SET t_norm=?, "
+                  "t_opt = MAX(1, ROUND(COALESCE(t_opt, t_norm) * ?)), "
+                  "t_pess = MAX(1, ROUND(COALESCE(t_pess, t_norm) * ?)) WHERE id=?",
+                  { std::to_string(tn), std::to_string(scale), std::to_string(scale), opId });
+          db.exec("UPDATE time_norms SET t_norm=?, "
+                  "t_opt = MAX(1, ROUND(COALESCE(t_opt, t_norm) * ?)), "
+                  "t_pess = MAX(1, ROUND(COALESCE(t_pess, t_norm) * ?)) WHERE operation_id=?",
+                  { std::to_string(tn), std::to_string(scale), std::to_string(scale), opId });
+          ++updated;
+        }
+        db.exec("COMMIT");
+      } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+      audit(db, "nsi", "calibration", "CALIBRATE", { {"updated", updated} });
+      ok(res, { {"updated", updated} });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+
+  // Аналитика прогона (как в имитационных пакетах): загрузка оборудования и число
+  // занятых операторов ВО ВРЕМЕНИ, требуемое число операторов (пик), пропускная
+  // способность, загрузка по станкам. Плюс рекомендация в НСИ по числу рабочих.
+  svr.Get("/api/simulation/results", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const std::string want = req.has_param("plan_id") ? req.get_param_value("plan_id") : "";
+      json plan;
+      try {
+        plan = want.empty()
+          ? db.query_one(
+              "SELECT id FROM plans pl WHERE EXISTS("
+              "  SELECT 1 FROM plan_tasks pt WHERE pt.plan_id=pl.id"
+              "  AND pt.machine_id<>'supply' AND pt.machine_id<>'') "
+              "ORDER BY pl.rowid DESC LIMIT 1")
+          : db.query_one("SELECT id FROM plans WHERE id=?", { want });
+      } catch (...) { ok(res, { {"plan_id", nullptr} }); return; }
+      const std::string planId = jstr(plan, "id");
+
+      struct T { std::string mid, wid; double s, e; int order; };
+      std::vector<T> tasks;
+      std::set<std::string> machineSet, workerSet;
+      std::unordered_map<std::string,double> orderFin;
+      double makespan = 0;
+      for (auto& r : db.query_json(
+             "SELECT machine_id, worker_id, start_min, end_min, order_idx "
+             "FROM plan_tasks WHERE plan_id=? AND machine_id<>'supply' AND machine_id<>''",
+             { planId })) {
+        T t; t.mid = jstr(r, "machine_id"); t.wid = jstr(r, "worker_id");
+        try { t.s = std::stod(jstr(r, "start_min")) / 60.0; } catch (...) { t.s = 0; }
+        try { t.e = std::stod(jstr(r, "end_min")) / 60.0; } catch (...) { t.e = 0; }
+        try { t.order = (int)std::stod(jstr(r, "order_idx")); } catch (...) { t.order = 0; }
+        makespan = std::max(makespan, t.e);
+        if (!t.mid.empty()) machineSet.insert(t.mid);
+        if (!t.wid.empty()) workerSet.insert(t.wid);
+        orderFin[std::to_string(t.order)] = std::max(orderFin[std::to_string(t.order)], t.e);
+        tasks.push_back(t);
+      }
+      const int BK = 48;
+      const double bw = std::max(1e-9, makespan / BK);
+      std::vector<std::set<std::string>> busM(BK + 1), busW(BK + 1);
+      std::unordered_map<std::string,double> mBusy;   // станок → занятые часы
+      for (const T& t : tasks) {
+        int b0 = std::max(0, (int)std::floor(t.s / bw));
+        int b1 = std::min(BK, (int)std::floor((t.e - 1e-9) / bw));
+        for (int k = b0; k <= b1; ++k) { busM[k].insert(t.mid); if (!t.wid.empty()) busW[k].insert(t.wid); }
+        mBusy[t.mid] += std::max(0.0, t.e - t.s);
+      }
+      json util = json::array(), workers = json::array();
+      int peakOps = 0; double sumOps = 0, sumUtil = 0; int nMach = (int)machineSet.size();
+      for (int k = 0; k <= BK; ++k) {
+        const int bm = (int)busM[k].size(), bw2 = (int)busW[k].size();
+        peakOps = std::max(peakOps, bw2); sumOps += bw2;
+        const double u = nMach > 0 ? (double)bm / nMach : 0; sumUtil += u;
+        util.push_back({ {"t", k * bw}, {"util", u}, {"busy", bm} });
+        workers.push_back({ {"t", k * bw}, {"workers", bw2} });
+      }
+      // Загрузка по станкам (топ для столбиков).
+      json perMachine = json::array();
+      for (auto& [mid, h] : mBusy) {
+        std::string nm = mid;
+        try { auto mr = db.query_one("SELECT name FROM machines WHERE id=?", { mid }); nm = jstr(mr, "name"); } catch (...) {}
+        perMachine.push_back({ {"machine_id", mid}, {"name", nm}, {"busy_hours", h},
+                               {"utilization", makespan > 0 ? h / makespan : 0} });
+      }
+      const int nOrders = (int)orderFin.size();
+      const double days = std::max(1e-9, makespan / 24.0);
+      ok(res, {
+        {"plan_id", planId}, {"makespan", makespan},
+        {"n_machines", nMach}, {"n_workers", (int)workerSet.size()},
+        {"required_operators", peakOps},                     // пик одновременно занятых
+        {"avg_operators", (BK + 1) > 0 ? sumOps / (BK + 1) : 0},
+        {"avg_utilization", (BK + 1) > 0 ? sumUtil / (BK + 1) : 0},
+        {"throughput_per_day", nOrders / days},
+        {"n_orders", nOrders},
+        {"util_series", util}, {"workers_series", workers}, {"per_machine", perMachine},
+      });
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+}
+
 /* ── Рабочий календарь (смены по умолчанию) ──────────────────────────────── */
 
 static void register_calendar(httplib::Server& svr, Database& db) {
@@ -2625,10 +2953,100 @@ static void register_calendar(httplib::Server& svr, Database& db) {
 /* ── main ────────────────────────────────────────────────────────────────── */
 
 /* ── Инициализация БД проекта (старт + переключение) ─────────────────────── */
+// Идемпотентный посев истории цен для изделий БЕЗ ts_data (новые проекты/изделия
+// добавляются после разовой миграции v9). Ряд ~30 мес: экспон. тренд + сезонность
+// + слабый AR-остаток, последняя точка = текущая base_price/base_cost — прогноз
+// (EMD-тренд + гармоники + AIC-фит) получает содержательные данные вместо пустоты.
+static void seed_missing_ts_data(Database& db) {
+  json rows;
+  try {
+    rows = db.query_json(
+      "SELECT p.id, p.base_price, p.base_cost, p.sellable, p.purchased "
+      "FROM products p "
+      "WHERE (p.sellable=1 OR p.purchased=1) "
+      "AND NOT EXISTS (SELECT 1 FROM ts_data t WHERE t.product_id=p.id)");
+  } catch (...) { return; }
+  if (rows.empty()) return;
+
+  const int N = 30;
+  int seeded = 0;
+  std::lock_guard<std::recursive_mutex> lk(db.mutex());
+  db.exec("BEGIN");
+  try {
+    for (auto& p : rows) {
+      const bool sellable = jstr(p, "sellable") == "1";
+      const std::string kind = sellable ? "price" : "cost";
+      const std::string bs = sellable ? jstr(p, "base_price") : jstr(p, "base_cost");
+      const std::string pid = jstr(p, "id");
+      if (bs.empty()) continue;
+      double base = 0; try { base = std::stod(bs); } catch (...) {}
+      if (base <= 0) continue;
+
+      // Детерминированный seed по id изделия — стабильная история между рестартами.
+      std::mt19937 rng((unsigned)(fnv1a(pid) & 0xFFFFFFFFu));
+      std::normal_distribution<double> nd(0.0, 1.0);
+      const double sigma  = sellable ? 0.040 : 0.055;    // мес. волатильность лог-остатка
+      const double trend  = 0.004 + 0.004 * (double)((fnv1a(pid) >> 8) % 100) / 100.0; // 0.4–0.8%/мес
+      const double seasAmp = 0.03 + 0.05 * (double)((fnv1a(pid) >> 16) % 100) / 100.0;  // сезонность
+      const double seasPh  = (double)((fnv1a(pid) >> 24) % 12);
+      // Строим лог-остаток вперёд (AR(1) с φ=0.5), затем центрируем на base в конце.
+      std::vector<double> resid(N, 0.0);
+      for (int t = 1; t < N; ++t) resid[t] = 0.5 * resid[t - 1] + sigma * nd(rng);
+      std::vector<double> logv(N, 0.0);
+      for (int t = 0; t < N; ++t) {
+        const double seas = seasAmp * std::sin(2.0 * M_PI * ((t + seasPh) / 12.0));
+        logv[t] = trend * t + seas + resid[t];
+      }
+      const double shift = std::log(base) - logv[N - 1];  // последняя точка = base
+      std::ostringstream sql;
+      sql << "INSERT OR IGNORE INTO ts_data(id,product_id,kind,month_idx,value) VALUES";
+      for (int t = 0; t < N; ++t) {
+        if (t) sql << ",";
+        sql << "('" << pid << "#" << kind << "#" << t << "','" << pid << "','" << kind
+            << "'," << t << "," << std::exp(logv[t] + shift) << ")";
+      }
+      db.exec(sql.str());
+      ++seeded;
+    }
+    db.exec("COMMIT");
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  if (seeded > 0) std::cout << "Seeded price history for " << seeded << " products.\n";
+}
+
 static bool setup_database(Database& db) {
   db.init_schema();
   db.exec_safe("ALTER TABLE users ADD COLUMN locked_until TEXT");  // идемпотентно для старых БД
   // Версионирование техкарт (ТЗ «Справочник техкарт» §3.3): version + is_default.
+  db.exec_safe("ALTER TABLE org_units ADD COLUMN kind TEXT");  // 3D-модель здания цеха
+  // flows: from/to полиморфные (станок ИЛИ 'shop:<org_unit_id>') — старый FK на
+  // machines молча ронял сохранение межцеховых дорог (SQLITE_CONSTRAINT глотался
+  // фронтом). Перестраиваем таблицу без FK; висячие связи чистим на старте.
+  try {
+    auto fk = db.query_json("PRAGMA foreign_key_list(flows)");
+    if (!fk.empty()) {
+      db.exec("PRAGMA foreign_keys=OFF");
+      db.exec("BEGIN");
+      db.exec("CREATE TABLE flows_new("
+              "id TEXT PRIMARY KEY, from_id TEXT NOT NULL, to_id TEXT NOT NULL, "
+              "parent_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))");
+      db.exec("INSERT INTO flows_new(id,from_id,to_id,parent_id,created_at) "
+              "SELECT id,from_id,to_id,parent_id,created_at FROM flows");
+      db.exec("DROP TABLE flows");
+      db.exec("ALTER TABLE flows_new RENAME TO flows");
+      db.exec("COMMIT");
+      db.exec("PRAGMA foreign_keys=ON");
+      std::cout << "Migrated flows: FK dropped (roads can link shops).\n";
+    }
+  } catch (std::exception& e) {
+    try { db.exec("ROLLBACK"); } catch (...) {}
+    std::cerr << "flows FK migration failed: " << e.what() << "\n";
+  }
+  // Чистка висячих связей (станок/цех удалён) — FK больше не каскадит.
+  db.exec_safe("DELETE FROM flows WHERE "
+               "(from_id NOT LIKE 'shop:%' AND from_id NOT IN (SELECT id FROM machines)) OR "
+               "(to_id   NOT LIKE 'shop:%' AND to_id   NOT IN (SELECT id FROM machines)) OR "
+               "(from_id LIKE 'shop:%' AND substr(from_id,6) NOT IN (SELECT id FROM org_units)) OR "
+               "(to_id   LIKE 'shop:%' AND substr(to_id,6)   NOT IN (SELECT id FROM org_units))");
   db.exec_safe("ALTER TABLE routings ADD COLUMN version INTEGER DEFAULT 1");
   db.exec_safe("ALTER TABLE routings ADD COLUMN is_default INTEGER DEFAULT 1");
   db.exec_safe("ALTER TABLE routings ADD COLUMN effective_from TEXT");
@@ -2671,6 +3089,30 @@ static bool setup_database(Database& db) {
   db.exec_safe("UPDATE work_center_types SET mtbf_hours=350, repair_hours=6, "
                "mtbm_hours=160, maintenance_hours=4 "
                "WHERE (mtbf_hours IS NULL OR mtbf_hours=0) AND hour_rate > 0");
+  // Миграция plans: run_id был NOT NULL + FK — план из /api/schedule (без прогона
+  // оптимизации) вообще не мог сохраниться, и симуляции нечего было проигрывать.
+  try {
+    auto ti = db.query_json("SELECT \"notnull\" AS nn FROM pragma_table_info('plans') WHERE name='run_id'");
+    if (!ti.empty() && jstr(ti[0], "nn") == "1") {
+      std::lock_guard<std::recursive_mutex> lk(db.mutex());
+      db.exec("PRAGMA foreign_keys=OFF");
+      db.exec("BEGIN");
+      try {
+        db.exec("CREATE TABLE plans_new (id TEXT PRIMARY KEY, "
+                "run_id TEXT REFERENCES optimization_runs(id) ON DELETE SET NULL, "
+                "created_at TEXT NOT NULL DEFAULT (datetime('now')))");
+        db.exec("INSERT INTO plans_new SELECT id, NULLIF(run_id,''), created_at FROM plans");
+        db.exec("DROP TABLE plans");
+        db.exec("ALTER TABLE plans_new RENAME TO plans");
+        db.exec("COMMIT");
+        std::cout << "Migrated plans.run_id -> nullable.\n";
+      } catch (std::exception& e) {
+        try { db.exec("ROLLBACK"); } catch (...) {}
+        std::cerr << "plans migration failed: " << e.what() << "\n";
+      }
+      db.exec("PRAGMA foreign_keys=ON");
+    }
+  } catch (...) {}
   std::cout << "Schema ready.\n";
 
   // Авто-посев демо-данных при пустой базе: реестры и схема должны быть
@@ -2713,6 +3155,7 @@ static bool setup_database(Database& db) {
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
     return false;
   }
+  seed_missing_ts_data(db);   // история цен для новых изделий (прогноз ОТ данных)
   return true;
 }
 
@@ -2780,7 +3223,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.47.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.56.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.
@@ -2811,7 +3254,7 @@ int main(int argc, char* argv[]) {
 
   register_crud(svr, db, {
     "machines", "machine",
-    { "name", "wc_type_id", "org_unit", "inv_no", "serial_no",
+    { "name", "wc_type_id", "org_unit", "org_unit_id", "inv_no", "serial_no",
       "year_made", "schedule", "status",
       "subtitle", "pos_x", "pos_z", "rotation_y", "parent_machine_id" }
   });
@@ -2851,9 +3294,10 @@ int main(int argc, char* argv[]) {
     "production_plans", "production_plan", { "name", "description" }
   });
 
-  // Оргструктура (подразделения/цеха) — для выпадающих списков
+  // Оргструктура (подразделения/цеха) — для выпадающих списков.
+  // kind — выбранная пользователем 3D-модель здания цеха на схеме.
   register_crud(svr, db, {
-    "org_units", "org_unit", { "name", "parent_id" }
+    "org_units", "org_unit", { "name", "parent_id", "kind" }
   });
 
   // Custom POST for operations (NULLIF routing_id) — must precede generic CRUD
@@ -2884,6 +3328,9 @@ int main(int argc, char* argv[]) {
 
   // Рабочий календарь (смены)
   register_calendar(svr, db);
+
+  // Имитационный режим (3D-плеер плана + калибровка НСИ)
+  register_simulation(svr, db);
 
   // MRP — потребность в материалах из программы (Стадия C)
   register_mrp(svr, db);

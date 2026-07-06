@@ -46,13 +46,15 @@ export const REGISTRIES: RegistryDef[] = [
     description:
       'Номенклатура с составом (BOM) и запасами. Каждое изделие привязано к техкартам — как его произвести.',
     columns: [
-      { key: 'code',      title: 'Код' },
-      { key: 'name',      title: 'Наименование' },
-      { key: 'role',      title: 'Роль' },
-      { key: 'unit',      title: 'Ед.' },
-      { key: 'parent_id', title: 'Входит в' },
-      { key: 'stock',     title: 'Остаток' },
-      { key: 'purchased', title: 'Покупное' },
+      { key: 'code',       title: 'Код' },
+      { key: 'name',       title: 'Наименование' },
+      { key: 'role',       title: 'Роль' },
+      { key: 'unit',       title: 'Ед.' },
+      { key: 'parent_id',  title: 'Входит в' },
+      { key: 'stock',      title: 'Остаток' },
+      { key: 'demand_max', title: 'Спрос/год' },
+      { key: 'base_price', title: 'Цена, ₽' },
+      { key: 'purchased',  title: 'Покупное' },
     ],
   },
   {

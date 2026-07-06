@@ -8,7 +8,8 @@ const SHOULDER = '#54595f'
 const LANE = '#c9b65a'
 const ROAD_W = 2.4
 const EPS = 0.6
-const Y_SHOULDER = 0.035, Y_ROAD = 0.05, Y_LANE = 0.065
+// Дороги слоями с зазором ≥0.03 и выше площадок (0.03)/теней (0.008) — без z-fighting.
+const Y_SHOULDER = 0.05, Y_ROAD = 0.085, Y_LANE = 0.12
 
 interface HSeg { z: number; x0: number; x1: number }
 interface VSeg { x: number; z0: number; z1: number }
@@ -100,13 +101,13 @@ function RoadStrip({ cx, cz, w, d }: { cx: number; cz: number; w: number; d: num
 function Roundabout({ x, z, indoor }: { x: number; z: number; indoor?: boolean }) {
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 0.052, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh position={[0, 0.085, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <ringGeometry args={[1.3, 2.6, 36]} /><meshStandardMaterial color={ASPHALT} roughness={1} />
       </mesh>
-      <mesh position={[0, 0.066, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[2.5, 2.6, 36]} /><meshBasicMaterial color={indoor ? '#c7cdd2' : LANE} />
       </mesh>
-      <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[1.25, 28]} /><meshStandardMaterial color={indoor ? '#6a7076' : '#3f5d3a'} roughness={1} />
       </mesh>
       {!indoor && (

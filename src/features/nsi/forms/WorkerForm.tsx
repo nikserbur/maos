@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../lib/api'
-import { useOrgUnits } from '../useNsi'
+import { useOrgUnits, useWorkCenterTypes } from '../useNsi'
 import type { EditCtx } from '../CreateDialog'
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
 
 export function WorkerForm({ onSuccess, edit }: Props) {
   const orgUnits = useOrgUnits()
+  const wcTypes = useWorkCenterTypes()
   const r = edit?.row ?? {}
   const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
   const [tabNo, setTabNo]     = useState(sv('tab_no'))
@@ -19,13 +20,62 @@ export function WorkerForm({ onSuccess, edit }: Props) {
   const [orgUnit, setOrgUnit] = useState(sv('org_unit'))
   const [position, setPos]    = useState(sv('position'))
   const [grade, setGrade]     = useState(sv('grade', '3'))
-  const [skills, setSkills]   = useState(sv('skills'))
+  // Допуски — множество ID типов РЦ. Раньше был текстовый ввод; теперь галочки.
+  // Пустое множество = универсал (допущен ко всем типам).
+  const initialSkills = sv('skills')
+  const [allowed, setAllowed] = useState<Set<string>>(() => {
+    if (!initialSkills.trim()) return new Set()   // универсал — конкретных галочек нет
+    const toks = initialSkills.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean)
+    return new Set(wcTypes.filter((t) => {
+      const nm = t.name.toLowerCase(), idl = t.id.toLowerCase()
+      return toks.some((x) => x === nm || x === idl || (x.length > 3 && nm.includes(x)))
+    }).map((t) => t.id))
+  })
+  const [universal, setUniversal] = useState(() => !initialSkills.trim())
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+
+  // Гидратация допусков, когда типы РЦ подгрузились асинхронно (режим правки):
+  // useState-инициализатор мог сработать при пустом wcTypes.
+  const hydrated = useRef(false)
+  useEffect(() => {
+    if (hydrated.current || !initialSkills.trim() || wcTypes.length === 0) return
+    hydrated.current = true
+    const toks = initialSkills.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean)
+    setAllowed(new Set(wcTypes.filter((t) => {
+      const nm = t.name.toLowerCase(), idl = t.id.toLowerCase()
+      return toks.some((x) => x === nm || x === idl || (x.length > 3 && nm.includes(x)))
+    }).map((t) => t.id)))
+  }, [wcTypes, initialSkills])
+
+  // Группировка типов по group_name (группы допусков).
+  const groups = useMemo(() => {
+    const g = new Map<string, typeof wcTypes>()
+    for (const t of wcTypes) {
+      const key = t.group_name?.trim() || 'Прочие'
+      if (!g.has(key)) g.set(key, [])
+      g.get(key)!.push(t)
+    }
+    return [...g.entries()]
+  }, [wcTypes])
+
+  const toggle = (id: string) => setAllowed((prev) => {
+    const n = new Set(prev)
+    n.has(id) ? n.delete(id) : n.add(id)
+    return n
+  })
+  const toggleGroup = (ids: string[], on: boolean) => setAllowed((prev) => {
+    const n = new Set(prev)
+    ids.forEach((id) => (on ? n.add(id) : n.delete(id)))
+    return n
+  })
 
   const handleSubmit = async () => {
     if (!last.trim() || !first.trim()) { setError('Укажите фамилию и имя'); return }
     if (!tabNo.trim()) { setError('Укажите табельный номер'); return }
+    // Универсал → пустые навыки; иначе CSV ИМЁН типов (планировщик матчит по имени).
+    const skills = universal ? '' :
+      wcTypes.filter((t) => allowed.has(t.id)).map((t) => t.name).join(', ')
     setLoading(true)
     setError(null)
     try {
@@ -91,18 +141,53 @@ export function WorkerForm({ onSuccess, edit }: Props) {
         </div>
       </div>
 
-      <div className="form__field">
-        <label className="form__label">Компетенции / навыки</label>
-        <textarea
-          className="form__textarea"
-          value={skills}
-          onChange={(e) => setSkills(e.target.value)}
-          placeholder="Токарные работы, ЧПУ Fanuc, Контроль ОТК…"
-        />
-        <span className="form__hint">
-          Рабочий — ресурс плана наравне с оборудованием («оборудование + рабочий»).
-        </span>
-      </div>
+      <div className="form__section">Допуски к оборудованию</div>
+      <label className="form__check">
+        <input type="checkbox" checked={universal} onChange={(e) => setUniversal(e.target.checked)} />
+        Универсал — допущен ко всем типам оборудования
+      </label>
+      <span className="form__hint" style={{ marginTop: 2 }}>
+        Допуск = к каким <b>типам станков</b> рабочий может встать. Планировщик ставит
+        операцию только если есть свободный станок <b>и</b> допущенный оператор — поэтому
+        мало операторов с допуском = станки простаивают, даже если их несколько.
+      </span>
+
+      {!universal && (
+        wcTypes.length === 0 ? (
+          <span className="form__hint" style={{ color: 'var(--intent-warning)' }}>
+            Типов оборудования ещё нет — создайте их в реестре «Типы оборудования».
+          </span>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+            {groups.map(([group, types]) => {
+              const ids = types.map((t) => t.id)
+              const allOn = ids.every((id) => allowed.has(id))
+              return (
+                <div key={group} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                  <label className="form__check" style={{ fontWeight: 600, marginBottom: 4 }}>
+                    <input type="checkbox" checked={allOn}
+                           ref={(el) => { if (el) el.indeterminate = !allOn && ids.some((id) => allowed.has(id)) }}
+                           onChange={(e) => toggleGroup(ids, e.target.checked)} />
+                    {group} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· группа допусков</span>
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '2px 12px', paddingLeft: 18 }}>
+                    {types.map((t) => (
+                      <label key={t.id} className="form__check" style={{ margin: 0 }}>
+                        <input type="checkbox" checked={allowed.has(t.id)} onChange={() => toggle(t.id)} />
+                        {t.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+            <span className="form__hint">
+              Отмечено допусков: <b>{allowed.size}</b>. Пусто и не «универсал» — рабочий
+              не встанет ни на один станок.
+            </span>
+          </div>
+        )
+      )}
 
       <div className="form__actions">
         <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>

@@ -157,3 +157,16 @@
 .forecast__distf input { width: 90px; }
 .forecast__distrow select { background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37); border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 5px 7px; }
 .forecast__dist-note { font-size: 10px; color: var(--text-muted, #6a7079); flex-basis: 100%; }
+
+/* Вклад факторов в прогноз (водопад) */
+.forecast__contrib { margin: 10px 0; padding: 8px 10px; background: var(--bg-card, #12161c);
+  border: 1px solid var(--border); border-radius: 8px; }
+.forecast__contrib-h { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.forecast__contrib-row { display: grid; grid-template-columns: 120px 1fr 52px; align-items: center;
+  gap: 8px; margin: 3px 0; }
+.forecast__contrib-l { font-size: 11.5px; color: var(--text-secondary); }
+.forecast__contrib-bar { height: 10px; background: var(--bg-app, #0d1014); border-radius: 3px; overflow: hidden; }
+.forecast__contrib-fill { display: block; height: 100%; border-radius: 3px; }
+.forecast__contrib-v { font-size: 11px; text-align: right; color: var(--text); }
+.forecast__contrib-note { font-size: 10.5px; color: var(--text-muted); margin-top: 5px; }
+.forecast__distprev { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
