@@ -1,0 +1,110 @@
+/* Мировая карта — НАСТОЯЩАЯ тёмная карта (MapLibre GL + тёмный векторный стиль CARTO).
+   Стилистика Google/Mapbox: реальная география, подписи, дороги. Маркеры-пины со
+   статусным цветом + всплывающая карточка KPI. */
+
+.wm2d {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #0b0e14;
+}
+.wm2d__map { position: absolute; inset: 0; }
+
+/* Приглушаем яркость подложки, чтобы маркеры/карточки читались (как в control tower). */
+.wm2d .maplibregl-map { font-family: var(--font-sans, system-ui, sans-serif); }
+
+/* ── Пин-маркер (бейдж со скруглением + остриё), как на референсе ──
+   ВАЖНО: корневой элемент маркера НЕ трогаем по position/transform — иначе
+   перебиваем инлайновое позиционирование MapLibre (.maplibregl-marker{position:absolute})
+   и пины «стекаются» в поток. Всё оформление — во внутреннем .wm2d-pin__body. */
+.wm2d-pin {
+  --pin: #238551;
+  cursor: pointer;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+.wm2d-pin__body {
+  position: relative;
+  width: 30px;
+  height: 38px;
+  transform-origin: 50% 100%;
+  transition: transform 0.12s ease;
+}
+.wm2d-pin:hover .wm2d-pin__body { transform: scale(1.08); }
+.wm2d-pin.is-selected { z-index: 3; }
+.wm2d-pin__badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--pin);
+  border: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.wm2d-pin__badge svg { width: 16px; height: 16px; fill: #fff; }
+/* Остриё-указатель под бейджем. */
+.wm2d-pin__tip {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  background: var(--pin);
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 0 0 3px 0;
+}
+.wm2d-pin.is-selected .wm2d-pin__badge,
+.wm2d-pin.is-selected .wm2d-pin__tip { --pin: #2d72d2; }
+
+/* ── Карточка KPI (popup) ── */
+.wm2d-popup .maplibregl-popup-content {
+  background: #1b2130;
+  color: #e8ecf3;
+  border: 1px solid #2c3547;
+  border-radius: 8px;
+  padding: 0;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  min-width: 210px;
+}
+.wm2d-popup .maplibregl-popup-tip { border-top-color: #1b2130; border-bottom-color: #1b2130; }
+.wm2d-popup .maplibregl-popup-close-button { color: #8a97ab; font-size: 16px; }
+
+.wm2d-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 12px;
+  background: #232b3d;
+  border-bottom: 1px solid #2c3547;
+}
+.wm2d-card__title .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.wm2d-card__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.wm2d-card__row:last-child { padding-bottom: 10px; }
+.wm2d-card__row span { color: #8a97ab; }
+.wm2d-card__row b { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* Кнопки навигации MapLibre — тёмная тема. */
+.wm2d .maplibregl-ctrl-group {
+  background: #1b2130;
+  border: 1px solid #2c3547;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.wm2d .maplibregl-ctrl-group button + button { border-top: 1px solid #2c3547; }
+.wm2d .maplibregl-ctrl button .maplibregl-ctrl-icon { filter: invert(0.85); }
+.wm2d .maplibregl-ctrl-attrib {
+  background: rgba(11, 14, 20, 0.7);
+  color: #8a97ab;
+}
+.wm2d .maplibregl-ctrl-attrib a { color: #a9b6c9; }

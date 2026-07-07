@@ -112,7 +112,7 @@ export interface User {
   role_id: string; role_name: string; permissions: string; created_at: string
 }
 export interface Role { id: string; name: string; permissions: string }
-export interface OrgUnit { id: string; name: string; parent_id: string; unit_type?: string; kind?: string; pos_x?: string; pos_z?: string; created_at: string }
+export interface OrgUnit { id: string; name: string; parent_id: string; unit_type?: string; kind?: string; pos_x?: string; pos_z?: string; lat?: string; lng?: string; created_at: string }
 
 /* ── Сценарии внешних условий (стохастика цен) ───────────────────────────── */
 export type DistType = 'normal' | 'lognormal' | 'triangular' | 'uniform' | 't' | 'pareto'
@@ -384,12 +384,20 @@ export const api = {
   analytics: {
     /** Полный KPI-блок плана (persisted при построении расписания). */
     kpi: (planId?: string) => get<KpiBundle>(planId ? `/analytics/kpi?plan_id=${planId}` : '/analytics/kpi'),
+    /** KPI по всем построенным планам (по возрастанию времени) — ряд для настраиваемых графиков. */
+    kpiSeries: () => get<KpiBundle[]>('/analytics/kpi_series'),
     /** Инвестпроект: докупка N станков типа → окупаемость/NPV/IRR через рынок+мощность. */
     investment: (p: {
       wc_type_id: string; add_machines: number; machine_capex: number
       discount_rate?: number; life_months?: number; scenario_id?: string
       samples?: number; demand?: number; horizon_hours?: number
     }) => post<InvestmentResult>('/analytics/investment', p),
+  },
+
+  /** KV-настройки на уровне проекта-БД (дашборд «Аналитики» и т.п.). */
+  prefs: {
+    get: <T>(key: string) => get<{ key: string; value: T | null }>(`/prefs/${encodeURIComponent(key)}`).then((r) => r.value),
+    set: (key: string, value: unknown) => put<{ key: string; ok: boolean }>(`/prefs/${encodeURIComponent(key)}`, { value }),
   },
 
   workCenterTypes: {

@@ -5,6 +5,7 @@ import {
 } from '../../lib/api'
 import { isEligible } from '../nsi/labor'
 import { KPI_CATALOG, KPI_CATEGORIES } from './kpiCatalog'
+import { KpiDashboard } from './KpiDashboard'
 import './analytics.css'
 
 type Tab = 'kpi' | 'bottleneck' | 'invest' | 'flow'
@@ -48,7 +49,11 @@ export function AnalyticsScreen() {
   }, [])
 
   useEffect(() => {
-    api.simulation.results(planId || undefined).then(setRes).catch(() => setRes(null))
+    // Бэкенд без построенного плана отдаёт { plan_id: null } БЕЗ массива per_machine.
+    // Нормализуем к null, иначе `res` истинный, но `res.per_machine` undefined → краш.
+    api.simulation.results(planId || undefined)
+      .then((r) => setRes(r && r.plan_id && Array.isArray(r.per_machine) ? r : null))
+      .catch(() => setRes(null))
     api.analytics.kpi(planId || undefined).then(setKpiB).catch(() => setKpiB(null))
     if (tab === 'flow') api.simulation.plan(planId || undefined).then(setPlan).catch(() => setPlan(null))
   }, [planId, tab])
@@ -60,7 +65,7 @@ export function AnalyticsScreen() {
 
   // Загрузка по типам РЦ из per_machine + труд.
   const typeLoads = useMemo<TypeLoad[]>(() => {
-    if (!res) return []
+    if (!res || !Array.isArray(res.per_machine)) return []
     const mType = new Map(machines.map((m) => [m.id, m.wc_type_id]))
     const agg = new Map<string, { sum: number; n: number }>()
     for (const pm of res.per_machine) {
@@ -148,8 +153,21 @@ function Spark({ pts, color, fmtY }: { pts: Array<{ t: number; v: number }>; col
   )
 }
 
-/* ── KPI: реестр метрик + светофор + тренды + рекомендации + сравнение ──────── */
-function KpiTab({ b, res, loads, plans, planId, onInvest }: {
+/* ── KPI-вкладка: настраиваемый дашборд сверху + детальный разбор ниже ──────── */
+function KpiTab(props: {
+  b: KpiBundle | null; res: SimResults | null; loads: TypeLoad[]
+  plans: SimPlanSummary[]; planId: string; onInvest: (id: string) => void
+}) {
+  return (
+    <>
+      <KpiDashboard bundle={props.b} res={props.res} />
+      <KpiDetails {...props} />
+    </>
+  )
+}
+
+/* ── Детальный разбор KPI: реестр метрик + светофор + тренды + рекомендации + сравнение ── */
+function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
   b: KpiBundle | null; res: SimResults | null; loads: TypeLoad[]
   plans: SimPlanSummary[]; planId: string; onInvest: (id: string) => void
 }) {

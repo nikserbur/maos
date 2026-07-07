@@ -228,6 +228,9 @@ export function SwitchbackStair({
   const rise = h / flights
   const run = w * 1.6
   const proj = 0.3 + w / 2
+  const railH = 0.95
+  const zL = proj - w / 2 + 0.05   // косоур/поручень ближней стороны
+  const zR = proj + w / 2 - 0.05   // …и дальней стороны
   return (
     <group position={position} rotation={rotation}>
       {Array.from({ length: flights }, (_, f) => {
@@ -235,7 +238,7 @@ export function SwitchbackStair({
         const y0 = f * rise
         const startX = goRight ? -run / 2 : run / 2
         const dir = goRight ? 1 : -1
-        const steps = Math.max(3, Math.round(rise / 0.25))
+        const steps = Math.max(3, Math.round(rise / 0.22))
         const stepRun = run / steps
         const stepRise = rise / steps
         const midX = startX + dir * run / 2
@@ -243,23 +246,48 @@ export function SwitchbackStair({
         const pitch = Math.atan2(rise, run)
         return (
           <group key={f}>
+            {/* ступени */}
             {Array.from({ length: steps }, (_, s) => (
               <mesh key={s} position={[startX + dir * (s + 0.5) * stepRun, y0 + (s + 1) * stepRise, proj]} castShadow>
                 <boxGeometry args={[stepRun + 0.02, 0.05, w]} /><meshStandardMaterial {...M.steel()} />
               </mesh>
             ))}
-            {[proj - w / 2 + 0.05, proj + w / 2 - 0.05].map((z, i) => (
+            {/* косоуры обеих сторон */}
+            {[zL, zR].map((z, i) => (
               <mesh key={`str${i}`} position={[midX, y0 + rise / 2, z]} rotation={[0, 0, dir * pitch]}>
-                <boxGeometry args={[diag, 0.12, 0.05]} /><meshStandardMaterial {...M.steelDark()} />
+                <boxGeometry args={[diag, 0.14, 0.06]} /><meshStandardMaterial {...M.steelDark()} />
               </mesh>
             ))}
-            <mesh position={[midX, y0 + rise / 2 + 0.5, proj + w / 2 - 0.03]} rotation={[0, 0, dir * pitch]}>
-              <boxGeometry args={[diag, 0.04, 0.04]} /><meshStandardMaterial {...M.steel()} />
-            </mesh>
-            {f < flights - 1 && (
-              <mesh position={[startX + dir * (run / 2 + w / 2), y0 + rise, proj]} castShadow receiveShadow>
-                <boxGeometry args={[w, 0.07, w]} /><meshStandardMaterial {...M.steel()} />
+            {/* поручни обеих сторон */}
+            {[zL, zR].map((z, i) => (
+              <mesh key={`rail${i}`} position={[midX, y0 + rise / 2 + railH, z]} rotation={[0, 0, dir * pitch]}>
+                <boxGeometry args={[diag, 0.045, 0.045]} /><meshStandardMaterial {...M.steel()} />
               </mesh>
+            ))}
+            {/* стойки перил (балясины) через ступень, обе стороны */}
+            {Array.from({ length: steps }, (_, s) => (s % 2 === 0 ? (
+              [zL, zR].map((z, i) => (
+                <mesh key={`post${s}-${i}`} position={[startX + dir * (s + 0.5) * stepRun, y0 + (s + 1) * stepRise + railH / 2, z]} castShadow>
+                  <boxGeometry args={[0.04, railH, 0.04]} /><meshStandardMaterial {...M.steel()} />
+                </mesh>
+              ))
+            ) : null))}
+            {/* опорная колонна под маршем (чтобы не «висел») */}
+            {f > 0 && (
+              <mesh position={[startX, y0 / 2, proj]} castShadow>
+                <boxGeometry args={[0.1, y0, 0.1]} /><meshStandardMaterial {...M.steelDark()} />
+              </mesh>
+            )}
+            {/* промежуточная площадка с ограждением + опора до земли */}
+            {f < flights - 1 && (
+              <group position={[startX + dir * (run / 2 + w / 2), y0 + rise, proj]}>
+                <mesh castShadow receiveShadow><boxGeometry args={[w, 0.08, w]} /><meshStandardMaterial {...M.steel()} /></mesh>
+                {[[-w / 2, -w / 2], [w / 2, -w / 2], [w / 2, w / 2], [-w / 2, w / 2]].map(([px, pz], i) => (
+                  <mesh key={`lp${i}`} position={[px, railH / 2, pz]} castShadow><boxGeometry args={[0.05, railH, 0.05]} /><meshStandardMaterial {...M.steel()} /></mesh>
+                ))}
+                <mesh position={[0, railH, w / 2 - 0.02]}><boxGeometry args={[w, 0.045, 0.045]} /><meshStandardMaterial {...M.steel()} /></mesh>
+                <mesh position={[0, -(y0 + rise) / 2, 0]} castShadow><boxGeometry args={[0.12, y0 + rise, 0.12]} /><meshStandardMaterial {...M.steelDark()} /></mesh>
+              </group>
             )}
           </group>
         )

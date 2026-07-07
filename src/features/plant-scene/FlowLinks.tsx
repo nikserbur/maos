@@ -2,19 +2,47 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { SceneEdge, SceneNode } from './graph/sceneModel'
+import { parkingSpot } from './siteLayout'
+
+// Отступ забора/периметра от крайних цехов (совпадает с MARGIN в Facility) — по нему
+// вычисляем габариты площадки, чтобы въездная дорога дошла ровно до +X-ворот.
+const MARGIN = 16
 
 const ASPHALT = '#34383d'
 const SHOULDER = '#54595f'
 const LANE = '#c9b65a'
 const KERB = '#b9bec4'
 const ZEBRA = '#e7e9ec'
+// Тротуар: светлый бетон, приподнятый бордюр вдоль обеих сторон проезжей части.
+const WALK = '#b8bcc0'
+const WALK_W = 0.5          // ширина полосы тротуара
+const WALK_H = 0.2          // высота бордюра (приподнят над асфальтом)
 const ROAD_W = 2.4
 const EPS = 0.6
+// Радиус скругления угла проезжей части (совпадает с TURN_R маршрутов ниже).
+const CORNER_R = 2.0
+// Развязка: внешний радиус асфальтового кольца (см. Roundabout ниже). Подходящие
+// прямые концы (асфальт + тротуар) ретрактим ЗА него, иначе они лезут внутрь кольца.
+const ROUND_OUTER_R = 2.6
+// Насколько от центра развязки должен заканчиваться прямой конец (асфальт/тротуар):
+// строго дальше внешнего радиуса кольца — без нахлёста на кольцевой асфальт.
+const ROUND_TRIM = 2.95
+// Внешний пешеходный бордюр-кольцо развязки: радиусы полосы (чисто вне RING_R=1.95,
+// по которому едет транспорт, и вне асфальтового кольца 2.6).
+const ROUND_WALK_RIN = 2.72, ROUND_WALK_ROUT = 3.06
+// Полуширина разрыва тротуара СКВОЗНОЙ дороги в устье T-съезда (отворотки): чуть
+// шире поперечного габарита ветки с бордюрами (≈ walkOff+борт), чтобы устье было
+// открыто и бордюр магистрали не перегораживал заезд.
+const TEE_GAP = ROAD_W / 2 + WALK_W + 0.4
 // Дороги слоями с зазором ≥0.03 и выше площадок (0.03)/теней (0.008) — без z-fighting.
 const Y_SHOULDER = 0.05, Y_ROAD = 0.085, Y_KERB = 0.1, Y_LANE = 0.12, Y_ZEBRA = 0.125
+// Центр box-тротуара: низ ≈ уровень площадки (0.03), верх ≈ 0.23 → бордюр ~0.15 над асфальтом.
+const Y_WALK = 0.03 + WALK_H / 2
 
 interface HSeg { z: number; x0: number; x1: number }
 interface VSeg { x: number; z0: number; z1: number }
+/** Угловой стык двух ортогональных участков: центр филе + квадрант дуги. */
+interface Corner { cx: number; cz: number; a0: number }
 
 /** Единая ортогональная сеть из рёбер: Г-разводка → слияние совпадающих отрезков. */
 function buildNetwork(nodes: SceneNode[], edges: SceneEdge[]) {
@@ -42,6 +70,37 @@ function buildNetwork(nodes: SceneNode[], edges: SceneEdge[]) {
     addH(a[1], a[0], b[0])
     addV(b[0], a[1], b[1])
   }
+
+  // Въезд и подъезд к парковке — вливаем в ТУ ЖЕ сеть ДО слияния/развязок/углов,
+  // чтобы их стыки обрабатывались единой логикой (крест → кольцо, L → филе), а не
+  // ложились поверх межцеховых дорог случайным нахлёстом (жалоба «дороги странно
+  // пересекаются»). Раньше их рисовал Facility отдельными ad-hoc дорогами.
+  if (nodes.length) {
+    let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity
+    for (const n of nodes) {
+      const [nx, nz] = n.position
+      mnX = Math.min(mnX, nx); mxX = Math.max(mxX, nx)
+      mnZ = Math.min(mnZ, nz); mxZ = Math.max(mxZ, nz)
+    }
+    const minX = mnX - MARGIN, maxX = mxX + MARGIN, minZ = mnZ - MARGIN, maxZ = mxZ + MARGIN
+    const gMid = (minZ + maxZ) / 2
+    // Точка стыка въезда с сетью: X цеха, ЛЕЖАЩЕГО БЛИЖЕ ВСЕГО к оси z=gMid (так въезд
+    // встречает межцеховую сеть), иначе центр площадки по X.
+    let junctionX = (minX + maxX) / 2
+    let bestDz = Infinity
+    for (const n of nodes) {
+      const dz = Math.abs(n.position[1] - gMid)
+      if (dz < bestDz) { bestDz = dz; junctionX = n.position[0] }
+    }
+    // Въезд: горизонталь вдоль оси ворот от точки стыка до +X-кромки (ворота).
+    addH(gMid, junctionX, maxX)
+    // Подъезд к парковке: вертикальная ветка от оси въезда к стоянке, стоп ~4 не доезжая
+    // до лота (со стороны, обращённой к оси gMid, откуда подходим).
+    const pk = parkingSpot(minX, maxX, minZ, maxZ, nodes)
+    const pkEndZ = pk.z < gMid ? pk.z + 4 : pk.z - 4
+    addV(pk.x, gMid, pkEndZ)
+  }
+
   // Слияние пересекающихся/совпадающих интервалов на одной линии → нет дублей.
   const merge = (arr: [number, number][]): [number, number][] => {
     arr.sort((p, q) => p[0] - q[0])
@@ -58,21 +117,69 @@ function buildNetwork(nodes: SceneNode[], edges: SceneEdge[]) {
   const vSegs: VSeg[] = []
   for (const [x, arr] of ver) for (const [z0, z1] of merge(arr)) vSegs.push({ x, z0, z1 })
 
-  // Кольцевые развязки только на настоящих перекрёстках (T/крест, степень ≥ 3).
+  // Классификация узлов пересечения по степени:
+  //  • крест (степень 4, обе оси сквозные) → КОЛЬЦЕВАЯ развязка (островок);
+  //  • T-узел (степень 3: одна дорога сквозная, вторая упирается концом — врезка/
+  //    отворотка, напр. въезд с ворот или подъезд к парковке) → ПРОСТОЙ СЪЕЗД без
+  //    островка. Пользователь: «не должно быть кругового — только отворотка».
   const seen = new Set<string>()
   const roundabouts: [number, number][] = []
+  const tees: [number, number][] = []
   for (const h of hSegs) for (const v of vSegs) {
     const x = v.x, z = h.z
     if (!(x >= h.x0 - EPS && x <= h.x1 + EPS && z >= v.z0 - EPS && z <= v.z1 + EPS)) continue
     const hArms = (x > h.x0 + EPS ? 1 : 0) + (x < h.x1 - EPS ? 1 : 0)
     const vArms = (z > v.z0 + EPS ? 1 : 0) + (z < v.z1 - EPS ? 1 : 0)
-    if (hArms + vArms < 3) continue
+    const deg = hArms + vArms
+    if (deg < 3) continue
     const key = `${Math.round(x)},${Math.round(z)}`
     if (seen.has(key)) continue
     seen.add(key)
-    roundabouts.push([x, z])
+    if (deg >= 4) roundabouts.push([x, z])   // крест → кольцо
+    else tees.push([x, z])                    // T → отворотка (без островка)
   }
-  return { hSegs, vSegs, roundabouts }
+
+  // Угловые стыки (L-повороты): конец H-участка совпал с концом V-участка, при
+  // этом это НЕ перекрёсток-развязка. Такой узел скругляем филе-дугой, иначе
+  // асфальт «ломается» под прямым углом (жалоба пользователя).
+  const isJunction = (x: number, z: number): boolean =>
+    roundabouts.some(([rx, rz]) => Math.abs(rx - x) < EPS && Math.abs(rz - z) < EPS) ||
+    tees.some(([tx, tz]) => Math.abs(tx - x) < EPS && Math.abs(tz - z) < EPS)
+  const cornerSeen = new Set<string>()
+  const corners: Corner[] = []
+  for (const h of hSegs) for (const v of vSegs) {
+    // dirH/dirV — куда УХОДЯТ участки от угла (по X / по Z).
+    for (const [hx, dirH] of [[h.x0, +1], [h.x1, -1]] as const) {
+      if (Math.abs(hx - v.x) > EPS) continue
+      for (const [vz, dirV] of [[v.z0, +1], [v.z1, -1]] as const) {
+        if (Math.abs(vz - h.z) > EPS) continue
+        const x = v.x, z = h.z
+        if (isJunction(x, z)) continue
+        const key = `${Math.round(x)},${Math.round(z)}`
+        if (cornerSeen.has(key)) continue
+        cornerSeen.add(key)
+        // Центр дуги — на пересечении осевых обоих участков, смещён на радиус в
+        // сторону, куда уходят участки: осевая-дуга касается обеих осевых линий.
+        corners.push({ cx: x + dirH * CORNER_R, cz: z + dirV * CORNER_R, a0: cornerStartAngle(dirH, dirV) })
+      }
+    }
+  }
+  return { hSegs, vSegs, roundabouts, corners, tees }
+}
+
+/**
+ * Стартовый угол thetaStart для ringGeometry (90°-квадрант, положительный sweep),
+ * скругляющий угол-стык. Ring рисуется в локальной XY, повёрнутой на −π/2 по X:
+ * локальный угол θ → world-XZ (cos θ, −sin θ), т.е. world-угол = −θ. Квадрант
+ * должен накрыть касательные к обеим кромкам: world-направления (−dirH,0) и
+ * (0,−dirV). Ниже — thetaStart для каждого из 4 расположений угла.
+ */
+function cornerStartAngle(dirH: number, dirV: number): number {
+  // θ-старт 90°-квадранта (касательные к H- и V-кромкам ограничивают дугу):
+  if (dirH > 0 && dirV > 0) return Math.PI / 2        // касания θ=π/2 и θ=π → [π/2, π]
+  if (dirH < 0 && dirV > 0) return 0                  // касания θ=0 и θ=π/2 → [0, π/2]
+  if (dirH < 0 && dirV < 0) return -Math.PI / 2       // касания θ=−π/2 и θ=0 → [−π/2, 0]
+  return -Math.PI                                     // dirH>0 && dirV<0 → касания θ=−π и θ=−π/2 → [−π, −π/2]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,29 +361,163 @@ function DashedCenter({ cx, cz, along, horiz }: { cx: number; cz: number; along:
   )
 }
 
-function RoadStrip({ cx, cz, w, d }: { cx: number; cz: number; w: number; d: number }) {
-  const along = Math.max(w, d)
+/**
+ * Приподнятый тротуар (бетонный борт) вдоль ОДНОЙ стороны прямого участка.
+ * Box высотой WALK_H со «шляпкой» верхней грани — читается как бордюр-пешеходка.
+ * len — длина полосы по оси участка (уже с вычетом углов), off — смещение от осевой.
+ */
+function WalkStrip({ cx, cz, len, off, horiz }: { cx: number; cz: number; len: number; off: number; horiz: boolean }) {
+  if (len < 0.4) return null
+  const size: [number, number, number] = horiz ? [len, WALK_H, WALK_W] : [WALK_W, WALK_H, len]
+  return (
+    <mesh position={[cx + (horiz ? 0 : off), Y_WALK, cz + (horiz ? off : 0)]} castShadow receiveShadow>
+      <boxGeometry args={size} /><meshStandardMaterial color={WALK} roughness={0.92} />
+    </mesh>
+  )
+}
+
+/** Тип конца прямого участка: примыкает к скруглённому углу, к развязке, либо
+ *  «обычный» стык (крест/T) — от этого зависит величина ретракта асфальта/бордюра. */
+type EndKind = 'corner' | 'round' | 'plain'
+
+/**
+ * Прямой участок дороги: обочина + асфальт + осевая + приподнятый тротуар по
+ * обеим сторонам. Каждый конец классифицирован (loKind/hiKind):
+ *  • 'corner' — тротуар отступает РОВНО на CORNER_R (стыкуется с дугой WalkArc
+ *    без зазора/нахлёста), асфальт держит лёгкий нахлёст под филе CornerPatch.
+ *  • 'round'  — асфальт И тротуар отступают на ROUND_TRIM (≈2.95), т.е. за
+ *    внешний радиус кольца (2.6): ничего не лезет внутрь развязки.
+ *  • 'plain'  — тротуар отступает на wTrim (анти-мерцание у креста/T), асфальт
+ *    держит нахлёст под перекрёсток (тот же цвет — стык невидим).
+ * cutLo/cutHi (вырез угла = CORNER_R) сохранены как публичные пропсы.
+ */
+function RoadStrip({ cx, cz, w, d, cutLo = 0, cutHi = 0, loKind = 'plain', hiKind = 'plain', gaps = [] }: { cx: number; cz: number; w: number; d: number; cutLo?: number; cutHi?: number; loKind?: EndKind; hiKind?: EndKind; gaps?: [number, number][] }) {
   const horiz = w >= d
+  const full = Math.max(w, d)
+  const wTrim = ROAD_W / 2 + 0.4
+  // Ретракт асфальта/обочины на каждом конце: у угла — лёгкий нахлёст под филе,
+  // у развязки — строго за внешний радиус кольца, иначе — нет ретракта (нахлёст
+  // под перекрёсток невидим, тот же цвет).
+  const aLo = loKind === 'round' ? ROUND_TRIM : loKind === 'corner' ? cutLo * 0.85 : 0
+  const aHi = hiKind === 'round' ? ROUND_TRIM : hiKind === 'corner' ? cutHi * 0.85 : 0
+  const along = Math.max(0.1, full - aLo - aHi)
+  const center = -full / 2 + aLo + along / 2
   const shoulder: [number, number] = horiz ? [along, ROAD_W + 0.9] : [ROAD_W + 0.9, along]
   const road: [number, number] = horiz ? [along, ROAD_W] : [ROAD_W, along]
-  // Бордюры (kerb) — тонкие светлые полосы по краям проезжей части.
-  const kerb: [number, number] = horiz ? [along, 0.16] : [0.16, along]
-  const kerbOff = ROAD_W / 2 + 0.08
+  const acx = cx + (horiz ? center : 0), acz = cz + (horiz ? 0 : center)
+  // Ретракт тротуара на каждом конце: у угла — РОВНО CORNER_R (концы бордюра ложатся
+  // точно на концы дуги WalkArc), у развязки — ROUND_TRIM (за кольцо), иначе — wTrim
+  // (бордюр не выходит на проезжую часть креста и не накладывается на бордюр пересекающей
+  // дороги — это давало мерцание/«лаги» тротуаров в узлах).
+  const wLo = loKind === 'corner' ? CORNER_R : loKind === 'round' ? ROUND_TRIM : wTrim
+  const wHi = hiKind === 'corner' ? CORNER_R : hiKind === 'round' ? ROUND_TRIM : wTrim
+  const walkOff = ROAD_W / 2 + WALK_W / 2 + 0.06
+  // Тротуар в абсолютных координатах вдоль оси участка (world X для horiz, world Z
+  // для vert). Разбиваем на подотрезки, вырезая проёмы gaps — так бордюр не идёт
+  // сквозь развязку, стоящую В СЕРЕДИНЕ пролёта (совпад. H+V пересечение).
+  const base = horiz ? cx : cz
+  const lo = base - full / 2 + wLo
+  const hi = base + full / 2 - wHi
+  const walkSpans: [number, number][] = subtractGaps(lo, hi, gaps)
   return (
     <group>
-      <mesh position={[cx, Y_SHOULDER, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh position={[acx, Y_SHOULDER, acz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={shoulder} /><meshStandardMaterial color={SHOULDER} roughness={1} />
       </mesh>
-      <mesh position={[cx, Y_ROAD, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh position={[acx, Y_ROAD, acz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={road} /><meshStandardMaterial color={ASPHALT} roughness={1} />
       </mesh>
-      <mesh position={[cx + (horiz ? 0 : kerbOff), Y_KERB, cz + (horiz ? kerbOff : 0)]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={kerb} /><meshStandardMaterial color={KERB} roughness={0.9} />
+      {walkSpans.map(([s0, s1], i) => {
+        const len = s1 - s0, mid = (s0 + s1) / 2
+        const scx = horiz ? mid : cx, scz = horiz ? cz : mid
+        return (
+          <group key={i}>
+            <WalkStrip cx={scx} cz={scz} len={len} off={+walkOff} horiz={horiz} />
+            <WalkStrip cx={scx} cz={scz} len={len} off={-walkOff} horiz={horiz} />
+          </group>
+        )
+      })}
+      <DashedCenter cx={acx} cz={acz} along={along} horiz={horiz} />
+    </group>
+  )
+}
+
+/** Вырезает интервалы gaps из [lo,hi], возвращает оставшиеся подотрезки (для разрыва
+ *  тротуара вокруг развязки в середине пролёта). Отрезки короче 0.4 отбрасываем. */
+function subtractGaps(lo: number, hi: number, gaps: [number, number][]): [number, number][] {
+  let spans: [number, number][] = [[lo, hi]]
+  for (const [g0, g1] of gaps) {
+    const next: [number, number][] = []
+    for (const [s0, s1] of spans) {
+      if (g1 <= s0 || g0 >= s1) { next.push([s0, s1]); continue }   // проём вне подотрезка
+      if (g0 > s0) next.push([s0, g0])                              // хвост слева
+      if (g1 < s1) next.push([g1, s1])                              // хвост справа
+    }
+    spans = next
+  }
+  return spans.filter(([s0, s1]) => s1 - s0 > 0.4)
+}
+
+/**
+ * Приподнятый тротуар вдоль ДУГИ радиуса r (θ∈[a0, a0+π/2]): короткие box-звенья
+ * по дуге, каждое повёрнуто по касательной — читается как непрерывный бордюр,
+ * стыкующийся с прямыми участками. Локальный θ → world-XZ (cos θ, −sin θ).
+ */
+function WalkArc({ r, a0, color = WALK }: { r: number; a0: number; color?: string }) {
+  const links = 7
+  const step = Math.PI / 2 / links
+  const segLen = r * step + 0.06                        // лёгкий нахлёст звеньев
+  const items: { x: number; z: number; ry: number }[] = []
+  for (let i = 0; i < links; i++) {
+    const th = a0 + (i + 0.5) * step
+    const x = Math.cos(th) * r, z = -Math.sin(th) * r    // локальный θ → world (X, −Z)
+    // Касательная world T=(−sinθ, −cosθ); ось +X box'а выставляем вдоль T:
+    // rotation.y=ry даёт +X → (cos ry, 0, −sin ry) ⇒ ry = atan2(cosθ, −sinθ).
+    const ry = Math.atan2(Math.cos(th), -Math.sin(th))
+    items.push({ x, z, ry })
+  }
+  return (
+    <group>
+      {items.map((it, i) => (
+        <mesh key={i} position={[it.x, Y_WALK, it.z]} rotation={[0, it.ry, 0]} castShadow receiveShadow>
+          <boxGeometry args={[segLen, WALK_H, WALK_W]} /><meshStandardMaterial color={color} roughness={0.92} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/**
+ * Скруглённый угол L-поворота: обочина/асфальт-филе (четверть-кольцо) + осевая
+ * по дуге + приподнятые тротуары по внешней (выпуклой) и внутренней (вогнутой)
+ * дугам. Радиус осевой = CORNER_R (совпадает с TURN_R маршрутов) — асфальт
+ * непрерывен на повороте, машины идут ровно по дуге.
+ */
+function CornerPatch({ cx, cz, a0 }: Corner) {
+  const HW = ROAD_W / 2
+  const rIn = CORNER_R - HW, rOut = CORNER_R + HW
+  const seg = 14
+  const wr = HW + WALK_W / 2 + 0.06                     // радиус-смещение осевой тротуара
+  return (
+    <group position={[cx, 0, cz]}>
+      {/* Обочина-филе (шире асфальта). */}
+      <mesh position={[0, Y_SHOULDER, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <ringGeometry args={[Math.max(0, rIn - 0.45), rOut + 0.45, seg, 1, a0, Math.PI / 2]} />
+        <meshStandardMaterial color={SHOULDER} roughness={1} />
       </mesh>
-      <mesh position={[cx + (horiz ? 0 : -kerbOff), Y_KERB, cz + (horiz ? -kerbOff : 0)]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={kerb} /><meshStandardMaterial color={KERB} roughness={0.9} />
+      {/* Асфальт-филе. */}
+      <mesh position={[0, Y_ROAD, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <ringGeometry args={[Math.max(0, rIn), rOut, seg, 1, a0, Math.PI / 2]} />
+        <meshStandardMaterial color={ASPHALT} roughness={1} />
       </mesh>
-      <DashedCenter cx={cx} cz={cz} along={along} horiz={horiz} />
+      {/* Осевая: тонкое кольцо-дуга (жёлтая), чуть короче квадранта. */}
+      <mesh position={[0, Y_LANE, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[CORNER_R - 0.065, CORNER_R + 0.065, seg, 1, a0 + 0.14, Math.PI / 2 - 0.28]} />
+        <meshBasicMaterial color={LANE} />
+      </mesh>
+      {/* Приподнятый тротуар: внешняя и (если помещается) внутренняя дуги. */}
+      <WalkArc r={CORNER_R + wr} a0={a0} />
+      {rIn - wr - WALK_W / 2 > 0.02 && <WalkArc r={CORNER_R - wr} a0={a0} />}
     </group>
   )
 }
@@ -300,15 +541,57 @@ function Crossing({ x, z, horiz }: { x: number; z: number; horiz: boolean }) {
 }
 
 /**
- * Кольцевая развязка: асфальтовое кольцо + бордюр + ring-разметка + островок.
+ * Внешний пешеходный бордюр-кольцо развязки с ПРОЁМАМИ под дорожные рукава.
+ * arms — единичные world-направления рукавов (dx,dz) от центра. Ring рисуется в
+ * локальной XY (rotation.x=−π/2): world-угол рукава θ=atan2(−dz, dx). Между
+ * соседними рукавами кладём дугу-звено бордюра, пропуская сектор ±gapHalf вокруг
+ * каждого рукава (там дорога входит в кольцо). Если рукавов нет — сплошное кольцо.
+ */
+function RoundWalkRing({ arms }: { arms: [number, number][] }) {
+  const TAU = Math.PI * 2
+  // Угловой полураствор проёма на радиусе бордюра: должен превышать поперечный вынос
+  // тротуара входящей дороги (walkOff + полширины борта), иначе диагональные звенья
+  // столкнулись бы с концами прямых бордюров. Небольшой запас 0.15.
+  const gapHalf = Math.atan2(ROAD_W / 2 + WALK_W / 2 + 0.06 + WALK_W / 2 + 0.15, ROUND_WALK_RIN)
+  const spans: { start: number; len: number }[] = []
+  if (arms.length === 0) {
+    spans.push({ start: 0, len: TAU })
+  } else {
+    const th = arms.map(([dx, dz]) => ((Math.atan2(-dz, dx) % TAU) + TAU) % TAU).sort((p, q) => p - q)
+    for (let i = 0; i < th.length; i++) {
+      const a = th[i] + gapHalf                       // конец текущего проёма
+      const bNext = th[(i + 1) % th.length] + (i + 1 === th.length ? TAU : 0)
+      const b = bNext - gapHalf                        // начало следующего проёма
+      const len = b - a
+      if (len > 0.05) spans.push({ start: a, len })    // видимая дуга-звено бордюра
+    }
+  }
+  return (
+    <group>
+      {spans.map((s, i) => (
+        <mesh key={i} position={[0, Y_WALK, 0]} rotation={[-Math.PI / 2, 0, 0]} castShadow receiveShadow>
+          <ringGeometry args={[ROUND_WALK_RIN, ROUND_WALK_ROUT, 40, 1, s.start, s.len]} />
+          <meshStandardMaterial color={WALK} roughness={0.92} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/**
+ * Кольцевая развязка: асфальтовое кольцо + бордюр + ring-разметка + островок +
+ * внешний пешеходный бордюр-кольцо (RoundWalkRing) с проёмами под рукава — так
+ * у развязки непрерывная пешеходная граница, как у прямых участков.
  * На улице островок газонный с плантером/деревцем; в цехе — бетонный.
  */
-function Roundabout({ x, z, indoor }: { x: number; z: number; indoor?: boolean }) {
+function Roundabout({ x, z, indoor, arms = [] }: { x: number; z: number; indoor?: boolean; arms?: [number, number][] }) {
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, Y_ROAD, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <ringGeometry args={[1.3, 2.6, 36]} /><meshStandardMaterial color={ASPHALT} roughness={1} />
+        <ringGeometry args={[1.3, ROUND_OUTER_R, 36]} /><meshStandardMaterial color={ASPHALT} roughness={1} />
       </mesh>
+      {/* Внешний пешеходный бордюр-кольцо с проёмами под дорожные рукава. */}
+      <RoundWalkRing arms={arms} />
       {/* Внешняя и внутренняя кольцевая разметка. */}
       <mesh position={[0, Y_LANE, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[2.5, 2.6, 36]} /><meshBasicMaterial color={indoor ? '#c7cdd2' : LANE} />
@@ -320,25 +603,41 @@ function Roundabout({ x, z, indoor }: { x: number; z: number; indoor?: boolean }
       <mesh position={[0, Y_KERB, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[1.18, 1.3, 32]} /><meshStandardMaterial color={KERB} roughness={0.9} />
       </mesh>
-      {/* Островок: газон/бетон. */}
-      <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[1.18, 28]} /><meshStandardMaterial color={indoor ? '#6a7076' : '#3f5d3a'} roughness={1} />
-      </mesh>
+      {/* Островок: приподнятый газон (улица) или плоский бетон (цех). */}
+      {indoor ? (
+        <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[1.18, 28]} /><meshStandardMaterial color="#6a7076" roughness={1} />
+        </mesh>
+      ) : (
+        <mesh position={[0, 0.14, 0]} receiveShadow castShadow>
+          <cylinderGeometry args={[1.14, 1.18, 0.28, 30]} /><meshStandardMaterial color="#456b3f" roughness={1} />
+        </mesh>
+      )}
       {!indoor && (
         <group>
-          {/* Плантер (низкий бетонный борт) + деревце. */}
-          <mesh position={[0, 0.22, 0]} castShadow>
-            <cylinderGeometry args={[0.62, 0.66, 0.24, 18]} /><meshStandardMaterial color="#8d8f93" roughness={0.95} />
+          {/* Мягкий газонный купол — островок читается объёмным, а не плоским пятном. */}
+          <mesh position={[0, 0.28, 0]} scale={[1, 0.42, 1]} castShadow receiveShadow>
+            <sphereGeometry args={[1.0, 22, 12]} /><meshStandardMaterial color="#4f7444" roughness={1} />
           </mesh>
-          <mesh position={[0, 0.34, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <circleGeometry args={[0.55, 18]} /><meshStandardMaterial color="#4a7a41" roughness={1} />
+          {/* Кольцо декоративного кустарника/цветов по краю купола. */}
+          {Array.from({ length: 10 }, (_, k) => {
+            const a = (k / 10) * Math.PI * 2
+            const c = k % 3 === 0 ? '#c98a3a' : k % 3 === 1 ? '#5c8a3e' : '#b34b6a'
+            return (
+              <mesh key={`s${k}`} position={[Math.cos(a) * 0.82, 0.4, Math.sin(a) * 0.82]} castShadow>
+                <sphereGeometry args={[0.2, 8, 6]} /><meshStandardMaterial color={c} roughness={1} />
+              </mesh>
+            )
+          })}
+          {/* Аккуратное деревце по центру: ствол + округлая многосферная крона (не конус). */}
+          <mesh position={[0, 0.78, 0]} castShadow>
+            <cylinderGeometry args={[0.08, 0.11, 0.8, 8]} /><meshStandardMaterial color="#6b4a2b" roughness={0.95} />
           </mesh>
-          <mesh position={[0, 0.62, 0]} castShadow>
-            <cylinderGeometry args={[0.07, 0.09, 0.5, 8]} /><meshStandardMaterial color="#6b4a2b" roughness={0.9} />
-          </mesh>
-          <mesh position={[0, 1.1, 0]} castShadow>
-            <coneGeometry args={[0.5, 1, 8]} /><meshStandardMaterial color="#4d7d44" roughness={1} />
-          </mesh>
+          {([[0, 1.28, 0, 0.5], [0.34, 1.12, 0.16, 0.36], [-0.32, 1.16, -0.14, 0.34], [0.12, 1.5, -0.18, 0.3]] as const).map(([px, py, pz, r], k) => (
+            <mesh key={`c${k}`} position={[px, py, pz]} castShadow>
+              <sphereGeometry args={[r, 8, 6]} /><meshStandardMaterial color={k === 3 ? '#c07a2e' : '#3f6b3a'} roughness={1} />
+            </mesh>
+          ))}
         </group>
       )}
     </group>
@@ -544,7 +843,7 @@ interface FlowLinksProps { nodes: SceneNode[]; edges: SceneEdge[]; indoor?: bool
 
 /** Единая ортогональная дорожная сеть: дедуп-отрезки + развязки + транспорт. */
 export function FlowLinks({ nodes, edges, indoor }: FlowLinksProps) {
-  const { hSegs, vSegs, roundabouts, routes } = useMemo(() => {
+  const { hSegs, vSegs, roundabouts, corners, tees, routes } = useMemo(() => {
     const net = buildNetwork(nodes, edges)
     const pos: Record<string, Pt> = {}
     const rad: Record<string, number> = {}
@@ -601,12 +900,85 @@ export function FlowLinks({ nodes, edges, indoor }: FlowLinksProps) {
     return list
   }, [roundabouts, hSegs, vSegs])
 
+  // Подрезка концов участков под скруглённые углы + классификация КАЖДОГО конца
+  // (corner/round/plain) + рукава каждой развязки — всё для бесшовной стыковки
+  // тротуаров: у угла бордюр отступает ровно на CORNER_R (стык с WalkArc), у
+  // развязки — за её внешний радиус (не лезет внутрь кольца).
+  const { hCuts, vCuts, hEnds, vEnds, roundArms, hGaps, vGaps } = useMemo(() => {
+    const hCuts = hSegs.map(() => [0, 0])
+    const vCuts = vSegs.map(() => [0, 0])
+    const hEnds = hSegs.map(() => ['plain', 'plain'] as [EndKind, EndKind])
+    const vEnds = vSegs.map(() => ['plain', 'plain'] as [EndKind, EndKind])
+    // Проёмы в тротуаре вокруг развязки, стоящей В СЕРЕДИНЕ пролёта участка.
+    const hGaps: [number, number][][] = hSegs.map(() => [])
+    const vGaps: [number, number][][] = vSegs.map(() => [])
+    // У каждого угла центр смещён на (dirH·R, dirV·R) от стыка. Знаки dir задаёт
+    // a0 (cornerStartAngle) — перебираем 4 варианта и восстанавливаем стык (jx,jz).
+    for (const c of corners) {
+      for (const dh of [+1, -1] as const) for (const dv of [+1, -1] as const) {
+        const jx = c.cx - dh * CORNER_R, jz = c.cz - dv * CORNER_R
+        if (cornerStartAngle(dh, dv) !== c.a0) continue
+        hSegs.forEach((h, i) => {
+          if (Math.abs(h.z - jz) > EPS) return
+          if (Math.abs(h.x0 - jx) < EPS) { hCuts[i][0] = CORNER_R; hEnds[i][0] = 'corner' }
+          else if (Math.abs(h.x1 - jx) < EPS) { hCuts[i][1] = CORNER_R; hEnds[i][1] = 'corner' }
+        })
+        vSegs.forEach((v, i) => {
+          if (Math.abs(v.x - jx) > EPS) return
+          if (Math.abs(v.z0 - jz) < EPS) { vCuts[i][0] = CORNER_R; vEnds[i][0] = 'corner' }
+          else if (Math.abs(v.z1 - jz) < EPS) { vCuts[i][1] = CORNER_R; vEnds[i][1] = 'corner' }
+        })
+      }
+    }
+    // Концы, упирающиеся в развязку: тот конец, что совпал с центром кольца [rx,rz].
+    // Рукава развязки (world-направления входящих дорог) — для проёмов в бордюр-кольце.
+    const roundArms: [number, number][][] = roundabouts.map(() => [])
+    roundabouts.forEach(([rx, rz], ri) => {
+      const arms = roundArms[ri]
+      const push = (dx: number, dz: number) => { if (!arms.some(([ax, az]) => ax === dx && az === dz)) arms.push([dx, dz]) }
+      hSegs.forEach((h, i) => {
+        if (Math.abs(h.z - rz) > EPS) return
+        if (Math.abs(h.x0 - rx) < EPS) { hEnds[i][0] = 'round'; push(+1, 0) }   // дорога уходит на +X
+        else if (Math.abs(h.x1 - rx) < EPS) { hEnds[i][1] = 'round'; push(-1, 0) }
+        else if (rx > h.x0 + EPS && rx < h.x1 - EPS) {                          // развязка внутри пролёта
+          push(+1, 0); push(-1, 0)
+          hGaps[i].push([rx - ROUND_TRIM, rx + ROUND_TRIM])                    // разрыв тротуара
+        }
+      })
+      vSegs.forEach((v, i) => {
+        if (Math.abs(v.x - rx) > EPS) return
+        if (Math.abs(v.z0 - rz) < EPS) { vEnds[i][0] = 'round'; push(0, +1) }   // дорога уходит на +Z
+        else if (Math.abs(v.z1 - rz) < EPS) { vEnds[i][1] = 'round'; push(0, -1) }
+        else if (rz > v.z0 + EPS && rz < v.z1 - EPS) {
+          push(0, +1); push(0, -1)
+          vGaps[i].push([rz - ROUND_TRIM, rz + ROUND_TRIM])
+        }
+      })
+    })
+    // T-съезды (отворотки): островка НЕТ. У СКВОЗНОЙ дороги (узел в середине её
+    // пролёта) разрываем тротуар в устье съезда, чтобы заезд был открыт. Ветка,
+    // упирающаяся концом, остаётся 'plain' — её бордюр и так отступает от устья,
+    // а асфальт без ретракта продолжается в магистраль (бесшовный съезд).
+    for (const [tx, tz] of tees) {
+      hSegs.forEach((h, i) => {
+        if (Math.abs(h.z - tz) > EPS) return
+        if (tx > h.x0 + EPS && tx < h.x1 - EPS) hGaps[i].push([tx - TEE_GAP, tx + TEE_GAP])
+      })
+      vSegs.forEach((v, i) => {
+        if (Math.abs(v.x - tx) > EPS) return
+        if (tz > v.z0 + EPS && tz < v.z1 - EPS) vGaps[i].push([tz - TEE_GAP, tz + TEE_GAP])
+      })
+    }
+    return { hCuts, vCuts, hEnds, vEnds, roundArms, hGaps, vGaps }
+  }, [hSegs, vSegs, corners, roundabouts, tees])
+
   return (
     <group>
-      {hSegs.map((h, i) => <RoadStrip key={`h${i}`} cx={(h.x0 + h.x1) / 2} cz={h.z} w={h.x1 - h.x0} d={0} />)}
-      {vSegs.map((v, i) => <RoadStrip key={`v${i}`} cx={v.x} cz={(v.z0 + v.z1) / 2} w={0} d={v.z1 - v.z0} />)}
+      {hSegs.map((h, i) => <RoadStrip key={`h${i}`} cx={(h.x0 + h.x1) / 2} cz={h.z} w={h.x1 - h.x0} d={0} cutLo={hCuts[i][0]} cutHi={hCuts[i][1]} loKind={hEnds[i][0]} hiKind={hEnds[i][1]} gaps={hGaps[i]} />)}
+      {vSegs.map((v, i) => <RoadStrip key={`v${i}`} cx={v.x} cz={(v.z0 + v.z1) / 2} w={0} d={v.z1 - v.z0} cutLo={vCuts[i][0]} cutHi={vCuts[i][1]} loKind={vEnds[i][0]} hiKind={vEnds[i][1]} gaps={vGaps[i]} />)}
+      {corners.map((c, i) => <CornerPatch key={`k${i}`} cx={c.cx} cz={c.cz} a0={c.a0} />)}
       {!indoor && crossings.map((c, i) => <Crossing key={`c${i}`} x={c.x} z={c.z} horiz={c.horiz} />)}
-      {roundabouts.map(([x, z], i) => <Roundabout key={`r${i}`} x={x} z={z} indoor={indoor} />)}
+      {roundabouts.map(([x, z], i) => <Roundabout key={`r${i}`} x={x} z={z} indoor={indoor} arms={roundArms[i]} />)}
       <VehicleFleet routes={routes} indoor={indoor} />
     </group>
   )

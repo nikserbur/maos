@@ -4,7 +4,7 @@ import { Loader } from '@react-three/drei'
 import { SceneEnvironment } from './SceneEnvironment'
 import { Facility } from './Facility'
 import { WorkshopInterior } from './WorkshopInterior'
-import { WorldMap } from './WorldMap'
+import { WorldMap2D } from './WorldMap2D'
 import { PlantLayout } from './PlantLayout'
 import { EditorPanel } from './EditorPanel'
 import { SimulationLayer, createSimState } from './SimulationLayer'
@@ -293,57 +293,55 @@ export default function PlantScene() {
   return (
     <div className="scene">
       <div className="scene__canvas">
-        <Canvas
-          shadows
-          dpr={[1, 1.5]}
-          /* near=1.5 (было 0.1) — ГЛАВНЫЙ фикс z-fighting: точность буфера глубины
-             определяется отношением far/near. 0.1/1000 давало «частокол» мерцаний
-             на всех плоских декалях (тени, разметка, полосы, кольца) у земли;
-             1.5/1500 повышает точность на порядок. Камера не ближе 8 ед. к цели
-             (OrbitControls minDistance), поэтому near=1.5 ничего не срезает.
-             logarithmicDepthBuffer НЕ используем — он ломает polygonOffset декалей. */
-          camera={{ position: [46, 36, 50], fov: 44, near: 1.5, far: 1500 }}
-          onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
-        >
-          <SceneEnvironment indoor={indoor} extent={extent} />
-          <Suspense fallback={null}>
-            {/* Земля/окружение уровня: мир — своя карта; площадка — газон (Facility);
-                цех — интерьер. WorldMap сам рисует иконки заводов + магистрали,
-                поэтому PlantLayout на мировом уровне НЕ рисуем (иначе двойной рендер). */}
-            {level === 'world'
-              ? (
-                <WorldMap
-                  nodes={nodes}
-                  edges={edges}
-                  selectedId={state.selectedId}
-                  editing={editing}
-                  onSelect={handleSelect}
-                  onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-                  onMove={handleMove}
-                />
-              )
-              : (
-                <>
-                  {level === 'site' ? <Facility nodes={nodes} /> : <WorkshopInterior nodes={nodes} />}
-                  {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
-                  <PlantLayout
-                    graph={state.graph}
-                    nodes={nodes}
-                    edges={edges}
-                    selectedId={state.selectedId}
-                    connectFrom={state.connectFrom}
-                    connecting={state.connecting}
-                    editing={editing}
-                    indoor={indoor}
-                    onSelect={handleSelect}
-                    onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-                    onMove={handleMove}
-                    onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
-                  />
-                </>
-              )}
-          </Suspense>
-        </Canvas>
+        {/* Мировой уровень — 2D-карта (DOM, вне R3F). Площадка/цех — 3D Canvas.
+            Условие ПОДНЯТО над <Canvas>, чтобы 2D-карта была обычным DOM-компонентом
+            (без второго WebGL-контекста, без rAF — скриншотится в фоне сразу). */}
+        {level === 'world' ? (
+          <WorldMap2D
+            nodes={nodes}
+            edges={edges}
+            graph={state.graph}
+            selectedId={state.selectedId}
+            editing={editing}
+            onSelect={handleSelect}
+            onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+            onMove={handleMove}
+            onBackground={() => dispatch({ type: 'CLEAR_SELECTION' })}
+          />
+        ) : (
+          <Canvas
+            shadows
+            dpr={[1, 1.5]}
+            /* near=1.5 (было 0.1) — ГЛАВНЫЙ фикс z-fighting: точность буфера глубины
+               определяется отношением far/near. 0.1/1000 давало «частокол» мерцаний
+               на всех плоских декалях (тени, разметка, полосы, кольца) у земли;
+               1.5/1500 повышает точность на порядок. Камера не ближе 8 ед. к цели
+               (OrbitControls minDistance), поэтому near=1.5 ничего не срезает.
+               logarithmicDepthBuffer НЕ используем — он ломает polygonOffset декалей. */
+            camera={{ position: [46, 36, 50], fov: 44, near: 1.5, far: 1500 }}
+            onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
+          >
+            <SceneEnvironment indoor={indoor} extent={extent} />
+            <Suspense fallback={null}>
+              {level === 'site' ? <Facility nodes={nodes} /> : <WorkshopInterior nodes={nodes} />}
+              {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
+              <PlantLayout
+                graph={state.graph}
+                nodes={nodes}
+                edges={edges}
+                selectedId={state.selectedId}
+                connectFrom={state.connectFrom}
+                connecting={state.connecting}
+                editing={editing}
+                indoor={indoor}
+                onSelect={handleSelect}
+                onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+                onMove={handleMove}
+                onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
+              />
+            </Suspense>
+          </Canvas>
+        )}
 
         <Loader />
 

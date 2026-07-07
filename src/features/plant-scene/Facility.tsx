@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import type { SceneNode } from './graph/sceneModel'
 import { Decorations } from './Decorations'
+import { RailYard } from './RailYard'
+import { railSpur } from './siteLayout'
 
 const FENCE_H = 2.4
 const PANEL_COLOR = '#3a4048'          // тёмное полупрозрачное полотно (рабица)
@@ -101,6 +103,52 @@ function WatchTower({ x, z }: { x: number; z: number }) {
         <boxGeometry args={[3.6, 0.2, 3.6]} />
         <meshStandardMaterial color="#4c5550" />
       </mesh>
+    </group>
+  )
+}
+
+// ─── Пешеходная тропинка (тонкая, светлая — отличается от дорог) ──────────────
+// Дороги (въезд + подъезд к парковке) вынесены в FlowLinks — здесь только пешеходная тропа.
+const PATH_COLOR = '#b9b2a2'       // светлый песчано-серый (брусчатка/грунт), не асфальт
+const PATH_W = 1.2                 // узкая: пешеходная, уже проезжей части
+const PATH_Y = 0.045               // чуть выше газона (0.02), но ниже дорожного полотна (0.05)
+
+/** Один прямой отрезок тропинки: тонкий светлый плоский квад (без осевой/бордюров). */
+function PathSegment({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: number }) {
+  const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
+  const len = Math.hypot(x2 - x1, z2 - z1)
+  const angle = Math.atan2(-(z2 - z1), x2 - x1)
+  return (
+    <group position={[cx, PATH_Y, cz]} rotation={[0, angle, 0]}>
+      {/* Плоский квад вдоль оси сегмента (как RoadSegment: группа крутит по Y, квад
+          лежит горизонтально). Прежний одиночный Euler [-π/2,0,-angle] разворачивал
+          сегменты неверно → «рваная» тропинка. Чуть длиннее — перекрытие стыков. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[len + PATH_W, PATH_W]} />
+        <meshStandardMaterial color={PATH_COLOR} roughness={1} />
+      </mesh>
+    </group>
+  )
+}
+
+/**
+ * Пешеходная тропинка по списку точек XZ: тонкие светлые квады-сегменты с
+ * квадратными «заплатками» на изломах (перекрывают стыки, скругляют углы).
+ * Тоньше и светлее дорог, без жёлтой осевой и бордюров.
+ */
+function Footpath({ points }: { points: [number, number][] }) {
+  return (
+    <group>
+      {points.slice(1).map(([x2, z2], i) => {
+        const [x1, z1] = points[i]
+        return <PathSegment key={`ps${i}`} x1={x1} z1={z1} x2={x2} z2={z2} />
+      })}
+      {points.slice(1, -1).map(([x, z], i) => (
+        <mesh key={`pj${i}`} position={[x, PATH_Y, z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[PATH_W, PATH_W]} />
+          <meshStandardMaterial color={PATH_COLOR} roughness={1} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -243,6 +291,66 @@ export function Facility({ nodes }: FacilityProps) {
   const gMid = (minZ + maxZ) / 2
   const gate = { z0: gMid - 5, z1: gMid + 5 }
 
+  // Рельсовые (северные) ворота. Всё детерминировано (без Math.random).
+  //  • Северные ворота — РЕЛЬСОВЫЕ: центр на оси жд-спура (railSpur.x), проём = 2*gateHalf
+  //    (рельс проходит сквозь зазор). Служебной дороги нет.
+  //  • Въезд с главных (+X) ворот и подъезд к парковке ТЕПЕРЬ рисует FlowLinks — они
+  //    влиты в его единую дорожную сеть, чтобы все стыки обрабатывались одной логикой
+  //    (крест → кольцо, L → филе), без ad-hoc нахлёста поверх межцеховых дорог.
+  const roads = useMemo(() => {
+    // Рельсовые (северные) ворота — на оси спура; проём = 2*gateHalf.
+    const spur = railSpur(minX, maxX, minZ, maxZ)
+    const railGate = { x0: spur.x - spur.gateHalf, x1: spur.x + spur.gateHalf }
+    return { railGate }
+  }, [minX, maxX, minZ, maxZ])
+
+  // Пешеходная тропинка идёт «ПО КРАЮ» вдоль ЮЖНОЙ кромки двора: от юго-восточной
+  // части на запад, мимо ряда скамеек (они у z=maxZ-5), к ДАЛЬНЕЙ курилке в ЮЗ-углу
+  // (smoke2 ≈ [minX+7, maxZ-9]). Юг свободен от дорог и жд-узла (тот на севере/западе),
+  // поэтому тропа не режет двор и не пересекает пути.
+  const footpath = useMemo(() => {
+    const sz = maxZ - 6.5              // ось тропы вдоль южной кромки — перед скамейками
+    const pts: [number, number][] = [
+      [maxX - 16, maxZ - 8],           // старт: юго-восток двора (западнее парковки/ворот)
+      [maxX - 26, sz],
+      [(minX + maxX) / 2, sz],         // мимо южного ряда скамеек
+      [minX + 16, sz],
+      [minX + 8, maxZ - 8],            // финиш у дальней (ЮЗ) курилки
+    ]
+    // Смещаем точки прочь от footprint'ов цехов (радиус KEEP), затем ПРИЖИМАЕМ к южной
+    // кромке (az в [gMid, maxZ-5.5] — севернее скамеек, южнее центра) и держим в ограде.
+    const KEEP = 9
+    const nudged = pts.map(([px, pz]) => {
+      let ax = px, az = pz
+      for (const n of nodes) {
+        const dx = ax - n.position[0], dz = az - n.position[1]
+        const d = Math.hypot(dx, dz)
+        if (d > 0.001 && d < KEEP) {
+          const push = (KEEP - d) / d
+          ax += dx * push; az += dz * push
+        }
+      }
+      ax = Math.min(maxX - 5, Math.max(minX + 5, ax))
+      az = Math.min(maxZ - 5.5, Math.max(gMid, az))
+      return [ax, az] as [number, number]
+    })
+    // Сглаживание Чайкина (2 итерации): «отталкивание» от цехов давало резкие изломы —
+    // тропинка выглядела рваной/кривой. Скругляем внутренние вершины в плавную кривую,
+    // концы сохраняем. Каждое ребро → две точки на 1/4 и 3/4 длины.
+    const chaikin = (p: [number, number][]): [number, number][] => {
+      if (p.length < 3) return p
+      const out: [number, number][] = [p[0]]
+      for (let k = 0; k < p.length - 1; k++) {
+        const [ax, az] = p[k], [bx, bz] = p[k + 1]
+        out.push([ax + (bx - ax) * 0.25, az + (bz - az) * 0.25])
+        out.push([ax + (bx - ax) * 0.75, az + (bz - az) * 0.75])
+      }
+      out.push(p[p.length - 1])
+      return out
+    }
+    return chaikin(chaikin(nudged))
+  }, [minX, maxX, minZ, maxZ, gMid, nodes])
+
   // Газон: полосы «покоса» — крупные низкие квады чуть разного тона внутри ограды.
   const stripes = useMemo(() => {
     const w = maxX - minX + 8, d = maxZ - minZ + 8
@@ -257,16 +365,30 @@ export function Facility({ nodes }: FacilityProps) {
     return { out, cx, cz, w, d }
   }, [minX, maxX, minZ, maxZ])
 
-  // Деревья за оградой: смешанный ряд дуб/клён + редкие кусты.
+  // Деревья за оградой: смешанный ряд дуб/клён + редкие кусты. С ПРОВЕРКОЙ НАЛОЖЕНИЙ:
+  //  • северная кромка — жд-узел, деревьев нет;
+  //  • вокруг зданий цехов (крупные процесс-кластеры) — «пятна запрета»;
+  //  так дерево не влезает в поезд, эстакаду или оборудование.
   const { trees, bushes } = useMemo(() => {
     let i = 1
-    const band = () => 4 + hash(i++) * 9            // вынос наружу от забора
+    const band = () => 9 + hash(i++) * 8            // вынос дальше от забора/кластеров
     const scale = () => 0.85 + hash(i++) * 0.55     // ~3.5–5 ед. (ниже корпусов)
     const kind = () => (hash(i++) < 0.5 ? 0 : 1)    // 0 дуб · 1 клён
     const isBush = () => hash(i++) < 0.22
     const tr: [number, number, number, number][] = []
     const bs: [number, number, number][] = []
+    const RAIL_Z = minZ - 2          // всё севернее верхней кромки занято жд-узлом
+    const KEEP2 = 15 * 15            // радиус² запрета вокруг узла-цеха (крупный кластер)
+    const blocked = (x: number, z: number) => {
+      if (z < RAIL_Z) return true
+      for (const n of nodes) {
+        const dx = x - n.position[0], dz = z - n.position[1]
+        if (dx * dx + dz * dz < KEEP2) return true
+      }
+      return false
+    }
     const place = (x: number, z: number) => {
+      if (blocked(x, z)) return
       if (isBush()) bs.push([x, z, 0.9 + hash(i++) * 0.7])
       else tr.push([x, z, scale(), kind()])
     }
@@ -274,8 +396,7 @@ export function Facility({ nodes }: FacilityProps) {
     const nz = Math.max(6, Math.round((maxZ - minZ) / 7))
     for (let k = 0; k <= nx; k++) {
       const x = minX + ((maxX - minX) * k) / nx + (hash(i++) - 0.5) * 4
-      place(x, minZ - band())
-      place(x, maxZ + band())
+      place(x, maxZ + band())        // север (minZ) отдан жд-узлу — деревьев там нет
     }
     for (let k = 0; k <= nz; k++) {
       const z = minZ + ((maxZ - minZ) * k) / nz + (hash(i++) - 0.5) * 4
@@ -283,7 +404,7 @@ export function Facility({ nodes }: FacilityProps) {
       place(maxX + band(), z)
     }
     return { trees: tr, bushes: bs }
-  }, [minX, maxX, minZ, maxZ])
+  }, [minX, maxX, minZ, maxZ, nodes])
 
   // Пучки травы и низкие кусты вдоль внутренней кромки забора.
   const tufts = useMemo(() => {
@@ -319,8 +440,15 @@ export function Facility({ nodes }: FacilityProps) {
         </mesh>
       ))}
 
-      {/* Забор: 3 сплошные стороны + сторона +X с проёмом ворот */}
-      <FenceRun x1={minX} z1={minZ} x2={maxX} z2={minZ} />
+      {/* Въезд (+X ворота) и подъезд к парковке рисует FlowLinks (влиты в его единую
+          дорожную сеть). С севера заходит рельсовый путь (RailYard) — служебной дороги нет. */}
+
+      {/* Пешеходная тропинка: фронт двора → зона отдыха на востоке (тоньше/светлее дорог) */}
+      <Footpath points={footpath} />
+
+      {/* Забор: юг сплошной, север с проёмом рельсовых ворот, +X с проёмом гл. ворот */}
+      <FenceRun x1={minX} z1={minZ} x2={roads.railGate.x0} z2={minZ} />
+      <FenceRun x1={roads.railGate.x1} z1={minZ} x2={maxX} z2={minZ} />
       <FenceRun x1={minX} z1={maxZ} x2={maxX} z2={maxZ} />
       <FenceRun x1={minX} z1={minZ} x2={minX} z2={maxZ} />
       <FenceRun x1={maxX} z1={minZ} x2={maxX} z2={gate.z0} />
@@ -338,6 +466,19 @@ export function Facility({ nodes }: FacilityProps) {
         <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
       </mesh>
 
+      {/* Рельсовые (северные) ворота на оси жд-спура: те же усиленные столбы + балка,
+          проём ориентирован вдоль X (сторона z=minZ); рельс проходит сквозь зазор. */}
+      <Post x={roads.railGate.x0} z={minZ} h={3.6} w={0.5} />
+      <Post x={roads.railGate.x1} z={minZ} h={3.6} w={0.5} />
+      <mesh position={[(roads.railGate.x0 + roads.railGate.x1) / 2, 3.7, minZ]} castShadow>
+        <boxGeometry args={[roads.railGate.x1 - roads.railGate.x0, 0.34, 0.3]} />
+        <meshStandardMaterial color="#c87619" metalness={0.4} roughness={0.6} />
+      </mesh>
+      <mesh position={[(roads.railGate.x0 + roads.railGate.x1) / 2, 3.34, minZ]}>
+        <boxGeometry args={[roads.railGate.x1 - roads.railGate.x0 - 0.4, 0.16, 0.16]} />
+        <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
+      </mesh>
+
       {/* Вышки по углам */}
       <WatchTower x={minX + 1.5} z={minZ + 1.5} />
       <WatchTower x={maxX - 1.5} z={maxZ - 1.5} />
@@ -348,7 +489,10 @@ export function Facility({ nodes }: FacilityProps) {
       {tufts.map(([x, z], i) => <GrassTuft key={`g${i}`} x={x} z={z} />)}
 
       {/* Декорации территории (КПП, шлагбаум, парковка, навесы, скамейки, курилки) */}
-      <Decorations minX={minX} maxX={maxX} minZ={minZ} maxZ={maxZ} gMid={gMid} />
+      <Decorations minX={minX} maxX={maxX} minZ={minZ} maxZ={maxZ} gMid={gMid} nodes={nodes} />
+
+      {/* Жд-станция + сортировочная развязка + вагоны; магистраль уходит в даль */}
+      <RailYard minX={minX} maxX={maxX} minZ={minZ} maxZ={maxZ} />
     </group>
   )
 }

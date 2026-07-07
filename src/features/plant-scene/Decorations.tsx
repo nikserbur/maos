@@ -1,3 +1,6 @@
+import type { SceneNode } from './graph/sceneModel'
+import { railSpur, parkingSpot } from './siteLayout'
+
 const METAL = '#6a7076'
 const POST = '#4c5550'
 const WOOD = '#6b5436'
@@ -168,22 +171,34 @@ function Boom({ x, z }: { x: number; z: number }) {
   )
 }
 
-/** Навес с техникой (погрузчик под крышей). */
+/** Навес с техникой: погрузчик + экскаватор под крышей (зона погрузки у жд-спура). */
 function Canopy({ x, z }: { x: number; z: number }) {
   return (
     <group position={[x, 0, z]}>
-      {[[-2.4, -1.6], [2.4, -1.6], [-2.4, 1.6], [2.4, 1.6]].map(([px, pz], i) => (
+      {[[-3.4, -1.8], [3.4, -1.8], [-3.4, 1.8], [3.4, 1.8]].map(([px, pz], i) => (
         <mesh key={i} position={[px, 1.4, pz]} castShadow><boxGeometry args={[0.2, 2.8, 0.2]} /><meshStandardMaterial color={POST} metalness={0.4} /></mesh>
       ))}
-      <mesh position={[0, 2.9, 0]} castShadow><boxGeometry args={[5.6, 0.25, 4]} /><meshStandardMaterial color={METAL} metalness={0.3} roughness={0.6} /></mesh>
-      {/* погрузчик */}
-      <group position={[-0.4, 0, 0]}>
+      <mesh position={[0, 2.9, 0]} castShadow><boxGeometry args={[7.6, 0.25, 4.4]} /><meshStandardMaterial color={METAL} metalness={0.3} roughness={0.6} /></mesh>
+      {/* погрузчик (слева) */}
+      <group position={[-2.2, 0, 0]}>
         <mesh position={[0, 0.6, 0]} castShadow><boxGeometry args={[1.6, 0.9, 1]} /><meshStandardMaterial color="#d8b24a" metalness={0.2} roughness={0.6} /></mesh>
         <mesh position={[0.5, 1.2, 0]}><boxGeometry args={[0.5, 0.7, 0.9]} /><meshStandardMaterial color="#33363a" /></mesh>
         <mesh position={[1.1, 0.7, 0]}><boxGeometry args={[0.2, 1.4, 0.9]} /><meshStandardMaterial color="#2a2d31" /></mesh>
         {[[0.5, 0.5], [0.5, -0.5], [-0.5, 0.5], [-0.5, -0.5]].map(([wx, wz], i) => (
           <mesh key={i} position={[wx, 0.25, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.25, 0.25, 0.16, 10]} /><meshStandardMaterial color="#15171a" /></mesh>
         ))}
+      </group>
+      {/* экскаватор (справа): гусеницы + поворотная платформа + кабина + противовес + стрела с ковшом */}
+      <group position={[2.1, 0, 0]} rotation={[0, -0.5, 0]}>
+        {[-0.55, 0.55].map((tz, i) => (
+          <mesh key={i} position={[0, 0.28, tz]} castShadow><boxGeometry args={[2.1, 0.5, 0.5]} /><meshStandardMaterial color="#2a2d31" roughness={0.85} /></mesh>
+        ))}
+        <mesh position={[-0.2, 0.75, 0]} castShadow><boxGeometry args={[1.7, 0.6, 1.5]} /><meshStandardMaterial color="#e0a11e" metalness={0.2} roughness={0.6} /></mesh>
+        <mesh position={[-0.6, 1.35, 0.25]} castShadow><boxGeometry args={[0.9, 0.9, 0.9]} /><meshStandardMaterial color="#33363a" metalness={0.3} roughness={0.4} /></mesh>
+        <mesh position={[-1.1, 0.8, 0]} castShadow><boxGeometry args={[0.5, 0.7, 1.3]} /><meshStandardMaterial color="#c8901a" roughness={0.6} /></mesh>
+        <mesh position={[0.55, 1.25, -0.35]} rotation={[0, 0, 0.7]} castShadow><boxGeometry args={[1.7, 0.24, 0.24]} /><meshStandardMaterial color="#e0a11e" roughness={0.6} /></mesh>
+        <mesh position={[1.35, 0.95, -0.35]} rotation={[0, 0, -0.6]} castShadow><boxGeometry args={[1.3, 0.2, 0.2]} /><meshStandardMaterial color="#e0a11e" roughness={0.6} /></mesh>
+        <mesh position={[1.75, 0.4, -0.35]} castShadow><boxGeometry args={[0.5, 0.5, 0.6]} /><meshStandardMaterial color="#2a2d31" metalness={0.4} roughness={0.6} /></mesh>
       </group>
     </group>
   )
@@ -197,7 +212,7 @@ function Bench({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
   const seatSlats: number[] = [-0.16, 0, 0.16]
   const backSlats: number[] = [0.62, 0.78, 0.94]
   return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={1.1}>
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.9}>
       {/* деревянные рейки сиденья */}
       {seatSlats.map((sz, i) => (
         <mesh key={`s${i}`} position={[0, 0.45, sz]} castShadow><boxGeometry args={[1.4, 0.06, 0.12]} /><meshStandardMaterial {...wood} /></mesh>
@@ -238,25 +253,6 @@ function StreetLamp({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
   )
 }
 
-/** Велопарковка: рама-основание с несколькими U-образными дугами. */
-function BikeRack({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
-  const bar = { color: METAL, metalness: 0.6, roughness: 0.4 }
-  const arcs: number[] = [-0.9, -0.3, 0.3, 0.9]
-  return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      {/* нижняя направляющая */}
-      <mesh position={[0, 0.08, 0]}><boxGeometry args={[2.2, 0.08, 0.08]} /><meshStandardMaterial {...bar} /></mesh>
-      {arcs.map((ax, i) => (
-        <group key={i} position={[ax, 0, 0]}>
-          <mesh position={[-0.16, 0.35, 0]}><boxGeometry args={[0.05, 0.7, 0.05]} /><meshStandardMaterial {...bar} /></mesh>
-          <mesh position={[0.16, 0.35, 0]}><boxGeometry args={[0.05, 0.7, 0.05]} /><meshStandardMaterial {...bar} /></mesh>
-          <mesh position={[0, 0.7, 0]}><boxGeometry args={[0.37, 0.05, 0.05]} /><meshStandardMaterial {...bar} /></mesh>
-        </group>
-      ))}
-    </group>
-  )
-}
-
 /** Кашпо/клумба с кустом. */
 function Planter({ x, z, s = 1 }: { x: number; z: number; s?: number }) {
   return (
@@ -265,6 +261,24 @@ function Planter({ x, z, s = 1 }: { x: number; z: number; s?: number }) {
       <mesh position={[0, 0.72, 0]} castShadow><sphereGeometry args={[0.55, 9, 7]} /><meshStandardMaterial color={SHRUB} roughness={1} /></mesh>
       <mesh position={[0.3, 0.62, 0.22]} castShadow><sphereGeometry args={[0.34, 8, 6]} /><meshStandardMaterial color="#4c8a4a" roughness={1} /></mesh>
       <mesh position={[-0.28, 0.66, -0.2]} castShadow><sphereGeometry args={[0.3, 8, 6]} /><meshStandardMaterial color="#357a34" roughness={1} /></mesh>
+    </group>
+  )
+}
+
+/** Велопарковка: рама-основание с несколькими U-образными дугами. */
+function BikeRack({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
+  const bar = { color: METAL, metalness: 0.6, roughness: 0.4 }
+  const arcs: number[] = [-0.9, -0.3, 0.3, 0.9]
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
+      <mesh position={[0, 0.08, 0]}><boxGeometry args={[2.2, 0.08, 0.08]} /><meshStandardMaterial {...bar} /></mesh>
+      {arcs.map((ax, i) => (
+        <group key={i} position={[ax, 0, 0]}>
+          <mesh position={[-0.16, 0.35, 0]}><boxGeometry args={[0.05, 0.7, 0.05]} /><meshStandardMaterial {...bar} /></mesh>
+          <mesh position={[0.16, 0.35, 0]}><boxGeometry args={[0.05, 0.7, 0.05]} /><meshStandardMaterial {...bar} /></mesh>
+          <mesh position={[0, 0.7, 0]}><boxGeometry args={[0.37, 0.05, 0.05]} /><meshStandardMaterial {...bar} /></mesh>
+        </group>
+      ))}
     </group>
   )
 }
@@ -282,107 +296,93 @@ function SignBoard({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
   )
 }
 
-/** Безопасный столбик-болард. */
-function Bollard({ x, z }: { x: number; z: number }) {
-  return (
-    <group position={[x, 0, z]}>
-      <mesh position={[0, 0.4, 0]} castShadow><cylinderGeometry args={[0.1, 0.12, 0.8, 10]} /><meshStandardMaterial color="#d8b23a" metalness={0.3} roughness={0.5} /></mesh>
-      <mesh position={[0, 0.62, 0]}><cylinderGeometry args={[0.105, 0.105, 0.12, 10]} /><meshStandardMaterial color="#1c1e20" roughness={0.8} /></mesh>
-    </group>
-  )
-}
-
-/** Ряд болардов вдоль пешеходной кромки. */
-function BollardRow({ x, z, count = 4, gap = 1.2, rot = 0 }: { x: number; z: number; count?: number; gap?: number; rot?: number }) {
-  return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      {Array.from({ length: count }, (_, i) => (
-        <Bollard key={i} x={(i - (count - 1) / 2) * gap} z={0} />
-      ))}
-    </group>
-  )
-}
-
-/** Остановка/навес автобусного типа: крыша на стойках + скамейка + боковая стенка. */
-function BusShelter({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
-  return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      {/* стойки */}
-      {[[-1.6, -0.7], [1.6, -0.7], [-1.6, 0.7], [1.6, 0.7]].map(([px, pz], i) => (
-        <mesh key={i} position={[px, 1.15, pz]} castShadow><boxGeometry args={[0.1, 2.3, 0.1]} /><meshStandardMaterial color={POST} metalness={0.4} /></mesh>
-      ))}
-      {/* крыша */}
-      <mesh position={[0, 2.35, 0]} castShadow><boxGeometry args={[3.6, 0.14, 1.8]} /><meshStandardMaterial color={METAL} metalness={0.3} roughness={0.6} /></mesh>
-      {/* задняя остеклённая стенка */}
-      <mesh position={[0, 1.3, -0.72]}><boxGeometry args={[3.4, 1.9, 0.05]} /><meshStandardMaterial color="#bcd3e6" emissive="#7fa8c8" emissiveIntensity={0.22} transparent opacity={0.7} /></mesh>
-      {/* боковая остеклённая стенка */}
-      <mesh position={[-1.62, 1.3, 0]}><boxGeometry args={[0.05, 1.9, 1.5]} /><meshStandardMaterial color="#bcd3e6" emissive="#7fa8c8" emissiveIntensity={0.22} transparent opacity={0.7} /></mesh>
-      <Bench x={0} z={-0.4} />
-    </group>
-  )
-}
-
 /** Курилка: навес + скамейка + урна. */
-function SmokingSpot({ x, z }: { x: number; z: number }) {
+function SmokingSpot({ x, z, rot = 0 }: { x: number; z: number; rot?: number }) {
   return (
-    <group position={[x, 0, z]}>
+    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
       {[[-1.3, -1], [1.3, -1], [-1.3, 1], [1.3, 1]].map(([px, pz], i) => (
         <mesh key={i} position={[px, 1.1, pz]}><boxGeometry args={[0.12, 2.2, 0.12]} /><meshStandardMaterial color={POST} /></mesh>
       ))}
       <mesh position={[0, 2.25, 0]} castShadow><boxGeometry args={[3, 0.18, 2.6]} /><meshStandardMaterial color="#3f6b6e" metalness={0.2} roughness={0.7} /></mesh>
       <Bench x={0} z={-0.5} />
-      {/* урна */}
       <mesh position={[1, 0.4, 0.6]}><cylinderGeometry args={[0.22, 0.18, 0.8, 12]} /><meshStandardMaterial color="#3a3d40" metalness={0.4} /></mesh>
     </group>
   )
 }
 
-interface DecorationsProps { minX: number; maxX: number; minZ: number; maxZ: number; gMid: number }
+interface DecorationsProps { minX: number; maxX: number; minZ: number; maxZ: number; gMid: number; nodes?: SceneNode[] }
 
 /** Декорации территории: размещаются в «дворовой» полосе между цехами и забором. */
-export function Decorations({ minX, maxX, minZ, maxZ, gMid }: DecorationsProps) {
+export function Decorations({ minX, maxX, minZ, maxZ, gMid, nodes }: DecorationsProps) {
+  // Декор ВОЗВРАЩЁН (курилки, велопарковка, инфощит, скамейки), но раскладывается
+  // ЖАДНО «без наложений»: занятые зоны — парковка, КПП, главные ворота+подъездная
+  // дорога (+X), жд-узел + северные ворота+служебная дорога — резервируются заранее;
+  // каждый элемент берёт ПЕРВЫЙ свободный кандидат у кромки и резервирует свой габарит.
+  // Кандидаты — в «дворовой» полосе у забора (цеха внутри отступа MARGIN=16), с уклоном
+  // в южную/боковые стороны (север занят жд, восток-центр — воротами).
+  const W = maxX - minX
+  // Зона погрузки у КОНЦА жд-спура: навес (погрузчик+экскаватор) и парковка грузовиков
+  // по бокам от рельса — «готовы грузить с путей на автотранспорт».
+  const sp = railSpur(minX, maxX, minZ, maxZ)
+  const pk = parkingSpot(minX, maxX, minZ, maxZ, nodes ?? [])  // угол +X, свободный от цехов
+  const loadZ = sp.endZ                                // навес-погрузка — у конца жд-спура
+  const canopyX = Math.min(maxX - 6, sp.x + 4.5)
+  const obst: { x: number; z: number; hx: number; hz: number }[] = [
+    { x: pk.x, z: pk.z, hx: 8, hz: 5 },                            // парковка (в углу у ворот)
+    { x: canopyX, z: loadZ, hx: 4.5, hz: 3 },                      // навес-погрузка у спура
+    { x: maxX - 4.5, z: gMid + 4.5, hx: 3.2, hz: 3.2 },            // КПП
+    { x: maxX - 6, z: gMid, hx: 7.5, hz: 7 },                      // главные ворота + подъезд (+X)
+    { x: (minX + maxX) / 2, z: minZ - 2, hx: W / 2 + 90, hz: 18 }, // жд-узел + рельсовые ворота + спур
+  ]
+  const fits = (x: number, z: number, hx: number, hz: number) =>
+    x > minX + 3 && x < maxX - 3 && z > minZ + 3 && z < maxZ - 3 &&
+    !obst.some((o) => Math.abs(x - o.x) < o.hx + hx && Math.abs(z - o.z) < o.hz + hz)
+  const put = (cands: [number, number, number][], hx: number, hz: number): [number, number, number] | null => {
+    for (const c of cands) if (fits(c[0], c[1], hx, hz)) { obst.push({ x: c[0], z: c[1], hx, hz }); return c }
+    return null
+  }
+  const eastCol = (dz: number): [number, number, number] => [maxX - 7, dz, -Math.PI / 2]
+  const westCol = (dz: number): [number, number, number] => [minX + 7, dz, Math.PI / 2]
+  const southRow = (dx: number): [number, number, number] => [dx, maxZ - 5, Math.PI]
+  const eastZs = [maxZ - 9, gMid + 11, maxZ - 15, gMid + 17]
+  const westZs = [maxZ - 9, gMid + 11, gMid - 9, maxZ - 15, gMid + 17]
+  const southXs = [minX + 13, minX + 23, 0, maxX - 15, minX + 33]
+
+  const smoke1 = put(eastZs.map(eastCol), 2.4, 2.4)
+  const smoke2 = put([...westZs.map(westCol), ...southXs.map(southRow)], 2.4, 2.4)
+  const bike = put([...eastZs.map(eastCol), ...westZs.map(westCol)], 1.6, 1.4)
+  const sign = put([...eastZs.map(eastCol), [maxX - 8, gMid + 15, -Math.PI / 2]], 1.0, 0.8)
+  const benches: [number, number, number][] = []
+  for (const c of [...eastZs.map(eastCol), ...southXs.map(southRow), ...westZs.map(westCol)]) {
+    if (benches.length >= 4) break
+    const p = put([c], 1.4, 1.1); if (p) benches.push(p)
+  }
+  const planters: [number, number, number][] = []
+  for (const c of [westCol(gMid - 4), southRow(minX + 28), eastCol(gMid + 4)] as [number, number, number][]) {
+    const p = put([c], 0.8, 0.8); if (p) planters.push(p)
+  }
   return (
     <group>
-      {/* Въездная группа у ворот (сторона +X) */}
+      {/* Въездная группа у главных ворот (+X). Фонари ставим ВПЛОТНУЮ к воротам
+          (x=maxX-3), а НЕ на x=maxX-9 — там проходит подъездная дорога к парковке
+          (pk.x=maxX-9), фонарь стоял прямо на проезжей части («наезд»). */}
       <Kpp x={maxX - 4.5} z={gMid + 4.5} />
       <Boom x={maxX - 5} z={gMid - 2.4} />
-      <ParkingLot x={maxX - 13} z={minZ + 9} />
+      <StreetLamp x={maxX - 3} z={gMid + 6} rot={Math.PI} />
+      <StreetLamp x={maxX - 3} z={gMid - 6} rot={Math.PI} />
 
-      {/* Навесы с техникой */}
-      <Canopy x={maxX - 12} z={maxZ - 9} />
-      <Canopy x={minX + 12} z={minZ + 9} />
+      {/* Навес-погрузка (погрузчик+экскаватор) у конца жд-спура */}
+      <Canopy x={canopyX} z={loadZ} />
+      {/* Парковка грузовиков — в углу у главных ворот, отдельно от жд-погрузки */}
+      <ParkingLot x={pk.x} z={pk.z} />
 
-      {/* Аллея фонарей вдоль пешеходной оси у офиса/въезда */}
-      <StreetLamp x={maxX - 9} z={gMid + 8} rot={Math.PI} />
-      <StreetLamp x={maxX - 9} z={gMid - 8} rot={Math.PI} />
-      <StreetLamp x={maxX - 18} z={gMid + 8} rot={Math.PI} />
-
-      {/* Скамейки — у офиса/въезда и вдоль дорожек, со слабым разбросом поворота */}
-      <Bench x={maxX - 9} z={gMid + 5} rot={Math.PI / 2 + (hash(1) - 0.5) * 0.3} />
-      <Bench x={maxX - 9} z={gMid - 5} rot={-Math.PI / 2 + (hash(2) - 0.5) * 0.3} />
-      <Bench x={minX + 13} z={gMid} rot={Math.PI / 2 + (hash(3) - 0.5) * 0.3} />
-      <Bench x={-8} z={maxZ - 6} rot={(hash(4) - 0.5) * 0.3} />
-      <Bench x={9} z={maxZ - 6} rot={Math.PI + (hash(5) - 0.5) * 0.3} />
-
-      {/* Велопарковка и указатель у входной зоны */}
-      <BikeRack x={maxX - 15} z={gMid + 6} rot={Math.PI / 2} />
-      <SignBoard x={maxX - 7} z={gMid + 7} rot={-Math.PI / 2 + 0.2} />
-
-      {/* Кашпо/кусты для озеленения площадок */}
-      <Planter x={maxX - 10.5} z={gMid + 3} />
-      <Planter x={maxX - 10.5} z={gMid - 3} s={0.9} />
-      <Planter x={minX + 15} z={gMid - 2} s={1.1} />
-      <Planter x={-6} z={maxZ - 6} />
-
-      {/* Болларды вдоль пешеходной кромки у ворот */}
-      <BollardRow x={maxX - 8} z={gMid} count={5} gap={1.4} />
-
-      {/* Остановка автобусного типа у въезда */}
-      <BusShelter x={maxX - 20} z={gMid + 7} rot={Math.PI} />
-
-      {/* Курилки */}
-      <SmokingSpot x={minX + 12} z={maxZ - 8} />
-      <SmokingSpot x={12} z={minZ + 8} />
+      {/* Восстановленный декор — только в свободных местах (жадная укладка выше) */}
+      {smoke1 && <SmokingSpot x={smoke1[0]} z={smoke1[1]} rot={smoke1[2]} />}
+      {smoke2 && <SmokingSpot x={smoke2[0]} z={smoke2[1]} rot={smoke2[2]} />}
+      {bike && <BikeRack x={bike[0]} z={bike[1]} rot={bike[2]} />}
+      {sign && <SignBoard x={sign[0]} z={sign[1]} rot={sign[2]} />}
+      {benches.map((b, i) => <Bench key={`b${i}`} x={b[0]} z={b[1]} rot={b[2] + (hash(i + 1) - 0.5) * 0.25} />)}
+      {planters.map((p, i) => <Planter key={`p${i}`} x={p[0]} z={p[1]} s={0.95} />)}
     </group>
   )
 }

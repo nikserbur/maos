@@ -608,6 +608,54 @@ static void register_analytics(httplib::Server& svr, Database& db) {
       });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
+
+  // KPI по ВСЕМ построенным планам — ряд «во времени» (x=дата/номер, y=любой KPI).
+  // Для настраиваемых графиков «Аналитики»: тянем kpi_json каждого плана разом.
+  svr.Get("/api/analytics/kpi_series", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      auto rows = db.query_json(
+        "SELECT id, created_at, kpi_json FROM plans pl WHERE kpi_json IS NOT NULL AND EXISTS("
+        "  SELECT 1 FROM plan_tasks pt WHERE pt.plan_id=pl.id"
+        "  AND pt.machine_id<>'supply' AND pt.machine_id<>'') ORDER BY pl.rowid ASC");
+      json out = json::array();
+      for (auto& r : rows) {
+        json bundle = json::object();
+        const std::string kj = jstr(r, "kpi_json");
+        if (!kj.empty()) { try { bundle = json::parse(kj); } catch (...) {} }
+        bundle["plan_id"] = jstr(r, "id");
+        bundle["created_at"] = jstr(r, "created_at");
+        out.push_back(bundle);   // каждая точка — полный KpiBundle (как /analytics/kpi)
+      }
+      ok(res, out);
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+
+  // Настройки дашборда (закреплённые KPI + конфиг графиков) — KV в БД проекта.
+  // Хранится в app_prefs (см. setup_database); привязано к выбранному проекту-БД.
+  svr.Get("/api/prefs/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      json row;
+      try { row = db.query_one("SELECT value FROM app_prefs WHERE key=?", { req.matches[1] }); }
+      catch (...) { ok(res, { {"key", std::string(req.matches[1])}, {"value", nullptr} }); return; }
+      const std::string v = jstr(row, "value");
+      json parsed = nullptr;
+      if (!v.empty()) { try { parsed = json::parse(v); } catch (...) { parsed = v; } }
+      ok(res, { {"key", std::string(req.matches[1])}, {"value", parsed} });
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  svr.Put("/api/prefs/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = json::parse(req.body);
+      // value может прийти строкой (уже JSON) или объектом — храним как текст.
+      std::string val;
+      if (body.contains("value"))
+        val = body["value"].is_string() ? body["value"].get<std::string>() : body["value"].dump();
+      db.exec("INSERT INTO app_prefs(key,value,updated_at) VALUES(?,?,datetime('now')) "
+              "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')",
+              { std::string(req.matches[1]), val });
+      ok(res, { {"key", std::string(req.matches[1])}, {"ok", true} });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
 }
 
 /* ── Standalone operations (routing_id nullable) ─────────────────────────── */
@@ -940,6 +988,130 @@ static void seed_demo(Database& db) {
       order += 10;
     }
   }
+
+  // ══ РАСШИРЕНИЕ НСИ до масштаба крупного холдинга (труба+прокат+машиностроение+
+  //    литьё+ковка+сварка+термообработка+покрытия+сборка+ОТК+энерго+логистика).
+  //    Идемпотентно (INSERT OR IGNORE); id/коды не пересекаются с базовыми;
+  //    kind ∈ 11 бандл-моделей 3D. Операции ссылаются на типы по ИМЕНИ (как фронт). ══
+  db.exec(R"SQL(
+    INSERT OR IGNORE INTO work_center_types(id,name,group_name,kind,characteristics) VALUES
+    ('wct-tpa-piercer',   'ТПА: прошивной стан',            'Трубопрокат',   'pileizer',    '[{"label":"Производительность","value":"38 т/ч"},{"label":"Ø гильзы","value":"60–426 мм"}]'),
+    ('wct-tpa-reducer',   'Стан-редуктор (редукционный)',   'Трубопрокат',   'pileizer',    '[{"label":"Производительность","value":"42 т/ч"},{"label":"Клетей","value":"24"}]'),
+    ('wct-tpa-sizing',    'Калибровочный стан',             'Трубопрокат',   'pileizer',    '[{"label":"Производительность","value":"40 т/ч"},{"label":"Допуск Ø","value":"±0.4 мм"}]'),
+    ('wct-tpa-pilger',    'Пильгерстан',                    'Трубопрокат',   'pileizer',    '[{"label":"Производительность","value":"22 т/ч"},{"label":"Ходов/мин","value":"58"}]'),
+    ('wct-cnc-lathe',     'Токарный обрабатывающий центр',  'Механообработка','pileizer',   '[{"label":"Шпиндель","value":"22 кВт"},{"label":"Ось Z","value":"1500 мм"}]'),
+    ('wct-cnc-mill',      'Фрезерный станок с ЧПУ',         'Механообработка','pileizer',   '[{"label":"Шпиндель","value":"18 000 об/мин"},{"label":"Осей","value":"5"}]'),
+    ('wct-cnc-bore',      'Расточной станок',               'Механообработка','pileizer',   '[{"label":"Ø расточки","value":"до 320 мм"},{"label":"Точность","value":"H7"}]'),
+    ('wct-cnc-grind',     'Круглошлифовальный станок',      'Механообработка','pileizer',   '[{"label":"Ra","value":"0.2 мкм"},{"label":"Ø детали","value":"до 400 мм"}]'),
+    ('wct-cnc-hob',       'Зубофрезерный станок',           'Механообработка','pileizer',   '[{"label":"Модуль","value":"до 12 мм"},{"label":"Ø колеса","value":"до 800 мм"}]'),
+    ('wct-cnc-jig',       'Координатно-расточной станок',   'Механообработка','pileizer',   '[{"label":"Точность позиц.","value":"±2 мкм"},{"label":"Стол","value":"1000×630 мм"}]'),
+    ('wct-foundry-imf',   'Индукционная плавильная печь',   'Литьё',         'finecleaning','[{"label":"Ёмкость","value":"6 т"},{"label":"Мощность","value":"4.5 МВт"}]'),
+    ('wct-foundry-mold',  'Формовочная линия',              'Литьё',         'finecleaning','[{"label":"Производительность","value":"120 форм/ч"},{"label":"Опока","value":"800×700 мм"}]'),
+    ('wct-foundry-sand',  'Землеприготовительный участок',  'Литьё',         'cleaningarea','[{"label":"Производительность","value":"60 т/ч"},{"label":"Регенерация","value":"92%"}]'),
+    ('wct-forge-press',   'Ковочный пресс',                 'Кузнечно-прессовое','briquettes','[{"label":"Усилие","value":"3150 тс"},{"label":"Ход","value":"900 мм"}]'),
+    ('wct-forge-hammer',  'Ковочный молот',                 'Кузнечно-прессовое','briquettes','[{"label":"Энергия удара","value":"80 кДж"},{"label":"Падающие части","value":"5 т"}]'),
+    ('wct-stamp-press',   'Листоштамповочный пресс',        'Кузнечно-прессовое','briquettes','[{"label":"Усилие","value":"630 тс"},{"label":"Ходов/мин","value":"35"}]'),
+    ('wct-weld-robot',    'Сварочный робот',                'Сварка',        'briquettes',  '[{"label":"Осей","value":"6"},{"label":"Скорость сварки","value":"1.2 м/мин"}]'),
+    ('wct-weld-tesa',     'Стан сварки труб ТЭСА',          'Сварка',        'briquettes',  '[{"label":"Производительность","value":"45 м/мин"},{"label":"Ø трубы","value":"57–530 мм"}]'),
+    ('wct-ht-quench',     'Закалочная печь',                'Термообработка','dryer',       '[{"label":"Температура","value":"950 °C"},{"label":"Садка","value":"3 т"}]'),
+    ('wct-ht-temper',     'Отпускная печь',                 'Термообработка','boiler',      '[{"label":"Температура","value":"680 °C"},{"label":"Садка","value":"3 т"}]'),
+    ('wct-ht-carb',       'Печь цементации',                'Термообработка','dryer',       '[{"label":"Глубина слоя","value":"0.8–1.5 мм"},{"label":"Температура","value":"930 °C"}]'),
+    ('wct-ht-induction',  'Установка индукционной закалки',  'Термообработка','dryer',       '[{"label":"Частота","value":"8 кГц"},{"label":"Мощность","value":"250 кВт"}]'),
+    ('wct-coat-galv',     'Линия горячего оцинкования',     'Покрытия',      'cleaningarea','[{"label":"Производительность","value":"32 т/ч"},{"label":"Толщина цинка","value":"55–85 мкм"}]'),
+    ('wct-coat-electro',  'Гальванический участок',         'Покрытия',      'cleaningarea','[{"label":"Ванн","value":"12"},{"label":"Толщина покрытия","value":"6–20 мкм"}]'),
+    ('wct-coat-shot',     'Дробеструйная камера',           'Покрытия',      'cleaningarea','[{"label":"Производительность","value":"18 т/ч"},{"label":"Sa","value":"2.5"}]'),
+    ('wct-coat-paint',    'Окрасочная камера',              'Покрытия',      'cleaningarea','[{"label":"Расход ЛКМ","value":"12 л/ч"},{"label":"Сушка","value":"80 °C"}]'),
+    ('wct-asm-conveyor',  'Сборочный конвейер',             'Сборка',        'briquettes',  '[{"label":"Такт","value":"6 мин"},{"label":"Постов","value":"14"}]'),
+    ('wct-asm-stand',     'Стенд сборки узлов',             'Сборка',        'briquettes',  '[{"label":"Грузоподъёмность","value":"5 т"},{"label":"Постов","value":"4"}]'),
+    ('wct-qc-cmm',        'Координатно-измерительная машина','ОТК/Лаборатория','marketing',  '[{"label":"Точность","value":"±1.8 мкм"},{"label":"Зона","value":"1200×800×600 мм"}]'),
+    ('wct-qc-spectro',    'Оптико-эмиссионный спектрометр', 'ОТК/Лаборатория','marketing',  '[{"label":"Элементов","value":"до 30"},{"label":"Проб/ч","value":"25"}]'),
+    ('wct-qc-ut',         'УЗК-дефектоскоп',                'ОТК/Лаборатория','marketing',  '[{"label":"Диапазон","value":"0.5–10 МГц"},{"label":"Толщина","value":"до 300 мм"}]'),
+    ('wct-qc-tensile',    'Разрывная машина',               'ОТК/Лаборатория','marketing',  '[{"label":"Усилие","value":"600 кН"},{"label":"Точность","value":"класс 0.5"}]'),
+    ('wct-tool-shop',     'Инструментальный участок',       'Инструмент/Ремонт','marketing', '[{"label":"Станков","value":"9"},{"label":"Загрузка","value":"63%"}]'),
+    ('wct-maint-rmc',     'Ремонтно-механический цех (РМЦ)','Инструмент/Ремонт','marketing', '[{"label":"Бригад","value":"6"},{"label":"MTTR","value":"5.5 ч"}]'),
+    ('wct-util-compress', 'Компрессорная станция',          'Энергетика',    'boiler',      '[{"label":"Давление","value":"8 бар"},{"label":"Производительность","value":"120 м³/мин"}]'),
+    ('wct-util-oxygen',   'Кислородная станция',            'Энергетика',    'transformer', '[{"label":"Производительность O₂","value":"2 500 м³/ч"},{"label":"Чистота","value":"99.5%"}]'),
+    ('wct-util-water',    'Водоподготовка',                 'Энергетика',    'boiler',      '[{"label":"Производительность","value":"180 м³/ч"},{"label":"Оборотный цикл","value":"94%"}]'),
+    ('wct-log-gantry',    'Козловой кран',                  'Логистика',     'wirehouse',   '[{"label":"Грузоподъёмность","value":"32 т"},{"label":"Пролёт","value":"32 м"}]'),
+    ('wct-log-asrs',      'Автоматизированный склад (АС/РС)','Логистика',    'sale',        '[{"label":"Ячеек","value":"4 800"},{"label":"Заполнение","value":"71%"}]')
+  )SQL");
+
+  db.exec(R"SQL(
+    INSERT OR IGNORE INTO products(id,code,name,unit,purchased) VALUES
+    ('prod-rebar',      'FIN-010', 'Арматура А500С',              'т', 0),
+    ('prod-wirerod',    'FIN-011', 'Катанка Ø6.5 мм',             'т', 0),
+    ('prod-crcoil',     'FIN-012', 'Рулон холоднокатаный',        'т', 0),
+    ('prod-hrplate',    'FIN-013', 'Лист горячекатаный',          'т', 0),
+    ('prod-pipe-sl',    'FIN-014', 'Труба бесшовная 108×6',       'т', 0),
+    ('prod-pipe-ew',    'FIN-015', 'Труба электросварная 76×4',   'т', 0),
+    ('prod-bloom',      'SF-010',  'Блюм (заготовка)',            'т', 0),
+    ('prod-billet',     'SF-011',  'Заготовка непрерывнолитая',   'т', 0),
+    ('prod-shaft',      'FIN-016', 'Вал приводной',               'шт', 0),
+    ('prod-gear',       'FIN-017', 'Шестерня цилиндрическая',     'шт', 0),
+    ('prod-gearbox',    'FIN-018', 'Корпус редуктора',            'шт', 0),
+    ('prod-fastener',   'FIN-019', 'Метизы (болт М16)',           'т', 0),
+    ('prod-forging',    'SF-012',  'Поковка черновая',            'т', 0),
+    ('prod-casting',    'SF-013',  'Отливка чугунная (черновая)', 'т', 0)
+  )SQL");
+
+  db.exec(R"SQL(
+    INSERT OR IGNORE INTO operations(id,code,name,op_type,wc_types,t_norm,t_opt,t_pess,inputs,outputs) VALUES
+    ('opt-pierce',   'OP-110', 'Прошивка гильзы',            'machining', 'ТПА: прошивной стан',              25, 20, 40, 'Заготовка непрерывнолитая', 'Гильза трубная'),
+    ('opt-reduce',   'OP-111', 'Редуцирование трубы',        'machining', 'Стан-редуктор (редукционный)',     18, 14, 30, 'Гильза трубная', 'Труба черновая'),
+    ('opt-size',     'OP-112', 'Калибровка трубы',           'machining', 'Калибровочный стан',               15, 12, 26, 'Труба черновая', 'Труба бесшовная 108×6'),
+    ('opt-utpipe',   'OP-113', 'УЗК контроль трубы',         'control',   'УЗК-дефектоскоп',                  12, 10, 22, 'Труба бесшовная 108×6', 'Труба бесшовная 108×6'),
+    ('opt-crcoil',   'OP-120', 'Холодная прокатка рулона',   'machining', 'Обогащение и подготовка',          30, 24, 48, 'Рулон горячекатаный', 'Рулон холоднокатаный'),
+    ('opt-anneal',   'OP-121', 'Отжиг рулона',               'heat',      'Отпускная печь',                   150, 120, 240, 'Рулон холоднокатаный', 'Рулон холоднокатаный'),
+    ('opt-galv',     'OP-122', 'Горячее оцинкование',        'machining', 'Линия горячего оцинкования',       22, 18, 38, 'Рулон холоднокатаный', 'Рулон холоднокатаный'),
+    ('opt-turn',     'OP-130', 'Токарная обработка вала',    'machining', 'Токарный обрабатывающий центр',    40, 32, 70, 'Поковка черновая', 'Вал приводной'),
+    ('opt-hob',      'OP-131', 'Зубофрезерование',           'machining', 'Зубофрезерный станок',             55, 44, 95, 'Поковка черновая', 'Шестерня цилиндрическая'),
+    ('opt-carb',     'OP-132', 'Цементация зубьев',          'heat',      'Печь цементации',                  360, 300, 540, 'Шестерня цилиндрическая', 'Шестерня цилиндрическая'),
+    ('opt-grind',    'OP-133', 'Шлифование',                 'machining', 'Круглошлифовальный станок',        28, 22, 50, 'Шестерня цилиндрическая', 'Шестерня цилиндрическая'),
+    ('opt-cmm',      'OP-134', 'Контроль на КИМ',            'control',   'Координатно-измерительная машина', 18, 14, 32, 'Шестерня цилиндрическая', 'Шестерня цилиндрическая'),
+    ('opt-melt',     'OP-140', 'Индукционная плавка',        'heat',      'Индукционная плавильная печь',     70, 55, 120, 'Металлолом', 'Чугун жидкий'),
+    ('opt-mold',     'OP-141', 'Формовка и заливка',         'machining', 'Формовочная линия',                35, 28, 60, 'Чугун жидкий', 'Отливка чугунная (черновая)'),
+    ('opt-borehousing','OP-142','Расточка корпуса',          'machining', 'Расточной станок',                 50, 40, 90, 'Отливка чугунная (черновая)', 'Корпус редуктора'),
+    ('opt-millface', 'OP-143', 'Фрезерование плоскостей',    'machining', 'Фрезерный станок с ЧПУ',           38, 30, 68, 'Отливка чугунная (черновая)', 'Корпус редуктора'),
+    ('opt-forge',    'OP-150', 'Ковка на прессе',            'machining', 'Ковочный пресс',                   30, 24, 55, 'Блюм (заготовка)', 'Поковка черновая'),
+    ('opt-quench',   'OP-151', 'Закалка',                    'heat',      'Закалочная печь',                  90, 70, 150, 'Поковка черновая', 'Поковка черновая'),
+    ('opt-temper',   'OP-152', 'Отпуск',                     'heat',      'Отпускная печь',                   120, 95, 200, 'Поковка черновая', 'Поковка черновая')
+  )SQL");
+
+  db.exec(R"SQL(
+    INSERT OR IGNORE INTO routings(id,name,product_id) VALUES
+    ('route-pipe-sl', 'Производство бесшовной трубы',        'prod-pipe-sl'),
+    ('route-crcoil',  'Производство х/к оцинкованного рулона','prod-crcoil'),
+    ('route-gear',    'Механообработка шестерни',            'prod-gear'),
+    ('route-gearbox', 'Литьё и обработка корпуса редуктора', 'prod-gearbox'),
+    ('route-shaft',   'Изготовление приводного вала',        'prod-shaft')
+  )SQL");
+
+  db.exec(R"SQL(
+    INSERT OR IGNORE INTO operations(id,routing_id,code,name,op_type,wc_types,order_no,t_norm,t_opt,t_pess,inputs,outputs) VALUES
+    ('route-pipe-sl-10','route-pipe-sl','OP-110','Прошивка гильзы',        'machining','ТПА: прошивной стан',           10, 25, 20, 40, 'Заготовка непрерывнолитая','Гильза трубная'),
+    ('route-pipe-sl-20','route-pipe-sl','OP-111','Редуцирование трубы',    'machining','Стан-редуктор (редукционный)',  20, 18, 14, 30, 'Гильза трубная','Труба черновая'),
+    ('route-pipe-sl-30','route-pipe-sl','OP-112','Калибровка трубы',       'machining','Калибровочный стан',            30, 15, 12, 26, 'Труба черновая','Труба бесшовная 108×6'),
+    ('route-pipe-sl-40','route-pipe-sl','OP-113','УЗК контроль трубы',     'control',  'УЗК-дефектоскоп',               40, 12, 10, 22, 'Труба бесшовная 108×6','Труба бесшовная 108×6'),
+    ('route-crcoil-10','route-crcoil','OP-120','Холодная прокатка рулона', 'machining','Обогащение и подготовка',       10, 30, 24, 48, 'Рулон горячекатаный','Рулон холоднокатаный'),
+    ('route-crcoil-20','route-crcoil','OP-121','Отжиг рулона',             'heat',     'Отпускная печь',                20, 150, 120, 240, 'Рулон холоднокатаный','Рулон холоднокатаный'),
+    ('route-crcoil-30','route-crcoil','OP-122','Горячее оцинкование',      'machining','Линия горячего оцинкования',    30, 22, 18, 38, 'Рулон холоднокатаный','Рулон холоднокатаный'),
+    ('route-crcoil-40','route-crcoil','OP-100','Контроль качества',        'control',  'Вспомогательные службы',        40, 20, 20, 20, '',''),
+    ('route-gear-10','route-gear','OP-150','Ковка на прессе',              'machining','Ковочный пресс',                10, 30, 24, 55, 'Блюм (заготовка)','Поковка черновая'),
+    ('route-gear-20','route-gear','OP-131','Зубофрезерование',             'machining','Зубофрезерный станок',          20, 55, 44, 95, 'Поковка черновая','Шестерня цилиндрическая'),
+    ('route-gear-30','route-gear','OP-132','Цементация зубьев',            'heat',     'Печь цементации',               30, 360, 300, 540, 'Шестерня цилиндрическая','Шестерня цилиндрическая'),
+    ('route-gear-40','route-gear','OP-133','Шлифование',                   'machining','Круглошлифовальный станок',     40, 28, 22, 50, 'Шестерня цилиндрическая','Шестерня цилиндрическая'),
+    ('route-gear-50','route-gear','OP-134','Контроль на КИМ',              'control',  'Координатно-измерительная машина',50, 18, 14, 32, 'Шестерня цилиндрическая','Шестерня цилиндрическая'),
+    ('route-gearbox-10','route-gearbox','OP-140','Индукционная плавка',    'heat',     'Индукционная плавильная печь',  10, 70, 55, 120, 'Металлолом','Чугун жидкий'),
+    ('route-gearbox-20','route-gearbox','OP-141','Формовка и заливка',     'machining','Формовочная линия',             20, 35, 28, 60, 'Чугун жидкий','Отливка чугунная (черновая)'),
+    ('route-gearbox-30','route-gearbox','OP-142','Расточка корпуса',       'machining','Расточной станок',              30, 50, 40, 90, 'Отливка чугунная (черновая)','Корпус редуктора'),
+    ('route-gearbox-40','route-gearbox','OP-143','Фрезерование плоскостей','machining','Фрезерный станок с ЧПУ',        40, 38, 30, 68, 'Отливка чугунная (черновая)','Корпус редуктора'),
+    ('route-gearbox-50','route-gearbox','OP-100','Контроль качества',      'control',  'Вспомогательные службы',        50, 20, 20, 20, '',''),
+    ('route-shaft-10','route-shaft','OP-150','Ковка на прессе',            'machining','Ковочный пресс',                10, 30, 24, 55, 'Блюм (заготовка)','Поковка черновая'),
+    ('route-shaft-20','route-shaft','OP-151','Закалка',                    'heat',     'Закалочная печь',               20, 90, 70, 150, 'Поковка черновая','Поковка черновая'),
+    ('route-shaft-30','route-shaft','OP-152','Отпуск',                     'heat',     'Отпускная печь',                30, 120, 95, 200, 'Поковка черновая','Поковка черновая'),
+    ('route-shaft-40','route-shaft','OP-130','Токарная обработка вала',    'machining','Токарный обрабатывающий центр', 40, 40, 32, 70, 'Поковка черновая','Вал приводной'),
+    ('route-shaft-50','route-shaft','OP-134','Контроль на КИМ',            'control',  'Координатно-измерительная машина',50, 18, 14, 32, 'Вал приводной','Вал приводной')
+  )SQL");
 
   db.exec("COMMIT");
 }
@@ -3274,6 +3446,10 @@ static bool setup_database(Database& db) {
   db.exec_safe("ALTER TABLE org_units ADD COLUMN pos_z REAL"); // позиция цеха на площадке (Z)
   db.exec_safe("ALTER TABLE org_units ADD COLUMN unit_type TEXT"); // 'factory' | 'warehouse' | 'shop' (пусто = 'shop')
   db.exec_safe("ALTER TABLE plans ADD COLUMN kpi_json TEXT");  // KPI-блок плана для «Аналитики»
+  // KV-настройки на уровне проекта-БД: дашборд «Аналитики» (закреплённые KPI + графики).
+  db.exec_safe("CREATE TABLE IF NOT EXISTS app_prefs ("
+               "key TEXT PRIMARY KEY, value TEXT, "
+               "updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
   // flows: from/to полиморфные (станок ИЛИ 'shop:<org_unit_id>') — старый FK на
   // machines молча ронял сохранение межцеховых дорог (SQLITE_CONSTRAINT глотался
   // фронтом). Перестраиваем таблицу без FK; висячие связи чистим на старте.

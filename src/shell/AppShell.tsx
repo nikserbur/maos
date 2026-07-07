@@ -2,6 +2,7 @@ import { Suspense, useState } from 'react'
 import { NavRail } from './NavRail'
 import { TopBar } from './TopBar'
 import { StatusBar } from './StatusBar'
+import { ErrorBoundary } from './ErrorBoundary'
 import { SCREENS } from './screens'
 import './shell.css'
 
@@ -21,9 +22,12 @@ export default function AppShell() {
       <div className="shell__body">
         <NavRail activeId={active.id} onSelect={setActiveId} />
         <main className="shell__content">
-          <Suspense fallback={<div className="shell__loading">Загрузка модуля…</div>}>
-            <ActiveScreen />
-          </Suspense>
+          {/* key=id → предохранитель сбрасывается при переключении экрана. */}
+          <ErrorBoundary key={active.id} label={active.label}>
+            <Suspense fallback={<div className="shell__loading">Загрузка модуля…</div>}>
+              <ActiveScreen />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <StatusBar screen={active.label} />

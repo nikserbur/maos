@@ -35,6 +35,14 @@ export interface SceneNode {
   linkedMachineId?: string
   /** Для узла-цеха И узла-завода — id записи org_units. */
   orgUnitId?: string
+  /**
+   * Гео-координаты для узла-завода/склада на МИРОВОЙ 2D-карте (org_units.lat/lng).
+   * ОТДЕЛЬНОЕ координатное пространство: НЕ смешивать с position (pos_x/pos_z —
+   * абстрактная 3D-раскладка площадки/цеха). Может отсутствовать до миграции БД —
+   * тогда 2D-карта берёт координаты из таблицы городов (см. worldmap2d/cities.ts).
+   */
+  lat?: number
+  lng?: number
 }
 
 /** Префикс id узла-цеха (чтобы не пересекался с id машины). */
@@ -294,11 +302,16 @@ export function buildGraphFromDb(
     const cx = hasPos ? Number(o.pos_x) : gx
     const cz = hasPos ? Number(o.pos_z) : gz
     const warehouse = o.unit_type === 'warehouse'
+    // Гео-координаты (мировая 2D-карта) — отдельно от pos_x/pos_z. Опциональны.
+    const hasLat = o.lat != null && String(o.lat) !== '' && !Number.isNaN(Number(o.lat))
+    const hasLng = o.lng != null && String(o.lng) !== '' && !Number.isNaN(Number(o.lng))
     return {
       id: factoryNodeId(o.id), parentId: null, refType: 'factory',
       kind: warehouse ? 'wirehouse' : 'marketing',
       title: o.name, subtitle: warehouse ? 'Склад / логистика' : 'Завод / производственная площадка',
       position: [cx, cz], rotationY: 0, scale: 1, status: 'running', kpis: [], orgUnitId: o.id,
+      lat: hasLat ? Number(o.lat) : undefined,
+      lng: hasLng ? Number(o.lng) : undefined,
     }
   })
   // Виртуальный завод (legacy или для «Без цеха») — если на него кто-то ссылается.
