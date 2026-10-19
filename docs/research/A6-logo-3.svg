@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="maos3-t maos3-d">
+  <title id="maos3-t">MAOS — «Терпкий»</title>
+  <desc id="maos3-d">The tart, dissonant palette: an ochre plate, a deep ultramarine disc, an oxblood square turned 12 degrees off the orthogonal, an aubergine lens where they overlap, and an off-black line along the dramatic diagonal that runs from the "loosest" upper-left corner and stops on the edge of the square. A bone-white point sits off-centre inside the square. It reads like a printed Bauhaus-book tile and works on both light and dark backgrounds.</desc>
+  <defs>
+    <clipPath id="maos3-clip-disc">
+      <circle cx="22" cy="43" r="14"/>
+    </clipPath>
+  </defs>
+  <!-- plate: muted ochre oklch(0.74 0.12 76), 8.2:1 against dark #0d0f16, 2.2:1 against light #f8f5ef (an intense colour field) -->
+  <rect x="0" y="0" width="64" height="64" rx="5" fill="#d6a04b"/>
+  <!-- disc: deep ultramarine oklch(0.42 0.19 268), 3.8:1 against the plate -->
+  <circle cx="22" cy="43" r="14" fill="#243bb2"/>
+  <!-- square: oxblood oklch(0.42 0.13 22), 3.9:1 against the plate; rotate(-12) is the deliberate "tension" -->
+  <g transform="rotate(-12 40 24)">
+    <rect x="28" y="12" width="24" height="24" fill="#86262b"/>
+  </g>
+  <!-- lens: the square's corner inside the disc, aubergine oklch(0.26 0.07 305) -->
+  <g clip-path="url(#maos3-clip-disc)">
+    <rect x="28" y="12" width="24" height="24" fill="#2c1a3f" transform="rotate(-12 40 24)"/>
+  </g>
+  <!-- dramatic diagonal y = x: from the upper-left corner to the left edge of the square at about (28.7, 28.7); off-black, 7.8:1 against the plate -->
+  <line x1="7" y1="7" x2="28.6" y2="28.6" stroke="#13161d" stroke-width="4" stroke-linecap="square"/>
+  <!-- point: bone, off-centre inside the square (about 8:1 against the oxblood) -->
+  <circle cx="45.5" cy="20.5" r="3.5" fill="#f6f1e7"/>
+</svg>

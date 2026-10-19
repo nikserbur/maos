@@ -1,0 +1,57 @@
+/*
+ * Status glyphs (AUDIT §2.5: colour is never the only signal).
+ * running ● · setup ▲ · idle ○ · down ■ · info ◆ — see tokens --status-*.
+ * Usage: <span className="glyph-running">Работает</span> or an empty <span>.
+ */
+/* ── Status glyphs: colour + shape (● ▲ ○ ■ ◆), CSS-drawn for crisp, font-
+ *    independent geometry. Use alone or before a text label.               */
+.glyph-running::before,
+.glyph-setup::before,
+.glyph-idle::before,
+.glyph-down::before,
+.glyph-info::before {
+  content: '';
+  display: inline-block;
+  flex: none;
+  width: 0.62em;
+  height: 0.62em;
+  vertical-align: -0.02em;
+}
+.glyph-running:not(:empty)::before,
+.glyph-setup:not(:empty)::before,
+.glyph-idle:not(:empty)::before,
+.glyph-down:not(:empty)::before,
+.glyph-info:not(:empty)::before {
+  margin-right: 0.45em;
+}
+.glyph-running::before {
+  border-radius: 50%;
+  background: var(--status-running);
+}
+.glyph-setup::before {
+  /* border triangle (no clip-path, so the light-theme outline filter works) */
+  width: 0;
+  height: 0;
+  border-left: 0.37em solid transparent;
+  border-right: 0.37em solid transparent;
+  border-bottom: 0.64em solid var(--status-setup);
+}
+[data-theme='light'] .glyph-setup::before {
+  filter: drop-shadow(0.6px 0 0 var(--ink)) drop-shadow(-0.6px 0 0 var(--ink))
+    drop-shadow(0 0.6px 0 var(--ink)) drop-shadow(0 -0.6px 0 var(--ink));
+}
+.glyph-idle::before {
+  border-radius: 50%;
+  border: max(1.5px, 0.12em) solid var(--status-idle);
+}
+.glyph-down::before {
+  width: 0.56em;
+  height: 0.56em;
+  background: var(--status-down);
+}
+.glyph-info::before {
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--status-info);
+  transform: rotate(45deg);
+}

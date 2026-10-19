@@ -26,12 +26,25 @@ FetchContent_MakeAvailable(nlohmann_json)
 # ── SQLite3 ───────────────────────────────────────────────────────────────
 find_package(SQLite3 REQUIRED)
 
-# ── Target ────────────────────────────────────────────────────────────────
-add_executable(maos_server
-  src/main.cpp
+# ── Targets ───────────────────────────────────────────────────────────────
+# Ядро (БД + Стадия 1/2) — общая статическая библиотека сервера и тестов, чтобы
+# тесты проверяли ровно тот же объектный код, что работает в сервере.
+add_library(maos_core STATIC
   src/Database.cpp
   src/Optimizer.cpp
   src/Scheduler.cpp
+)
+target_include_directories(maos_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(maos_core PUBLIC
+  nlohmann_json::nlohmann_json
+  SQLite3::SQLite3
+)
+if(UNIX AND NOT APPLE)
+  target_link_libraries(maos_core PUBLIC pthread)
+endif()
+
+add_executable(maos_server
+  src/main.cpp
 )
 
 target_include_directories(maos_server PRIVATE
@@ -39,13 +52,33 @@ target_include_directories(maos_server PRIVATE
 )
 
 target_link_libraries(maos_server PRIVATE
+  maos_core
   httplib::httplib
-  nlohmann_json::nlohmann_json
-  SQLite3::SQLite3
 )
 
-if(UNIX AND NOT APPLE)
-  target_link_libraries(maos_server PRIVATE pthread)
+# ── Tests (GoogleTest, regression tests for the methodology fixes) ────────
+option(MAOS_BUILD_TESTS "Build maos_tests (GoogleTest)" ON)
+if(MAOS_BUILD_TESTS)
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.15.2
+    GIT_SHALLOW    TRUE
+  )
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+
+  enable_testing()
+  add_executable(maos_tests
+    tests/test_finance.cpp
+    tests/test_planmath.cpp
+    tests/test_scheduler.cpp
+  )
+  target_link_libraries(maos_tests PRIVATE maos_core GTest::gtest_main)
+  include(GoogleTest)
+  gtest_discover_tests(maos_tests DISCOVERY_TIMEOUT 60)
 endif()
 
 # Copy schema.sql next to the binary so the server can read it

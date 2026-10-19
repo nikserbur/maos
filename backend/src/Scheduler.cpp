@@ -1,4 +1,5 @@
 #include "Scheduler.h"
+#include "PlanMath.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -244,17 +245,28 @@ Model load_model(Database& db) {
 }
 
 /* Индивидуальный график станка из строки machines.schedule: '8x5' (пн-пт 8ч),
-   '12x2' (ежедневно 12ч), '24x7' (круглосуточно). Пусто → общий календарь. */
-Calendar machine_calendar(const std::string& sched) {
-  Calendar c;
+   '12x2' (ежедневно 12ч), '24x7' (круглосуточно). Возвращает false, если график
+   не распознан (пусто/прочее) → станок работает по общему календарю.
+   B4: '24x7' распознаётся ЯВНО и даёт календарь без ограничений (any=false —
+   работа круглосуточно); раньше он возвращал any=false как «не задан» и станок
+   молча падал на общий сменный календарь. */
+bool machine_calendar(std::string sched, Calendar& c) {
+  c = Calendar{};
+  sched.erase(0, sched.find_first_not_of(" \t"));
+  sched.erase(sched.find_last_not_of(" \t") + 1);
+  for (char& ch : sched) ch = (char)std::tolower((unsigned char)ch);
   if (sched == "8x5") {
     for (int d = 0; d < 5; ++d) c.day[d].push_back({ 480, 960 });     // 08:00–16:00
     c.any = true;
-  } else if (sched == "12x2") {
+    return true;
+  }
+  if (sched == "12x2") {
     for (int d = 0; d < 7; ++d) c.day[d].push_back({ 480, 1200 });    // 08:00–20:00
     c.any = true;
+    return true;
   }
-  return c;   // '24x7' и прочее → any=false (без ограничений)
+  if (sched == "24x7" || sched == "24/7") return true;                // круглосуточно
+  return false;
 }
 
 /* ── Развёртка программы в граф операций (jobs) ───────────────────────────── */
@@ -265,13 +277,13 @@ struct Job {
   double setupTime = 0;                                // наладка при смене изделия на станке
   double batches = 1;                                  // партий (batch_size) в этой джобе
   int nInputs = 0;                                     // входных материалов у операции
+  bool needsWorker = true;                             // B3: false у «поставки» (только lead time)
   std::vector<int> preds;
 };
 
 struct Expander {
   const Model& m; std::vector<Job>& jobs;
-  std::unordered_map<std::string, std::vector<int>> lastJobs;   // key → batch-джобы последней операции
-  std::unordered_set<std::string> visiting;
+  std::unordered_set<std::string> visiting;                    // защита от циклов BOM
 
   // Число transfer-партий = ОБЪЁМ / РАЗМЕР ПАРТИИ изделия (sizeFactor = mult/batchSize):
   // каждая партия проходит операции и сразу «течёт» к следующей на свободном станке.
@@ -282,13 +294,16 @@ struct Expander {
   }
 
   // Возвращает batch-джобы ПОСЛЕДНЕЙ операции изделия (для побатчевой стыковки с потребителем).
+  // B2: каждое потребление раскрывается СВОЕЙ партией ровно на свой объём `mult`.
+  // Раньше результат запоминался по ключу «заказ#изделие», и второе потребление того же
+  // полуфабриката в заказе (другая операция/ветка BOM) повторно использовало первую
+  // развёртку — с ЕЁ объёмом: работа второго потребления терялась.
   std::vector<int> expand(int orderIdx, const std::string& pid, double mult, double dueMin, int depth = 0) {
     if (depth > 64) return {};
     std::string key = std::to_string(orderIdx) + "#" + pid;
-    if (auto it = lastJobs.find(key); it != lastJobs.end()) return it->second;
     if (visiting.count(key)) return {};                       // цикл цепочки
     auto oit = m.opsOf.find(pid);
-    if (oit == m.opsOf.end() || oit->second.empty()) { lastJobs[key] = {}; return {}; }
+    if (oit == m.opsOf.end() || oit->second.empty()) return {};
     visiting.insert(key);
     double batch = m.prods.count(pid) ? m.prods.at(pid).batchSize : 1;
     double sizeFactor = std::max(1.0, mult / batch);
@@ -314,12 +329,14 @@ struct Expander {
         j.nInputs = (int)o.inputs.size();
         j.hourRate = o.hourRate; j.laborRate = o.laborRate; j.dueMin = dueMin;
         if (!prevBatch.empty()) j.preds.push_back(prevBatch[k]);              // тот же batch пред. операции
-        for (auto& v : ins) j.preds.push_back(v[std::min((int)v.size() - 1, k * (int)v.size() / N)]);
+        // B1: партия k ждёт ПОСЛЕДНЮЮ нужную ей входную партию ⌈(k+1)·L/N⌉−1
+        // (раньше — первую, k·L/N: при L>N потребитель стартовал раньше входов).
+        for (auto& v : ins) j.preds.push_back(v[planmath::lot_input_index(k, N, (int)v.size())]);
         curBatch[k] = (int)jobs.size(); jobs.push_back(j);
       }
       prevBatch = std::move(curBatch);
     }
-    visiting.erase(key); lastJobs[key] = prevBatch; return prevBatch;
+    visiting.erase(key); return prevBatch;
   }
 };
 
@@ -414,6 +431,9 @@ struct SimOut {
   int nSetups = 0; double setupMinutes = 0, setupCost = 0;   // переналадки при смене изделия
   int nBreakdowns = 0; double breakdownMinutes = 0, maintMinutes = 0;   // поломки и плановое ТО
   std::unordered_map<std::string,double> busyByMachine; std::vector<double> busyByWorker;
+  // По джобам: наладка и простой (ТО + ремонт), мин — для единой загрузки (B9):
+  // продуктивное время = обработка, а наладка и простой учитываются отдельно.
+  std::vector<double> setupJ, downJ;
 };
 
 using PinMap = std::unordered_map<int, std::pair<double, std::string>>;  // jobIdx → (startMin, machineId)
@@ -428,6 +448,7 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
   size_t J = jobs.size(); SimOut o;
   o.start.assign(J,0); o.end.assign(J,0); o.machineId.assign(J,""); o.worker.assign(J,-1);
   o.busyByWorker.assign(m.workers.size(), 0);
+  o.setupJ.assign(J, 0); o.downJ.assign(J, 0);
   std::unordered_map<std::string,double> mFree; std::vector<double> wFree(m.workers.size(), 0);
   std::unordered_map<std::string,std::string> lastProd;   // станок → последнее изделие (наладки)
   std::unordered_map<std::string,double> usage;            // станок → наработка, мин (ТО/поломки)
@@ -473,8 +494,10 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
     }
     // Рабочий — наименее занятый из ДОПУЩЕННЫХ к типу выбранного станка
     // (матрица компетенций); тип без матрицы → любой рабочий.
+    // B3: «поставка» (только срок поставщика, без станка) рабочего НЕ занимает —
+    // раньше рабочий блокировался на весь lead time поставщика.
     int wi = -1; double wfree = 0;
-    if (!m.workers.empty()) {
+    if (!m.workers.empty() && j.needsWorker) {
       double bw = 1e300;
       auto scan = [&](int w) { if (wFree[w] < bw) { bw = wFree[w]; wi = w; } };
       const std::string mwct = !chosenM.empty() && m.machineWct.count(chosenM)
@@ -532,6 +555,7 @@ SimOut simulate(const Model& m, const std::vector<Job>& jobs,
     double st = mcal.nextWork(t0);                                       // снап к рабочему времени
     double en = mcal.advance(st, work);                                  // финиш с учётом смен
     o.start[best] = st; o.end[best] = en; o.machineId[best] = chosenM; o.worker[best] = wi;
+    o.setupJ[best] = setup; o.downJ[best] = downtime;
     if (!chosenM.empty()) {
       mFree[chosenM] = en; o.busyByMachine[chosenM] += work; lastProd[chosenM] = j.productId;
       usage[chosenM] += work;
@@ -652,6 +676,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
         sj.durMean = supplyLead * 60.0; sj.sigma = supplyLead * 60.0 * 0.2;
         sj.riskCoef = 0.05; sj.tailWeight = 0.12; sj.tailIndex = 2.0;
         sj.hourRate = 0; sj.laborRate = 0; sj.dueMin = 1e12;
+        sj.needsWorker = false;                                  // B3: срок поставщика — не работа цеха
         int sjIdx = (int)jobs.size(); jobs.push_back(sj);
         for (size_t j = 0; j < jobs.size(); ++j)
           if (jobs[j].orderIdx == k && (int)j != sjIdx && jobs[j].preds.empty())
@@ -672,11 +697,13 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   for (auto& j : jobs) j.dueMin = due[j.orderIdx];
 
   // Индивидуальные календари станков ('8x5'/'12x2'/'24x7' из паспорта ЕО).
+  // B4: распознанный график (в т.ч. '24x7' = без ограничений) кладётся ВСЕГДА;
+  // нераспознанный/пустой → станок работает по общему календарю.
   std::unordered_map<std::string, Calendar> calByM;
   if (p.useCalendar)
     for (auto& [mid, sch] : m.machineSched) {
-      Calendar mc = machine_calendar(sch);
-      if (mc.any) calByM.emplace(mid, std::move(mc));
+      Calendar mc;
+      if (machine_calendar(sch, mc)) calByM.emplace(mid, std::move(mc));
     }
   // Ручные правки Ганта (drag&drop): jobIdx → (не раньше, станок).
   PinMap pinMap;
@@ -701,6 +728,26 @@ json run_schedule(Database& db, const ScheduleParams& p) {
 
   struct RuleEval { std::string rule; double mkDet, mkMean, mkCVaR, mkWorst, tardMean, tardCVaR, setupMin, bdMin = 0, score; };
   std::vector<RuleEval> evals(rules.size());
+  // Монте-Карло-оценка ПРИОРИТЕТНОГО КЛЮЧА на всех N сценариях (общие случайные
+  // числа: одинаковые durMC и seed поломок для любого ключа). Используется и для
+  // сравнения правил, и (B5) для итогового ключа после локального поиска.
+  struct McEval { double mkMean = 0, mkCVaR = 0, mkWorst = 0, tardMean = 0, tardCVaR = 0, bdMin = 0; };
+  auto mcEval = [&](const std::vector<double>& key) {
+    std::vector<double> mks(N), tards(N);
+    double bdSum = 0;
+    for (int s = 0; s < N; ++s) {
+      std::mt19937 brng(p.seed + 7919u * (unsigned)s);   // одинаково для всех ключей
+      SimOut so = simulate(m, jobs, key, durMC[s], cal, calByM, pinMap, &brng);
+      mks[s] = so.makespan; int nl2; tards[s] = order_tardiness(jobs, so, nOrders, due, nl2);
+      bdSum += so.breakdownMinutes;
+    }
+    McEval r;
+    r.mkMean = mean_of(mks); r.mkCVaR = cvar_upper(mks, p.alpha);
+    r.mkWorst = *std::max_element(mks.begin(), mks.end());
+    r.tardMean = mean_of(tards); r.tardCVaR = cvar_upper(tards, p.alpha);
+    r.bdMin = bdSum / N;
+    return r;
+  };
   // Правила НЕЗАВИСИМЫ (общие durMC read-only) — оцениваем параллельно по потокам:
   // 7 правил × (1+N) симуляций раньше шли строго последовательно.
   {
@@ -709,18 +756,10 @@ json run_schedule(Database& db, const ScheduleParams& p) {
       auto key = priorities(rule, jobs, orderWork, p.customRule);
       SimOut det = simulate(m, jobs, key, durMean, cal, calByM, pinMap);
       int nl; double tardDet = order_tardiness(jobs, det, nOrders, due, nl);
-      std::vector<double> mks(N), tards(N);
-      double bdSum = 0;
-      for (int s = 0; s < N; ++s) {
-        std::mt19937 brng(p.seed + 7919u * (unsigned)s);   // одинаково для всех правил
-        SimOut so = simulate(m, jobs, key, durMC[s], cal, calByM, pinMap, &brng);
-        mks[s] = so.makespan; int nl2; tards[s] = order_tardiness(jobs, so, nOrders, due, nl2);
-        bdSum += so.breakdownMinutes;
-      }
-      RuleEval e; e.rule = rule; e.mkDet = det.makespan; e.bdMin = bdSum / N;
-      e.mkMean = mean_of(mks); e.mkCVaR = cvar_upper(mks, p.alpha);
-      e.mkWorst = *std::max_element(mks.begin(), mks.end());
-      e.tardMean = mean_of(tards); e.tardCVaR = cvar_upper(tards, p.alpha);
+      const McEval mc = mcEval(key);
+      RuleEval e; e.rule = rule; e.mkDet = det.makespan; e.bdMin = mc.bdMin;
+      e.mkMean = mc.mkMean; e.mkCVaR = mc.mkCVaR; e.mkWorst = mc.mkWorst;
+      e.tardMean = mc.tardMean; e.tardCVaR = mc.tardCVaR;
       e.setupMin = det.setupMinutes;
       // Целевая F = w_time·ВРЕМЯ + w_cost·СТОИМОСТЬ + w_risk·РИСК + просрочка
       // («Требования к оптимизации» §3). Стоимостная компонента — минуты
@@ -745,6 +784,7 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // диспетч-правило — только стартовая точка). Возмущаем приоритеты шумом,
   // оцениваем score на подвыборке сценариев, принимаем улучшения (hill climbing).
   json improverJson = nullptr;
+  bool keyImproved = false;                              // ключ изменён локальным поиском
   {
     const int IT = ((int)jobs.size() > 3000) ? 0 : std::max(0, p.improveIters);
     if (IT > 0) {
@@ -779,18 +819,30 @@ json run_schedule(Database& db, const ScheduleParams& p) {
         double sc = scoreOf(candK);
         if (sc < cur) { cur = sc; bestKey = std::move(candK); ++accepted; }
       }
-      if (accepted > 0) key = bestKey;
+      if (accepted > 0) { key = bestKey; keyImproved = true; }
       improverJson = { {"iterations", IT}, {"accepted", accepted},
                        {"score_before", before}, {"score_after", cur},
                        {"improvement_pct", before > 0 ? (before - cur) / before * 100.0 : 0.0} };
     }
   }
 
+  // B5: риск-KPI (E/CVaR/худший makespan, CVaR просрочки, поломки) — Монте-Карло
+  // ИТОГОВОГО ключа (того же, что даёт Ганта), на всех N сценариях. Раньше они
+  // брались у правила ДО локального поиска и не относились к показанному плану.
+  // Если ключ не менялся — оценка правила и есть оценка итогового ключа (те же CRN).
+  const McEval finalMc = keyImproved ? mcEval(key) : McEval{
+    evals[bestR].mkMean, evals[bestR].mkCVaR, evals[bestR].mkWorst,
+    evals[bestR].tardMean, evals[bestR].tardCVaR, evals[bestR].bdMin };
+
   SimOut sched = simulate(m, jobs, key, durMean, cal, calByM, pinMap);
   double makespan = sched.makespan;
   int nLate = 0; double tardiness = order_tardiness(jobs, sched, nOrders, due, nLate);
 
   auto H = [](double minutes) { return minutes / 60.0; };  // мин → часы
+  if (!improverJson.is_null()) {                       // эффект локального поиска на E[Cmax]
+    improverJson["makespan_mean_rule"]  = H(evals[bestR].mkMean);
+    improverJson["makespan_mean_final"] = H(finalMc.mkMean);
+  }
 
   // Гантт.
   json gantt = json::array();
@@ -818,6 +870,9 @@ json run_schedule(Database& db, const ScheduleParams& p) {
                       ? m.workers[sched.worker[i]].name : std::string()},
       {"start", H(sched.start[i])}, {"end", H(sched.end[i])},
       {"due", H(j.dueMin)}, {"late", late},
+      // B9: разложение занятости джобы — обработка (продуктивное время), наладка, простой (ТО/ремонт).
+      {"proc_hours", isSupply ? 0.0 : H(durMean[i])},
+      {"setup_hours", H(sched.setupJ[i])}, {"downtime_hours", H(sched.downJ[i])},
     });
   }
 
@@ -864,27 +919,51 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     }
   }
 
-  // Загрузка станков + простои. Фонд = рабочее время в [0, makespan] (без выходных/смен).
-  double fond = working_span(cal, makespan);
-  json machineLoad = json::array(); double totalBusy = 0, totalCap = 0;
-  std::unordered_map<std::string,double> wcBusy, wcCap;
+  // ── Загрузка (B9, AUDIT §4.2, ISO 22400 APT/фонд): ЕДИНОЕ определение
+  //    utilization = Σ продуктивного времени ресурса / Σ его КАЛЕНДАРНОГО фонда за
+  //    горизонт [0, makespan]. Продуктивное время станка = обработка; наладка и
+  //    простой (плановое ТО + ремонт) НЕ входят в занятость и даются отдельно, так что
+  //    фонд = обработка + наладка + простой + свободное время. Фонд станка — по ЕГО
+  //    календарю (индивидуальный график, иначе общий; без календаря — 24×7).
+  double fond = working_span(cal, makespan);           // фонд общего календаря (рабочие)
+  std::unordered_map<std::string,double> procM, setupM, downM;   // станок → мин
+  std::vector<double> prodW(m.workers.size(), 0);                 // рабочий → мин
+  for (size_t i = 0; i < jobs.size(); ++i) {
+    const std::string& mid = sched.machineId[i];
+    if (!mid.empty()) { procM[mid] += durMean[i]; setupM[mid] += sched.setupJ[i]; downM[mid] += sched.downJ[i]; }
+    // Рабочий выполняет обработку и наладку; ТО/ремонт — простой станка, не работа рабочего.
+    const int w = sched.worker[i];
+    if (w >= 0 && w < (int)prodW.size()) prodW[w] += durMean[i] + sched.setupJ[i];
+  }
+  auto getm = [](const std::unordered_map<std::string,double>& mp, const std::string& k) {
+    auto it = mp.find(k); return it != mp.end() ? it->second : 0.0; };
+  json machineLoad = json::array();
+  double totalBusy = 0, totalCap = 0, totalSetup = 0, totalDown = 0, totalIdle = 0;
+  std::unordered_map<std::string,double> wcBusy, wcCap, wcSetup, wcDown, wcIdle;
   for (auto& [wct, mids] : m.machinesOf) for (auto& mid : mids) {
-    double busy = sched.busyByMachine.count(mid)?sched.busyByMachine[mid]:0;
-    double util = fond > 0 ? busy / fond : 0;
+    const double busy = getm(procM, mid), su = getm(setupM, mid), dn = getm(downM, mid);
+    const Calendar& mcal = calByM.count(mid) ? calByM.at(mid) : cal;
+    const double fund = working_span(mcal, makespan);
+    const double idle = std::max(0.0, fund - busy - su - dn);
     machineLoad.push_back({ {"machine_id", mid}, {"machine_name", m.machineName[mid]},
       {"wc_type_id", wct}, {"wc_name", m.wcName.count(wct)?m.wcName[wct]:wct},
-      {"busy_hours", H(busy)}, {"idle_hours", H(std::max(0.0, fond - busy))}, {"utilization", util} });
-    totalBusy += busy; totalCap += fond; wcBusy[wct] += busy; wcCap[wct] += fond;
+      {"busy_hours", H(busy)}, {"idle_hours", H(idle)}, {"utilization", fund > 0 ? busy / fund : 0},
+      {"setup_hours", H(su)}, {"downtime_hours", H(dn)}, {"fund_hours", H(fund)} });
+    totalBusy += busy; totalCap += fund; totalSetup += su; totalDown += dn; totalIdle += idle;
+    wcBusy[wct] += busy; wcCap[wct] += fund; wcSetup[wct] += su; wcDown[wct] += dn; wcIdle[wct] += idle;
   }
   json wcLoad = json::array(); std::string bottleneck; double bnUtil = -1;
   for (auto& [wct, cap] : wcCap) {
     double util = cap > 0 ? wcBusy[wct] / cap : 0;
     wcLoad.push_back({ {"wc_type_id", wct}, {"wc_name", m.wcName.count(wct)?m.wcName[wct]:wct},
-      {"busy_hours", H(wcBusy[wct])}, {"idle_hours", H(cap - wcBusy[wct])}, {"utilization", util} });
+      {"busy_hours", H(wcBusy[wct])}, {"idle_hours", H(wcIdle[wct])}, {"utilization", util},
+      {"setup_hours", H(wcSetup[wct])}, {"downtime_hours", H(wcDown[wct])}, {"fund_hours", H(cap)} });
     if (util > bnUtil) { bnUtil = util; bottleneck = wct; }
   }
 
-  // Планы рабочих + простои людей.
+  // Планы рабочих + простои людей. Фонд рабочего — общий сменный календарь (своих
+  // графиков у рабочих в модели нет); при работе на станке 24×7 вне смен загрузка
+  // может превысить 1 — это сверхурочные относительно графика, а не ошибка формулы.
   json workerPlan = json::array();
   for (size_t w = 0; w < m.workers.size(); ++w) {
     json js = json::array(); int cnt = 0;
@@ -892,10 +971,11 @@ json run_schedule(Database& db, const ScheduleParams& p) {
       js.push_back({ {"op_name", jobs[i].opName}, {"product_id", jobs[i].productId},
         {"start", H(sched.start[i])}, {"end", H(sched.end[i])} }); ++cnt;
     }
-    double busy = w < sched.busyByWorker.size() ? sched.busyByWorker[w] : 0;
+    const double busy = prodW[w];
     workerPlan.push_back({ {"worker_id", m.workers[w].id}, {"name", m.workers[w].name},
       {"jobs", js}, {"job_count", cnt}, {"busy_hours", H(busy)},
-      {"idle_hours", H(makespan - busy)}, {"utilization", makespan>0?busy/makespan:0} });
+      {"idle_hours", H(std::max(0.0, fond - busy))}, {"utilization", fond > 0 ? busy / fond : 0},
+      {"fund_hours", H(fond)} });
   }
 
   // ── Дополнительные KPI (стандарт APS: flow time, ожидание, НЗП, проходка) ──
@@ -916,10 +996,14 @@ json run_schedule(Database& db, const ScheduleParams& p) {
       qtySum  += std::max(1.0, program[k2].qty);
     }
   }
+  // B10, единицы (AUDIT §4.2): throughput — ЕДИНИЦ ПРОДУКЦИИ в сутки; wip_avg —
+  // среднее число ЗАКАЗОВ в системе = Σ времени потока / Cmax; orders_per_day —
+  // интенсивность λ (заказов в сутки). Закон Литтла: wip_avg = λ · W, W = flow_time_mean.
   const double flowMeanH = nOrders > 0 ? flowSum / nOrders / 60.0 : 0;
   const double waitShare = (waitSum + procSum) > 0 ? waitSum / (waitSum + procSum) : 0;
   const double wipAvg    = makespan > 0 ? wipArea / makespan : 0;
   const double thruDay   = makespan > 0 ? qtySum / (makespan / 60.0 / 24.0) : 0;
+  const double ordersDay = makespan > 0 ? nOrders / (makespan / 60.0 / 24.0) : 0;
 
   json rulesJson = json::array();
   for (auto& e : evals) rulesJson.push_back({
@@ -927,7 +1011,6 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     {"makespan_worst", H(e.mkWorst)}, {"tardiness", H(e.tardMean)}, {"score", e.score},
     {"chosen", e.rule == chosenRule} });
 
-  const RuleEval& be = evals[bestR];
   double cost = 0; for (size_t i = 0; i < jobs.size(); ++i)
     cost += (durMean[i] / 60.0) * (jobs[i].hourRate + jobs[i].laborRate);
   cost += sched.setupCost;                              // переналадки — тоже деньги
@@ -961,9 +1044,9 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // Осуществимость связки стадий: вписывается ли программа портфеля в горизонт,
   // под который Стадия 2 резервировала мощность.
   if (portfolioHorizon > 0) {
-    if (H(be.mkCVaR) > portfolioHorizon)
+    if (H(finalMc.mkCVaR) > portfolioHorizon)
       warnings.push_back("Портфель НЕ вписывается в горизонт прогона с учётом риска: CVaR makespan "
-                         + std::to_string((int)std::lround(H(be.mkCVaR))) + " ч > "
+                         + std::to_string((int)std::lround(H(finalMc.mkCVaR))) + " ч > "
                          + std::to_string((int)std::lround(portfolioHorizon)) + " ч.");
     else if (H(makespan) > portfolioHorizon)
       warnings.push_back("Детерминированный план превышает горизонт прогона ("
@@ -986,20 +1069,28 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     {"machine_load", machineLoad}, {"wc_load", wcLoad}, {"worker_plan", workerPlan},
     {"bottleneck", { {"wc_type_id", bottleneck}, {"wc_name", m.wcName.count(bottleneck)?m.wcName[bottleneck]:bottleneck},
                      {"utilization", bnUtil} }},
-    {"idle", { {"machine_idle_hours", H(totalCap - totalBusy)},
+    {"idle", { {"machine_idle_hours", H(totalIdle)},
                {"machine_utilization", totalCap>0?totalBusy/totalCap:0} }},
-    {"calendar", { {"enabled", cal.any}, {"work_fond_hours", H(fond)} }},
+    {"calendar", { {"enabled", cal.any}, {"work_fond_hours", H(fond)},
+                   {"machine_fund_hours", H(totalCap)} }},
     {"kpi", {
-      {"makespan", H(makespan)}, {"makespan_mean", H(be.mkMean)}, {"makespan_cvar", H(be.mkCVaR)},
-      {"makespan_worst", H(be.mkWorst)}, {"tardiness", H(tardiness)}, {"tardiness_cvar", H(be.tardCVaR)},
+      {"makespan", H(makespan)}, {"makespan_mean", H(finalMc.mkMean)}, {"makespan_cvar", H(finalMc.mkCVaR)},
+      {"makespan_worst", H(finalMc.mkWorst)}, {"tardiness", H(tardiness)}, {"tardiness_cvar", H(finalMc.tardCVaR)},
       {"n_late", nLate}, {"otd", nOrders>0 ? (double)(nOrders - nLate) / nOrders : 1.0},
       {"utilization", totalCap>0?totalBusy/totalCap:0}, {"cost", cost},
       {"labor_cost", laborCost},
       {"n_setups", sched.nSetups}, {"setup_hours", H(sched.setupMinutes)},
       {"maintenance_hours", H(sched.maintMinutes)},
-      {"breakdown_hours_mean", H(evals[bestR].bdMin)},
+      {"breakdown_hours_mean", H(finalMc.bdMin)},
       {"flow_time_mean_h", flowMeanH}, {"wait_share", waitShare},
-      {"wip_avg", wipAvg}, {"throughput_per_day", thruDay} }},
+      {"wip_avg", wipAvg}, {"throughput_per_day", thruDay},
+      // Новые поля (AUDIT §4.2): знаменатель — Σ календарного фонда станков.
+      {"machine_fund_hours", H(totalCap)},
+      {"setup_share", totalCap > 0 ? totalSetup / totalCap : 0.0},
+      // Коэффициент готовности (оценка): 1 − (плановое ТО детерм. плана + E[ремонт] МК) / Σ фонда.
+      {"availability", totalCap > 0
+          ? std::max(0.0, 1.0 - (sched.maintMinutes + finalMc.bdMin) / totalCap) : 1.0},
+      {"orders_per_day", ordersDay} }},
     {"portfolio_horizon_hours", portfolioHorizon},
     {"n_pins", (int)pinMap.size()},
     {"improver", improverJson},

@@ -1,67 +1,244 @@
 /*
- * MAOS design tokens — Palantir Blueprint, dark-first.
- * Exact hex values per «Требования к UI, дизайн-система Palantir и логика окон».
- * Light theme is opt-in via [data-theme="light"] on <html>.
+ * MAOS design tokens — «Конструктивный Кандинский» (docs/research/A6-visual-direction.md).
+ * Dark-first: ultramarine-tinted ink ground (h 268) + warm bone text (h 85).
+ * Light theme: [data-theme='light'] on <html> (paper h 85 / ink h 268).
+ * Contract: docs/AUDIT-2026-10.md §4.1 — names are stable, values may evolve.
+ * Every colour is OKLCH; the sRGB hex is given in the comment.
+ * Contrast is quoted against app / panel / card / elevated (WCAG 2.x).
  */
 :root {
-  /* Surfaces — Blueprint dark-gray ladder */
-  --bg-app: #111418; /* Black — canvas / app background */
-  --bg-panel: #1c2127; /* Dark Gray1 — docks / panels */
-  --bg-card: #252a31; /* Dark Gray2 — cards / table rows */
-  --bg-input: #2f343c; /* Dark Gray3 — inputs / hover */
-  --border: #383e47; /* Dark Gray4 — dividers */
-  --border-strong: #404854; /* Dark Gray5 — stronger borders */
+  color-scheme: dark;
 
-  /* Text */
-  --text: #f6f7f9; /* Light Gray5 */
-  --text-secondary: #abb3bf; /* Gray4 */
-  --text-muted: #8f99a8; /* Gray3 */
-  --text-disabled: #5f6b7c; /* Gray1 */
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --bg-app: oklch(0.170 0.014 268); /* #0d0f16 canvas, 3D scene background */
+  --bg-panel: oklch(0.200 0.015 268); /* #13161d docks, rail, top bar */
+  --bg-card: oklch(0.235 0.016 268); /* #1b1e26 cards, table rows */
+  --bg-elevated: oklch(0.275 0.017 268); /* #242730 popovers, menus */
+  --bg-input: oklch(0.255 0.016 268); /* #1f232b inputs, quiet buttons */
+  --bg-hover: oklch(0.295 0.018 268); /* #292c36 hover wash on any surface */
+  --border: oklch(0.33 0.016 268); /* #32353e decorative dividers 1.4–1.6 */
+  --border-strong: oklch(0.42 0.016 268); /* #494d56 stronger dividers 1.8–2.3 */
+  --border-control: oklch(0.56 0.020 268); /* #6f7481 input boundaries 4.1/3.9/3.6/3.2 (1.4.11) */
+  --scrim: oklch(0.10 0.02 268 / 0.66); /* modal scrim — no backdrop-filter over WebGL */
 
-  /* Accent — cobalt */
-  --accent: #2d72d2; /* Blue3 */
-  --accent-hover: #215db0; /* Blue2 */
-  --accent-active: #184a90; /* Blue1 */
-  --focus: #8abbff; /* Blue5 — focus ring / links on dark */
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --text: oklch(0.95 0.012 85); /* #f2eee6 bone 16.5/15.6/14.4/12.8 */
+  --text-secondary: oklch(0.82 0.012 85); /* #c8c4bc 11.0/10.4/9.6/8.5 */
+  --text-muted: oklch(0.70 0.014 268); /* #9b9ea7 7.2/6.8/6.2/5.6 */
+  --text-disabled: oklch(0.52 0.014 268); /* #656971 3.5–2.7 (exempt) */
 
-  /* Intent / status (shared with data-viz and plan-fact) */
-  --intent-success: #238551; /* on time / running */
-  --intent-warning: #c87619; /* setup */
-  --intent-danger: #cd4246; /* overdue / down */
-  --intent-info: #2d72d2; /* highlight / critical path */
+  /* ── Accent — ultramarine ─────────────────────────────────────────────── */
+  --accent: oklch(0.56 0.200 268); /* #4366e8 fill; white on it 4.89 */
+  --accent-hover: oklch(0.62 0.190 268); /* #567bf7 link hover 5.1/4.8/4.4/3.9 */
+  --accent-active: oklch(0.50 0.195 268); /* #3554d0 pressed fill; white on it 6.3 */
+  --accent-text: oklch(0.76 0.120 268); /* #90aefe links, active icons 8.8/8.3/7.7/6.8 */
+  --on-accent: oklch(1 0 0); /* #ffffff text on --accent / solid badges */
+  --focus: var(--accent-text); /* focus ring colour */
 
-  /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', sans-serif;
-  --font-mono: 'SF Mono', Monaco, Inconsolata, 'Fira Mono', monospace;
+  /* ── Brand (Kandinsky set). Dark values are text-safe except oxblood ──── */
+  --ultramarine: oklch(0.56 0.200 268); /* #4366e8 ● system / model */
+  --ochre: oklch(0.79 0.140 80); /* #e9af41 ▲ objective, highlight 9.8/9.2/8.5/7.6 */
+  --ochre-fill: oklch(0.79 0.140 80); /* #e9af41 large ochre fills (marks, badges) */
+  --cinnabar: oklch(0.66 0.180 33); /* #eb5e43 ■ brand red, risk 5.7/5.4/5.0/4.4 */
+  --verdigris: oklch(0.76 0.110 175); /* #58c8ad feasible, healthy 9.4/8.9/8.2/7.3 */
+  --oxblood: oklch(0.42 0.130 22); /* #86262b illustration only (2.1 vs ground) */
+  --bone: oklch(0.95 0.012 85); /* #f2eee6 constant light pole (both themes) */
+  --ink: oklch(0.22 0.020 268); /* #171a24 constant dark pole (both themes) */
 
-  /* Geometry — Blueprint grid 10px, radius 2–3px */
-  --grid: 10px;
-  --radius: 2px;
-  --radius-lg: 3px;
+  /* ── Status: colour + glyph (● ▲ ○ ■), never colour alone ─────────────── */
+  --status-running: oklch(0.76 0.150 152); /* #5bcc80 ● 9.5/9.0/8.2/7.3 */
+  --status-setup: oklch(0.80 0.150 78); /* #f2b036 ▲ 10.1/9.5/8.8/7.8 */
+  --status-idle: oklch(0.70 0.030 268); /* #969eb2 ○ 7.2/6.8/6.2/5.6 */
+  --status-down: oklch(0.68 0.190 27); /* #f75e54 ■ 6.1/5.8/5.3/4.7 */
+  --status-info: oklch(0.74 0.130 258); /* #76acfc ◆ 8.3/7.8/7.2/6.4 */
+  --status-running-solid: oklch(0.48 0.120 152); /* #10703a badge fill + white 6.2 */
+  --status-down-solid: oklch(0.52 0.190 27); /* #be2323 badge fill + white 6.1 */
 
-  /* Control heights */
+  /* ── Charts (fill slots 1–6 first; all ≥3:1 vs card; min CVD ΔE 8.3) ─── */
+  --chart-1: oklch(0.62 0.17 262); /* #4a81eb ultramarine */
+  --chart-2: oklch(0.78 0.15 75); /* #efa831 ochre */
+  --chart-3: oklch(0.70 0.11 172); /* #47b497 verdigris */
+  --chart-4: oklch(0.62 0.18 38); /* #dc5426 cinnabar */
+  --chart-5: oklch(0.84 0.08 232); /* #95d4f6 sky */
+  --chart-6: oklch(0.54 0.15 318); /* #924da6 violet */
+  --chart-7: oklch(0.91 0.16 104); /* #f3e657 lemon */
+  --chart-8: oklch(0.60 0.01 85); /* #83807a grey «прочее» */
+  --chart-other: var(--chart-8);
+  --chart-grid: oklch(0.29 0.014 268); /* #282b33 gridlines */
+  --chart-axis: oklch(0.50 0.016 268); /* #5f636d axis lines/ticks; labels use --text-muted */
+
+  /* ── Typography (self-hosted @fontsource-variable, see main.tsx) ──────── */
+  --font-sans: 'Onest Variable', 'Onest', system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', sans-serif;
+  --font-display: 'Unbounded Variable', 'Unbounded', 'Onest Variable', system-ui,
+    sans-serif; /* headings ≥ 20px only */
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono',
+    Menlo, Consolas, monospace;
+  --fs-11: 11px; /* caps labels, 600, +0.06em */
+  --fs-12: 12px; /* meta */
+  --fs-13: 13px; /* body, tables */
+  --fs-14: 14px; /* forms */
+  --fs-16: 16px; /* panel titles */
+  --fs-20: 20px; /* screen titles, Unbounded 500 */
+  --fs-24: 24px;
+  --fs-32: 32px; /* KPI hero, Onest 300 */
+  --fs-44: 44px; /* login display, Unbounded 300 */
+  --lh-body: 1.45;
+  --lh-display: 1.15;
+
+  /* ── Spacing (4px base; Blueprint density) ────────────────────────────── */
+  --grid: 10px; /* legacy Blueprint grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ── Radii ────────────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* ── Elevation: ink-tinted depth; modals get an ultramarine halo ──────── */
+  --shadow-1: 0 1px 2px oklch(0.08 0.02 268 / 0.45);
+  --shadow-2: 0 4px 14px oklch(0.08 0.02 268 / 0.50), 0 1px 3px oklch(0.08 0.02 268 / 0.40);
+  --shadow-3: 0 24px 64px oklch(0.06 0.03 268 / 0.62), 0 2px 8px oklch(0.06 0.02 268 / 0.40),
+    0 0 0 1px oklch(0.62 0.12 268 / 0.10), 0 0 48px oklch(0.56 0.20 268 / 0.10);
+  --halo: 0 0 0 1px var(--focus), 0 0 0 4px oklch(0.56 0.200 268 / 0.32);
+  --halo-danger: 0 0 0 1px var(--intent-danger), 0 0 0 4px oklch(0.68 0.190 27 / 0.28);
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 360ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ── Layers ───────────────────────────────────────────────────────────── */
+  --z-overlay: 100; /* in-screen floating panels, dropdowns */
+  --z-modal: 200; /* modal scrim + dialog */
+  --z-popover: 300; /* popovers / «i» tips — above modals */
+  --z-toast: 400;
+
+  /* ── Atmosphere (login / empty states only; never over data) ──────────── */
+  --aurora-1: oklch(0.32 0.13 268); /* #182974 ultramarine */
+  --aurora-2: oklch(0.30 0.10 22); /* #551015 oxblood */
+  --aurora-3: oklch(0.36 0.08 75); /* #553600 ochre */
+  --theme-color: #0d0f16; /* = --bg-app, literal for <meta name="theme-color"> */
+
+  /* ── Controls & shell layout ──────────────────────────────────────────── */
   --control-compact: 24px;
   --control: 30px;
   --control-large: 40px;
-
-  /* Shell layout */
-  --rail-w: 56px;
+  --rail-w: 80px;
   --topbar-h: 48px;
   --statusbar-h: 28px;
   --inspector-w: 320px;
 }
 
-[data-theme='light'] {
-  --bg-app: #f6f7f9;
-  --bg-panel: #edeff2;
-  --bg-card: #e5e8eb;
-  --bg-input: #ffffff;
-  --border: #d3d8de;
-  --border-strong: #c5cbd3;
+/*
+ * Aliases resolve wherever a theme is declared, so they follow the theme
+ * (a var() alias declared only on :root would freeze the dark value).
+ */
+:root,
+[data-theme] {
+  --surface: var(--bg-card);
+  --surface-2: var(--bg-elevated);
+  --surface-3: var(--bg-input);
+  --intent-success: var(--status-running);
+  --intent-warning: var(--status-setup);
+  --intent-danger: var(--status-down);
+  --intent-info: var(--status-info);
+  --danger: var(--intent-danger);
+  --grad-brand: linear-gradient(
+    90deg,
+    var(--ultramarine) 0%,
+    var(--ultramarine) 12%,
+    color-mix(in oklch, var(--ultramarine) 50%, var(--ochre)) 56%,
+    var(--ochre) 100%
+  );
+}
 
-  --text: #1c2127;
-  --text-secondary: #404854;
-  --text-muted: #5f6b7c;
-  --text-disabled: #abb3bf;
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surfaces — paper h 85 */
+  --bg-app: oklch(0.970 0.008 85); /* #f8f5ef */
+  --bg-panel: oklch(0.945 0.010 85); /* #f0ece5 */
+  --bg-card: oklch(0.995 0.004 85); /* #fffdfa */
+  --bg-elevated: oklch(1 0 0); /* #ffffff */
+  --bg-input: oklch(0.995 0.004 85); /* #fffdfa */
+  --bg-hover: oklch(0.925 0.012 85); /* #eae6dd */
+  --border: oklch(0.89 0.010 85); /* #dedad3 */
+  --border-strong: oklch(0.80 0.012 85); /* #c1bdb5 */
+  --border-control: oklch(0.62 0.016 268); /* #828690 3.3/3.1/3.6/3.6 */
+  --scrim: oklch(0.22 0.02 268 / 0.34);
+
+  /* Text — ink h 268 */
+  --text: oklch(0.22 0.020 268); /* #171a24 15.9/14.8/17.1/17.3 */
+  --text-secondary: oklch(0.38 0.018 268); /* #3e424c 9.2/8.5/9.9/10.0 */
+  --text-muted: oklch(0.49 0.016 268); /* #5c606a 5.8/5.3/6.2/6.3 */
+  --text-disabled: oklch(0.66 0.012 268); /* #8f929a (exempt) */
+
+  /* Accent */
+  --accent: oklch(0.50 0.21 268); /* #3250d8 fill + link; white on it 6.4 */
+  --accent-hover: oklch(0.45 0.20 268); /* #2942c2 */
+  --accent-active: oklch(0.40 0.18 268); /* #2137a6 */
+  --accent-text: oklch(0.50 0.21 268); /* #3250d8 5.9/5.4/6.3/6.4 */
+  --focus: var(--accent);
+
+  /* Brand — text-safe on paper (≥4.6) */
+  --ultramarine: oklch(0.50 0.21 268); /* #3250d8 */
+  --ochre: oklch(0.53 0.115 70); /* #955e00 5.0/4.6/5.3/5.4 */
+  --ochre-fill: oklch(0.64 0.140 66); /* #c4780b fills only (3.2 vs paper) */
+  --cinnabar: oklch(0.54 0.18 32); /* #c1351e 5.1/4.7/5.5/5.5 */
+  --verdigris: oklch(0.50 0.09 175); /* #107460 5.2/4.9/5.6/5.7 */
+  --oxblood: oklch(0.42 0.13 22); /* #86262b 8.3 */
+
+  /* Status */
+  --status-running: oklch(0.50 0.125 152); /* #12773d 5.2/4.8/5.6/5.7 */
+  --status-setup: oklch(0.66 0.14 70); /* #c8800d 2.9–3.2: glyph gets an ink outline */
+  --status-idle: oklch(0.50 0.02 268); /* #5e636f 5.5/5.1/5.9/6.0 */
+  --status-down: oklch(0.50 0.19 27); /* #b7191c 6.1/5.6/6.5/6.6 */
+  --status-info: oklch(0.50 0.15 258); /* #2460b7 5.6/5.2/6.0/6.1 */
+  --status-running-solid: oklch(0.48 0.120 152); /* #10703a */
+  --status-down-solid: oklch(0.52 0.190 27); /* #be2323 */
+
+  /* Charts — core 6 ≥3:1 vs white, min CVD ΔE 8.9; slot 8 «прочее» draw hatched */
+  --chart-1: oklch(0.48 0.20 268); /* #304ccc */
+  --chart-2: oklch(0.67 0.14 68); /* #cd821a */
+  --chart-3: oklch(0.56 0.10 170); /* #22876b */
+  --chart-4: oklch(0.57 0.19 34); /* #cf3b18 */
+  --chart-5: oklch(0.66 0.10 232); /* #4a9dc5 */
+  --chart-6: oklch(0.42 0.15 318); /* #6d2981 */
+  --chart-7: oklch(0.36 0.09 22); /* #642627 oxblood */
+  --chart-8: oklch(0.62 0.008 85); /* #888681 grey «прочее» */
+  --chart-grid: oklch(0.91 0.008 85); /* #e4e1db */
+  --chart-axis: oklch(0.66 0.014 268); /* #8e929b */
+
+  /* Elevation — softer, ink-tinted */
+  --shadow-1: 0 1px 2px oklch(0.22 0.02 268 / 0.10);
+  --shadow-2: 0 4px 14px oklch(0.22 0.02 268 / 0.10), 0 1px 3px oklch(0.22 0.02 268 / 0.08);
+  --shadow-3: 0 24px 64px oklch(0.22 0.03 268 / 0.18), 0 2px 8px oklch(0.22 0.02 268 / 0.08),
+    0 0 0 1px oklch(0.50 0.21 268 / 0.06);
+  --halo: 0 0 0 1px var(--focus), 0 0 0 4px oklch(0.50 0.21 268 / 0.22);
+  --halo-danger: 0 0 0 1px var(--intent-danger), 0 0 0 4px oklch(0.50 0.19 27 / 0.20);
+
+  /* Atmosphere */
+  --aurora-1: oklch(0.88 0.06 268); /* #c6d7ff */
+  --aurora-2: oklch(0.90 0.05 22); /* #fed2cf */
+  --aurora-3: oklch(0.92 0.07 80); /* #fde0b0 */
+  --theme-color: #f8f5ef;
+}
+
+/* Users who ask for less motion get instant UI transitions. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+  }
 }

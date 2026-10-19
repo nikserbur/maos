@@ -1,5 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../../lib/api'
+import { Backdrop } from '../../brand/Backdrop'
+import { Lockup, MarkCircles } from '../../brand/Logo'
+import './auth.css'
 
 interface LoginScreenProps {
   onLogin: () => void
@@ -44,101 +47,101 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   }
 
   return (
-    <div style={{
-      height: '100dvh', display: 'grid', placeItems: 'center',
-      background: 'var(--bg-app)',
-    }}>
-      <div style={{
-        width: 380, display: 'flex', flexDirection: 'column', gap: 32,
-        padding: '40px 40px 48px',
-        background: 'var(--bg-panel)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: '0 24px 64px rgba(0,0,0,.6)',
-      }}>
-        {/* Logo / title */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 8,
-              background: 'var(--accent)',
-              display: 'grid', placeItems: 'center',
-              fontWeight: 800, fontSize: 18, color: '#fff',
-            }}>M</div>
-            <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.5px' }}>
-              MAOS
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Система управления производством.<br />
-            Введите учётные данные для доступа к базе.
+    <div className="login-screen">
+      <Backdrop variant="login" />
+
+      <div className="login">
+        {/* Бренд-момент: «Несколько кругов» — мир → завод → цех; линза — план встречает факт. */}
+        <section className="login__hero" aria-labelledby="login-display">
+          <MarkCircles drift size={220} className="login__mark" />
+          <p className="login__eyebrow text-caps">MAOS · мониторинг и оптимизация производства</p>
+          <h1 className="login__display" id="login-display">Цифровой двойник производства</h1>
+          <p className="login__lede">
+            Прозрачная стохастическая модель предприятия: от схемы цехов и справочников —
+            к устойчивому портфелю и расписанию.
+          </p>
+          <ul className="login__triad" aria-label="Язык схем">
+            <li><i className="login__g login__g--sys" aria-hidden="true" />система</li>
+            <li><i className="login__g login__g--res" aria-hidden="true" />ресурс</li>
+            <li><i className="login__g login__g--obj" aria-hidden="true" />цель</li>
+          </ul>
+        </section>
+
+        <div className="login__card">
+          <header className="login__head">
+            <Lockup height={30} />
+            <h2 className="login__title">Вход в систему</h2>
+            <p className="login__intro">
+              Система управления производством.<br />
+              Введите учётные данные для доступа к базе.
+            </p>
+          </header>
+
+          <form className="login__form" onSubmit={handleSubmit} noValidate>
+            <div className="form__field">
+              <label className="form__label" htmlFor="login-db">Проект (производство)</label>
+              <select id="login-db" className="form__input" value={db} onChange={e => setDb(e.target.value)}>
+                {projects.map((p) => <option key={p} value={p}>{p.replace(/\.db$/, '')}</option>)}
+                <option value="__new__">+ Новый проект…</option>
+              </select>
+              {db === '__new__' && (
+                <input className="form__input login__new" value={newName}
+                       onChange={e => setNewName(e.target.value)}
+                       placeholder="Название нового производства"
+                       aria-label="Название нового производства" />
+              )}
+              <span className="form__hint">
+                Каждый проект — отдельная БД (SQLite WAL); новый создаётся с демо-данными
+              </span>
+            </div>
+
+            <div className="form__field">
+              <label className="form__label" htmlFor="login-user">Логин</label>
+              <input
+                id="login-user"
+                className="form__input"
+                value={login}
+                onChange={e => setLogin(e.target.value)}
+                placeholder="admin"
+                autoComplete="username"
+              />
+            </div>
+
+            <div className="form__field">
+              <label className="form__label" htmlFor="login-pass">Пароль / ключ шифрования</label>
+              <input
+                id="login-pass"
+                className="form__input"
+                type="password"
+                value={pass}
+                onChange={e => setPass(e.target.value)}
+                placeholder="•••••••••"
+                autoComplete="current-password"
+              />
+            </div>
+
+            {error && (
+              <div className="login__error" role="alert">
+                <span className="glyph-down" aria-hidden="true" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="btn btn--primary btn--lg btn--block login__submit"
+              disabled={loading}
+              aria-busy={loading}
+            >
+              {loading && <span className="login__spinner" aria-hidden="true" />}
+              {loading ? 'Подключение…' : 'Войти'}
+            </button>
+          </form>
+
+          <p className="login__footer">
+            MAOS v0.59.0 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="form__field">
-            <label className="form__label">Проект (производство)</label>
-            <select className="form__input" value={db} onChange={e => setDb(e.target.value)}>
-              {projects.map((p) => <option key={p} value={p}>{p.replace(/\.db$/, '')}</option>)}
-              <option value="__new__">+ Новый проект…</option>
-            </select>
-            {db === '__new__' && (
-              <input className="form__input" style={{ marginTop: 6 }} value={newName}
-                     onChange={e => setNewName(e.target.value)}
-                     placeholder="Название нового производства" />
-            )}
-            <span className="form__hint">
-              Каждый проект — отдельная БД (SQLite WAL); новый создаётся с демо-данными
-            </span>
-          </div>
-
-          <div className="form__field">
-            <label className="form__label">Логин</label>
-            <input
-              className="form__input"
-              value={login}
-              onChange={e => setLogin(e.target.value)}
-              placeholder="admin"
-              autoComplete="username"
-            />
-          </div>
-
-          <div className="form__field">
-            <label className="form__label">Пароль / ключ шифрования</label>
-            <input
-              className="form__input"
-              type="password"
-              value={pass}
-              onChange={e => setPass(e.target.value)}
-              placeholder="•••••••••"
-              autoComplete="current-password"
-            />
-          </div>
-
-          {error && (
-            <div style={{
-              padding: '8px 12px', background: 'rgba(205,66,70,.12)',
-              border: '1px solid rgba(205,66,70,.4)', borderRadius: 'var(--radius)',
-              fontSize: 13, color: '#f2b8b5',
-            }}>
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            className="btn btn--primary"
-            disabled={loading}
-            style={{ width: '100%', height: 36, fontSize: 14, marginTop: 4 }}
-          >
-            {loading ? 'Подключение…' : 'Войти'}
-          </button>
-        </form>
-
-        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-disabled)', textAlign: 'center' }}>
-          MAOS v0.58.0 · дипломная работа · {new Date().getFullYear()}
-        </p>
       </div>
     </div>
   )

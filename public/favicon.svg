@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="MAOS">
+  <title>MAOS — «Терпкий»</title>
+  <!-- Mark 3 (docs/research/A6-logo-3.svg): self-grounded tile, identical on light and dark. -->
+  <defs>
+    <clipPath id="d"><circle cx="22" cy="43" r="14"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="5" fill="#d6a04b"/>
+  <circle cx="22" cy="43" r="14" fill="#243bb2"/>
+  <rect x="28" y="12" width="24" height="24" fill="#86262b" transform="rotate(-12 40 24)"/>
+  <g clip-path="url(#d)">
+    <rect x="28" y="12" width="24" height="24" fill="#2c1a3f" transform="rotate(-12 40 24)"/>
+  </g>
+  <line x1="7" y1="7" x2="28.6" y2="28.6" stroke="#13161d" stroke-width="4" stroke-linecap="square"/>
+  <circle cx="45.5" cy="20.5" r="3.5" fill="#f6f1e7"/>
+</svg>

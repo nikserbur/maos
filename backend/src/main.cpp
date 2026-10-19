@@ -8,7 +8,9 @@
  *   ./maos_server [path/to/maos.db]
  */
 #include "Database.h"
+#include "Finance.h"
 #include "Optimizer.h"
+#include "PlanMath.h"
 #include "Scheduler.h"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -572,27 +574,25 @@ static void register_analytics(httplib::Server& svr, Database& db) {
       const int lifeMonths = std::max(1, std::min(600, (int)bnum("life_months", 60)));  // по умолч. 5 лет
       const double capex = capexPer * addN;
 
-      // Следующее узкое место после снятия текущего (макс. загрузка в прогоне «+N»).
-      std::string nbId, nbName; double nbU = 0;
-      if (r1.contains("robust") && r1["robust"].contains("resource_load"))
-        for (auto& e : r1["robust"]["resource_load"]) {
-          double u = e.value("utilization", 0.0);
-          if (u > nbU && jstr(e, "wc_type_id") != wct) { nbU = u; nbId = jstr(e, "wc_type_id"); }
-        }
+      // B16: «следующее узкое место» = argmax загрузки по ВСЕМ типам в прогоне «+N»
+      // (может остаться тем же типом — тогда докупка не снимает ограничение).
+      const auto nb = maos::planmath::next_bottleneck(
+        (r1.contains("robust") && r1["robust"].contains("resource_load"))
+          ? r1["robust"]["resource_load"] : json::array());
+      const std::string nbId = nb.first; const double nbU = nb.second;
+      std::string nbName;
       if (!nbId.empty()) { try { nbName = jstr(db.query_one("SELECT name FROM work_center_types WHERE id=?", { nbId }), "name"); } catch (...) {} }
 
-      // NPV / IRR / payback / ROI по месячному ΔCF за СРОК СЛУЖБЫ (lifeMonths).
-      const double rm = discAnnual / 12.0;
-      auto npvAt = [&](double r) { double v = -capex; for (int t = 1; t <= lifeMonths; ++t) v += dCFmonth / std::pow(1.0 + r, t); return v; };
-      const double npv = npvAt(rm);
-      double irrM = 0;
-      if (dCFmonth > 0 && capex > 0) {
-        double lo = -0.9, hi = 5.0;
-        if (npvAt(hi) > 0) irrM = hi;                          // всегда выгодно
-        else if (npvAt(lo) < 0) irrM = 0;                      // не окупается
-        else { for (int i = 0; i < 80; ++i) { double mid = (lo + hi) / 2; (npvAt(mid) > 0 ? lo : hi) = mid; } irrM = (lo + hi) / 2; }
-      }
-      const double irrAnnual = dCFmonth > 0 ? std::pow(1.0 + irrM, 12) - 1.0 : 0;
+      // B6: ЧДД / ВНД / сроки окупаемости по месячному ΔCF за СРОК СЛУЖБЫ (lifeMonths).
+      // Месячная ставка r_m = (1+r)^{1/12} − 1 (эффективная годовая r, ВК 477) — та же,
+      // по которой ВНД пересчитывается в годовую, поэтому ЧДД(r = ВНД) = 0.
+      namespace fin = maos::finance;
+      const double rm = fin::monthly_rate(discAnnual);
+      const double npv = fin::npv(capex, dCFmonth, lifeMonths, rm);
+      const std::optional<double> irrM = fin::irr_monthly(capex, dCFmonth, lifeMonths);
+      const json irrAnnualJ  = irrM ? json(fin::annual_effective(*irrM)) : json(nullptr);
+      const json irrMonthlyJ = irrM ? json(*irrM) : json(nullptr);
+      const std::optional<double> dpp = fin::discounted_payback_months(capex, dCFmonth, lifeMonths, rm);
       const double payback = dCFmonth > 1e-9 ? capex / dCFmonth : -1;   // мес; -1 = не окупается
       const double roi = capex > 0 ? (dCFmonth * lifeMonths - capex) / capex : 0;
 
@@ -602,9 +602,13 @@ static void register_analytics(httplib::Server& svr, Database& db) {
         {"discount_annual", discAnnual},
         {"profit_before", p0}, {"profit_after", p1},
         {"delta_profit_horizon", dProfit}, {"delta_cf_month", dCFmonth},
-        {"payback_months", payback}, {"npv", npv}, {"irr_annual", irrAnnual}, {"roi", roi},
+        {"payback_months", payback}, {"npv", npv}, {"irr_annual", irrAnnualJ}, {"roi", roi},
+        // Новые поля (B6): месячная ставка дисконта, месячная ВНД, дисконт. срок окупаемости.
+        {"discount_monthly", rm}, {"irr_monthly", irrMonthlyJ},
+        {"dpp_months", dpp ? json(*dpp) : json(nullptr)},      // null = не окупается за life_months
         {"util_before", utilOf(r0, wct)}, {"util_after", utilOf(r1, wct)},
-        {"next_bottleneck", { {"wc_type_id", nbId}, {"wc_name", nbName}, {"utilization", nbU} }},
+        {"next_bottleneck", { {"wc_type_id", nbId}, {"wc_name", nbName}, {"utilization", nbU},
+                              {"same_as_invested", !nbId.empty() && nbId == wct} }},
       });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
@@ -2836,15 +2840,18 @@ static void persist_schedule(Database& db, const std::string& planId, const json
     // и план не сохранялся вовсе (симуляции нечего было проигрывать).
     const std::string mid = g.value("machine_id", std::string());
     if (mid.empty() || mid == "supply") continue;
+    // load_hours = ПРОДУКТИВНОЕ время задачи (обработка, без наладки и ТО/ремонта) —
+    // для единой загрузки в /simulation/results (B9).
     db.exec("INSERT INTO plan_tasks(id,plan_id,product_id,operation_id,wc_type_id,machine_id,"
-            "worker_id,start_min,end_min,order_idx,qty) "
-            "VALUES(?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),?,?,?,?)",
+            "worker_id,start_min,end_min,order_idx,qty,load_hours) "
+            "VALUES(?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),?,?,?,?,?)",
             { gen_uuid(), planId, g.value("product_id", std::string()),
               g.value("op_id", std::string()), g.value("wc_type_id", std::string()),
               mid, g.value("worker_id", std::string()),
               std::to_string(g.value("start", 0.0) * 60.0), std::to_string(g.value("end", 0.0) * 60.0),
               std::to_string(g.value("order_idx", 0)),
-              std::to_string(g.value("batches", 1.0)) });   // партий в джобе
+              std::to_string(g.value("batches", 1.0)),        // партий в джобе
+              std::to_string(g.value("proc_hours", 0.0)) });
   }
 }
 
@@ -2982,15 +2989,27 @@ static void register_mrp(httplib::Server& svr, Database& db) {
         double q = 1; try { q = std::stod(jstr(r,"q")); } catch (...) {}
         bom[jstr(r,"parent")].push_back({ jstr(r,"child"), q });
       }
-      // Цикл обработки изделия (ч на единицу) — для lead-time offset потребности.
-      std::unordered_map<std::string, double> procH;
+      // B14: операции маршрута изделия (ч на ОДНУ ПАРТИЮ batch_size, как в Стадии 1) и
+      // число параллельных станков (все допустимые типы операции) — для lead-time
+      // offset по циклу ПАРТИИ ЗАПУСКА, а не по часам «на единицу».
+      std::unordered_map<std::string, int> opMachines;     // операция → активных станков
       for (auto& r : db.query_json(
-             "SELECT r.product_id AS pid, "
-             "SUM((COALESCE(o.t_opt,o.t_norm)+4*o.t_norm+COALESCE(o.t_pess,o.t_norm))/6.0)/60.0 AS h "
+             "SELECT ow.operation_id AS op, COUNT(DISTINCT m.id) AS n FROM operation_wc_types ow "
+             "JOIN machines m ON m.wc_type_id = ow.wc_type_id AND m.status='active' "
+             "GROUP BY ow.operation_id")) {
+        try { opMachines[jstr(r,"op")] = (int)std::stod(jstr(r,"n")); } catch (...) {}
+      }
+      std::unordered_map<std::string, std::vector<maos::planmath::OpLoad>> procOps;
+      for (auto& r : db.query_json(
+             "SELECT r.product_id AS pid, o.id AS op, "
+             "((COALESCE(o.t_opt,o.t_norm)+4*o.t_norm+COALESCE(o.t_pess,o.t_norm))/6.0)/60.0 AS h "
              "FROM routings r JOIN operations o ON o.routing_id=r.id "
-             "WHERE r.product_id IS NOT NULL AND r.product_id<>'' AND COALESCE(r.is_default,1)=1 "
-             "GROUP BY r.product_id")) {
-        try { procH[jstr(r,"pid")] = std::stod(jstr(r,"h")); } catch (...) {}
+             "WHERE r.product_id IS NOT NULL AND r.product_id<>'' AND COALESCE(r.is_default,1)=1")) {
+        maos::planmath::OpLoad ol;
+        try { ol.hoursPerBatch = std::stod(jstr(r,"h")); } catch (...) { continue; }
+        const auto mi = opMachines.find(jstr(r,"op"));
+        ol.parallelMachines = mi != opMachines.end() ? std::max(1, mi->second) : 1;
+        procOps[jstr(r,"pid")].push_back(ol);
       }
       struct PInfo {
         std::string name; bool purchased = false;
@@ -3033,7 +3052,7 @@ static void register_mrp(httplib::Server& svr, Database& db) {
       std::sort(order.begin(), order.end(),
                 [&](const std::string& a, const std::string& b) { return llc[a] < llc[b]; });
 
-      std::unordered_map<std::string,double> gross, netQ, plannedQ;
+      std::unordered_map<std::string,double> gross, netQ, plannedQ, lotCycleH;
       // Time-phased: срок потребности позиции = min(срок родителя − цикл родителя).
       std::unordered_map<std::string,double> needBy;       // ч от «сейчас»; нет = срок неизвестен
       auto needMin = [&](const std::string& id, double v) {
@@ -3057,9 +3076,13 @@ static void register_mrp(httplib::Server& svr, Database& db) {
         plannedQ[pid] = planned;
         if (planned > 0 && !pi.purchased)                  // спускаем только плановый запуск
           if (auto b = bom.find(pid); b != bom.end()) {
-            // Компоненты нужны к старту обработки родителя: срок − цикл родителя.
-            const double childDue = needBy.count(pid)
-              ? needBy[pid] - (procH.count(pid) ? procH[pid] : 0) : -1;
+            // Компоненты нужны к старту обработки родителя: срок − цикл ПАРТИИ запуска
+            // родителя (planned/batch партий, разнесённых по параллельным станкам).
+            const auto po = procOps.find(pid);
+            const double cyc = po != procOps.end()
+              ? maos::planmath::lot_cycle_hours(po->second, planned, pi.batch) : 0.0;
+            lotCycleH[pid] = cyc;
+            const double childDue = needBy.count(pid) ? needBy[pid] - cyc : -1;
             for (auto& [child, q] : b->second) {
               gross[child] += planned * q;
               if (childDue >= 0) needMin(child, childDue);
@@ -3086,6 +3109,8 @@ static void register_mrp(httplib::Server& svr, Database& db) {
           {"shortage", net > 0}, {"reorder", pi.stock < pi.reorder && pi.reorder > 0},
           {"lead_time_hours", pi.lead}, {"unit_cost", pi.cost},
         };
+        // B14 (новое поле): цикл обработки партии запуска собственного изготовления, ч.
+        if (lotCycleH.count(pid)) mrow["lot_cycle_hours"] = lotCycleH[pid];
         // Time-phased: когда нужен материал и когда РАЗМЕЩАТЬ заказ (нужен − lead).
         // place_by < 0 → заказ надо было разместить «вчера» (просрочен старт закупки).
         if (needBy.count(pid)) {
@@ -3264,18 +3289,33 @@ static void register_simulation(httplib::Server& svr, Database& db) {
       } catch (...) { ok(res, { {"plan_id", nullptr} }); return; }
       const std::string planId = jstr(plan, "id");
 
-      struct T { std::string mid, wid; double s, e; int order; };
+      // KPI-блок плана (Scheduler): календарный фонд каждого станка (machine_load[].fund_hours)
+      // и темп выпуска в единицах продукции. В старых планах этих полей нет → legacy-формула.
+      json bundle = json::object();
+      try {
+        const std::string kj = jstr(db.query_one("SELECT kpi_json FROM plans WHERE id=?", { planId }), "kpi_json");
+        if (!kj.empty()) bundle = json::parse(kj);
+      } catch (...) {}
+      std::unordered_map<std::string,double> fundOf;   // станок → календарный фонд, ч
+      if (bundle.contains("machine_load") && bundle["machine_load"].is_array())
+        for (auto& e : bundle["machine_load"])
+          if (e.is_object() && e.contains("fund_hours") && e["fund_hours"].is_number())
+            fundOf[jstr(e, "machine_id")] = e["fund_hours"].get<double>();
+      const bool unified = !fundOf.empty();
+
+      struct T { std::string mid, wid; double s, e, load; int order; };
       std::vector<T> tasks;
       std::set<std::string> machineSet, workerSet;
       std::unordered_map<std::string,double> orderFin;
       double makespan = 0;
       for (auto& r : db.query_json(
-             "SELECT machine_id, worker_id, start_min, end_min, order_idx "
+             "SELECT machine_id, worker_id, start_min, end_min, order_idx, load_hours "
              "FROM plan_tasks WHERE plan_id=? AND machine_id<>'supply' AND machine_id<>''",
              { planId })) {
         T t; t.mid = jstr(r, "machine_id"); t.wid = jstr(r, "worker_id");
         try { t.s = std::stod(jstr(r, "start_min")) / 60.0; } catch (...) { t.s = 0; }
         try { t.e = std::stod(jstr(r, "end_min")) / 60.0; } catch (...) { t.e = 0; }
+        try { t.load = std::stod(jstr(r, "load_hours")); } catch (...) { t.load = 0; }
         try { t.order = (int)std::stod(jstr(r, "order_idx")); } catch (...) { t.order = 0; }
         makespan = std::max(makespan, t.e);
         if (!t.mid.empty()) machineSet.insert(t.mid);
@@ -3286,39 +3326,64 @@ static void register_simulation(httplib::Server& svr, Database& db) {
       const int BK = 48;
       const double bw = std::max(1e-9, makespan / BK);
       std::vector<std::set<std::string>> busM(BK + 1), busW(BK + 1);
+      std::vector<std::unordered_map<std::string,double>> occM(BK + 1);   // бин → станок → доля бина
       std::unordered_map<std::string,double> mBusy;   // станок → занятые часы
       for (const T& t : tasks) {
         int b0 = std::max(0, (int)std::floor(t.s / bw));
         int b1 = std::min(BK, (int)std::floor((t.e - 1e-9) / bw));
-        for (int k = b0; k <= b1; ++k) { busM[k].insert(t.mid); if (!t.wid.empty()) busW[k].insert(t.wid); }
-        mBusy[t.mid] += std::max(0.0, t.e - t.s);
+        for (int k = b0; k <= b1; ++k) {
+          busM[k].insert(t.mid); if (!t.wid.empty()) busW[k].insert(t.wid);
+          // Ряд занятости — ДОЛЯ бина, перекрытая задачей (раньше бин засчитывался целиком).
+          const double ov = std::min(t.e, (k + 1) * bw) - std::max(t.s, k * bw);
+          if (ov > 0) occM[k][t.mid] += ov / bw;
+        }
+        // B9: занятость = ПРОДУКТИВНОЕ время (обработка, plan_tasks.load_hours); для старых
+        // планов без него — длительность интервала (включала наладку/ТО и нерабочие окна).
+        mBusy[t.mid] += unified ? std::max(0.0, t.load) : std::max(0.0, t.e - t.s);
       }
       json util = json::array(), workers = json::array();
       int peakOps = 0; double sumOps = 0, sumUtil = 0; int nMach = (int)machineSet.size();
       for (int k = 0; k <= BK; ++k) {
         const int bm = (int)busM[k].size(), bw2 = (int)busW[k].size();
         peakOps = std::max(peakOps, bw2); sumOps += bw2;
-        const double u = nMach > 0 ? (double)bm / nMach : 0; sumUtil += u;
+        double occ = 0; for (auto& [mid, f] : occM[k]) occ += std::min(1.0, f);
+        const double u = nMach > 0 ? occ / nMach : 0; sumUtil += u;
         util.push_back({ {"t", k * bw}, {"util", u}, {"busy", bm} });
         workers.push_back({ {"t", k * bw}, {"workers", bw2} });
       }
-      // Загрузка по станкам (топ для столбиков).
+      // Загрузка по станкам (топ для столбиков): продуктивное время / календарный фонд станка.
       json perMachine = json::array();
+      double sumBusy = 0;
       for (auto& [mid, h] : mBusy) {
         std::string nm = mid;
         try { auto mr = db.query_one("SELECT name FROM machines WHERE id=?", { mid }); nm = jstr(mr, "name"); } catch (...) {}
+        const auto fi = fundOf.find(mid);
+        const double fund = unified ? (fi != fundOf.end() ? fi->second : makespan) : makespan;
+        sumBusy += h;
         perMachine.push_back({ {"machine_id", mid}, {"name", nm}, {"busy_hours", h},
-                               {"utilization", makespan > 0 ? h / makespan : 0} });
+                               {"utilization", fund > 0 ? h / fund : 0},
+                               {"fund_hours", unified ? json(fund) : json(nullptr)} });
       }
+      // Средняя загрузка — та же формула, что kpi.utilization: Σ продуктивного / Σ фонда
+      // ВСЕХ станков плана (включая простаивающие).
+      double sumFund = 0; for (auto& [mid, f] : fundOf) sumFund += f;
+      const double avgUtil = unified ? (sumFund > 0 ? sumBusy / sumFund : 0)
+                                     : ((BK + 1) > 0 ? sumUtil / (BK + 1) : 0);
       const int nOrders = (int)orderFin.size();
       const double days = std::max(1e-9, makespan / 24.0);
+      const json kpiB = bundle.contains("kpi") && bundle["kpi"].is_object() ? bundle["kpi"] : json::object();
       ok(res, {
         {"plan_id", planId}, {"makespan", makespan},
         {"n_machines", nMach}, {"n_workers", (int)workerSet.size()},
         {"required_operators", peakOps},                     // пик одновременно занятых
         {"avg_operators", (BK + 1) > 0 ? sumOps / (BK + 1) : 0},
-        {"avg_utilization", (BK + 1) > 0 ? sumUtil / (BK + 1) : 0},
-        {"throughput_per_day", nOrders / days},
+        {"avg_utilization", avgUtil},
+        {"throughput_per_day", nOrders / days},              // legacy-имя: это ЗАКАЗОВ в сутки
+        {"orders_per_day", nOrders / days},                  // B10: корректное имя той же величины
+        {"units_per_day", kpiB.contains("throughput_per_day") && kpiB["throughput_per_day"].is_number()
+                            ? kpiB["throughput_per_day"] : json(nullptr)},   // темп выпуска, ед. продукции/сут
+        {"utilization_basis", unified ? "calendar_fund" : "makespan_legacy"},
+        {"machine_fund_hours", unified ? json(sumFund) : json(nullptr)},
         {"n_orders", nOrders},
         {"util_series", util}, {"workers_series", workers}, {"per_machine", perMachine},
       });
@@ -3676,7 +3741,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.58.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.59.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="maos1-t maos1-d" class="maos-mark-1">
+  <title id="maos1-t">MAOS — «Триада»</title>
+  <desc id="maos1-d">Ultramarine circle (the plant as a system), cinnabar square (machines and material, set in the heavy lower-right corner), ochre acute triangle standing upright (optimisation, the warm vertical). A line runs along the harmonic diagonal from lower-left through the centre of the circle and goes in under the triangle: flow passing through the system into optimisation.</desc>
+  <style>
+    /* Dark-first. Contrast against --bg-app #0d0f16: ultramarine 3.9, cinnabar 5.7, ochre 9.7, line 16.5 */
+    .maos-mark-1 { --m-u: #4366e8; --m-r: #eb5e43; --m-o: #e9af41; --m-l: #f2eee6; }
+    /* Light theme. Contrast against --bg-app #f8f5ef: ultramarine 5.9, cinnabar 5.1, ochre 3.2, line 16 */
+    @media (prefers-color-scheme: light) {
+      .maos-mark-1 { --m-u: #3250d8; --m-r: #c1351e; --m-o: #c4780b; --m-l: #171a24; }
+    }
+    .u { fill: var(--m-u); }
+    .r { fill: var(--m-r); }
+    .o { fill: var(--m-o); }
+    .l { stroke: var(--m-l); stroke-width: 4; stroke-linecap: square; fill: none; }
+  </style>
+  <!-- circle: centre (24,40), r 18; sits on the harmonic diagonal y = 64 - x -->
+  <circle class="u" cx="24" cy="40" r="18"/>
+  <!-- line along the harmonic diagonal (lower-left to upper-right), through the circle centre; its end goes under the triangle -->
+  <line class="l" x1="8" y1="56" x2="48" y2="16"/>
+  <!-- acute triangle (apex angle 41 deg), upright (the vertical is "warm"); the gap to the circle is 2.6 -->
+  <polygon class="o" points="52,3 62,30 42,30"/>
+  <!-- square: 16 x 16 in the heaviest corner (lower-right), "home" and material; the gap to the circle is 2.1 -->
+  <rect class="r" x="44" y="42" width="16" height="16"/>
+</svg>

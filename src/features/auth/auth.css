@@ -1,0 +1,235 @@
+/*
+ * Окно входа — бренд-момент «Конструктивный Кандинский»:
+ * анимированная aurora + плёночное зерно (Backdrop variant="login"), герой
+ * «Несколько кругов» с дрейфом, заголовок Unbounded, карточка на приподнятой поверхности.
+ * Текст героя — только --text / --text-secondary (muted над охристым пятном падает до 4.1).
+ */
+.login-screen {
+  position: relative;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  isolation: isolate;
+}
+
+.login {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 400px);
+  align-items: center;
+  gap: clamp(32px, 6vw, 104px);
+  padding: clamp(24px, 5vw, 72px) clamp(20px, 5vw, 72px);
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+.login__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.login__mark {
+  width: clamp(132px, 17vw, 220px);
+  height: auto;
+  margin-bottom: var(--space-4);
+  filter: drop-shadow(0 18px 40px color-mix(in oklch, var(--ink) 55%, transparent));
+  animation: maos-login-rise var(--dur-slow) var(--ease-out) both;
+}
+.login__eyebrow {
+  color: var(--text-secondary);
+}
+.login__display {
+  max-width: 13ch;
+  font-family: var(--font-display);
+  font-size: clamp(var(--fs-32), 3.6vw, var(--fs-44));
+  font-weight: 300;
+  line-height: var(--lh-display);
+  letter-spacing: -0.015em;
+  color: var(--text);
+  text-wrap: balance;
+}
+.login__lede {
+  max-width: 44ch;
+  font-size: var(--fs-16);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+.login__triad {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.login__triad li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.login__g {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}
+.login__g--sys { border-radius: 50%; background: var(--ultramarine); }
+.login__g--res { background: var(--cinnabar); }
+.login__g--obj {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 11px solid var(--ochre-fill);
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.login__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-8) var(--space-6);
+  background: color-mix(in oklch, var(--bg-panel) 94%, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  animation: maos-login-rise var(--dur-slow) var(--ease-out) 60ms both;
+}
+.login__card::before {
+  /* та же волосяная линия бренда, что под верхней панелью */
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: var(--space-6);
+  right: var(--space-6);
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--grad-brand);
+}
+.login__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.login__head .lockup {
+  margin-bottom: var(--space-3);
+}
+.login__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-20);
+  font-weight: 500;
+  line-height: var(--lh-display);
+  color: var(--text);
+}
+.login__intro {
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.login__form .form__input {
+  height: var(--control);
+  font-size: var(--fs-14);
+}
+.login__new {
+  margin-top: 6px;
+}
+.login__error {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: color-mix(in oklch, var(--intent-danger) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--intent-danger) 45%, transparent);
+  border-left: 3px solid var(--intent-danger);
+  border-radius: var(--radius);
+  animation: maos-login-shake var(--dur-slow) var(--ease-out);
+}
+.login__submit {
+  margin-top: var(--space-1);
+}
+.login__submit[aria-busy='true']:disabled {
+  /* идёт подключение: кнопка занята, а не недоступна */
+  color: var(--on-accent);
+  background: var(--accent-active);
+  border-color: var(--accent-active);
+  border-style: solid;
+  cursor: progress;
+}
+.login__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: maos-spin 0.8s linear infinite;
+}
+.login__footer {
+  font-size: var(--fs-11);
+  text-align: center;
+  color: var(--text-disabled);
+}
+
+@keyframes maos-login-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes maos-login-shake {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-3px); }
+  60% { transform: translateX(2px); }
+}
+@keyframes maos-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Narrow screens: hero above the card, compact ────────────────────────── */
+@media (max-width: 900px) {
+  .login {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 480px;
+    align-content: start;
+    gap: var(--space-8);
+  }
+  .login__mark {
+    width: 112px;
+    margin-bottom: 0;
+  }
+  .login__display {
+    font-size: var(--fs-32);
+  }
+  .login__lede,
+  .login__triad {
+    display: none;
+  }
+  .login__card {
+    padding: var(--space-6) var(--space-5) var(--space-5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login__mark,
+  .login__card,
+  .login__error {
+    animation: none;
+  }
+}

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="maos2-t maos2-d">
+  <title id="maos2-t">MAOS — «Несколько кругов»</title>
+  <desc id="maos2-d">A dark disc with a halo, after Kandinsky's Several Circles (1926). Inside it: a large ultramarine circle (the plant), a smaller ochre circle (the shop / plan), a green lens where they overlap (blue + yellow = green, the plan meeting reality, the "running" state), and a cinnabar point (the order or event in focus). The mark carries its own background, so the colours are the same on light and dark backgrounds.</desc>
+  <defs>
+    <radialGradient id="maos2-plate" cx="0.42" cy="0.40" r="0.62">
+      <stop offset="0" stop-color="#11131b"/>
+      <stop offset="0.78" stop-color="#171a24"/>
+      <stop offset="1" stop-color="#232a4a"/>
+    </radialGradient>
+    <clipPath id="maos2-clip-blue">
+      <circle cx="27" cy="36" r="16"/>
+    </clipPath>
+  </defs>
+  <!-- background disc with halo; the edge ring (#6782ce, 5.2:1 against #0d0f16) separates the disc from a dark background -->
+  <circle cx="32" cy="32" r="30.5" fill="url(#maos2-plate)"/>
+  <circle cx="32" cy="32" r="30.5" fill="none" stroke="#6782ce" stroke-opacity="0.55" stroke-width="2"/>
+  <!-- plant: ultramarine, 3.9:1 against the disc -->
+  <circle cx="27" cy="36" r="16" fill="#4b6ee9"/>
+  <!-- shop / plan: ochre, 9.2:1 against the disc -->
+  <circle cx="40" cy="25" r="11" fill="#eab444"/>
+  <!-- lens: ochre circle clipped to the blue one; blue + yellow = green -->
+  <circle cx="40" cy="25" r="11" fill="#24ab7e" clip-path="url(#maos2-clip-blue)"/>
+  <!-- point: order / event, cinnabar, 5.1:1 -->
+  <circle cx="47" cy="46" r="5" fill="#ef5a3d"/>
+  <!-- white point: "the silence of possibility"; fades out at 16 px -->
+  <circle cx="17" cy="18" r="2.75" fill="#f2eee6"/>
+</svg>

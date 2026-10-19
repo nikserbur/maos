@@ -360,7 +360,7 @@ export interface ForecastResult {
 }
 
 export const api = {
-  health: () => get<{ status: string; version: string }>('/health'),
+  health: () => get<{ status: string; version: string; project?: string }>('/health'),
 
   auth: {
     login: (login: string, password: string, db?: string) =>

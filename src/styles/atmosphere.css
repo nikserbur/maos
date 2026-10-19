@@ -1,0 +1,121 @@
+/*
+ * Atmosphere — aurora + grain (A6 §4). Chrome, login and empty states ONLY:
+ * never over tables, Gantt, KPI, forms, the 3D canvas or the map.
+ * Aurora animates transform only (no repaint per frame); pause it with
+ * [data-paused] whenever a 3D/map view is visible.
+ */
+
+/* ── Aurora ──────────────────────────────────────────────────────────────── */
+.aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  contain: strict;
+  pointer-events: none;
+  background: var(--aurora-ground, var(--bg-app));
+}
+.aurora i {
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c), transparent);
+  opacity: var(--aurora-opacity, 0.55);
+  will-change: transform;
+  animation: maos-drift var(--t) ease-in-out infinite alternate;
+}
+.aurora i:nth-child(1) { --c: var(--aurora-1); --t: 41s; left: -5%; top: -10%; }
+.aurora i:nth-child(2) { --c: var(--aurora-2); --t: 53s; right: 0; top: 30%; animation-delay: -17s; }
+.aurora i:nth-child(3) { --c: var(--aurora-3); --t: 67s; left: 30%; bottom: -15%; animation-delay: -31s; }
+.aurora[data-paused] i {
+  animation-play-state: paused;
+}
+.aurora--static i {
+  animation: none;
+  transform: scale(4.5);
+}
+
+@keyframes maos-drift {
+  from { transform: translate3d(0, 0, 0) scale(4); }
+  to { transform: translate3d(12vw, 8vh, 0) scale(5.2) rotate(30deg); }
+}
+
+/* ── Grain (feTurbulence, rasterised once and tiled) ─────────────────────── */
+:where(.grain) {
+  position: relative;
+}
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--grain, var(--grain-base, 0.05));
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+[data-theme='light'] {
+  --grain-base: 0.035;
+}
+/* Film grain — login only: the oversized layer jumps by sub-tile offsets. */
+.grain--film {
+  overflow: hidden;
+}
+.grain--film::after {
+  inset: -160px;
+  will-change: transform;
+  animation: maos-film 0.9s steps(1, end) infinite;
+}
+[data-paused] .grain--film::after,
+.grain--film[data-paused]::after {
+  animation-play-state: paused;
+}
+
+@keyframes maos-film {
+  0% { transform: translate3d(0, 0, 0); }
+  17% { transform: translate3d(-53px, 31px, 0); }
+  33% { transform: translate3d(41px, -67px, 0); }
+  50% { transform: translate3d(-97px, -23px, 0); }
+  67% { transform: translate3d(79px, 59px, 0); }
+  83% { transform: translate3d(-17px, 113px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+/* ── <Backdrop> variants (src/brand/Backdrop.tsx) ────────────────────────── */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.backdrop__grain {
+  position: absolute;
+  inset: 0;
+}
+.backdrop--login {
+  position: fixed;
+  --grain: 0.06;
+}
+.backdrop--shell {
+  --grain: 0.03;
+  background:
+    radial-gradient(60% 260% at 0% 0%, color-mix(in oklch, var(--ultramarine) 9%, transparent), transparent 70%),
+    radial-gradient(40% 220% at 100% 100%, color-mix(in oklch, var(--ochre) 4%, transparent), transparent 70%);
+}
+.backdrop--empty {
+  --grain: 0.04;
+  --aurora-ground: transparent;
+  --aurora-opacity: 0.32;
+}
+[data-theme='light'] .backdrop--login { --grain: 0.045; }
+[data-theme='light'] .backdrop--shell { --grain: 0.02; }
+[data-theme='light'] .backdrop--empty { --grain: 0.03; }
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora i {
+    animation: none;
+    transform: scale(4.5);
+  }
+  .grain--film::after {
+    animation: none;
+  }
+}

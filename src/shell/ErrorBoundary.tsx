@@ -32,25 +32,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const { error } = this.state
     if (!error) return this.props.children
     return (
-      <div style={{ padding: 32, maxWidth: 720 }}>
-        <div style={{
-          padding: '18px 20px',
-          background: 'rgba(205,66,70,.10)',
-          border: '1px solid rgba(205,66,70,.4)',
-          borderRadius: 'var(--radius-lg, 12px)',
-          color: 'var(--text)',
-        }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>Экран не удалось отобразить</h2>
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted)' }}>
+      <div className="screen-error" role="alert">
+        <div className="screen-error__card">
+          <h2 className="screen-error__title glyph-down">Экран не удалось отобразить</h2>
+          <p className="screen-error__text">
             Внутренняя ошибка модуля. Остальное приложение работает — переключитесь на
             другой раздел или повторите.
           </p>
-          <pre style={{
-            margin: '0 0 12px', padding: 10, fontSize: 12, overflowX: 'auto',
-            background: 'var(--bg-app, #111)', borderRadius: 'var(--radius, 8px)',
-            color: '#f2b8b5', whiteSpace: 'pre-wrap',
-          }}>{error.message}</pre>
-          <button className="btn" onClick={this.handleReset}>Повторить</button>
+          <pre className="screen-error__msg mono">{error.message}</pre>
+          <button type="button" className="btn" onClick={this.handleReset}>Повторить</button>
         </div>
       </div>
     )

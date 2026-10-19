@@ -1,16 +1,21 @@
 {
   "name": "maos",
   "private": true,
-  "version": "0.58.0",
+  "version": "0.59.0",
   "type": "module",
   "description": "MAOS — Monitoring & Optimization System. Цифровой двойник производственного предприятия (3D-схема, мониторинг, планирование, оптимизация).",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@floating-ui/react-dom": "2.1.9",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/onest": "5.3.1",
+    "@fontsource-variable/unbounded": "5.3.0",
     "@react-three/drei": "^9.117.0",
     "@react-three/fiber": "^8.17.10",
     "@react-three/postprocessing": "^2.16.3",
@@ -27,7 +32,8 @@
     "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "3.2.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

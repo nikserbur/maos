@@ -4,7 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0d0f16" />
+    <meta name="description" content="MAOS — цифровой двойник производственного предприятия: схема, справочники, сценарии, оптимизация и план." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>MAOS — Система мониторинга и оптимизации производства</title>
+    <script>
+      /* Тема до первой отрисовки: localStorage['maos-theme'] → <html data-theme> (без вспышки). */
+      (function () {
+        try {
+          var t = localStorage.getItem('maos-theme');
+          if (t !== 'light' && t !== 'dark') return;
+          document.documentElement.setAttribute('data-theme', t);
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m && t === 'light') m.setAttribute('content', '#f8f5ef');
+        } catch (e) {
+          /* хранилище недоступно (приватный режим) — остаёмся на тёмной теме */
+        }
+      })();
+    </script>
+    <style>
+      /* Критический фон до загрузки CSS (= --bg-app обеих тем). */
+      html { background: #0d0f16; color-scheme: dark; }
+      html[data-theme='light'] { background: #f8f5ef; color-scheme: light; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

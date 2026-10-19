@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 208 64" width="208" height="64" role="img" aria-labelledby="maosL-t" class="maos-lockup">
+  <title id="maosL-t">MAOS: the «Триада» mark plus a wordmark built from the same primitives</title>
+  <!-- The wordmark is drawn from Kandinsky's elements, so it needs no font:
+       M is two verticals and two diagonals; A is an acute angle (Λ, no crossbar);
+       O is a solid ultramarine disc (the circle from the mark); S is two arcs.
+       Cap height 28 (y 18 to 46), stroke 5, bevel joins. Any of the three marks can go on the left. -->
+  <style>
+    .maos-lockup { --m-u: #4366e8; --m-r: #eb5e43; --m-o: #e9af41; --m-l: #f2eee6; --m-t: #f2eee6; }
+    @media (prefers-color-scheme: light) {
+      .maos-lockup { --m-u: #3250d8; --m-r: #c1351e; --m-o: #c4780b; --m-l: #171a24; --m-t: #171a24; }
+    }
+    .u { fill: var(--m-u); } .r { fill: var(--m-r); } .o { fill: var(--m-o); }
+    .l { stroke: var(--m-l); stroke-width: 4; stroke-linecap: square; fill: none; }
+    .w { stroke: var(--m-t); stroke-width: 5; stroke-linejoin: bevel; stroke-linecap: butt; fill: none; }
+  </style>
+  <!-- mark 1 (same as A6-logo-1.svg) -->
+  <circle class="u" cx="24" cy="40" r="18"/>
+  <line class="l" x1="8" y1="56" x2="48" y2="16"/>
+  <polygon class="o" points="52,3 62,30 42,30"/>
+  <rect class="r" x="44" y="42" width="16" height="16"/>
+  <!-- M -->
+  <polyline class="w" points="82.5,46 82.5,20.5 92,36 101.5,20.5 101.5,46"/>
+  <!-- A as Λ -->
+  <polyline class="w" points="113,46 124.5,20.5 136,46"/>
+  <!-- O as a disc -->
+  <circle class="u" cx="160" cy="32" r="14"/>
+  <!-- S as two arcs, r 5.75, centres (190.25,26.25) and (190.25,37.75) -->
+  <path class="w" d="M195.23 23.38 A5.75 5.75 0 1 0 190.25 32 A5.75 5.75 0 1 1 185.27 40.63"/>
+</svg>

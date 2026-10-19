@@ -1,0 +1,89 @@
+/*
+ * MAOS marks (docs/research/A6-visual-direction.md §1–2).
+ * Mark 1 «Триада» and the wordmark follow the theme tokens; marks 2 and 3 carry
+ * their own ground, so their brand constants below are identical in both themes.
+ */
+.mk {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  shape-rendering: geometricPrecision;
+}
+
+/* ── Mark 1 «Триада» — theme-bound ───────────────────────────────────────── */
+.mk1__u { fill: var(--ultramarine); }
+.mk1__r { fill: var(--cinnabar); }
+.mk1__o { fill: var(--ochre-fill); }
+.mk1__l { fill: none; stroke: var(--text); stroke-width: 4; stroke-linecap: square; }
+
+/* ── Wordmark «MΛ●S» — theme-bound ───────────────────────────────────────── */
+.wm__t { fill: none; stroke: var(--text); stroke-width: 5; stroke-linejoin: bevel; stroke-linecap: butt; }
+.wm__o { fill: var(--ultramarine); }
+
+/* ── Mark 2 «Несколько кругов» — self-grounded ───────────────────────────── */
+.mk2 {
+  --mk2-plate-0: oklch(0.188 0.017 274); /* #11131b */
+  --mk2-plate-1: oklch(0.219 0.020 272); /* #171a24 */
+  --mk2-plate-2: oklch(0.295 0.059 273); /* #232a4a */
+  --mk2-ring: oklch(0.619 0.120 268); /* #6782ce, 5.2:1 vs dark UI */
+  --mk2-u: oklch(0.580 0.190 268); /* #4b6ee9 plant */
+  --mk2-o: oklch(0.800 0.140 82); /* #eab444 shop / plan */
+  --mk2-lens: oklch(0.661 0.130 165); /* #24ab7e plan meets reality */
+  --mk2-r: oklch(0.660 0.189 33); /* #ef5a3d order / event */
+  --mk2-b: oklch(0.950 0.011 85); /* #f2eee6 possibility */
+}
+.mk2__p0 { stop-color: var(--mk2-plate-0); }
+.mk2__p1 { stop-color: var(--mk2-plate-1); }
+.mk2__p2 { stop-color: var(--mk2-plate-2); }
+.mk2__ring { fill: none; stroke: var(--mk2-ring); stroke-opacity: 0.55; stroke-width: 2; }
+.mk2__u { fill: var(--mk2-u); }
+.mk2__o { fill: var(--mk2-o); }
+.mk2__lens { fill: var(--mk2-lens); }
+.mk2__r { fill: var(--mk2-r); }
+.mk2__b { fill: var(--mk2-b); }
+
+/* Slow drift: the ochre circle orbits (its lens moves with it, the clip stays),
+ * the event point wanders, the white point breathes. Co-prime periods. */
+.mk2--drift .mk2__orbit { animation: maos-mk2-orbit 23s ease-in-out infinite alternate; }
+.mk2--drift .mk2__event { animation: maos-mk2-event 31s ease-in-out infinite alternate; }
+.mk2--drift .mk2__b { animation: maos-mk2-breathe 7s ease-in-out infinite alternate; }
+
+@keyframes maos-mk2-orbit {
+  0% { transform: translate(0, 0); }
+  35% { transform: translate(-2.6px, 1.8px); }
+  70% { transform: translate(1.4px, 3px); }
+  100% { transform: translate(2.4px, -1.2px); }
+}
+@keyframes maos-mk2-event {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(-1.8px, -1.4px); }
+  100% { transform: translate(1.2px, -2.2px); }
+}
+@keyframes maos-mk2-breathe {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+/* ── Mark 3 «Терпкий» — self-grounded tile (favicon / app icon) ──────────── */
+.mk3 {
+  --mk3-plate: oklch(0.741 0.120 76); /* #d6a04b, 8.2:1 vs dark */
+  --mk3-disc: oklch(0.420 0.189 268); /* #243bb2 */
+  --mk3-sq: oklch(0.421 0.130 22); /* #86262b */
+  --mk3-lens: oklch(0.261 0.069 305); /* #2c1a3f */
+  --mk3-line: oklch(0.200 0.015 267); /* #13161d */
+  --mk3-pt: oklch(0.959 0.014 85); /* #f6f1e7 */
+}
+.mk3__plate { fill: var(--mk3-plate); }
+.mk3__disc { fill: var(--mk3-disc); }
+.mk3__sq { fill: var(--mk3-sq); }
+.mk3__lens { fill: var(--mk3-lens); }
+.mk3__line { fill: none; stroke: var(--mk3-line); stroke-width: 4; stroke-linecap: square; }
+.mk3__pt { fill: var(--mk3-pt); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mk2--drift .mk2__orbit,
+  .mk2--drift .mk2__event,
+  .mk2--drift .mk2__b {
+    animation: none;
+  }
+}

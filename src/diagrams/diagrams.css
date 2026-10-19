@@ -1,0 +1,46 @@
+/*
+ * Абстрактные схемы MAOS («Конструктивный Кандинский», A6 §6).
+ * Семантические псевдонимы цветов → токены темы (AUDIT §4.1). Запасные значения —
+ * только другие токены (никаких литералов), поэтому схемы корректны в обеих темах
+ * и до, и после внедрения палитры W1.
+ */
+.dg {
+  --dg-model: var(--ultramarine, var(--accent));
+  --dg-goal: var(--ochre, var(--intent-warning));
+  --dg-risk: var(--cinnabar, var(--intent-danger));
+  --dg-ok: var(--verdigris, var(--intent-success));
+  --dg-ink: var(--text);
+  --dg-muted: var(--text-muted);
+  --dg-line: var(--border-strong);
+  --dg-grid: var(--chart-grid, var(--border));
+  --dg-bone: var(--text-secondary);
+  --dg-ground: var(--bg-card);
+
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
+  user-select: none;
+}
+
+/* Цвет текста задаётся атрибутом fill (примитив Label), здесь — только гарнитура. */
+.dg .dg-mono { font-family: var(--font-mono); }
+
+/* Лёгкая анимация — только в полном виде и только без prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .dg--full .dg-flow { animation: dg-dash 1.8s linear infinite; }
+  .dg--full .dg-breathe { animation: dg-breathe 4.8s ease-in-out infinite alternate; }
+}
+@keyframes dg-dash { to { stroke-dashoffset: -14; } }
+@keyframes dg-breathe { from { opacity: 0.55; } to { opacity: 1; } }
+
+/* Заглушка на время загрузки чанка схемы: та же пропорция 2:1, без сдвига вёрстки. */
+.dg-placeholder {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-panel);
+  opacity: 0.4;
+}
