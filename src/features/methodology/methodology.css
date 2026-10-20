@@ -1,0 +1,237 @@
+/* «Методика» — редакционный лонгрид: липкое оглавление, рисунки-карточки, формулы. */
+.mth {
+  height: 100%;
+  overflow-y: auto;
+  scroll-behavior: auto;
+  background:
+    radial-gradient(60% 40% at 85% 0%, color-mix(in oklch, var(--ultramarine) 10%, transparent), transparent 70%),
+    radial-gradient(40% 30% at 0% 30%, color-mix(in oklch, var(--ochre) 6%, transparent), transparent 70%),
+    var(--bg-app);
+}
+.mth__layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-8);
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) 120px;
+}
+.mth__article { max-width: 78ch; min-width: 0; }
+
+/* ── Оглавление ─────────────────────────────────────────────────────────── */
+.mth-toc {
+  position: sticky;
+  top: var(--space-6);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar-h) - var(--statusbar-h) - 48px);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 92%, white 3%), var(--bg-panel));
+  box-shadow: inset 0 1px 0 color-mix(in oklch, white 5%, transparent), var(--shadow-1);
+}
+.mth-toc__title { color: var(--text-muted); margin-bottom: var(--space-3); }
+.mth-toc__group + .mth-toc__group { margin-top: var(--space-4); }
+.mth-toc__group-title {
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+.mth-toc__item {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  width: 100%;
+  padding: 5px 8px 5px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+  line-height: 1.35;
+  text-align: left;
+  position: relative;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.mth-toc__item::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background var(--dur) var(--ease-out);
+}
+.mth-toc__item:hover { color: var(--text); background: var(--bg-hover); }
+.mth-toc__item.is-active { color: var(--text); background: color-mix(in oklch, var(--ultramarine) 12%, transparent); }
+.mth-toc__item.is-active::before { background: var(--grad-brand); }
+.mth-toc__num { color: var(--text-disabled); font-size: var(--fs-11); min-width: 18px; }
+.mth-toc__item.is-active .mth-toc__num { color: var(--accent-text); }
+
+/* ── Герой ──────────────────────────────────────────────────────────────── */
+.mth-hero { padding: var(--space-8) 0 var(--space-6); border-bottom: 1px solid var(--border); margin-bottom: var(--space-6); }
+.mth-hero__eyebrow { color: var(--ochre); }
+.mth-hero__title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-44);
+  line-height: var(--lh-display);
+  letter-spacing: -0.01em;
+  margin: var(--space-2) 0 var(--space-3);
+  background: linear-gradient(100deg, var(--text) 30%, color-mix(in oklch, var(--ultramarine) 60%, var(--text)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mth-hero__lead { font-size: var(--fs-16); line-height: 1.6; color: var(--text-secondary); max-width: 64ch; }
+
+/* ── Раздел ─────────────────────────────────────────────────────────────── */
+.mth-sec { padding: var(--space-8) 0 var(--space-6); scroll-margin-top: var(--space-4); }
+.mth-sec + .mth-sec { border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent); }
+.mth-sec__meta { display: flex; gap: var(--space-3); align-items: baseline; }
+.mth-sec__num {
+  font-family: var(--font-display);
+  font-size: var(--fs-13);
+  color: var(--ochre);
+  font-variant-numeric: tabular-nums;
+}
+.mth-sec__eyebrow { color: var(--text-muted); }
+.mth-sec__title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-24);
+  line-height: 1.2;
+  margin: var(--space-2) 0 var(--space-3);
+}
+.mth-sec__stages { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
+.mth-lead { font-size: var(--fs-16); line-height: 1.6; color: var(--text-secondary); margin: 0 0 var(--space-4); }
+.mth-prose { font-size: var(--fs-14); line-height: 1.7; color: var(--text); }
+.mth-prose > * + * { margin-top: var(--space-4); }
+.mth-prose p { margin: 0; }
+.mth-prose a { color: var(--accent-text); text-decoration: none; border-bottom: 1px solid color-mix(in oklch, var(--accent-text) 40%, transparent); }
+.mth-prose a:hover { border-bottom-color: var(--accent-text); }
+.mth-prose code { font-family: var(--font-mono); font-size: 0.92em; padding: 1px 5px; border-radius: var(--radius-sm); background: var(--bg-input); }
+.mth-h3 { font-size: var(--fs-16); font-weight: 600; margin: var(--space-6) 0 var(--space-2); }
+.mth-steps { padding-left: 1.3em; }
+.mth-steps li + li { margin-top: var(--space-2); }
+.mth-steps li::marker { color: var(--ochre); font-weight: 600; }
+
+/* ── Чипы статуса ───────────────────────────────────────────────────────── */
+.mth-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-11);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.mth-chip__glyph { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.mth-chip__stage { font-weight: 600; }
+.mth-chip__what { color: var(--text-muted); }
+.mth-chip--done .mth-chip__glyph { background: var(--status-running); }
+.mth-chip--w1 .mth-chip__glyph { background: var(--ochre); clip-path: polygon(50% 0, 100% 100%, 0 100%); border-radius: 0; }
+.mth-chip--w2 .mth-chip__glyph { background: transparent; border: 1.5px solid var(--ultramarine); }
+.mth-chip--w3 .mth-chip__glyph { background: var(--ultramarine); border-radius: 1px; }
+
+/* ── Рисунок ────────────────────────────────────────────────────────────── */
+.mth-fig {
+  margin: var(--space-6) 0;
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in oklch, var(--ultramarine) 8%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 96%, white 2%), var(--bg-card));
+  box-shadow: inset 0 1px 0 color-mix(in oklch, white 5%, transparent), var(--shadow-1);
+  overflow: hidden;
+}
+.mth-fig__canvas { padding: var(--space-4) var(--space-4) 0; }
+.mth-fig__canvas svg { display: block; width: 100%; height: auto; }
+.mth-fig__cap {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text-muted);
+  border-top: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+}
+.mth-fig__no { color: var(--ochre); margin-right: var(--space-2); }
+.mth-fig__title { color: var(--text); font-weight: 600; }
+
+/* ── Формула ────────────────────────────────────────────────────────────── */
+.mth-formula {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--ultramarine);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in oklch, var(--ultramarine) 7%, var(--bg-panel));
+}
+.mth-formula__body { font-family: var(--font-mono); font-size: var(--fs-13); line-height: 1.7; color: var(--text); overflow-x: auto; }
+.mth-formula__note { margin-top: var(--space-1); font-size: var(--fs-12); color: var(--text-muted); }
+
+/* ── Выноски, допущения, литература ─────────────────────────────────────── */
+.mth-callout { padding: var(--space-3) var(--space-4); border-radius: var(--radius); border: 1px solid; }
+.mth-callout--fix { border-color: color-mix(in oklch, var(--cinnabar) 45%, transparent); background: color-mix(in oklch, var(--cinnabar) 7%, var(--bg-panel)); }
+.mth-callout--note { border-color: color-mix(in oklch, var(--ochre) 45%, transparent); background: color-mix(in oklch, var(--ochre) 6%, var(--bg-panel)); }
+.mth-callout__title { display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-1); color: var(--text-secondary); }
+.mth-callout__glyph { width: 8px; height: 8px; }
+.mth-callout--fix .mth-callout__glyph { background: var(--cinnabar); }
+.mth-callout--note .mth-callout__glyph { background: var(--ochre); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.mth-callout__body { font-size: var(--fs-13); line-height: 1.6; color: var(--text-secondary); }
+.mth-notes, .mth-refs { font-size: var(--fs-12); line-height: 1.6; color: var(--text-muted); }
+.mth-notes__title, .mth-refs__title { color: var(--text-secondary); margin-bottom: var(--space-1); }
+.mth-notes ul, .mth-refs ol { margin: 0; padding-left: 1.2em; }
+.mth-refs li::marker { color: var(--text-disabled); font-variant-numeric: tabular-nums; }
+
+/* ── Таблицы и матрицы ──────────────────────────────────────────────────── */
+.mth-table-wrap {
+  overflow-x: auto;
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+.mth-table, .mth-matrix { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
+.mth-table th, .mth-matrix th {
+  position: sticky; top: 0;
+  text-align: left;
+  font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.mth-table td, .mth-matrix td { padding: var(--space-2) var(--space-3); vertical-align: top; border-bottom: 1px solid color-mix(in oklch, var(--border) 45%, transparent); }
+.mth-table tr:last-child td, .mth-matrix tr:last-child td { border-bottom: 0; }
+.mth-table tbody tr:hover, .mth-matrix tbody tr:hover { background: var(--bg-hover); }
+.mth-table__name { font-weight: 600; color: var(--text); }
+.mth-table__id { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-disabled); }
+.mth-table__unit { white-space: nowrap; text-align: right; color: var(--text-secondary); }
+.mth-table__muted { color: var(--text-muted); }
+.mth-table__was { color: var(--text-disabled); text-decoration: line-through; }
+.mth-matrix td:not(:first-child), .mth-matrix th:not(:first-child) { text-align: center; }
+.mth-matrix__mark { font-size: var(--fs-13); color: var(--accent-text); }
+.mth-after-table { margin-top: var(--space-3); }
+
+/* ── Грамматика схем, легенда статусов, V&V ─────────────────────────────── */
+.mth-grammar { display: grid; gap: var(--space-2); margin: 0; }
+.mth-grammar__row { display: grid; grid-template-columns: 230px 1fr; gap: var(--space-3); align-items: center; font-size: var(--fs-13); }
+.mth-grammar__row dd { margin: 0; color: var(--text-muted); }
+.mth-grammar__row dt { font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.mth-swatch { width: 28px; height: 16px; }
+.mth-stage-legend { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mth-vv { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); }
+.mth-vv__card {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 96%, white 2%), var(--bg-card));
+}
+.mth-vv__title { font-weight: 600; margin-bottom: var(--space-1); }
+.mth-vv__q { font-size: var(--fs-12); color: var(--text-muted); line-height: 1.55; }
+
+@media (max-width: 960px) {
+  .mth__layout { grid-template-columns: 1fr; }
+  .mth-toc { position: static; max-height: none; }
+  .mth-grammar__row { grid-template-columns: 1fr; }
+}

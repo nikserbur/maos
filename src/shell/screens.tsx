@@ -9,6 +9,7 @@ const ScenariosHub = lazy(() => import('../features/scenarios/ScenariosHub').the
 const PlanScreen = lazy(() => import('../features/plan/PlanScreen').then((m) => ({ default: m.PlanScreen })))
 const AnalyticsScreen = lazy(() => import('../features/analytics/AnalyticsScreen').then((m) => ({ default: m.AnalyticsScreen })))
 const AdminScreen = lazy(() => import('../features/admin/AdminScreen').then((m) => ({ default: m.AdminScreen })))
+const MethodologyScreen = lazy(() => import('../features/methodology/MethodologyScreen'))
 const WorkflowBuilder = lazy(() => import('../features/workflow-builder/WorkflowBuilder').then((m) => ({ default: m.WorkflowBuilder })))
 
 /** Группы рельсы по потоку данных: модель → решение → анализ → система. */
@@ -38,11 +39,12 @@ export interface ScreenDef {
  */
 export const SCREENS: ScreenDef[] = [
   { id: 'scheme', label: 'Схема предприятия', short: 'Схема', icon: 'scheme', group: 'model', Component: PlantScene },
-  { id: 'nsi', label: 'Справочники', short: 'Справочники', icon: 'nsi', group: 'model', Component: NsiScreen },
+  { id: 'nsi', label: 'Справочники', short: 'НСИ', icon: 'nsi', group: 'model', Component: NsiScreen },
   { id: 'scenarios', label: 'Сценарии', short: 'Сценарии', icon: 'scenarios', group: 'decide', Component: ScenariosHub },
-  { id: 'optimization', label: 'Оптимизация', short: 'Оптимизация', icon: 'optimization', group: 'decide', stage: 2, Component: OptimizationScreen },
+  { id: 'optimization', label: 'Оптимизация', short: 'Портфель', icon: 'optimization', group: 'decide', stage: 2, Component: OptimizationScreen },
   { id: 'plan', label: 'План', short: 'План', icon: 'plan', group: 'decide', stage: 1, Component: PlanScreen },
   { id: 'analytics', label: 'Аналитика', short: 'Аналитика', icon: 'analytics', group: 'insight', Component: AnalyticsScreen },
+  { id: 'methodology', label: 'Методика', short: 'Методика', icon: 'book', group: 'insight', Component: MethodologyScreen },
   { id: 'aiflow', label: 'AI-воркфлоу (конструктор)', short: 'AI', icon: 'workflow', group: 'system', Component: WorkflowBuilder },
   { id: 'admin', label: 'Администрирование', short: 'Админ', icon: 'admin', group: 'system', Component: AdminScreen },
 ]

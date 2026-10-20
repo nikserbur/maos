@@ -35,10 +35,13 @@ export function useAnchorNav(rootRef: RefObject<HTMLElement>): { active: Section
     // Два кадра: дождаться раскладки секций (схемы — с плейсхолдерами той же пропорции).
     let raf2 = 0
     const raf1 = requestAnimationFrame(() => { raf2 = requestAnimationFrame(apply) })
+    // Схемы грузятся лениво и могут сдвинуть раскладку — повторяем после их загрузки.
+    const late = window.setTimeout(apply, 700)
     window.addEventListener('hashchange', apply)
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
+      window.clearTimeout(late)
       window.removeEventListener('hashchange', apply)
     }
   }, [scrollTo])
