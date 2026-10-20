@@ -1,8 +1,20 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Suspense, lazy, useEffect, useState, type FormEvent } from 'react'
 import { api } from '../../lib/api'
 import { Backdrop } from '../../brand/Backdrop'
 import { Lockup, MarkCircles } from '../../brand/Logo'
 import './auth.css'
+
+const GaLandscape = lazy(() => import('../../brand/landscape/GaLandscape'))
+
+/** WebGL доступен? Без него — статичная аврора. */
+function hasWebGL(): boolean {
+  try {
+    const c = document.createElement('canvas')
+    return !!(c.getContext('webgl2') || c.getContext('webgl'))
+  } catch {
+    return false
+  }
+}
 
 interface LoginScreenProps {
   onLogin: () => void
@@ -21,6 +33,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [pass, setPass]     = useState('')
   const [error, setError]   = useState('')
   const [loading, setLoading] = useState(false)
+  const [webgl] = useState(hasWebGL)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -48,12 +61,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
   return (
     <div className="login-screen">
-      <Backdrop variant="login" />
+      {webgl
+        ? <Suspense fallback={<Backdrop variant="login" />}><GaLandscape /></Suspense>
+        : <Backdrop variant="login" />}
 
       <div className="login">
         {/* Бренд-момент: «Несколько кругов» — мир → завод → цех; линза — план встречает факт. */}
         <section className="login__hero" aria-labelledby="login-display">
-          <MarkCircles drift size={220} className="login__mark" />
+          <MarkCircles drift size={64} className="login__mark" />
           <p className="login__eyebrow text-caps">MAOS · мониторинг и оптимизация производства</p>
           <h1 className="login__display" id="login-display">Цифровой двойник производства</h1>
           <p className="login__lede">
@@ -139,7 +154,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            MAOS v0.60.0 · дипломная работа · {new Date().getFullYear()}
+            MAOS v0.61.0 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>
