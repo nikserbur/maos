@@ -80,7 +80,7 @@ export function LittleLaw({ compact }: DiagramProps) {
         <g>
           <Label x={g.x1} y={g.y0 + 18} size={10.5} anchor="end">время t, ч</Label>
           <Label x={g.x0 - 30} y={(g.y0 + g.y1) / 2} size={10.5} anchor="middle" rotate={-90}>заказов (накопленно)</Label>
-          <Label x={g.x0 + 8} y={g.y1 + 4} size={10.5}>площадь = Σ W_{j}</Label>
+          <Label x={g.x0 + 8} y={g.y1 + 4} size={10.5}>{'площадь = Σ W_{j}'}</Label>
 
           {/* Система ● с заделом внутри */}
           <circle cx={516} cy={112} r={52} fill={C.model} fillOpacity={0.07} stroke={C.model} strokeWidth={S2} />

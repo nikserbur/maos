@@ -342,7 +342,7 @@ export function OptimizationScreen() {
             <div className="opt__section">
               <p className="opt__section-title">Распределение прибыли устойчивого портфеля · {result.samples} прогонов</p>
               <div className="opt__panel">
-                <ProfitDistribution histogram={result.histogram} metrics={result.robust.metrics} />
+                <ProfitDistribution histogram={result.histogram} metrics={result.robust.metrics} alpha={Number(alpha) || 0.1} samples={result.samples} />
                 <div className="opt__legend">
                   <span><i style={{ background: 'var(--accent)' }} /> устойчивый</span>
                   <span><i style={{ background: 'var(--intent-warning)' }} /> контур «макс E» (шире, с хвостом убытка)</span>

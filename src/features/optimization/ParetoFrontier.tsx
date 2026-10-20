@@ -1,120 +1,173 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState, type PointerEvent } from 'react'
 import type { OptCandidate } from '../../lib/api'
+import { money, pct } from '../../explain/format'
+import { axisMoney, linear, nearestIndex, niceTicks, svgId } from './kit/scale'
 
-function money(v: number): string {
-  const a = Math.abs(v)
-  if (a >= 1e9) return (v / 1e9).toFixed(1) + ' млрд'
-  if (a >= 1e6) return (v / 1e6).toFixed(1) + ' млн'
-  if (a >= 1e3) return (v / 1e3).toFixed(0) + ' тыс'
-  return v.toFixed(0)
-}
+const W = 720
+const H = 300
+const PAD_L = 64
+const PAD_R = 20
+const PAD_T = 22
+const PAD_B = 46
+const HIT_R2 = 28 * 28
 
-interface Hover { left: number; top: number; c: OptCandidate }
+interface Pt { x: number; y: number; c: OptCandidate }
 
 /**
- * Граница Парето портфелей: X — риск (σ прибыли, меньше → лучше), Y — ожидаемая прибыль.
- * Недоминируемые образуют «границу» (нельзя поднять доходность, не увеличив риск).
- * Интерактивно: наведение на точку показывает метрики портфеля.
+ * Граница Парето «доходность — риск»: X — σ прибыли (меньше — лучше), Y — E[Π].
+ * Недоминируемые — линия с градиентной областью; доминируемые — бледные точки;
+ * выбранный робастный портфель — охра ▲, портфель «макс. E» — киноварь ■.
+ * Наведение — перекрестие к ближайшей точке и подсказка.
  */
 export function ParetoFrontier({ candidates }: { candidates: OptCandidate[] }) {
-  const W = 600, H = 250, padL = 54, padR = 16, padT = 18, padB = 36
-  const plotW = W - padL - padR, plotH = H - padT - padB
-  const [hover, setHover] = useState<Hover | null>(null)
-  // Геометрия зависит только от candidates: без useMemo каждый hover (setHover)
-  // заново фильтровал/сортировал фронт и пересобирал полилинию. Min/max — циклом
-  // (spread по тысячам аргументов рискует переполнить стек вызова).
-  const geom = useMemo(() => {
+  const rid = useId()
+  const [hover, setHover] = useState<number | null>(null)
+
+  const g = useMemo(() => {
     if (candidates.length < 2) return null
     let xlo = Infinity, xhi = -Infinity, ylo = Infinity, yhi = -Infinity
     for (const c of candidates) {
-      if (c.std < xlo) xlo = c.std; if (c.std > xhi) xhi = c.std
-      if (c.expected < ylo) ylo = c.expected; if (c.expected > yhi) yhi = c.expected
+      xlo = Math.min(xlo, c.std); xhi = Math.max(xhi, c.std)
+      ylo = Math.min(ylo, c.expected); yhi = Math.max(yhi, c.expected)
     }
-    const xspan = Math.max(1, xhi - xlo), yspan = Math.max(1, yhi - ylo)
-    const px = (v: number) => padL + ((v - xlo) / xspan) * plotW
-    const py = (v: number) => padT + (1 - (v - ylo) / yspan) * plotH
-    const pareto = candidates.filter((c) => c.is_pareto).sort((a, b) => a.std - b.std)
-    const line = pareto.map((c) => `${px(c.std)},${py(c.expected)}`).join(' ')
-    const area = pareto.length > 1
-      ? `${px(pareto[0].std)},${padT + plotH} ${line} ${px(pareto[pareto.length - 1].std)},${padT + plotH}` : ''
+    const xPad = (xhi - xlo) * 0.06 || Math.abs(xhi) * 0.05 || 1
+    const yPad = (yhi - ylo) * 0.08 || Math.abs(yhi) * 0.05 || 1
+    const x = linear(xlo - xPad, xhi + xPad, PAD_L, W - PAD_R)
+    const y = linear(ylo - yPad, yhi + yPad, H - PAD_B, PAD_T)
+    const pts: Pt[] = candidates.map((c) => ({ x: x(c.std), y: y(c.expected), c }))
+    const front = pts.filter((p) => p.c.is_pareto).sort((a, b) => a.x - b.x)
+    const line = front.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join('')
+    const area = front.length > 1
+      ? `${line}L${front[front.length - 1].x},${H - PAD_B}L${front[0].x},${H - PAD_B}Z`
+      : ''
     return {
-      xlo, xhi, ylo, yhi, px, py, pareto, line, area,
-      robust: candidates.find((c) => c.is_robust),
-      expected: candidates.find((c) => c.is_expected),
+      x, y, pts, front, line, area,
+      xTicks: niceTicks(xlo - xPad, xhi + xPad, 5),
+      yTicks: niceTicks(ylo - yPad, yhi + yPad, 4),
+      robust: pts.find((p) => p.c.is_robust),
+      maxE: pts.find((p) => p.c.is_expected && !p.c.is_robust),
     }
-  }, [candidates]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (!geom) return null
-  const { xlo, xhi, ylo, yhi, px, py, pareto, line, area, robust, expected } = geom
+  }, [candidates])
+
+  if (!g) return null
+  const fillId = svgId(rid, 'front')
+  const hp = hover != null ? g.pts[hover] : null
+
+  const onMove = (e: PointerEvent<SVGRectElement>) => {
+    const svg = e.currentTarget.ownerSVGElement
+    if (!svg) return
+    const r = svg.getBoundingClientRect()
+    const sx = ((e.clientX - r.left) / Math.max(1, r.width)) * W
+    const sy = ((e.clientY - r.top) / Math.max(1, r.height)) * H
+    const i = nearestIndex(g.pts, sx, sy)
+    const p = i >= 0 ? g.pts[i] : null
+    setHover(p && (p.x - sx) ** 2 + (p.y - sy) ** 2 <= HIT_R2 ? i : null)
+  }
+
+  const kind = (c: OptCandidate) =>
+    c.is_robust ? 'выбранный устойчивый' : c.is_expected ? 'максимум ожидания' : c.is_pareto ? 'на границе Парето' : 'доминируемый'
+  const nPareto = g.front.length
 
   return (
-    <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Граница Парето: доходность против риска">
+    <div className="dk-plot pf" onPointerLeave={() => setHover(null)}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        role="img"
+        aria-label={`Граница Парето: ${nPareto} недоминируемых портфелей из ${candidates.length}; ось X — риск σ, ось Y — ожидаемая прибыль.`}
+      >
         <defs>
-          <linearGradient id="pareto-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" className="pd-stop-u" stopOpacity="0.28" />
+            <stop offset="100%" className="pd-stop-u" stopOpacity="0" />
           </linearGradient>
         </defs>
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line key={f} x1={padL} y1={padT + plotH * f} x2={W - padR} y2={padT + plotH * f}
-                stroke="var(--border)" strokeWidth="1" strokeDasharray="2 4" opacity="0.4" />
+
+        {g.yTicks.map((t) => (
+          <g key={`y${t}`}>
+            <line className="dk-grid" x1={PAD_L} x2={W - PAD_R} y1={g.y(t)} y2={g.y(t)} />
+            <text className="dk-axis" x={PAD_L - 10} y={g.y(t) + 3.5} textAnchor="end">{axisMoney(t)}</text>
+          </g>
         ))}
-        <line x1={padL} y1={padT} x2={padL} y2={padT + plotH} stroke="var(--border-strong)" strokeWidth="1" />
-        <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke="var(--border-strong)" strokeWidth="1" />
+        {g.xTicks.map((t) => (
+          <g key={`x${t}`}>
+            <line className="dk-grid" x1={g.x(t)} x2={g.x(t)} y1={PAD_T} y2={H - PAD_B} />
+            <text className="dk-axis" x={g.x(t)} y={H - PAD_B + 18} textAnchor="middle">{axisMoney(t)}</text>
+          </g>
+        ))}
+        <line className="dk-baseline" x1={PAD_L} x2={W - PAD_R} y1={H - PAD_B} y2={H - PAD_B} />
+        <text className="dk-axis dk-axis--title" x={W - PAD_R} y={H - 8} textAnchor="end">риск σ прибыли, ₽ →</text>
+        <text className="dk-axis dk-axis--title" x={PAD_L - 10} y={PAD_T - 8} textAnchor="end">E[Π], ₽ ↑</text>
 
-        {area && <polygon points={area} fill="url(#pareto-fill)" />}
-        {pareto.length > 1 && <polyline points={line} fill="none" stroke="var(--accent)" strokeWidth="2"
-                                        strokeLinejoin="round" opacity="0.85" />}
+        {g.area && <path d={g.area} fill={`url(#${fillId})`} />}
+        {g.front.length > 1 && <path className="pf-line" d={g.line} />}
 
-        {candidates.map((c, i) => {
-          const isH = hover?.c === c
-          return (
-            <circle key={i} cx={px(c.std)} cy={py(c.expected)} r={isH ? 5.5 : c.is_pareto ? 3.6 : 2.4}
-              fill={c.is_pareto ? 'var(--accent)' : 'var(--text-disabled)'}
-              opacity={c.is_pareto ? 0.95 : 0.5} style={{ cursor: 'pointer', transition: 'r .1s' }}
-              onMouseEnter={() => setHover({ left: px(c.std) / W * 100, top: py(c.expected) / H * 100, c })} />
-          )
-        })}
+        {g.pts.map((p, i) => (
+          <circle
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r={p.c.is_pareto ? 3.6 : 2.6}
+            className={`${p.c.is_pareto ? 'pf-dot pf-dot--front' : 'pf-dot'}${hover === i ? ' is-hot' : ''}`}
+          />
+        ))}
 
-        {robust && (
+        {g.maxE && (
           <g>
-            <circle cx={px(robust.std)} cy={py(robust.expected)} r="7" fill="none" stroke="var(--intent-success)" strokeWidth="2.2" />
-            <text x={px(robust.std) + 10} y={py(robust.expected) - 7} fontSize="9.5" fill="var(--intent-success)"
-                  style={{ fontFamily: 'var(--font-mono)' }}>устойчивый</text>
+            <rect className="pf-maxe" x={g.maxE.x - 6} y={g.maxE.y - 6} width={12} height={12} />
+            <text className="pd-lbl" x={g.maxE.x + 12} y={g.maxE.y + 16}>макс. E</text>
           </g>
         )}
-        {expected && !expected.is_robust && (
+        {g.robust && (
           <g>
-            <circle cx={px(expected.std)} cy={py(expected.expected)} r="7" fill="none" stroke="var(--intent-warning)" strokeWidth="2.2" />
-            <text x={px(expected.std) + 10} y={py(expected.expected) + 14} fontSize="9.5" fill="var(--intent-warning)"
-                  style={{ fontFamily: 'var(--font-mono)' }}>макс E (хрупкий)</text>
+            <path className="pf-pick" d={`M${g.robust.x},${g.robust.y - 10}L${g.robust.x + 9},${g.robust.y + 6}H${g.robust.x - 9}Z`} />
+            <text className="pd-lbl pd-lbl--strong" x={g.robust.x + 12} y={g.robust.y - 8}>выбрано</text>
           </g>
         )}
 
-        <text x={padL} y={H - 10} fontSize="9.5" fill="var(--text-muted)" style={{ fontFamily: 'var(--font-mono)' }}>риск σ {money(xlo)} →</text>
-        <text x={W - padR} y={H - 10} fontSize="9.5" fill="var(--text-muted)" textAnchor="end" style={{ fontFamily: 'var(--font-mono)' }}>{money(xhi)}</text>
-        <text x={6} y={padT + 6} fontSize="9.5" fill="var(--text-muted)" style={{ fontFamily: 'var(--font-mono)' }}>E {money(yhi)}</text>
-        <text x={6} y={padT + plotH} fontSize="9.5" fill="var(--text-muted)" style={{ fontFamily: 'var(--font-mono)' }}>{money(ylo)}</text>
+        {hp && (
+          <g>
+            <line className="dk-cross" x1={hp.x} x2={hp.x} y1={hp.y} y2={H - PAD_B} />
+            <line className="dk-cross" x1={PAD_L} x2={hp.x} y1={hp.y} y2={hp.y} />
+            <circle className="pf-halo" cx={hp.x} cy={hp.y} r={7} />
+          </g>
+        )}
+        <rect className="dk-plot__hit" x={PAD_L} y={PAD_T} width={W - PAD_L - PAD_R} height={H - PAD_T - PAD_B}
+              onPointerMove={onMove} />
       </svg>
 
-      {hover && (
-        <div style={{
-          position: 'absolute', left: `min(${hover.left}%, calc(100% - 160px))`, top: `${hover.top}%`,
-          transform: 'translate(10px, -50%)', pointerEvents: 'none', zIndex: 5,
-          background: 'var(--surface, #161a20)', border: '1px solid var(--accent)', borderRadius: 8,
-          padding: '7px 10px', fontSize: 11.5, boxShadow: '0 6px 22px rgba(0,0,0,.45)', minWidth: 140,
-        }}>
-          <b style={{ color: hover.c.is_robust ? 'var(--intent-success)' : hover.c.is_pareto ? 'var(--accent)' : 'var(--text-muted)' }}>
-            {hover.c.is_robust ? 'устойчивый' : hover.c.is_expected ? 'макс E' : hover.c.is_pareto ? 'на границе Парето' : 'доминируемый'}
-          </b>
-          <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5 }}>
-            E[прибыль] {money(hover.c.expected)}<br />
-            σ (риск) {money(hover.c.std)}<br />
-            CVaR {money(hover.c.cvar)} · худший {money(hover.c.worst_case)}<br />
-            P(убыток) {(hover.c.p_loss * 100).toFixed(1)}%{hover.c.concentration != null ? ` · конц. ${Math.round(hover.c.concentration * 100)}%` : ''}
+      {hp && (
+        <div
+          className="dk-tip"
+          style={{
+            left: `${(hp.x / W) * 100}%`,
+            top: `${(hp.y / H) * 100}%`,
+            transform: `translate(${hp.x > W * 0.6 ? 'calc(-100% - 14px)' : '14px'}, -50%)`,
+          }}
+        >
+          <div className="dk-tip__title">
+            <span className={hp.c.is_robust ? 'glyph-setup' : hp.c.is_pareto ? 'glyph-info' : 'glyph-idle'} aria-hidden="true" />
+            {kind(hp.c)}
           </div>
+          <div className="dk-tip__row">E[Π] <b>{money(hp.c.expected)}</b></div>
+          <div className="dk-tip__row">σ <b>{money(hp.c.std)}</b></div>
+          <div className="dk-tip__row">CVaR <b>{money(hp.c.cvar)}</b></div>
+          <div className="dk-tip__row">худший <b>{money(hp.c.worst_case)}</b></div>
+          <div className="dk-tip__row">P(убыток) <b>{pct(hp.c.p_loss)}</b></div>
+          {hp.c.concentration != null && <div className="dk-tip__row">макс. доля <b>{pct(hp.c.concentration, 0)}</b></div>}
         </div>
       )}
+    </div>
+  )
+}
+
+export function ParetoLegend() {
+  return (
+    <div className="dk-legend">
+      <span className="dk-legend__item"><i className="dk-legend__sw dk-legend__sw--line pd-sw-u" />граница Парето</span>
+      <span className="dk-legend__item"><i className="dk-legend__sw pf-sw-dom" />доминируемые</span>
+      <span className="dk-legend__item"><i className="dk-legend__sw dk-legend__sw--tri" />выбранный устойчивый</span>
+      <span className="dk-legend__item"><i className="dk-legend__sw dk-legend__sw--sq pf-sw-maxe" />максимум ожидания</span>
     </div>
   )
 }

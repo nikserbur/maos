@@ -1,4 +1,5 @@
 import type { KpiBundle } from '../../lib/api'
+import type { InfoTipValues } from '../../ui/InfoTip'
 
 /** Направление «лучше»: up — больше лучше, down — меньше лучше, neutral — контекст. */
 export type KpiDir = 'up' | 'down' | 'neutral'
@@ -6,92 +7,188 @@ export type KpiStatus = 'good' | 'warn' | 'bad' | ''
 
 export type KpiCategory = 'Сроки' | 'Ресурсы' | 'Поток' | 'Труд' | 'Надёжность' | 'Экономика'
 
+/** Единица KPI (подмножество единиц реестра «i», src/explain/format.ts). */
+export type KpiUnit = 'ч' | '%' | 'шт' | 'заказов' | 'ед./сут' | 'заказ/сут' | '₽'
+
+/** Контекст, которого нет в KPI-блоке плана (для оценок по старым планам). */
+export interface KpiContext {
+  /** Число станков в НСИ — оценка Σ фонда как N·Cmax (24×7) для планов до B1. */
+  machines?: number
+}
+
 export interface KpiDef {
+  /** Стабильный код — по нему сохранены дашборды (не переименовывать). */
   code: string
   name: string
   nameEn: string
   category: KpiCategory
-  unit: string
+  unit: KpiUnit
   dir: KpiDir
+  /** Краткая формула для реестра (полная — в «i»). */
   formula: string
-  /** Значение из сохранённого KPI-блока плана. */
-  value: (b: KpiBundle) => number
-  fmt?: (v: number) => string
-  /** Светофор по значению (условное форматирование как у Palantir). */
+  /** Значение из сохранённого KPI-блока плана; NaN — нет данных. */
+  value: (b: KpiBundle, ctx?: KpiContext) => number
+  /** true — значение оценено по старому набору полей (план до унификации KPI). */
+  estimate?: (b: KpiBundle) => boolean
+  /** Id объяснения «i» (src/explain) и живые значения для подстановки. */
+  info: string
+  infoValues?: (b: KpiBundle, ctx?: KpiContext) => InfoTipValues
+  /** Светофор по значению (условное форматирование). */
   status?: (v: number, b: KpiBundle) => KpiStatus
 }
 
-const pct = (v: number) => `${Math.round(v * 100)}%`
-const num0 = (v: number) => Math.round(v).toLocaleString('ru')
-const num1 = (v: number) => v.toFixed(1)
-const rubM = (v: number) => Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(2)} млн` : Math.round(v).toLocaleString('ru')
-const K = (b: KpiBundle, f: string) => Number(b.kpi?.[f] ?? 0)
-const mk = (b: KpiBundle) => Math.max(1e-6, K(b, 'makespan'))
+/** Поле KPI-блока: NaN, если его нет (старый план) — отличаем «нет данных» от нуля. */
+export const kpiField = (b: KpiBundle, f: string): number => {
+  const v = b.kpi?.[f]
+  return typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN
+}
+const has = (b: KpiBundle, f: string) => Number.isFinite(kpiField(b, f))
+const or0 = (v: number) => (Number.isFinite(v) ? v : 0)
+const K = (b: KpiBundle, f: string) => or0(kpiField(b, f))
+
+/** E[Cmax] на итоговом расписании; для старых планов — детерминированная длина. */
+const makespanMain = (b: KpiBundle) => (has(b, 'makespan_mean') && K(b, 'makespan_mean') > 0 ? K(b, 'makespan_mean') : kpiField(b, 'makespan'))
+const mkRef = (b: KpiBundle) => Math.max(1e-6, or0(makespanMain(b)))
+
+/**
+ * Σ календарного фонда станков: из KPI (после B1) или оценка N·Cmax (24×7) —
+ * верхняя граница фонда, поэтому доли по ней — нижние оценки.
+ */
+export function machineFund(b: KpiBundle, ctx?: KpiContext): number {
+  if (has(b, 'machine_fund_hours') && K(b, 'machine_fund_hours') > 0) return K(b, 'machine_fund_hours')
+  const n = ctx?.machines ?? 0
+  const mk = K(b, 'makespan')
+  return n > 0 && mk > 0 ? n * mk : Number.NaN
+}
+
+/** Доля переналадок: Σ τ_нал / Σ фонда станков (B8). */
+const setupShare = (b: KpiBundle, ctx?: KpiContext) => {
+  if (has(b, 'setup_share')) return K(b, 'setup_share')
+  const fund = machineFund(b, ctx)
+  return Number.isFinite(fund) ? K(b, 'setup_hours') / fund : Number.NaN
+}
+/** Коэффициент готовности (оценка): 1 − Σ(ТО + ремонт) / Σ фонда (ГОСТ 27.002). */
+const availability = (b: KpiBundle, ctx?: KpiContext) => {
+  if (has(b, 'availability')) return K(b, 'availability')
+  const fund = machineFund(b, ctx)
+  if (!Number.isFinite(fund)) return Number.NaN
+  return Math.max(0, 1 - (K(b, 'maintenance_hours') + K(b, 'breakdown_hours_mean')) / fund)
+}
 
 export const KPI_CATEGORIES: KpiCategory[] = ['Сроки', 'Ресурсы', 'Поток', 'Труд', 'Надёжность', 'Экономика']
 
 /**
- * Реестр KPI в стиле метрик-определений Palantir: показатель объявлен один раз
- * (имя, категория, единица, направление, формула, светофор). Значения — из
- * сохранённого блока `plans.kpi_json` (что считает планировщик), /api/analytics/kpi.
+ * Реестр KPI: показатель объявлен один раз (имя по ГОСТ, категория, единица,
+ * направление, формула, «i», светофор). Определения — docs/AUDIT-2026-10.md §4.2;
+ * значения — сохранённый блок `plans.kpi_json` (/api/analytics/kpi).
  */
 export const KPI_CATALOG: KpiDef[] = [
   // ── Сроки / исполнение ──
-  { code: 'MAKESPAN', name: 'Длительность плана', nameEn: 'Makespan', category: 'Сроки', unit: 'ч', dir: 'down',
-    formula: 'max(конец операции) по всем работам', value: (b) => K(b, 'makespan'), fmt: num0 },
-  { code: 'MK_CVAR', name: 'Срок в худших α% (CVaR)', nameEn: 'Makespan CVaR', category: 'Сроки', unit: 'ч', dir: 'down',
-    formula: 'средний makespan в α·100% худших прогонов Монте-Карло', value: (b) => K(b, 'makespan_cvar'), fmt: num0,
-    status: (v, b) => v > mk(b) * 1.3 ? 'warn' : 'good' },
-  { code: 'MK_WORST', name: 'Худший срок', nameEn: 'Makespan worst', category: 'Сроки', unit: 'ч', dir: 'down',
-    formula: 'максимальный makespan по прогонам (риск срыва)', value: (b) => K(b, 'makespan_worst'), fmt: num0 },
-  { code: 'OTD', name: 'В срок (OTD)', nameEn: 'On-time delivery', category: 'Сроки', unit: '%', dir: 'up',
-    formula: '(заказов − просроченных) / заказов', value: (b) => K(b, 'otd'), fmt: pct,
-    status: (v) => v >= 0.95 ? 'good' : v >= 0.8 ? 'warn' : 'bad' },
-  { code: 'TARD', name: 'Суммарная просрочка', nameEn: 'Tardiness', category: 'Сроки', unit: 'ч', dir: 'down',
-    formula: 'Σ max(0, факт_конец − срок) по заказам', value: (b) => K(b, 'tardiness'), fmt: num0,
-    status: (v, b) => v <= 0 ? 'good' : v < mk(b) * 0.1 ? 'warn' : 'bad' },
-  { code: 'N_LATE', name: 'Просроченных заказов', nameEn: 'Late orders', category: 'Сроки', unit: 'шт', dir: 'down',
-    formula: 'число заказов с конец > срок', value: (b) => K(b, 'n_late'), fmt: num0,
-    status: (v) => v <= 0 ? 'good' : 'warn' },
-  { code: 'FLOW', name: 'Цикл заказа (flow time)', nameEn: 'Flow time', category: 'Сроки', unit: 'ч', dir: 'down',
-    formula: 'ср. (выпуск − запуск) по заказам', value: (b) => K(b, 'flow_time_mean_h'), fmt: num0 },
+  { code: 'MAKESPAN', name: 'Длина расписания', nameEn: 'Makespan, E[Cmax]', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'E[Cmax] по Монте-Карло на итоговом расписании',
+    value: makespanMain, estimate: (b) => !has(b, 'makespan_mean'),
+    info: 'plan.makespan', infoValues: (b) => ({ mean: kpiField(b, 'makespan_mean'), det: kpiField(b, 'makespan') }) },
+  { code: 'MK_DET', name: 'Длина детерминированного расписания', nameEn: 'Makespan, deterministic', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'maxⱼ Cⱼ при средних длительностях (диаграмма Ганта)',
+    value: (b) => kpiField(b, 'makespan'),
+    info: 'plan.makespan', infoValues: (b) => ({ mean: kpiField(b, 'makespan_mean'), det: kpiField(b, 'makespan') }) },
+  { code: 'MK_CVAR', name: 'CVaR длины расписания', nameEn: 'Makespan CVaR', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'среднее худших ⌊α·N⌋ прогонов (верхний хвост)', value: (b) => kpiField(b, 'makespan_cvar'),
+    info: 'plan.makespan_cvar', infoValues: (b) => ({ cvar: kpiField(b, 'makespan_cvar'), worst: kpiField(b, 'makespan_worst') }),
+    status: (v, b) => (v > mkRef(b) * 1.3 ? 'warn' : 'good') },
+  { code: 'MK_WORST', name: 'Худший прогон', nameEn: 'Makespan worst', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'maxᵢ Cmax,i по прогонам Монте-Карло', value: (b) => kpiField(b, 'makespan_worst'),
+    info: 'plan.makespan_cvar', infoValues: (b) => ({ cvar: kpiField(b, 'makespan_cvar'), worst: kpiField(b, 'makespan_worst') }) },
+  { code: 'OTD', name: 'Доля заказов в срок (OTD)', nameEn: 'On-time delivery', category: 'Сроки', unit: '%', dir: 'up',
+    formula: '(n − n_просроч) / n', value: (b) => kpiField(b, 'otd'),
+    info: 'plan.otd', infoValues: (b) => ({ otd: kpiField(b, 'otd'), n_late: kpiField(b, 'n_late') }),
+    status: (v) => (v >= 0.95 ? 'good' : v >= 0.8 ? 'warn' : 'bad') },
+  { code: 'TARD', name: 'Суммарная просрочка', nameEn: 'Total tardiness', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'Σₖ max(0, Cₖ − dₖ)', value: (b) => kpiField(b, 'tardiness'),
+    info: 'plan.tardiness', infoValues: (b) => ({ tard: kpiField(b, 'tardiness'), tard_cvar: kpiField(b, 'tardiness_cvar'), n_late: kpiField(b, 'n_late') }),
+    status: (v, b) => (v <= 0 ? 'good' : v < mkRef(b) * 0.1 ? 'warn' : 'bad') },
+  { code: 'N_LATE', name: 'Просроченных заказов', nameEn: 'Late orders', category: 'Сроки', unit: 'заказов', dir: 'down',
+    formula: 'число заказов с Cₖ > dₖ', value: (b) => kpiField(b, 'n_late'),
+    info: 'plan.otd', infoValues: (b) => ({ otd: kpiField(b, 'otd'), n_late: kpiField(b, 'n_late') }),
+    status: (v) => (v <= 0 ? 'good' : 'warn') },
+  { code: 'FLOW', name: 'Время потока заказа', nameEn: 'Flow time', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'W̄ = (1/n)·Σₖ (Cₖ − Sₖ)', value: (b) => kpiField(b, 'flow_time_mean_h'),
+    info: 'plan.flow_time', infoValues: (b) => ({ flow: kpiField(b, 'flow_time_mean_h') }) },
 
   // ── Ресурсы ──
-  { code: 'UTIL', name: 'Загрузка оборудования', nameEn: 'Utilization', category: 'Ресурсы', unit: '%', dir: 'up',
-    formula: 'занятое время / фонд времени станков', value: (b) => K(b, 'utilization'), fmt: pct,
-    status: (v) => v >= 0.55 ? 'good' : v >= 0.3 ? 'warn' : 'bad' },
+  { code: 'UTIL', name: 'Загрузка оборудования', nameEn: 'Utilization (APT/PBT)', category: 'Ресурсы', unit: '%', dir: 'up',
+    formula: 'Σ продуктивного времени / Σ календарного фонда станков', value: (b) => kpiField(b, 'utilization'),
+    info: 'plan.utilization',
+    infoValues: (b, ctx) => {
+      const fund = machineFund(b, ctx), u = kpiField(b, 'utilization')
+      return { util: u, fund, busy: Number.isFinite(fund) ? u * fund : Number.NaN }
+    },
+    status: (v) => (v >= 0.55 ? 'good' : v >= 0.3 ? 'warn' : 'bad') },
   { code: 'BN_UTIL', name: 'Загрузка узкого места', nameEn: 'Bottleneck utilization', category: 'Ресурсы', unit: '%', dir: 'neutral',
-    formula: 'max загрузка по типам РЦ (ограничение системы)', value: (b) => Number(b.bottleneck?.utilization ?? 0), fmt: pct,
-    status: (v) => v >= 0.95 ? 'bad' : v >= 0.8 ? 'warn' : 'good' },
+    formula: 'maxₜ Uₜ по типам РЦ — ограничение системы',
+    value: (b) => (typeof b.bottleneck?.utilization === 'number' ? b.bottleneck.utilization : Number.NaN),
+    info: 'plan.bottleneck', infoValues: (b) => ({ name: b.bottleneck?.wc_name ?? null, util: b.bottleneck?.utilization ?? null }),
+    status: (v) => (v >= 0.95 ? 'bad' : v >= 0.8 ? 'warn' : 'good') },
 
   // ── Поток ──
-  { code: 'THRU', name: 'Проходка', nameEn: 'Throughput', category: 'Поток', unit: 'парт/дн', dir: 'up',
-    formula: 'выпущено партий / (makespan в днях)', value: (b) => K(b, 'throughput_per_day'), fmt: num1 },
-  { code: 'WIP', name: 'НЗП (WIP, среднее)', nameEn: 'Work-in-process', category: 'Поток', unit: 'шт', dir: 'down',
-    formula: 'ср. число одновременно запущенных партий', value: (b) => K(b, 'wip_avg'), fmt: num1 },
-  { code: 'WAIT', name: 'Доля ожидания в очередях', nameEn: 'Wait share', category: 'Поток', unit: '%', dir: 'down',
-    formula: '(цикл − обработка) / цикл заказа', value: (b) => K(b, 'wait_share'), fmt: pct,
-    status: (v) => v < 0.35 ? 'good' : v < 0.6 ? 'warn' : 'bad' },
+  { code: 'THRU', name: 'Темп выпуска', nameEn: 'Throughput', category: 'Поток', unit: 'ед./сут', dir: 'up',
+    formula: 'Σ выпущенных единиц / (Cmax / 24)', value: (b) => kpiField(b, 'throughput_per_day'),
+    info: 'plan.throughput',
+    infoValues: (b) => {
+      const th = kpiField(b, 'throughput_per_day'), cmax = kpiField(b, 'makespan')
+      return { th, cmax, qty: th * cmax / 24 }
+    } },
+  { code: 'ORDERS_DAY', name: 'Заказов в сутки', nameEn: 'Orders per day', category: 'Поток', unit: 'заказ/сут', dir: 'up',
+    formula: 'n / (Cmax / 24) — не путать с темпом выпуска', value: (b) => kpiField(b, 'orders_per_day'),
+    info: 'sim.orders_per_day', infoValues: (b) => ({ opd: kpiField(b, 'orders_per_day'), cmax: kpiField(b, 'makespan') }) },
+  { code: 'WIP', name: 'Задел (НЗП в натуральном выражении)', nameEn: 'Work-in-process', category: 'Поток', unit: 'заказов', dir: 'down',
+    formula: 'L = λ·W = Σ времени потока / Cmax (закон Литтла)', value: (b) => kpiField(b, 'wip_avg'),
+    info: 'plan.wip', infoValues: (b) => ({ wip: kpiField(b, 'wip_avg'), cmax: kpiField(b, 'makespan'), flow: kpiField(b, 'flow_time_mean_h') }) },
+  { code: 'WAIT', name: 'Доля ожидания', nameEn: 'Wait share', category: 'Поток', unit: '%', dir: 'down',
+    formula: 'ожидание / (ожидание + обработка) на уровне операций', value: (b) => kpiField(b, 'wait_share'),
+    info: 'plan.wait_share', infoValues: (b) => ({ share: kpiField(b, 'wait_share') }),
+    status: (v) => (v < 0.35 ? 'good' : v < 0.6 ? 'warn' : 'bad') },
 
   // ── Труд ──
   { code: 'LABOR_COST', name: 'Затраты на труд', nameEn: 'Labor cost', category: 'Труд', unit: '₽', dir: 'down',
-    formula: 'Σ (часы рабочего × ставка) по плану', value: (b) => K(b, 'labor_cost'), fmt: rubM },
+    formula: 'Σ_w B_w·r_w по назначениям рабочих', value: (b) => kpiField(b, 'labor_cost'),
+    info: 'plan.labor_cost', infoValues: (b) => ({ labor: kpiField(b, 'labor_cost') }) },
 
-  // ── Надёжность (компоненты OEE-availability) ──
-  { code: 'N_SETUP', name: 'Переналадок', nameEn: 'Setups', category: 'Надёжность', unit: 'шт', dir: 'down',
-    formula: 'число смен изделия на станке', value: (b) => K(b, 'n_setups'), fmt: num0 },
-  { code: 'SETUP_SHARE', name: 'Доля наладок', nameEn: 'Setup ratio', category: 'Надёжность', unit: '%', dir: 'down',
-    formula: 'часы наладок / makespan', value: (b) => K(b, 'setup_hours') / mk(b), fmt: pct,
-    status: (v) => v < 0.1 ? 'good' : v < 0.25 ? 'warn' : 'bad' },
-  { code: 'MAINT', name: 'Часы ТО', nameEn: 'Maintenance hours', category: 'Надёжность', unit: 'ч', dir: 'down',
-    formula: 'плановое ТО по наработке (MTBM)', value: (b) => K(b, 'maintenance_hours'), fmt: num0 },
-  { code: 'BREAK', name: 'Часы поломок (ср.)', nameEn: 'Breakdown hours', category: 'Надёжность', unit: 'ч', dir: 'down',
-    formula: 'ремонт по отказам (λ растёт с загрузкой)', value: (b) => K(b, 'breakdown_hours_mean'), fmt: num0 },
-  { code: 'AVAIL', name: 'Готовность (availability)', nameEn: 'Availability', category: 'Надёжность', unit: '%', dir: 'up',
-    formula: '1 − (ТО + поломки) / makespan', value: (b) => Math.max(0, 1 - (K(b, 'maintenance_hours') + K(b, 'breakdown_hours_mean')) / mk(b)), fmt: pct,
-    status: (v) => v >= 0.9 ? 'good' : v >= 0.75 ? 'warn' : 'bad' },
+  // ── Надёжность и переналадки ──
+  { code: 'N_SETUP', name: 'Число переналадок', nameEn: 'Setups', category: 'Надёжность', unit: 'шт', dir: 'down',
+    formula: 'смен изделия на станке в расписании', value: (b) => kpiField(b, 'n_setups'),
+    info: 'plan.setup_share',
+    infoValues: (b, ctx) => ({ share: setupShare(b, ctx), setup: kpiField(b, 'setup_hours'), fund: machineFund(b, ctx), n_setups: kpiField(b, 'n_setups') }) },
+  { code: 'SETUP_SHARE', name: 'Доля переналадок', nameEn: 'Setup share', category: 'Надёжность', unit: '%', dir: 'down',
+    formula: 'Σ τ_нал / Σ календарного фонда станков', value: setupShare, estimate: (b) => !has(b, 'setup_share'),
+    info: 'plan.setup_share',
+    infoValues: (b, ctx) => ({ share: setupShare(b, ctx), setup: kpiField(b, 'setup_hours'), fund: machineFund(b, ctx), n_setups: kpiField(b, 'n_setups') }),
+    status: (v) => (v < 0.1 ? 'good' : v < 0.2 ? 'warn' : 'bad') },
+  { code: 'MAINT', name: 'Плановое ТО', nameEn: 'Maintenance hours', category: 'Надёжность', unit: 'ч', dir: 'down',
+    formula: 'Σₘ ⌊Hₘ / MTBM⌋·t_ТО', value: (b) => kpiField(b, 'maintenance_hours'),
+    info: 'plan.maintenance', infoValues: (b) => ({ maint: kpiField(b, 'maintenance_hours'), repair: kpiField(b, 'breakdown_hours_mean') }) },
+  { code: 'BREAK', name: 'Ремонты после отказов (среднее)', nameEn: 'Repair hours', category: 'Надёжность', unit: 'ч', dir: 'down',
+    formula: 'E[T_рем] по прогонам Монте-Карло', value: (b) => kpiField(b, 'breakdown_hours_mean'),
+    info: 'plan.maintenance', infoValues: (b) => ({ maint: kpiField(b, 'maintenance_hours'), repair: kpiField(b, 'breakdown_hours_mean') }) },
+  { code: 'AVAIL', name: 'Коэффициент готовности (оценка)', nameEn: 'Availability', category: 'Надёжность', unit: '%', dir: 'up',
+    formula: '1 − Σ(ТО + ремонт) / Σ календарного фонда станков', value: availability, estimate: (b) => !has(b, 'availability'),
+    info: 'plan.availability',
+    infoValues: (b, ctx) => ({ avail: availability(b, ctx), maint: kpiField(b, 'maintenance_hours'), repair: kpiField(b, 'breakdown_hours_mean'), fund: machineFund(b, ctx) }),
+    status: (v) => (v >= 0.9 ? 'good' : v >= 0.75 ? 'warn' : 'bad') },
 
   // ── Экономика ──
   { code: 'COST', name: 'Себестоимость работ', nameEn: 'Work cost', category: 'Экономика', unit: '₽', dir: 'down',
-    formula: 'Σ стоимости операций плана (без материалов)', value: (b) => K(b, 'cost'), fmt: rubM },
+    formula: 'Σ машинного времени, труда и переналадок (без материалов)', value: (b) => kpiField(b, 'cost'),
+    info: 'plan.cost', infoValues: (b) => ({ cost: kpiField(b, 'cost') }) },
 ]
+
+const BY_CODE = new Map(KPI_CATALOG.map((k) => [k.code, k]))
+
+export function kpiDef(code: string): KpiDef | undefined {
+  return BY_CODE.get(code)
+}
+
+/** Значение KPI и признак «оценка» (план построен до унификации определений). */
+export function readKpi(def: KpiDef, b: KpiBundle, ctx?: KpiContext): { value: number; estimate: boolean } {
+  return { value: def.value(b, ctx), estimate: def.estimate ? def.estimate(b) : false }
+}

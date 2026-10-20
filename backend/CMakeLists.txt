@@ -23,6 +23,25 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+# ── HiGHS (MIT) — LP-решатель точной модели CVaR Стадии 2 (ExactCvar.*) ────
+# Статическая библиотека; исполняемый файл, тесты, примеры и zlib HiGHS отключены
+# (быстрее сборка, нет лишних целей в ctest). Версия закреплена тегом релиза.
+FetchContent_Declare(
+  highs
+  GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
+  GIT_TAG        v1.15.1
+  GIT_SHALLOW    TRUE
+)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING     OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
+set(BUILD_CXX_EXE     OFF CACHE BOOL "" FORCE)
+set(ZLIB              OFF CACHE BOOL "" FORCE)
+set(FAST_BUILD        ON  CACHE BOOL "" FORCE)
+set(HIPO              OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_EXTRAS_LIB OFF CACHE BOOL "" FORCE)  # без dlopen-заглушки extras
+FetchContent_MakeAvailable(highs)
+
 # ── SQLite3 ───────────────────────────────────────────────────────────────
 find_package(SQLite3 REQUIRED)
 
@@ -31,6 +50,7 @@ find_package(SQLite3 REQUIRED)
 # тесты проверяли ровно тот же объектный код, что работает в сервере.
 add_library(maos_core STATIC
   src/Database.cpp
+  src/ExactCvar.cpp
   src/Optimizer.cpp
   src/Scheduler.cpp
 )
@@ -39,6 +59,7 @@ target_link_libraries(maos_core PUBLIC
   nlohmann_json::nlohmann_json
   SQLite3::SQLite3
 )
+target_link_libraries(maos_core PRIVATE highs::highs)
 if(UNIX AND NOT APPLE)
   target_link_libraries(maos_core PUBLIC pthread)
 endif()

@@ -1,4 +1,5 @@
 #include "Optimizer.h"
+#include "ExactCvar.h"
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -409,6 +410,153 @@ double herfindahl(const std::vector<double>& x, const std::vector<double>& meanP
   double hhi = 0;
   for (size_t s = 0; s < x.size(); ++s) { double sh = x[s] * meanPrice[s] / total; hhi += sh * sh; }
   return hhi;
+}
+
+/* ── Точная модель Стадии 2 рядом с эвристикой (ExactCvar.*) ──────────────────
+   Строит LP по ТЕМ ЖЕ сценариям, мощностям, границам спроса и ограничению доли,
+   что и пул кандидатов, решает HiGHS и сравнивает с эвристикой по тому же критерию. */
+struct ExactInputs {
+  const Model& m;
+  const std::vector<std::vector<std::pair<std::string,double>>>& hpu;
+  const std::unordered_map<std::string, double>& cap;
+  const std::vector<std::vector<double>>& price;
+  const std::vector<std::vector<double>>& cost;
+  const std::vector<std::vector<double>>& price2;   // out-of-sample выборка
+  const std::vector<std::vector<double>>& cost2;
+  const std::vector<exact::Market>& market;
+  const std::vector<double>& absorb;
+  const std::vector<double>& meanPrice;
+  const std::vector<Portfolio>& cand;
+  const std::vector<Metrics>& mts;
+  const std::vector<double>& conc;
+  size_t robustIdx, expIdx;
+  double maxShare;
+  bool   shareFeasible;                              // эвристика уложилась в maxShare
+};
+
+json exact_compare(const ExactInputs& in, const OptimizeParams& p) {
+  const std::string want = p.exactCriterion.empty() ? p.objective : p.exactCriterion;
+  exact::Criterion crit;
+  if (want == "cvar")                                crit = exact::Criterion::Cvar;
+  else if (want == "worstcase" || want == "worst")   crit = exact::Criterion::Worst;
+  else if (want == "expected" || want == "mean")     crit = exact::Criterion::Expected;
+  else
+    return { {"status", "not_applicable"}, {"criterion", want}, {"solver", "HiGHS"},
+             {"reason", "Критерий не представим линейной программой (mean-variance — "
+                        "квадратичный корень, min-regret эвристики — относительно пула кандидатов)."} };
+
+  const size_t S = in.m.sellables.size();
+  // Эталон эвристики: тот портфель, что видит пользователь, если критерии совпадают;
+  // иначе — лучший кандидат пула по этому критерию (в тех же ограничениях).
+  const bool heurIsCvar = p.objective != "worstcase" && p.objective != "meanvariance" &&
+                          p.objective != "minregret";
+  const bool enforce = crit != exact::Criterion::Expected && in.shareFeasible;
+  auto objOf = [&](size_t c) {
+    const Metrics& mt = in.mts[c];
+    return exact::objective_of(crit, { mt.mean, mt.cvar, mt.worst });
+  };
+  size_t bestIdx = SIZE_MAX;
+  for (size_t c = 0; c < in.cand.size(); ++c) {
+    if (enforce && in.conc[c] > in.maxShare + 1e-9) continue;
+    if (bestIdx == SIZE_MAX || objOf(c) > objOf(bestIdx)) bestIdx = c;
+  }
+  size_t refIdx = bestIdx; std::string refKind = "best_candidate";
+  if (crit == exact::Criterion::Expected)                       { refIdx = in.expIdx;    refKind = "expected"; }
+  else if (crit == exact::Criterion::Cvar && heurIsCvar)        { refIdx = in.robustIdx; refKind = "robust"; }
+  else if (crit == exact::Criterion::Worst && p.objective == "worstcase") { refIdx = in.robustIdx; refKind = "robust"; }
+
+  // Задача: типы оборудования — в детерминированном порядке.
+  std::vector<std::string> wcIds;
+  for (auto& [id, c] : in.cap) wcIds.push_back(id);
+  std::sort(wcIds.begin(), wcIds.end());
+  std::unordered_map<std::string, int> wcIdx;
+  for (size_t w = 0; w < wcIds.size(); ++w) wcIdx[wcIds[w]] = (int)w;
+
+  exact::Problem pb;
+  pb.price = in.price; pb.cost = in.cost;
+  pb.market = in.market;
+  pb.alpha = p.alpha;
+  pb.criterion = crit;
+  pb.minSegments = std::max(1, std::min(256, p.exactSegments));
+  pb.maxSegments = std::max(pb.minSegments, 4 * pb.minSegments);
+  pb.enforceMaxShare = enforce;
+  pb.maxShare = in.maxShare;
+  pb.shareWeight = in.meanPrice;
+  for (auto& id : wcIds) pb.capacity.push_back(in.cap.at(id));
+  pb.usage.resize(S);
+  for (size_t s = 0; s < S; ++s) {
+    const Prod& pr = in.m.prods.at(in.m.sellables[s]);
+    // Та же граница, что у кандидатов: demand_max (уже ≤ absorb); без неё — absorb,
+    // без рынка — 1e9 (как greedy_fill).
+    pb.upper.push_back(pr.demandMax > 0 ? pr.demandMax
+                       : (in.absorb[s] < 1e17 ? std::max(0.0, in.absorb[s]) : 1e9));
+    pb.batch.push_back(std::max(1.0, pr.batchSize));
+    for (auto& [w, h] : in.hpu[s])
+      if (auto it = wcIdx.find(w); it != wcIdx.end()) pb.usage[s].push_back({ it->second, h });
+  }
+
+  exact::Result r = exact::solve(pb);
+  const int N = (int)in.price.size();
+  json out = {
+    {"status", r.status}, {"solver", "HiGHS"}, {"solver_version", exact::solver_version()},
+    {"criterion", exact::criterion_name(crit)}, {"heuristic_reference", refKind},
+    {"n_scenarios", N}, {"solve_ms", r.solveMs},
+    {"n_vars", r.nCols}, {"n_rows", r.nRows}, {"n_nonzeros", r.nNz},
+    {"max_share_enforced", enforce}, {"max_share", in.maxShare},
+    {"tail_k", r.tailK}, {"alpha_effective", (double)r.tailK / std::max(1, N)},
+  };
+  if (!r.reason.empty()) out["reason"] = r.reason;
+  if (r.status != "optimal") return out;
+
+  auto pct = [](double a, double b) -> json {
+    if (std::fabs(b) < 1e-12) return nullptr;
+    return 100.0 * (a - b) / std::fabs(b);
+  };
+  json items = json::array();
+  for (size_t s = 0; s < S; ++s)
+    if (r.x[s] > 0 || r.xRounded[s] > 0)
+      items.push_back({ {"product_id", in.m.sellables[s]}, {"qty", r.x[s]}, {"qty_rounded", r.xRounded[s]} });
+  json duals = json::array();
+  std::vector<exact::Dual> ds = r.duals;
+  std::stable_sort(ds.begin(), ds.end(),
+                   [](const exact::Dual& a, const exact::Dual& b) { return a.shadowPrice > b.shadowPrice; });
+  for (const exact::Dual& d : ds)
+    duals.push_back({ {"wc_type", wcIds[d.resource]}, {"shadow_price", d.shadowPrice},
+                      {"utilization", d.utilization}, {"load_hours", d.load},
+                      {"capacity_hours", d.capacity}, {"binding", d.binding} });
+
+  const Metrics& hm = in.mts[refIdx];
+  const double hObj = objOf(refIdx);
+  const exact::Metrics oos  = exact::evaluate_on(pb, in.price2, in.cost2, r.x);
+  const exact::Metrics hOos = exact::evaluate_on(pb, in.price2, in.cost2, in.cand[refIdx]);
+  out.update({
+    {"objective", r.objective}, {"expected", r.metrics.expected},
+    {"cvar", r.metrics.cvar}, {"worst", r.metrics.worst},
+    {"lp_objective", r.lpObjective}, {"upper_bound", r.lpObjective + r.pwlMaxError},
+    {"portfolio", items},
+    {"rounded", { {"objective", r.roundedObjective}, {"expected", r.roundedMetrics.expected},
+                  {"cvar", r.roundedMetrics.cvar}, {"worst", r.roundedMetrics.worst},
+                  {"max_share_ok", r.roundedMaxShareOk} }},
+    {"heuristic", { {"objective", hObj}, {"expected", hm.mean}, {"cvar", hm.cvar},
+                    {"worst", hm.worst}, {"best_candidate_objective", objOf(bestIdx)},
+                    {"n_candidates", (int)in.cand.size()},
+                    {"oos_objective", exact::objective_of(crit, hOos)} }},
+    {"gap_vs_heuristic", {
+      {"objective_abs", r.objective - hObj}, {"objective_pct", pct(r.objective, hObj)},
+      {"cvar_pct", pct(r.metrics.cvar, hm.cvar)}, {"expected_pct", pct(r.metrics.expected, hm.mean)},
+      {"worst_pct", pct(r.metrics.worst, hm.worst)},
+      {"rounded_objective_pct", pct(r.roundedObjective, hObj)},
+      {"vs_best_candidate_pct", pct(r.objective, objOf(bestIdx))},
+      {"oos_objective_pct", pct(exact::objective_of(crit, oos), exact::objective_of(crit, hOos))},
+    }},
+    {"duals", duals},
+    {"pwl_segments", r.pwlSegments}, {"pwl_segments_total", r.pwlSegmentsTotal},
+    {"pwl_max_error", r.pwlMaxError}, {"pwl_max_rel_error", r.pwlMaxRelError},
+    {"pwl_concave", r.pwlConcave},
+    {"oos", { {"expected", oos.expected}, {"cvar", oos.cvar}, {"worst", oos.worst},
+              {"objective", exact::objective_of(crit, oos)} }},
+  });
+  return out;
 }
 
 }  // namespace
@@ -916,8 +1064,8 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   // переобучено под конкретную выборку (оптимизационный bias) — честная
   // оценка качества решения вместо in-sample оптимизма.
   json oosJson = nullptr;
+  std::vector<std::vector<double>> price2, cost2;   // нужны и точной модели (OOS)
   {
-    std::vector<std::vector<double>> price2, cost2;
     genScenarios(p.seed + 9973u, N, price2, cost2);
     const Portfolio& xr = cand[robustIdx];
     std::vector<double> mul(S);
@@ -995,6 +1143,25 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     {"histogram", hist}, {"candidates", candList},
     {"warnings", warnings},
   };
+
+  // ── Точная модель (Rockafellar–Uryasev LP, HiGHS) — аддитивно, по запросу ──
+  if (p.compareExact) {
+    try {
+      std::vector<exact::Market> market(S);
+      for (size_t s = 0; s < S; ++s) {
+        const Prod& pr = m.prods.at(m.sellables[s]);
+        market[s].capM = capOf(s);                // как в priceMul(): после подрезки demandMax
+        market[s].competitor = pr.competitorSupply;
+        market[s].elasticity = pr.priceElasticity;
+        market[s].absorb = absorb[s];
+      }
+      const ExactInputs in{ m, hpu, cap, price, cost, price2, cost2, market, absorb, meanPrice,
+                            cand, mts, conc, robustIdx, expIdx, maxShare, bestRobust > -1e299 };
+      result["exact"] = exact_compare(in, p);
+    } catch (const std::exception& e) {
+      result["exact"] = { {"status", "error"}, {"solver", "HiGHS"}, {"reason", e.what()} };
+    }
+  }
   return result;
 }
 

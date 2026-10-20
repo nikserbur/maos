@@ -11,7 +11,7 @@
  * резиновыми опорами — так корпус не выглядит как отлитая из пластика коробка.
  */
 import type { StageStatus } from '../types'
-import { STATUS_META } from '../types'
+import { useThemeColors } from '../themeColors'
 
 /** Палитра станочных материалов (крашеный станочный металл: зелёный/синий + сталь). */
 const C = {
@@ -518,7 +518,7 @@ export function inferMachineArch(name: string): MachineArch {
 
 /** Единый вход: рисует станок по архетипу; статус подсвечивает маячок. */
 export function MachineModel({ arch, status }: { arch: MachineArch; status: StageStatus }) {
-  const beacon = STATUS_META[status].color
+  const beacon = useThemeColors().status[status]   // токен --status-* активной темы
   switch (arch) {
     case 'lathe':     return <Lathe beacon={beacon} />
     case 'mill':      return <EnclosedCenter beacon={beacon} body={C.body} />

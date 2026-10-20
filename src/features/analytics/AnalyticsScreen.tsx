@@ -5,6 +5,7 @@ import {
 } from '../../lib/api'
 import { isEligible } from '../nsi/labor'
 import { KPI_CATALOG, KPI_CATEGORIES } from './kpiCatalog'
+import { kpiDeltaText, kpiParts, kpiText } from './kpiFormat'
 import { KpiDashboard } from './KpiDashboard'
 import './analytics.css'
 
@@ -237,10 +238,10 @@ function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
                 return (
                   <div key={code} className="an__cmp-row">
                     <span>{k.name}</span>
-                    <span className="mono">{k.fmt ? k.fmt(va) : va}</span>
-                    <span className="mono an__muted">vs {k.fmt ? k.fmt(vb) : vb}</span>
+                    <span className="mono">{kpiText(va, k.unit)}</span>
+                    <span className="mono an__muted">vs {kpiText(vb, k.unit)}</span>
                     <span className="mono" style={{ color: better == null ? 'var(--text-muted)' : better ? 'var(--intent-success)' : 'var(--intent-danger)' }}>
-                      {d > 0 ? '+' : ''}{k.fmt ? k.fmt(d) : d.toFixed(1)}
+                      {kpiDeltaText(d, k.unit)}
                     </span>
                   </div>
                 )
@@ -265,7 +266,7 @@ function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
                     <div className="an__kpi-k">{k.name}
                       <span className={`an__dir an__dir--${k.dir}`}>{k.dir === 'up' ? '↑' : k.dir === 'down' ? '↓' : '·'}</span>
                     </div>
-                    <div className="an__kpi-v">{k.fmt ? k.fmt(v) : v}<small> {k.unit}</small></div>
+                    <div className="an__kpi-v">{kpiParts(v, k.unit).value}<small> {kpiParts(v, k.unit).unit}</small></div>
                     <div className="an__kpi-f">{k.formula}</div>
                   </div>
                 )

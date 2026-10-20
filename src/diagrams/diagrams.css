@@ -6,7 +6,7 @@
  */
 .dg {
   --dg-model: var(--ultramarine, var(--accent));
-  --dg-goal: var(--ochre, var(--intent-warning));
+  --dg-goal: var(--ochre-fill, var(--ochre, var(--intent-warning)));
   --dg-risk: var(--cinnabar, var(--intent-danger));
   --dg-ok: var(--verdigris, var(--intent-success));
   --dg-ink: var(--text);

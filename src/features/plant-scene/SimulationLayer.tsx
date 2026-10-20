@@ -1,7 +1,19 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { SimTaskDto } from '../../lib/api'
+import { useThemeColors, type ThemeColors } from './themeColors'
+
+/**
+ * Цвета потока симуляции = категориальная палитра графиков (--chart-*), та же, что
+ * в легенде SimulationPanel: занятость — ярь-медянка (3), очередь — охра (2),
+ * рабочие — небесный (5), партии — циклически по заказам из слотов 1–7.
+ */
+export interface SimFlowColors { busy: string; queue: string; worker: string; batches: readonly string[] }
+
+export function simFlowColors(c: ThemeColors): SimFlowColors {
+  return { busy: c.chart[2], queue: c.chart[1], worker: c.chart[4], batches: c.chart.slice(0, 7) }
+}
 
 /** Общее изменяемое состояние симуляции: панель (DOM) пишет, слой (R3F) читает
  *  в useFrame — без React-ререндеров на каждый кадр. */
@@ -18,7 +30,7 @@ export function createSimState(): SimState {
   return { tasks: [], makespan: 0, t: 0, playing: false, speed: 24, rev: 0 }
 }
 
-interface Transfer { from: string; to: string; t0: number; t1: number; hue: number }
+interface Transfer { from: string; to: string; t0: number; t1: number; slot: number }
 const DOT_POOL = 80
 const WORKER_POOL = 40
 const MAX_CRATES = 160      // общий пул «накопившихся батчей» (instanced)
@@ -51,6 +63,10 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
   }>({ rev: -1, nodes: null, byNode: new Map(), transfers: [], workers: [], ready: new Map() })
   const posOf = useRef<Map<string, [number, number]>>(new Map())
   const isShop = useRef<Set<string>>(new Set())
+  const colors = useThemeColors()
+  const flow = useMemo(() => simFlowColors(colors), [colors])
+  // Палитра партий как THREE.Color: в кадре только copy(), без разбора строк.
+  const batchColors = useMemo(() => flow.batches.map((c) => new THREE.Color(c)), [flow.batches])
 
   useFrame((_, delta) => {
     const s = sim.current
@@ -89,7 +105,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
           const a = arr[i], b = arr[i + 1]
           if (a.machine_id !== b.machine_id && b.start >= a.end - 1e-6)
             transfers.push({ from: a.machine_id, to: b.machine_id,
-                             t0: a.end, t1: Math.max(b.start, a.end + 0.25), hue: (oi * 47) % 360 })
+                             t0: a.end, t1: Math.max(b.start, a.end + 0.25), slot: oi })
         }
       })
       // Рабочие: последовательность их операций во времени (для перемещения фигурок).
@@ -203,7 +219,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
       else { const u = (f - 0.5) / 0.5; mx = p1[0]; mz = p0[1] + (p1[1] - p0[1]) * u }
       const arc = shopLevelOf(tr.from) || shopLevelOf(tr.to) ? 2.6 : 0.9
       mesh.position.set(mx, 1.3 + Math.sin(f * Math.PI) * arc, mz)
-      ;(mesh.material as THREE.MeshStandardMaterial).color.setHSL(tr.hue / 360, 0.75, 0.55)
+      ;(mesh.material as THREE.MeshStandardMaterial).color.copy(batchColors[Math.abs(tr.slot) % batchColors.length])
       mesh.visible = true
       d++
     }
@@ -248,7 +264,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
                 position={[n.position[0], 0.18, n.position[1]]}
                 rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
             <ringGeometry args={shop ? [7.6, 8.5, 48] : [2.1, 2.7, 32]} />
-            <meshBasicMaterial color="#f5a623" transparent opacity={0.85}
+            <meshBasicMaterial color={flow.busy} transparent opacity={0.85}
                                depthWrite={false} side={THREE.DoubleSide} />
           </mesh>
         )
@@ -256,7 +272,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
       {/* Стопки «накопившихся батчей» (очереди) — единый инстанс-пул. */}
       <instancedMesh ref={cratesRef} args={[undefined, undefined, MAX_CRATES]} castShadow>
         <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#c9964a" roughness={0.8} />
+        <meshStandardMaterial color={flow.queue} roughness={0.8} />
       </instancedMesh>
       {Array.from({ length: DOT_POOL }, (_, i) => (
         <mesh key={i} ref={(m) => { dotsRef.current[i] = m }} visible={false}>
@@ -269,7 +285,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
         <group key={i} ref={(g) => { workersRef.current[i] = g }} visible={false}>
           <mesh position={[0, 0.85, 0]}>
             <capsuleGeometry args={[0.28, 0.9, 4, 8]} />
-            <meshStandardMaterial color="#2ea3f2" />
+            <meshStandardMaterial color={flow.worker} />
           </mesh>
           <mesh position={[0, 1.75, 0]}>
             <sphereGeometry args={[0.26, 10, 10]} />

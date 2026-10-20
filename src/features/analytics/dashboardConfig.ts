@@ -7,11 +7,11 @@ export type AxisMode = 'plans' | 'timeline'
 
 /**
  * Метрики оси «внутри плана»: единственные временные ряды, что даёт симуляция
- * (загрузка оборудования и число занятых операторов во времени 0..makespan).
+ * (загрузка оборудования и число занятых операторов во времени 0..Cmax).
  */
 export const TIMELINE_METRICS = [
-  { key: 'util', name: 'Загрузка оборудования', pct: true },
-  { key: 'workers', name: 'Занятые операторы', pct: false },
+  { key: 'util', name: 'Загрузка оборудования', pct: true, info: 'sim.avg_utilization' },
+  { key: 'workers', name: 'Занятые операторы', pct: false, info: 'sim.required_operators' },
 ] as const
 
 export interface ChartConfig {
@@ -21,7 +21,7 @@ export interface ChartConfig {
   metrics: string[]
 }
 export interface DashboardConfig {
-  /** Коды KPI, закреплённые карточками вверху. */
+  /** Коды KPI, закреплённые плитками вверху (первый — герой-плитка). */
   pinned: string[]
   /** Ровно два настраиваемых графика. */
   charts: [ChartConfig, ChartConfig]
@@ -35,11 +35,16 @@ export const DEFAULT_DASHBOARD: DashboardConfig = {
   ],
 }
 
-/** Палитра серий (детерминированно по индексу метрики в графике). */
+/**
+ * Палитра серий — токены графиков (--chart-1…7, проверены на CVD и контраст в
+ * обеих темах); 8-й слот («прочее») рядам не выдаётся. var() работает и в SVG fill/stroke.
+ */
 export const SERIES_COLORS = [
-  'var(--accent)', 'var(--intent-warning)', 'var(--intent-success)',
-  'var(--intent-danger)', '#8b5cf6', '#22d3ee',
+  'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)',
+  'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)',
 ] as const
+
+export const seriesColor = (i: number): string => SERIES_COLORS[i % SERIES_COLORS.length]
 
 const KEY = 'analytics.dashboard'
 
@@ -69,16 +74,27 @@ export function normalizeDashboard(v: Partial<DashboardConfig> | null | undefine
   }
 }
 
-/** Загрузка конфига дашборда из БД проекта (best-effort → дефолт при ошибке). */
-export async function loadDashboard(): Promise<DashboardConfig> {
+export interface LoadedDashboard {
+  config: DashboardConfig
+  /** Текст ошибки, если сохранённый набор прочитать не удалось (показан дефолт). */
+  error: string | null
+}
+
+/** Загрузка конфига дашборда из БД проекта; при сбое — дефолт и текст ошибки для UI. */
+export async function loadDashboard(): Promise<LoadedDashboard> {
   try {
-    return normalizeDashboard(await api.prefs.get<DashboardConfig>(KEY))
-  } catch {
-    return DEFAULT_DASHBOARD
+    return { config: normalizeDashboard(await api.prefs.get<DashboardConfig>(KEY)), error: null }
+  } catch (e) {
+    return { config: DEFAULT_DASHBOARD, error: e instanceof Error ? e.message : 'нет связи с сервером' }
   }
 }
 
-/** Сохранение конфига в БД проекта (best-effort — молча игнорируем сбой сети). */
-export async function saveDashboard(cfg: DashboardConfig): Promise<void> {
-  try { await api.prefs.set(KEY, cfg) } catch { /* автосейв не критичен */ }
+/** Сохранение конфига в БД проекта. Возвращает null или текст ошибки (UI покажет «не сохранено»). */
+export async function saveDashboard(cfg: DashboardConfig): Promise<string | null> {
+  try {
+    await api.prefs.set(KEY, cfg)
+    return null
+  } catch (e) {
+    return e instanceof Error ? e.message : 'нет связи с сервером'
+  }
 }

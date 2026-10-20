@@ -1,0 +1,118 @@
+/*
+ * Bento-сетка KPI экрана «План» и баннер узкого места. Иерархия — масштабом:
+ * герой-плитка 5×2 (длина расписания + хвост риска), остальные 3–7 колонок из 12.
+ */
+.pl-bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-3); }
+
+.pl-tile {
+  position: relative; grid-column: span 3; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--pl-card-bg);
+  border: 1px solid var(--pl-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--pl-hl), var(--shadow-1);
+}
+.pl-tile--s4 { grid-column: span 4; }
+.pl-tile--s5 { grid-column: span 5; }
+.pl-tile--s7 { grid-column: span 7; }
+.pl-tile--hero {
+  grid-row: span 2; gap: var(--space-3); padding: var(--space-5);
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in oklch, var(--ultramarine) 14%, transparent), transparent 60%),
+    var(--pl-card-bg);
+}
+.pl-tile__k { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--text-muted); }
+.pl-tile__label { display: inline-flex; align-items: center; min-width: 0; }
+.pl-tile__v { display: flex; align-items: baseline; gap: 6px; color: var(--text); white-space: nowrap; }
+.pl-tile__v .unit { font-size: var(--fs-14); }
+.pl-tile__v--md { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums lining-nums slashed-zero; }
+.pl-tile--hero .pl-tile__v { font-size: var(--fs-44); font-weight: 300; line-height: 1; }
+.pl-tile--hero .pl-tile__v .unit { font-size: var(--fs-16); }
+.pl-tile__sub { color: var(--text-muted); font-size: var(--fs-12); line-height: var(--lh-body); }
+.pl-tile__sub .num { color: var(--text-secondary); }
+.pl-tile__foot { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: auto; }
+.pl-tile__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-4); }
+.pl-tile__div { height: 1px; background: color-mix(in oklch, var(--border) 60%, transparent); }
+
+/* Хвост риска: det ○ — E ● — CVaR ▲ — худший ■, хвост CVaR…худший заштрихован. */
+.pl-tail { position: relative; height: 46px; margin: var(--space-2) 0 0; }
+.pl-tail__track { position: absolute; left: 0; right: 0; top: 12px; height: 2px; border-radius: 2px; background: var(--chart-grid); }
+.pl-tail__zone {
+  position: absolute; top: 6px; height: 14px; border-radius: var(--radius-sm);
+  background: repeating-linear-gradient(135deg, color-mix(in oklch, var(--cinnabar) 55%, transparent) 0 2px, transparent 2px 5px);
+  border: 1px solid color-mix(in oklch, var(--cinnabar) 40%, transparent);
+}
+.pl-tail__m { position: absolute; top: 6px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; line-height: 1; }
+.pl-tail__m::before { width: 10px; height: 10px; margin: 0; }
+.pl-tail__m.glyph-setup::before { border-left-width: 6px; border-right-width: 6px; border-bottom-width: 10px; }
+.pl-tail__m.is-mean { color: var(--text); font-weight: 600; }
+.pl-tail__dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent); }
+.pl-tail__key { color: var(--text); }
+.pl-tail__key::before { content: ''; display: inline-block; width: 0.62em; height: 0.62em; margin-right: 0.45em; border-radius: 50%; background: var(--accent); }
+.pl-tail__m--end { transform: translateX(-100%); align-items: flex-end; }
+.pl-tail__m--start { transform: none; align-items: flex-start; }
+
+/* Метр OTD */
+.pl-meter { height: 6px; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--text-muted) 16%, transparent); overflow: hidden; }
+.pl-meter__fill { display: block; height: 100%; border-radius: inherit; background: var(--status-running); transform-origin: left center; transition: transform var(--dur-slow) var(--ease-out); }
+.pl-meter__fill--warn { background: var(--status-setup); }
+.pl-meter__fill--bad { background: var(--status-down); }
+
+/* Разложение фонда станков: обработка ● / наладка ▲ / ТО+ремонт ■ / простой ○ */
+.pl-fund { display: flex; height: 10px; border-radius: var(--radius-pill); overflow: hidden; background: color-mix(in oklch, var(--status-idle) 12%, transparent); }
+.pl-fund > span { display: block; height: 100%; min-width: 0; }
+.pl-fund > span + span { box-shadow: inset 1px 0 0 var(--bg-card); }
+.pl-fund__busy { background: var(--status-running); }
+.pl-fund__setup { background: var(--status-setup); }
+.pl-fund__down { background: repeating-linear-gradient(135deg, var(--status-down) 0 2px, color-mix(in oklch, var(--status-down) 45%, transparent) 2px 4px); }
+.pl-fund__idle { background: transparent; }
+.pl-fund-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); color: var(--text-muted); font-size: var(--fs-12); }
+.pl-fund-legend .num { color: var(--text-secondary); }
+
+/* Спарклайн очереди в плитке ожидания */
+.pl-spark { display: block; width: 100%; height: 34px; margin-top: var(--space-1); overflow: visible; }
+.pl-spark__line { fill: none; stroke: var(--chart-2); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pl-spark__area { fill: url(#pl-spark-fill); }
+.pl-spark__s0 { stop-color: var(--chart-2); stop-opacity: 0.28; }
+.pl-spark__s1 { stop-color: var(--chart-2); stop-opacity: 0; }
+
+/* ── Баннер узкого места ─────────────────────────────────────────────────── */
+.pl-bn {
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-4); align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in oklch, var(--status-setup) 38%, var(--pl-line));
+  background:
+    radial-gradient(90% 140% at 0% 50%, color-mix(in oklch, var(--ochre-fill) 13%, transparent), transparent 62%),
+    var(--pl-card-bg);
+  box-shadow: var(--pl-hl), var(--shadow-1);
+}
+.pl-bn__mark {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius);
+  background: color-mix(in oklch, var(--status-setup) 16%, transparent);
+  border: 1px solid color-mix(in oklch, var(--status-setup) 40%, transparent);
+  font-size: 20px;
+}
+.pl-bn__mark::before { margin: 0; }
+.pl-bn__eyebrow { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ochre); }
+.pl-bn__name { margin-top: 2px; font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; line-height: var(--lh-display); color: var(--text); overflow-wrap: anywhere; }
+.pl-bn__text { margin-top: var(--space-1); color: var(--text-secondary); font-size: var(--fs-13); max-width: 92ch; }
+.pl-bn__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.pl-bn__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+.pl-bn__util { font-size: var(--fs-32); font-weight: 300; line-height: 1; color: var(--text); }
+.pl-bn__why { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-12); font-weight: 500; }
+
+@media (max-width: 1280px) {
+  .pl-bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pl-tile, .pl-tile--s4 { grid-column: span 3; }
+  .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: span 6; }
+  .pl-tile--hero { grid-row: auto; }
+}
+@media (max-width: 640px) {
+  .pl-bento { grid-template-columns: minmax(0, 1fr); }
+  .pl-tile, .pl-tile--s4, .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: 1 / -1; }
+  .pl-bn { grid-template-columns: minmax(0, 1fr); }
+  .pl-bn__side { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { .pl-meter__fill { transition: none; } }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, type KpiBundle, type SimResults } from '../../lib/api'
 import { KPI_CATALOG, KPI_CATEGORIES } from './kpiCatalog'
+import { kpiParts, kpiText } from './kpiFormat'
 import {
   loadDashboard, saveDashboard, SERIES_COLORS, TIMELINE_METRICS,
   type DashboardConfig, type ChartConfig, type ChartType, type AxisMode,
@@ -29,7 +30,7 @@ export function KpiDashboard({ bundle, res }: KpiDashboardProps) {
   const [series, setSeries] = useState<KpiBundle[]>([])
   const [editPins, setEditPins] = useState(false)
 
-  useEffect(() => { loadDashboard().then(setCfg) }, [])
+  useEffect(() => { loadDashboard().then((r) => setCfg(r.config)) }, [])
   useEffect(() => { api.analytics.kpiSeries().then(setSeries).catch(() => setSeries([])) }, [bundle?.plan_id])
 
   // Значение закреплённого KPI: из выбранного плана, иначе из последнего в ряду.
@@ -81,7 +82,7 @@ export function KpiDashboard({ bundle, res }: KpiDashboardProps) {
               <div className="an__pin-k">{def.name}
                 <span className={`an__dir an__dir--${def.dir}`}>{def.dir === 'up' ? '↑' : def.dir === 'down' ? '↓' : '·'}</span>
               </div>
-              <div className="an__pin-v">{Number.isFinite(v) ? (def.fmt ? def.fmt(v) : v) : '—'}<small> {def.unit}</small></div>
+              <div className="an__pin-v">{kpiParts(v, def.unit).value}<small> {kpiParts(v, def.unit).unit}</small></div>
             </button>
           )
         })}
@@ -205,7 +206,7 @@ function buildChartData(chart: ChartConfig, series: KpiBundle[], res: SimResults
         const def = kpiDef(code); if (!def) return null
         return {
           key: code, name: def.name, color: SERIES_COLORS[mi % SERIES_COLORS.length],
-          fmtY: def.fmt ?? roundFmt, points: series.map((b) => def.value(b)),
+          fmtY: (x: number) => kpiText(x, def.unit), points: series.map((b) => def.value(b)),
         }
       })
       .filter((s): s is ChartSeries => s !== null)

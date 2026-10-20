@@ -105,7 +105,7 @@ export function TwoStages({ compact }: DiagramProps) {
       <polygon points={triPoints(316, 91, 120, 110)} fill={C.goal} />
       {GRAIN_FULL.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={1.1} fill={C.ground} opacity={0.55} />)}
       <Label x={394} y={34} size={12} color={C.ink} weight={600}>Стадия 2 — робастный портфель x</Label>
-      <Label x={394} y={50}>что выпускать · max CVaR_{α}(прибыль)</Label>
+      <Label x={394} y={50}>{'что выпускать · max CVaR_{α}(прибыль)'}</Label>
       <Label x={394} y={64} size={10} mono>POST /api/optimize</Label>
 
       {/* ▲ → ●: программа выпуска (сплошная) */}

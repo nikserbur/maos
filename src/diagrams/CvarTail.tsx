@@ -45,6 +45,7 @@ export function CvarTail({ compact }: DiagramProps) {
   const xVar = x(TAIL.varA) + g.r
   const xCvar = x(TAIL.cvar)
   const xE = x(E)
+  const axisY = g.axisY
   const ticks = compact ? [] : Array.from({ length: Math.floor(HI / 5) - Math.ceil(LO / 5) + 1 }, (_, i) => (Math.ceil(LO / 5) + i) * 5)
 
   return (
@@ -81,19 +82,19 @@ export function CvarTail({ compact }: DiagramProps) {
         {'w_{risk}·(E − CVaR)'}
       </Label>
 
-      {g.axisY !== null && (
+      {axisY !== null && (
         <g>
-          <line x1={g.x0 - 8} y1={g.axisY} x2={g.x1 + 8} y2={g.axisY} stroke={C.line} strokeWidth={1} />
+          <line x1={g.x0 - 8} y1={axisY} x2={g.x1 + 8} y2={axisY} stroke={C.line} strokeWidth={1} />
           {LO < 0 && HI > 0 && (
-            <line x1={x(0)} y1={g.top} x2={x(0)} y2={g.axisY} stroke={C.muted} strokeWidth={1} strokeDasharray="2 3" />
+            <line x1={x(0)} y1={g.top} x2={x(0)} y2={axisY} stroke={C.muted} strokeWidth={1} strokeDasharray="2 3" />
           )}
           {ticks.map((t) => (
             <g key={t}>
-              <line x1={x(t)} y1={g.axisY} x2={x(t)} y2={g.axisY + 4} stroke={C.line} />
-              <Label x={x(t)} y={g.axisY + 16} anchor="middle" size={10}>{fmt(t, 0)}</Label>
+              <line x1={x(t)} y1={axisY} x2={x(t)} y2={axisY + 4} stroke={C.line} />
+              <Label x={x(t)} y={axisY + 16} anchor="middle" size={10}>{fmt(t, 0)}</Label>
             </g>
           ))}
-          <Label x={g.x1 + 8} y={g.axisY + 34} anchor="end" size={10.5}>прибыль за горизонт, млн ₽</Label>
+          <Label x={g.x1 + 8} y={axisY + 34} anchor="end" size={10.5}>прибыль за горизонт, млн ₽</Label>
           <Label x={g.x1 + 8} y={g.top - 10} anchor="end" size={10.5}>{`N = ${N} прогонов`}</Label>
         </g>
       )}

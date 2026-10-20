@@ -5,8 +5,13 @@ import type { ThreeEvent } from '@react-three/fiber'
 import { OBJECT_REGISTRY } from './registry'
 import { MachineModel } from './objects/machines'
 import { Building } from './Building'
+import { Icon } from '../../shell/icons'
 import { STATUS_META } from './types'
 import type { SceneNode } from './graph/sceneModel'
+import { useThemeColors } from './themeColors'
+
+/** ISA-101: штатный режим спокойный, насыщенный цвет — только для отклонений. */
+const CALM_STATUS = new Set(['running', 'idle'])
 
 interface StageObjectProps {
   node: SceneNode
@@ -45,8 +50,13 @@ export function StageObject({
   const groupRef = useRef<THREE.Group>(null)
   const Model = OBJECT_REGISTRY[node.kind]
   const meta = STATUS_META[node.status]
+  const colors = useThemeColors()
+  const statusColor = colors.status[node.status]
   const [x, z] = node.position
-  const ringColor = connectSource ? '#2bb3a3' : selected ? '#2d72d2' : meta.color
+  // Источник связи — ярь-медянка, выделение — цвет фокуса (accent), иначе — статус.
+  const ringColor = connectSource ? colors.verdigris : selected ? colors.focus : statusColor
+  const calm = CALM_STATUS.has(node.status)
+  const ringOpacity = selected || hovered || connectSource ? 0.95 : calm ? 0.38 : 0.85
 
   // Здания крупнее моделей — подложка/кольцо/подпись масштабируются под них.
   const pad   = asBuilding ? 13 : 5
@@ -101,7 +111,7 @@ export function StageObject({
           onPointerOut={handleOut}
         >
           {asBuilding
-            ? <Building kind={node.kind} accent={meta.color} />
+            ? <Building kind={node.kind} accent={statusColor} />
             : node.machineArch
               ? <MachineModel arch={node.machineArch} status={node.status} />
               : <group scale={node.scale}><Model /></group>}
@@ -123,25 +133,28 @@ export function StageObject({
             transparent
             depthWrite={false}
             polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2}
-            opacity={selected || hovered || connectSource ? 0.95 : 0.6}
+            opacity={ringOpacity}
           />
         </mesh>
 
         {showLabel && (
           <Html position={[0, labelY, 0]} center distanceFactor={26} className="stage-tag-wrap">
-            <div className="stage-tag">
-              <span className="stage-tag__dot" style={{ background: meta.color }} />
-              <span>{node.title}{asBuilding && childCount > 0 ? ` · ${childCount} ед.` : ''}</span>
+            <div className={`stage-tag${selected ? ' is-selected' : ''}`}>
+              <span className={`stage-tag__glyph ${meta.glyphClass}`} role="img" aria-label={meta.label} />
+              <span className="stage-tag__title">{node.title}</span>
+              {asBuilding && childCount > 0 && <span className="stage-tag__meta num">{childCount} ед.</span>}
               {editing && !connecting && (
                 <button
+                  type="button"
                   className="stage-connect-btn"
                   title="Соединить с другим узлом"
+                  aria-label="Соединить с другим узлом"
                   onClick={(e) => {
                     e.stopPropagation()
                     onConnectFrom(node.id)
                   }}
                 >
-                  ↔
+                  <Icon name="link" size={13} />
                 </button>
               )}
             </div>

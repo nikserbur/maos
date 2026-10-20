@@ -34,6 +34,11 @@ struct OptimizeParams {
   // Инвест-what-if: временная докупка станков (wc_type_id → +N) для оценки
   // окупаемости. Прибавляется к machineCount типа → растёт мощность. Не пишет в БД.
   std::unordered_map<std::string, int> machineBonus;
+  // Точная модель (Rockafellar–Uryasev LP, HiGHS) по ТЕМ ЖЕ сценариям, что эвристика:
+  // добавляет в ответ объект "exact" (эвристический результат не меняется).
+  bool   compareExact   = false;
+  std::string exactCriterion;         // "" → по objective; cvar | expected | worst(case)
+  int    exactSegments  = 16;         // мин. число отрезков PWL на криволинейный участок
 };
 
 /**

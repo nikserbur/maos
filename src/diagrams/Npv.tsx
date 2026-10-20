@@ -81,7 +81,7 @@ export function Npv({ compact }: DiagramProps) {
             )
           })}
           <line x1={g.x0} y1={300} x2={g.x1} y2={300} stroke={C.line} />
-          <Label x={g.x0} y={314} size={10}>CF_{t}: контур — номинальный, заливка — дисконтированный</Label>
+          <Label x={g.x0} y={314} size={10}>{'CF_{t}: контур — номинальный, заливка — дисконтированный'}</Label>
           {[12, 24, 36].map((t) => (
             <Label key={t} x={x(t)} y={g.y0 + 30} size={10} anchor="middle">{String(t)}</Label>
           ))}

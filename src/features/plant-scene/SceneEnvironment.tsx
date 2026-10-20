@@ -1,4 +1,7 @@
+import { useEffect, useMemo } from 'react'
+import * as THREE from 'three'
 import { ContactShadows, Grid, OrbitControls } from '@react-three/drei'
+import { useThemeColors, type ThemeColors } from './themeColors'
 
 interface SceneEnvironmentProps {
   /** true — внутри цеха (закрытая площадка); false — открытая территория с травой. */
@@ -8,15 +11,103 @@ interface SceneEnvironmentProps {
 }
 
 /**
+ * Декоративные цвета земли/сетки (материалы 3D, AUDIT §5 — исключение из правила токенов).
+ * В тёмной теме газон глубже и спокойнее, чтобы не спорить с сумеречным небом.
+ */
+const GROUND = {
+  dark: { lawn: '#3d5640', lawnCell: '#40573f', lawnSection: '#4f6b4a' },
+  light: { lawn: '#4a6d45', lawnCell: '#46603f', lawnSection: '#5b7a52' },
+  floor: '#2b2f36', floorCell: '#3a3f47', floorSection: '#4a5562',
+} as const
+
+/** Небо = вертикальный градиент по направлению взгляда: горизонт = туман = --bg-app. */
+interface SkyPalette { horizon: THREE.Color; glow: THREE.Color; zenith: THREE.Color }
+
+function skyPalette(c: ThemeColors, indoor: boolean): SkyPalette {
+  const horizon = new THREE.Color(c.bgApp)
+  const ultra = new THREE.Color(c.ultramarine)
+  if (c.theme === 'dark') {
+    // Сумерки «ink-ультрамарин»: чуть светлее и синее над горизонтом, глубже к зениту.
+    const glow = horizon.clone().lerp(ultra, indoor ? 0.04 : 0.14)
+    const zenith = horizon.clone().lerp(ultra, 0.1).multiplyScalar(0.62)
+    return { horizon, glow, zenith }
+  }
+  // Светлая тема: бумажный горизонт, яркое нейтральное небо с лёгкой синевой к зениту.
+  const glow = horizon.clone().lerp(new THREE.Color(c.bone), 0.4)
+  const zenith = horizon.clone().lerp(ultra, indoor ? 0.08 : 0.2)
+  return { horizon, glow, zenith }
+}
+
+const SKY_VERT = /* glsl */ `
+  varying vec3 vWorld;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vWorld = w.xyz;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }
+`
+const SKY_FRAG = /* glsl */ `
+  uniform vec3 uHorizon;
+  uniform vec3 uGlow;
+  uniform vec3 uZenith;
+  varying vec3 vWorld;
+  void main() {
+    float h = normalize(vWorld - cameraPosition).y;
+    vec3 col = mix(uHorizon, uGlow, smoothstep(0.0, 0.10, h));
+    col = mix(col, uZenith, smoothstep(0.06, 0.62, h));
+    gl_FragColor = vec4(col, 1.0);
+    #include <colorspace_fragment>
+  }
+`
+/** Радиус купола < far камеры (1500) − maxDistance OrbitControls: купол не обрезается. */
+const SKY_RADIUS = 900
+
+/** Купол неба: один draw call, без работы в кадре; униформы меняются только при смене темы. */
+function SkyDome({ palette }: { palette: SkyPalette }) {
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uHorizon: { value: new THREE.Color() },
+          uGlow: { value: new THREE.Color() },
+          uZenith: { value: new THREE.Color() },
+        },
+        vertexShader: SKY_VERT,
+        fragmentShader: SKY_FRAG,
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+      }),
+    [],
+  )
+  useEffect(() => {
+    material.uniforms.uHorizon.value.copy(palette.horizon)
+    material.uniforms.uGlow.value.copy(palette.glow)
+    material.uniforms.uZenith.value.copy(palette.zenith)
+  }, [material, palette])
+  useEffect(() => () => material.dispose(), [material])
+
+  return (
+    <mesh renderOrder={-1000} frustumCulled={false} material={material}>
+      <sphereGeometry args={[SKY_RADIUS, 32, 16]} />
+    </mesh>
+  )
+}
+
+/**
  * Окружение сцены: открытая территория предприятия (трава) либо пол цеха,
- * мягкое дневное освещение и контактные тени.
+ * мягкое освещение и контактные тени. Небо/туман следуют теме (горизонт = --bg-app),
+ * чтобы 3D-двойник сидел ВНУТРИ интерфейса, а не в отдельном «мире».
  */
 export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironmentProps) {
-  const sky    = indoor ? '#14181e' : '#b8d4e6'   // светлое небо
-  const ground = indoor ? '#2b2f36' : '#4a6d45'   // бетон цеха / газон
+  const colors = useThemeColors()
+  const palette = useMemo(() => skyPalette(colors, indoor), [colors, indoor])
+  const lawn = GROUND[colors.theme]
+  const ground = indoor ? GROUND.floor : lawn.lawn
+  const horizon = colors.bgApp
 
   // Туман: завод по умолчанию чёткий (near ≈ за самым дальним цехом от камеры),
-  // а земля растворяется в небе ЗАДОЛГО до края ground-плоскости — границ карты
+  // а земля растворяется в горизонте ЗАДОЛГО до края ground-плоскости — границ карты
   // не видно, горизонт «бесконечный».
   const fogNear = extent * (indoor ? 1.6 : 2.1)
   const fogFar  = extent * (indoor ? 3.6 : 4.2)
@@ -30,8 +121,9 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
 
   return (
     <>
-      <color attach="background" args={[sky]} />
-      <fog attach="fog" args={[sky, fogNear, fogFar]} />
+      <color attach="background" args={[horizon]} />
+      <fog attach="fog" args={[horizon, fogNear, fogFar]} />
+      <SkyDome palette={palette} />
 
       {/* В цехе — РОВНЫЙ свет (ряды верхних ламп), почти без теней: яркие
           hemisphere+ambient. На улице — солнечный ключевой свет с тенями. */}
@@ -73,10 +165,10 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
         position={[0, 0, 0]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor={indoor ? '#3a3f47' : '#46603f'}
+        cellColor={indoor ? GROUND.floorCell : lawn.lawnCell}
         sectionSize={10}
         sectionThickness={1}
-        sectionColor={indoor ? '#4a5562' : '#5b7a52'}
+        sectionColor={indoor ? GROUND.floorSection : lawn.lawnSection}
         fadeDistance={extent * 2.2}
         fadeStrength={1.6}
       />

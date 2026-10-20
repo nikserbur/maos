@@ -2708,6 +2708,14 @@ static void register_optimize(httplib::Server& svr, Database& db) {
         pr.horizonHours = std::stod(jstr(body, "horizon_hours"));
       if (body.contains("demand") && !jstr(body,"demand").empty())
         pr.demand = std::stod(jstr(body, "demand"));
+      // Точная модель CVaR (HiGHS) рядом с эвристикой: compare_exact=true → объект "exact".
+      if (body.contains("compare_exact")) {
+        const std::string v = jstr(body, "compare_exact");
+        pr.compareExact = (v == "true" || v == "1");
+      }
+      if (body.contains("exact_criterion")) pr.exactCriterion = jstr(body, "exact_criterion");
+      if (body.contains("exact_segments") && !jstr(body,"exact_segments").empty())
+        pr.exactSegments = (int)std::stod(jstr(body, "exact_segments"));
 
       // Сценарий несёт цель оптимизации (Стадия E): берём из него, если не задано в запросе.
       if (!pr.scenarioId.empty()) {

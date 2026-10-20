@@ -3,7 +3,8 @@
  * dark-matter, без API-ключа). Реальная география/подписи/дороги, как Mapbox/Google.
  * Рендерится как обычный DOM-компонент (НЕ внутри R3F Canvas) только на уровне `world`.
  *
- * Заводы/склад — пины со статусным цветом в РЕАЛЬНЫХ городах Урала (см. cities.ts).
+ * Заводы/склад — пины «цвет статуса + глиф (● ▲ ○ ■)» в РЕАЛЬНЫХ городах Урала (см. cities.ts);
+ * выбранный — акцент с ореолом. Цвета дорог берутся из токенов темы (themeColors.ts).
  * «Дороги» между складом и заводами строятся по НАСТОЯЩИМ трассам через OSRM
  * (маршрутизатор OpenStreetMap); при недоступности сети — прямая линия (fallback).
  * Наведение на пин — карточка KPI (статус / цехов / станков).
@@ -15,6 +16,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { SceneNode, SceneEdge, SceneGraph } from './graph/sceneModel'
 import { STATUS_META } from './types'
+import { useThemeColors, type ThemeColors } from './themeColors'
 import { nodeLngLat } from './worldmap2d/cities'
 import './worldmap2d/worldmap2d.css'
 
@@ -23,10 +25,16 @@ import './worldmap2d/worldmap2d.css'
 // РУССКИЕ подписи. Растровый рельеф (гипсометрия/hillshade) УБРАН намеренно: именно он на
 // отдалении давал блочные/«низкополигональные» пятна и грязь. Без него карта гладкая.
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
-const SEL_COLOR = '#1a73e8'
-const ROUTE_COLOR = '#1a73e8'
 
-/** Палитра «как Яндекс»: ровная суша по типу покрова, синяя вода/реки, мягкие границы. */
+/** Дороги: ультрамарин бренда в тёмной обводке (--ink) — читается на суше и воде. */
+function applyRouteColors(map: maplibregl.Map, c: ThemeColors): void {
+  try {
+    if (map.getLayer('routes-casing')) map.setPaintProperty('routes-casing', 'line-color', c.ink)
+    if (map.getLayer('routes-line')) map.setPaintProperty('routes-line', 'line-color', c.ultramarine)
+  } catch { /* стиль перезагружается — цвета применятся в следующем load */ }
+}
+
+/** Палитра базовой карты (декоративная, AUDIT §5 — как материалы 3D): суша по типу покрова, вода, границы. */
 const MAP = {
   land: '#5f8466', wood: '#4c7a5a', grass: '#7c9a6c', sand: '#cbb787', ice: '#dde7ed',
   water: '#2f4d74', river: '#3f6aa4', boundary: '#7d7288',
@@ -93,6 +101,9 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
   // Актуальные колбэки без пересоздания карты.
   const cbRef = useRef({ onSelect, onEnter, onBackground })
   cbRef.current = { onSelect, onEnter, onBackground }
+  const colors = useThemeColors()
+  const colorsRef = useRef(colors)
+  colorsRef.current = colors
 
   // Кол-во цехов/станков на завод — для карточки KPI.
   const stats = useMemo(() => {
@@ -125,13 +136,16 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
     const meta = STATUS_META[node.status]
     const s = stats.get(node.id)
     const warehouse = node.kind === 'wirehouse'
+    const row = (k: string, v: string) => `<div class="wm2d-card__row"><span>${k}</span><b class="num">${v}</b></div>`
     return (
-      `<div class="wm2d-card__title"><span class="dot" style="background:${meta?.color ?? '#8f99a8'}"></span>${esc(node.title)}</div>` +
-      `<div class="wm2d-card__row"><span>Статус</span><b style="color:${meta?.color ?? '#e8ecf3'}">${esc(meta?.label ?? '—')}</b></div>` +
+      `<div class="wm2d-card__head"><span class="wm2d-card__kind">${warehouse ? 'Склад' : 'Завод'}</span>` +
+      `<div class="wm2d-card__title">${esc(node.title)}</div></div>` +
+      `<div class="wm2d-card__row"><span>Статус</span>` +
+      `<b class="wm2d-card__status ${meta.glyphClass}" style="color:${meta.cssVar}">${esc(meta.label)}</b></div>` +
       (warehouse
-        ? `<div class="wm2d-card__row"><span>Тип</span><b>Центральный склад</b></div>`
-        : `<div class="wm2d-card__row"><span>Цехов</span><b>${s?.shops ?? 0}</b></div>` +
-          `<div class="wm2d-card__row"><span>Станков</span><b>${s?.machines ?? 0}</b></div>`)
+        ? row('Тип', 'Центральный склад')
+        : row('Цехов', String(s?.shops ?? 0)) + row('Станков', String(s?.machines ?? 0))) +
+      `<div class="wm2d-card__foot">2×ЛКМ — войти на площадку</div>`
     )
   }
 
@@ -147,7 +161,8 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
     })
     mapRef.current = map
     if (import.meta.env.DEV) (window as unknown as { __wmMap: maplibregl.Map }).__wmMap = map
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    // Правый нижний угол свободен от оверлеев схемы (сверху — кнопка симуляции).
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right')
     map.on('click', () => cbRef.current.onBackground?.())
     map.on('load', () => {
       readyRef.current = true
@@ -157,14 +172,20 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
       map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({ id: 'routes-casing', type: 'line', source: 'routes',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.9 } }, firstSymbol)
+        paint: { 'line-color': colorsRef.current.ink, 'line-width': 7, 'line-opacity': 0.85 } }, firstSymbol)
       map.addLayer({ id: 'routes-line', type: 'line', source: 'routes',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': ROUTE_COLOR, 'line-width': 4, 'line-opacity': 0.95 } }, firstSymbol)
+        paint: { 'line-color': colorsRef.current.ultramarine, 'line-width': 3.5, 'line-opacity': 0.95 } }, firstSymbol)
       map.fire('wm2d:ready')
     })
     return () => { readyRef.current = false; markersRef.current.clear(); map.remove(); mapRef.current = null }
   }, [])
+
+  // ── Смена темы → цвета дорог (без пересоздания карты) ──
+  useEffect(() => {
+    const map = mapRef.current
+    if (map && readyRef.current) applyRouteColors(map, colors)
+  }, [colors])
 
   // ── Маркеры-пины ──
   useEffect(() => {
@@ -176,11 +197,14 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
       store.clear()
       for (const { node, lngLat } of placed) {
         const warehouse = node.kind === 'wirehouse'
-        const color = node.id === selectedId ? SEL_COLOR : (STATUS_META[node.status]?.color ?? '#238551')
+        const meta = STATUS_META[node.status]
         const el = document.createElement('div')
-        el.className = 'wm2d-pin' + (node.id === selectedId ? ' is-selected' : '')
-        el.style.setProperty('--pin', color)
-        el.innerHTML = `<div class="wm2d-pin__body"><div class="wm2d-pin__badge">${warehouse ? ICON_WAREHOUSE : ICON_FACTORY}</div><div class="wm2d-pin__tip"></div></div>`
+        el.className = `wm2d-pin wm2d-pin--${node.status}` + (node.id === selectedId ? ' is-selected' : '')
+        el.setAttribute('role', 'button')
+        el.setAttribute('aria-label', `${node.title} — ${meta.label}`)
+        el.innerHTML =
+          `<div class="wm2d-pin__body"><div class="wm2d-pin__badge">${warehouse ? ICON_WAREHOUSE : ICON_FACTORY}` +
+          `<span class="wm2d-pin__glyph ${meta.glyphClass}"></span></div><div class="wm2d-pin__tip"></div></div>`
         const popup = new maplibregl.Popup({ offset: 22, closeButton: false, className: 'wm2d-popup' }).setHTML(cardHtml(node))
         const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(lngLat as [number, number]).addTo(map)
         el.addEventListener('mouseenter', () => { popup.setLngLat(lngLat as [number, number]).setHTML(cardHtml(node)).addTo(map) })
