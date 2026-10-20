@@ -1,384 +1,306 @@
+/**
+ * «Оптимизация» — Стадия 2: робастный портфель под стохастические цены.
+ * Герой — устойчивый портфель и распределение прибыли с хвостом CVaR;
+ * рядом — «максимум ожидания», цена робастности, Парето, загрузка,
+ * проверка вне выборки и сравнение эвристики с точной LP-моделью (HiGHS).
+ */
 import { useEffect, useMemo, useState } from 'react'
-import {
-  api,
-  type PriceScenario, type Product, type WorkCenterType,
-  type OptResult, type OptPortfolio,
-} from '../../lib/api'
-import { ProfitDistribution } from './ProfitDistribution'
-import { ParetoFrontier } from './ParetoFrontier'
+import { api, type OptPortfolio, type OptimizeParams, type PriceScenario, type Product, type WorkCenterType } from '../../lib/api'
+import { money, num, pct } from '../../explain/format'
+import { InfoTip } from '../../ui/InfoTip'
+import { ParetoFrontier, ParetoLegend } from './ParetoFrontier'
+import { ExpectedCard, PriceOfRobustness, RobustHero } from './PortfolioCards'
+import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, StatusChip, Switch, rise } from './kit/kit'
+import { failOptRun, finishOptRun, patchOptForm, startOptRun, useOptStore } from './optStore'
+import { OBJECTIVES, isSoft, type Objective, type OptResultExt, type OptRunParams } from './optTypes'
+import './kit/kit.css'
 import './optimization.css'
-
-const OBJECTIVES: Array<{ id: string; label: string; hint: string }> = [
-  { id: 'cvar',         label: 'CVaR (ожидаемые потери в хвосте)', hint: 'Максимизировать средний результат в худшие α·100% исходов' },
-  { id: 'worstcase',    label: 'Худший случай (maximin)',          hint: 'Максимизировать гарантированный минимум прибыли' },
-  { id: 'meanvariance', label: 'Mean–Variance (E − λ·σ)',          hint: 'Баланс ожидаемой прибыли и волатильности' },
-  { id: 'minregret',    label: 'Min-Regret (мин. сожаление)',      hint: 'Минимизировать макс. отставание от пооборотного оптимума' },
-]
-
-function money(v: number): string {
-  const a = Math.abs(v)
-  if (a >= 1e9) return (v / 1e9).toFixed(2) + ' млрд ₽'
-  if (a >= 1e6) return (v / 1e6).toFixed(1) + ' млн ₽'
-  if (a >= 1e3) return (v / 1e3).toFixed(0) + ' тыс ₽'
-  return v.toFixed(0) + ' ₽'
-}
-const pct = (v: number) => (v * 100).toFixed(1) + '%'
-const pct1 = (v: number) => Math.round(v * 100) + '%'
-
-interface PortfolioCardProps {
-  kind: 'robust' | 'expected'
-  title: string
-  hint: string
-  pf: OptPortfolio
-  nameOf: (id: string) => string
-}
-
-function PortfolioCard({ kind, title, hint, pf, nameOf }: PortfolioCardProps) {
-  const m = pf.metrics
-  return (
-    <div className={`pf-card pf-card--${kind}`}>
-      <div className="pf-card__eyebrow">
-        {kind === 'robust' ? 'Решение системы' : 'Для сравнения'}
-        {kind === 'robust' && <span className="pf-card__badge">ВЫБРАНО</span>}
-      </div>
-      <h3 className="pf-card__title">{title}</h3>
-      <p className="pf-card__hint">{hint}</p>
-
-      <div className="pf-metrics">
-        <Metric k="E[прибыль]" v={money(m.expected)} />
-        <Metric k="CVaR" v={money(m.cvar)} tone={m.cvar < 0 ? 'bad' : 'good'} />
-        <Metric k="худший" v={money(m.worst_case)} tone={m.worst_case < 0 ? 'bad' : undefined} />
-        <Metric k="σ (разброс)" v={money(m.std)} />
-        <Metric k="P(убыток)" v={pct(m.p_loss)} tone={m.p_loss > 0.02 ? 'bad' : 'good'} />
-        <Metric k="макс. сожаление" v={money(m.max_regret)} />
-      </div>
-
-      <div className="pf-div">
-        <span className="pf-div__chip" title="Число изделий в портфеле">
-          {pf.diversification.n_products} изделий
-        </span>
-        <span className="pf-div__chip" title="Эффективное число изделий (1/HHI)">
-          эфф. {pf.diversification.effective_n.toFixed(1)}
-        </span>
-        <span className={`pf-div__chip${pf.diversification.concentration > 0.5 ? ' pf-div__chip--warn' : ''}`}
-              title="Доля крупнейшего изделия в выручке">
-          концентрация {pct1(pf.diversification.concentration)}
-        </span>
-      </div>
-
-      <div className="pf-items">
-        {pf.items.length === 0 && <span className="pf-card__hint">Пустой портфель.</span>}
-        {[...pf.items].sort((a, b) => b.contribution - a.contribution).slice(0, 8).map((it) => (
-          <div className="pf-item" key={it.product_id}>
-            <span className="pf-item__name">{nameOf(it.product_id)}</span>
-            <span className="pf-item__qty">{Math.round(it.qty).toLocaleString('ru')} ед</span>
-            <span className="pf-item__risk" title="Вклад в риск портфеля">
-              <span className="pf-item__risk-bar" style={{ width: `${Math.max(0, Math.min(100, it.risk_contribution * 100))}%` }} />
-              <span className="pf-item__risk-pct">{pct1(it.risk_contribution)}</span>
-            </span>
-          </div>
-        ))}
-        {pf.items.length > 8 && (
-          <span className="pf-card__hint">…ещё {pf.items.length - 8} изделий</span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function Metric({ k, v, tone }: { k: string; v: string; tone?: 'good' | 'bad' }) {
-  const cls = tone === 'good' ? ' pf-metric__v--good' : tone === 'bad' ? ' pf-metric__v--bad' : ''
-  return (
-    <div className="pf-metric">
-      <div className="pf-metric__k">{k}</div>
-      <div className={`pf-metric__v${cls}`}>{v}</div>
-    </div>
-  )
-}
+import './opt-screen.css'
 
 function ResourceLoad({ pf, nameOf }: { pf: OptPortfolio; nameOf: (id: string) => string }) {
-  const rows = [...pf.resource_load].sort((a, b) => b.utilization - a.utilization)
+  const rows = [...pf.resource_load].sort((a, b) => b.utilization - a.utilization).slice(0, 14)
+  if (rows.length === 0) return <p className="opt-note">Нет загрузки.</p>
   return (
-    <div>
+    <div className="opt2-load">
       {rows.map((l) => {
         const u = Math.min(1, l.utilization)
-        const cls = u >= 0.98 ? ' load-bar__fill--full' : u >= 0.8 ? ' load-bar__fill--hot' : ''
+        const cls = u >= 0.98 ? ' opt2-load__fill--full' : u >= 0.8 ? ' opt2-load__fill--hot' : ''
         return (
-          <div className="load-row" key={l.wc_type_id}>
-            <span className="load-row__name" title={nameOf(l.wc_type_id)}>{nameOf(l.wc_type_id)}</span>
-            <span className="load-bar"><span className={`load-bar__fill${cls}`} style={{ width: `${u * 100}%` }} /></span>
-            <span className="load-row__pct">{pct(l.utilization)}</span>
+          <div className="opt2-load__row" key={l.wc_type_id}>
+            <span className="opt2-load__name" title={nameOf(l.wc_type_id)}>{nameOf(l.wc_type_id)}</span>
+            <span className="opt2-load__track"><span className={`opt2-load__fill${cls}`} style={{ width: `${u * 100}%` }} /></span>
+            <span className="opt2-load__pct">{pct(l.utilization, 0)}</span>
           </div>
         )
       })}
-      {rows.length === 0 && <span className="pf-card__hint">Нет загрузки.</span>}
     </div>
+  )
+}
+
+const pctPts = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${num(Math.abs(v), 1)} %`)
+
+function ExactCard({ result, nameOf }: { result: OptResultExt; nameOf: (id: string) => string }) {
+  const ex = result.exact
+  if (!ex) return null
+  if (ex.status !== 'optimal') {
+    return (
+      <section className="dk-card opt2-span-12" style={rise(5)}>
+        <p className="text-caps opt-eyebrow">Точная модель (LP, HiGHS)</p>
+        <p className="opt-note">Статус: {ex.status ?? '—'}{ex.reason ? ` — ${ex.reason}` : ''}. Для критериев «E − λσ» и «мин. сожаление» точная LP-постановка не применяется.</p>
+      </section>
+    )
+  }
+  const g = ex.gap_vs_heuristic ?? {}
+  const duals = (ex.duals ?? []).filter((d) => d.shadow_price > 0).slice(0, 8)
+  const maxDual = Math.max(1, ...duals.map((d) => d.shadow_price))
+  return (
+    <section className="dk-card opt2-span-12 dk-rise" style={rise(5)} aria-labelledby="opt-exact-title">
+      <div className="dk-card__head">
+        <div>
+          <p className="text-caps opt-eyebrow">Эвристика ↔ точная модель<InfoTip id="opt.cvar" /></p>
+          <h3 className="dk-card__title" id="opt-exact-title">Точное решение: LP Рокафеллара — Урясева (HiGHS)</h3>
+        </div>
+        <StatusChip tone="running">оптимум найден</StatusChip>
+      </div>
+      <p className="opt-note">
+        Те же {ex.n_scenarios ?? result.samples} сценариев (общие случайные числа), вогнутая выручка аппроксимирована
+        кусочно-линейно (отрезков: {ex.pwl_segments ?? "—"}, ошибка ≤ {money(ex.pwl_max_error ?? 0)}). Решено за {num(ex.solve_ms ?? 0, 0)} мс.
+      </p>
+      <div className="opt2-exact__grid">
+        <div><p className="text-caps opt-eyebrow">выигрыш по цели</p><div className="opt2-gain">{pctPts(g.objective_pct)}</div></div>
+        <div><p className="text-caps opt-eyebrow">вне выборки</p><div className="opt2-gain">{pctPts(g.oos_objective_pct)}</div></div>
+        <div><p className="text-caps opt-eyebrow">E[прибыль]</p><div className="opt2-gain">{pctPts(g.expected_pct)}</div></div>
+        <div><p className="text-caps opt-eyebrow">CVaR</p><div className="opt2-gain">{pctPts(g.cvar_pct)}</div></div>
+      </div>
+      {duals.length > 0 && (
+        <>
+          <p className="text-caps opt-eyebrow">Теневые цены мощностей — точный сигнал теории ограничений</p>
+          <table className="opt2-table">
+            <thead><tr><th>Тип оборудования</th><th>₽ за час мощности</th><th>Загрузка</th></tr></thead>
+            <tbody>
+              {duals.map((d) => (
+                <tr key={d.wc_type}>
+                  <td>{nameOf(d.wc_type)}</td>
+                  <td><span className="opt2-bar" style={{ width: `${Math.max(6, (d.shadow_price / maxDual) * 120)}px` }} />{money(d.shadow_price)}</td>
+                  <td>{pct(d.utilization, 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
+  )
+}
+
+function OosCard({ result }: { result: OptResultExt }) {
+  const o = result.oos
+  if (!o) return null
+  const ok = Math.abs(o.gap_cvar) < 0.05 && Math.abs(o.gap_expected) < 0.05
+  return (
+    <section className="dk-card dk-rise" style={rise(4)}>
+      <div className="dk-card__head">
+        <p className="text-caps opt-eyebrow">Проверка вне выборки<InfoTip id="opt.oos_gap" values={{ gap_expected: o.gap_expected, gap_cvar: o.gap_cvar }} /></p>
+        <StatusChip tone={ok ? 'running' : 'setup'}>{ok ? 'устойчиво' : 'есть переобучение'}</StatusChip>
+      </div>
+      <div className="opt-drows">
+        <div className="opt-drow"><span className="opt-drow__label">E на свежих сценариях</span><span className="opt-drow__value num">{money(o.expected)}</span><span className="opt2-meta">Δ {pct(o.gap_expected, 1)}</span></div>
+        <div className="opt-drow"><span className="opt-drow__label">CVaR на свежих сценариях</span><span className="opt-drow__value num">{money(o.cvar)}</span><span className="opt2-meta">Δ {pct(o.gap_cvar, 1)}</span></div>
+      </div>
+    </section>
   )
 }
 
 export function OptimizationScreen() {
+  const { form, result, running, error } = useOptStore()
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
-  const [products, setProducts]   = useState<Product[]>([])
-  const [wcTypes, setWcTypes]     = useState<WorkCenterType[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [wcTypes, setWcTypes] = useState<WorkCenterType[]>([])
+  const [loadErr, setLoadErr] = useState<string | null>(null)
+  const [planName, setPlanName] = useState('')
+  const [savedMsg, setSavedMsg] = useState<string | null>(null)
 
-  const [scenarioId, setScenarioId] = useState('')
-  const [objective, setObjective]   = useState('cvar')
-  const [samples, setSamples]       = useState('3000')
-  const [alpha, setAlpha]           = useState('0.10')
-  const [maxShare, setMaxShare]     = useState('0.35')
-  const [horizonMonths, setHorizon] = useState('12')   // горизонт плана (мес) → ёмкость → объёмы
-
-  const [result, setResult]   = useState<OptResult | null>(null)
-  const [running, setRunning] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-  const [planName, setPlanName]   = useState('')
-  const [savingPlan, setSavingPlan] = useState(false)
-  const [savedMsg, setSavedMsg]   = useState<string | null>(null)
-
-  useEffect(() => {
-    Promise.all([
-      api.scenarios.list().catch(() => [] as PriceScenario[]),
-      api.products.list().catch(() => [] as Product[]),
-      api.workCenterTypes.list().catch(() => [] as WorkCenterType[]),
-    ]).then(([sc, pr, wc]) => {
-      setScenarios(sc)
-      setProducts(pr)
-      setWcTypes(wc)
-      if (sc.length && !scenarioId) setScenarioId(sc[0].id)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // По умолчанию горизонт плана = горизонт выбранного сценария (months).
-  useEffect(() => {
-    const sc = scenarios.find((s) => s.id === scenarioId)
-    if (sc?.months) setHorizon(String(sc.months))
-  }, [scenarioId, scenarios])
+  const loadRefs = () => {
+    setLoadErr(null)
+    Promise.all([api.scenarios.list(), api.products.list(), api.workCenterTypes.list()])
+      .then(([sc, pr, wc]) => {
+        setScenarios(sc); setProducts(pr); setWcTypes(wc)
+        if (sc.length && !form.scenarioId) patchOptForm({ scenarioId: sc[0].id, horizonMonths: String(sc[0].months || 12) })
+      })
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : 'нет связи с сервером'))
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadRefs, [])
 
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
-    products.forEach((p) => map.set(p.id, `${p.name}`))
+    products.forEach((p) => map.set(p.id, p.name))
     wcTypes.forEach((t) => map.set(t.id, t.name))
     return (id: string) => map.get(id) ?? id
   }, [products, wcTypes])
 
+  const validate = (): string | null => {
+    const sell = products.filter((p) => p.sellable === '1')
+    if (sell.length === 0) return 'Нет товарных изделий. Отметьте «Товарная позиция» в «Справочники → Изделия» и задайте цену и спрос.'
+    const noDemand = sell.filter((p) => (Number(p.demand_max) || 0) <= 0)
+    if (noDemand.length) return `У товарных изделий не задан годовой спрос: ${noDemand.slice(0, 3).map((p) => `«${p.name}»`).join(', ')}${noDemand.length > 3 ? ` и ещё ${noDemand.length - 3}` : ''}.`
+    const noPrice = sell.filter((p) => (Number(p.base_price) || 0) <= 0)
+    if (noPrice.length) return `У товарных изделий не задан ориентир цены: ${noPrice.slice(0, 3).map((p) => `«${p.name}»`).join(', ')}.`
+    return null
+  }
+
   const run = async () => {
-    // Проверки ДО запуска — иначе пустая база даёт молчаливый нулевой портфель.
-    const sellables = products.filter((p) => p.sellable === '1')
-    if (sellables.length === 0) {
-      setError('Нет товарных изделий для оптимизации. Откройте «Справочники → Изделия», создайте изделие и отметьте «Товарная позиция» (там же задаются цена и спрос).')
-      return
+    const v = validate()
+    if (v) { failOptRun({ message: v, kind: 'validation' }); return }
+    startOptRun()
+    setSavedMsg(null)
+    const params: OptRunParams = {
+      scenario_id: form.scenarioId || undefined,
+      objective: form.objective,
+      samples: Number(form.samples) || 3000,
+      alpha: Number(form.alpha) || 0.1,
+      max_share: Number(form.maxShare) || 0.35,
+      horizon_hours: (Number(form.horizonMonths) || 12) * 720,
+      ...(form.exact ? { compare_exact: true, solver: 'exact' as const } : {}),
     }
-    const noDemand = sellables.filter((p) => (Number(p.demand_max) || 0) <= 0)
-    if (noDemand.length > 0) {
-      setError(`У товарных изделий не задан спрос — оптимизация не включит их в портфель: ${noDemand.slice(0, 4).map((p) => `«${p.name}»`).join(', ')}${noDemand.length > 4 ? ` и ещё ${noDemand.length - 4}` : ''}. Заполните «Спрос в год» в карточке изделия (Справочники → Изделия) — на горизонт он пересчитается автоматически.`)
-      return
-    }
-    const noPrice = sellables.filter((p) => (Number(p.base_price) || 0) <= 0)
-    if (noPrice.length > 0) {
-      setError(`У товарных изделий не задан ориентир цены — выручка получится нулевой: ${noPrice.slice(0, 4).map((p) => `«${p.name}»`).join(', ')}${noPrice.length > 4 ? ` и ещё ${noPrice.length - 4}` : ''}. Заполните «Ориентир цены сбыта» в карточке изделия.`)
-      return
-    }
-    setRunning(true)
-    setError(null)
     try {
-      const r = await api.optimize.run({
-        scenario_id: scenarioId || undefined,
-        objective,
-        samples: Number(samples) || 3000,
-        alpha: Number(alpha) || 0.1,
-        max_share: Number(maxShare) || 0.35,
-        horizon_hours: (Number(horizonMonths) || 12) * 720,   // мес → часы (720ч ≈ 1 мес)
-      })
-      setResult(r)
-      setSavedMsg(null)
+      finishOptRun(await api.optimize.run(params as OptimizeParams) as OptResultExt)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка оптимизации')
-    } finally {
-      setRunning(false)
+      failOptRun({ message: e instanceof Error ? e.message : 'Ошибка оптимизации', kind: 'api' })
     }
   }
 
   const savePlan = async () => {
     if (!result?.run_id) return
-    setSavingPlan(true)
-    setSavedMsg(null)
     try {
-      const name = planName.trim() || `Оптимизация ${new Date().toLocaleString('ru')}`
-      const p = await api.optimize.savePlan(result.run_id, name)
-      setSavedMsg(`План «${p.name}» сохранён (${p.orders} изделий). Откройте раздел «Планы».`)
+      const p = await api.optimize.savePlan(result.run_id, planName.trim() || `Оптимизация ${new Date().toLocaleString('ru')}`)
+      setSavedMsg(`Программа «${p.name}» сохранена (${p.orders} изделий) — откройте «План».`)
       setPlanName('')
     } catch (e) {
-      setSavedMsg('Ошибка сохранения: ' + (e instanceof Error ? e.message : 'неизвестно'))
-    } finally {
-      setSavingPlan(false)
+      setSavedMsg('Не сохранено: ' + (e instanceof Error ? e.message : 'ошибка'))
     }
   }
 
-  const objHint = OBJECTIVES.find((o) => o.id === objective)?.hint ?? ''
-  // Мягкая ошибка (нет товарных изделий) приходит без полей robust/expected —
-  // обращаемся к ним только при наличии валидного результата.
-  const soft = result?.error_soft || (result != null && result.robust == null)
-  const robustE = result?.robust?.metrics?.expected ?? 0
+  const soft = isSoft(result)
+  const objHint = OBJECTIVES.find((o) => o.id === form.objective)?.hint ?? ''
 
   return (
-    <div className="opt">
-      <div className="opt__head">
-        <div>
-          <h1 className="opt__title">Устойчивая оптимизация производства</h1>
-          <p className="opt__subtitle">
-            Цена продукции — внешнее условие, заданное распределениями в сценарии.
-            Методом Монте-Карло строится распределение прибыли каждого портфеля и
-            выбирается <strong>самое устойчивое</strong> решение к внешним условиям,
-            а не самое прибыльное в среднем. Спрос/ёмкость рынка в НСИ — <strong>годовые</strong>;
-            на горизонт плана они пересчитываются автоматически.
-          </p>
-        </div>
-      </div>
+    <div className="opt2">
+      <ScreenHeader
+        eyebrow="Стадия 2 · что выпускать"
+        title="Робастный портфель"
+        subtitle={<>Цены продукции — случайные величины сценария. Методом статистических испытаний строится распределение
+          прибыли каждого портфеля и выбирается <b>робастное</b> решение — лучшее в неблагоприятных сценариях, а не в среднем.</>}
+      />
 
-      <div className="opt__controls">
-        <div className="opt__ctl">
-          <span className="opt__ctl-label">Сценарий внешних условий</span>
-          <select className="opt__select" value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
-            {scenarios.length === 0 && <option value="">— базовые цены НСИ —</option>}
-            {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          {scenarios.length === 0 && (
-            <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
-              Сценариев нет — будут базовые цены из реестра изделий. Сценарии с
-              распределениями цен создаются в разделе «Сценарии».
-            </span>
-          )}
+      <section className="dk-card opt2-params dk-rise" style={rise(0)} aria-label="Параметры оптимизации">
+        <div className="opt2-params__row">
+          <label className="opt2-field">
+            <span className="opt2-field__label">Сценарий внешних условий</span>
+            <select value={form.scenarioId} onChange={(e) => {
+              const sc = scenarios.find((s) => s.id === e.target.value)
+              patchOptForm({ scenarioId: e.target.value, ...(sc?.months ? { horizonMonths: String(sc.months) } : {}) })
+            }}>
+              {scenarios.length === 0 && <option value="">— базовые цены НСИ —</option>}
+              {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </label>
+          <div className="opt2-field">
+            <span className="opt2-field__label">Критерий</span>
+            <Segmented label="Критерий робастности" value={form.objective}
+              onChange={(id: Objective) => patchOptForm({ objective: id })}
+              options={OBJECTIVES.map((o) => ({ id: o.id, label: o.label, title: o.hint }))} />
+          </div>
+          <label className="opt2-field">
+            <span className="opt2-field__label">α хвоста<InfoTip id="opt.cvar" /></span>
+            <input type="number" min="0.01" max="0.5" step="0.05" value={form.alpha} onChange={(e) => patchOptForm({ alpha: e.target.value })} />
+          </label>
+          <label className="opt2-field">
+            <span className="opt2-field__label">Прогонов</span>
+            <input type="number" min="200" step="500" value={form.samples} onChange={(e) => patchOptForm({ samples: e.target.value })} />
+          </label>
+          <label className="opt2-field">
+            <span className="opt2-field__label">Макс. доля изделия</span>
+            <input type="number" min="0.1" max="1" step="0.05" value={form.maxShare} onChange={(e) => patchOptForm({ maxShare: e.target.value })} />
+          </label>
+          <label className="opt2-field">
+            <span className="opt2-field__label">Горизонт, мес</span>
+            <input type="number" min="1" max="36" value={form.horizonMonths} onChange={(e) => patchOptForm({ horizonMonths: e.target.value })} />
+          </label>
         </div>
-        <div className="opt__ctl">
-          <span className="opt__ctl-label">Критерий устойчивости</span>
-          <select className="opt__select" value={objective} onChange={(e) => setObjective(e.target.value)}>
-            {OBJECTIVES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+        <div className="opt2-params__row">
+          <Switch checked={form.exact} onChange={(v) => patchOptForm({ exact: v })}
+            hint="Решить ту же задачу точно (LP Рокафеллара — Урясева, HiGHS) и показать разрыв с эвристикой">
+            Сравнить с точной LP-моделью
+          </Switch>
+          <span className="opt2-params__hint">{objHint}</span>
+          <button type="button" className="btn btn--primary opt2-run" onClick={run} disabled={running}>
+            {running ? 'Моделируем…' : 'Найти робастное решение'}
+          </button>
         </div>
-        <div className="opt__ctl">
-          <span className="opt__ctl-label">Прогонов (Монте-Карло)</span>
-          <input className="opt__input" type="number" min="200" step="500" value={samples}
-                 onChange={(e) => setSamples(e.target.value)} />
-        </div>
-        <div className="opt__ctl">
-          <span className="opt__ctl-label">α (хвост риска)</span>
-          <input className="opt__input" type="number" min="0.01" max="0.5" step="0.05" value={alpha}
-                 onChange={(e) => setAlpha(e.target.value)} />
-        </div>
-        <div className="opt__ctl">
-          <span className="opt__ctl-label">Макс. доля 1 изделия</span>
-          <input className="opt__input" type="number" min="0.1" max="1" step="0.05" value={maxShare}
-                 onChange={(e) => setMaxShare(e.target.value)} title="Ограничение концентрации — «не ставить всё на одно»" />
-        </div>
-        <div className="opt__ctl">
-          <span className="opt__ctl-label">Горизонт плана, мес</span>
-          <input className="opt__input" type="number" min="1" max="36" step="1" value={horizonMonths}
-                 onChange={(e) => setHorizon(e.target.value)}
-                 title="На сколько создаём план: задаёт ёмкость (станки × часы) → объёмы выпуска и длину плана. 1 мес ≈ 720 ч." />
-        </div>
-        <button className="btn btn--primary opt__run" onClick={run} disabled={running}>
-          {running ? 'Моделируем…' : 'Найти устойчивое решение'}
-        </button>
-      </div>
-      <p className="opt__subtitle" style={{ marginTop: -6 }}>{objHint}</p>
+      </section>
 
-      {error && <div className="opt__empty opt__warn">{error}</div>}
+      {loadErr && <ErrorBanner onRetry={loadRefs}>Справочники не загрузились: {loadErr}</ErrorBanner>}
+      {error && <ErrorBanner tone={error.kind === 'validation' ? 'setup' : 'down'} onRetry={error.kind === 'api' ? run : undefined}>{error.message}</ErrorBanner>}
 
-      {!result && !error && (
-        <div className="opt__empty">
-          Выберите сценарий и критерий, затем запустите моделирование.
+      {running && !result && (
+        <div className="opt2-grid">
+          <div className="dk-card dk-span-8"><Skeleton h={22} w="40%" /><Skeleton h={48} w="60%" /><Skeleton h={200} /></div>
+          <div className="opt2-col-4"><div className="dk-card"><Skeleton h={140} /></div><div className="dk-card"><Skeleton h={120} /></div></div>
         </div>
       )}
 
-      {soft && (
-        <div className="opt__empty opt__warn">
-          {result?.warnings?.join(' ') || 'Нет товарных изделий для оптимизации. Отметьте изделия как товарные и задайте цену в реестре «Изделия».'}
-        </div>
+      {!result && !running && !error && (
+        <EmptyState title="Портфель ещё не рассчитан" diagram="cvar-tail"
+          action={<button type="button" className="btn btn--primary" onClick={run}>Найти робастное решение</button>}>
+          Выберите сценарий цен и критерий. Система построит распределение прибыли для ~120 портфелей и выберет тот,
+          у которого лучше всего среднее в худших α сценариев (CVaR).
+        </EmptyState>
+      )}
+
+      {result && soft && (
+        <ErrorBanner tone="setup">{result.warnings?.join(' ') || 'Нет товарных изделий для оптимизации.'}</ErrorBanner>
       )}
 
       {result && !soft && (
-        <>
-          <div className="opt__compare">
-            <PortfolioCard
-              kind="robust" title="Устойчивый портфель"
-              hint="Держится в неблагоприятных сценариях: лучший CVaR / худший случай при меньшем разбросе."
-              pf={result.robust} nameOf={nameOf} />
-            <PortfolioCard
-              kind="expected" title="Максимум ожидаемой прибыли"
-              hint="«Наивно лучшее» по матожиданию — выше средняя прибыль, но хрупкое к падению цен."
-              pf={result.expected} nameOf={nameOf} />
+        <div className="opt2-grid">
+          <RobustHero result={result} footer={result.run_id && (
+            <div className="opt2-save">
+              <input value={planName} placeholder="Название производственной программы…" onChange={(e) => setPlanName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && savePlan()} />
+              <button type="button" className="btn btn--primary" onClick={savePlan}>Передать в «План»</button>
+              {savedMsg && <span className="opt2-save__msg">{savedMsg}</span>}
+            </div>
+          )} />
+          <div className="opt2-col-4">
+            <ExpectedCard result={result} />
+            <PriceOfRobustness result={result} />
+            <OosCard result={result} />
           </div>
 
-          {result.run_id && (
-            <div className="opt__save">
-              <span className="opt__save-label" title="Портфель (что и сколько производить) сохранится как производственная ПРОГРАММА — её можно открыть и спланировать по срокам в разделе «План».">Сохранить как производственную программу (для раздела «План»):</span>
-              <input className="opt__input opt__save-input" type="text" placeholder="Название плана…"
-                     value={planName} onChange={(e) => setPlanName(e.target.value)}
-                     onKeyDown={(e) => e.key === 'Enter' && savePlan()} />
-              <button className="btn btn--primary" onClick={savePlan} disabled={savingPlan}>
-                {savingPlan ? 'Сохраняю…' : 'Сохранить как план'}
-              </button>
-              {savedMsg && <span className="opt__save-msg">{savedMsg}</span>}
-            </div>
-          )}
-
-          <div className="opt__por">
-            <span className="opt__por-val">{money(result.price_of_robustness)}</span>
-            <span className="opt__por-text">
-              <strong>Цена устойчивости.</strong> Столько ожидаемой прибыли система осознанно
-              уступает (E={money(result.expected.metrics.expected)} → {money(robustE)}), чтобы
-              получить лучший худший случай ({money(result.robust.metrics.worst_case)} против{' '}
-              {money(result.expected.metrics.worst_case)}) и ниже риск убытка
-              ({pct(result.robust.metrics.p_loss)} против {pct(result.expected.metrics.p_loss)}).
-              {' '}Решение — <strong>диверсифицированный портфель</strong> из{' '}
-              {result.robust.diversification.n_products} изделий (а не «всё на одно»):
-              при взаимосвязи цен ρ={result.market_corr.toFixed(2)} это снижает разброс прибыли
-              с σ={money(result.expected.metrics.std)} до σ={money(result.robust.metrics.std)}.
-            </span>
-          </div>
-
-          <div className="opt__grid2">
-            <div className="opt__section">
-              <p className="opt__section-title">Распределение прибыли устойчивого портфеля · {result.samples} прогонов</p>
-              <div className="opt__panel">
-                <ProfitDistribution histogram={result.histogram} metrics={result.robust.metrics} alpha={Number(alpha) || 0.1} samples={result.samples} />
-                <div className="opt__legend">
-                  <span><i style={{ background: 'var(--accent)' }} /> устойчивый</span>
-                  <span><i style={{ background: 'var(--intent-warning)' }} /> контур «макс E» (шире, с хвостом убытка)</span>
-                  <span><i style={{ background: 'var(--intent-danger)' }} /> зона убытка</span>
-                </div>
-              </div>
-            </div>
-            <div className="opt__section">
-              <p className="opt__section-title">Загрузка оборудования (план из портфеля)</p>
-              <div className="opt__panel">
-                <ResourceLoad pf={result.robust} nameOf={nameOf} />
-              </div>
-            </div>
-          </div>
+          <ExactCard result={result} nameOf={nameOf} />
 
           {result.candidates?.length > 1 && (
-            <div className="opt__section">
-              <p className="opt__section-title">
-                Граница Парето · доходность ↔ риск ({result.candidates.filter((c) => c.is_pareto).length} недоминируемых из {result.candidates.length})
-              </p>
-              <div className="opt__panel">
-                <ParetoFrontier candidates={result.candidates} />
-                <div className="opt__legend">
-                  <span><i style={{ background: 'var(--accent)' }} /> граница Парето (недоминируемые)</span>
-                  <span><i style={{ background: 'var(--intent-success)' }} /> устойчивый выбор</span>
-                  <span><i style={{ background: 'var(--intent-warning)' }} /> макс E (хрупкий)</span>
-                  <span><i style={{ background: 'var(--text-disabled)' }} /> прочие портфели</span>
-                </div>
+            <section className="dk-card opt2-span-6 dk-rise" style={rise(6)}>
+              <div className="dk-card__head">
+                <p className="text-caps opt-eyebrow">Граница Парето «доходность ↔ риск»<InfoTip id="opt.pareto" /></p>
+                <span className="opt2-meta">{result.candidates.filter((c) => c.is_pareto).length} недоминируемых из {result.candidates.length}</span>
               </div>
-            </div>
+              <ParetoFrontier candidates={result.candidates} />
+              <ParetoLegend />
+            </section>
           )}
+          <section className="dk-card opt2-span-6 dk-rise" style={rise(7)}>
+            <div className="dk-card__head">
+              <p className="text-caps opt-eyebrow">Загрузка оборудования портфелем<InfoTip id="opt.resource_load" /></p>
+            </div>
+            <ResourceLoad pf={result.robust} nameOf={nameOf} />
+          </section>
 
           {result.warnings?.length > 0 && (
-            <div className="opt__warn">⚠ {result.warnings.join(' · ')}</div>
+            <div className="opt2-span-12"><ErrorBanner tone="setup">{result.warnings.join(' · ')}</ErrorBanner></div>
           )}
-        </>
+        </div>
       )}
     </div>
   )
