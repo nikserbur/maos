@@ -76,7 +76,7 @@ export function StatusBar({ screen }: StatusBarProps) {
 
   return (
     <footer className="statusbar">
-      <span className="statusbar__version num">MAOS v0.61.0</span>
+      <span className="statusbar__version num">MAOS v0.61.1</span>
       <span className="statusbar__sep" aria-hidden="true" />
       <span className={`statusbar__conn statusbar__conn--${connection} ${conn.glyph}`} role="status">
         {conn.label}

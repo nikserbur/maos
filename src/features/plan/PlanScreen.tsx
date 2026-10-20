@@ -6,9 +6,16 @@ import {
 import { LoadTimeline } from './LoadTimeline'
 import { QueueChart } from './QueueChart'
 import { LaborWarning } from '../nsi/LaborWarning'
+import { PlanKpis } from './PlanKpis'
+import { BottleneckBanner } from './BottleneckBanner'
+import { Segmented } from './ui'
+import { colorVar } from './ganttModel'
+import { Icon } from '../../shell/icons'
 import './plan.css'
+import './plan-screen.css'
 
-const ORDER_COLORS = ['#2d72d2', '#238551', '#c87619', '#9179f2', '#149e8e', '#cd4246', '#db2c6f', '#d1980b']
+/** Цвет заказа по индексу в программе — общая палитра токенов (--chart-*). */
+const orderColor = (i: number) => colorVar(i)
 const h1 = (v: number) => v.toFixed(1)
 const pct = (v: number) => Math.round(v * 100) + '%'
 
@@ -17,7 +24,7 @@ const RULES = [
   { id: 'SPT', label: 'SPT — короткие вперёд' }, { id: 'CR', label: 'CR — критическое отношение' },
   { id: 'MWKR', label: 'MWKR — больше работы' }, { id: 'MS', label: 'MS — мин. запас' },
   { id: 'LPT', label: 'LPT — длинные вперёд' }, { id: 'FIFO', label: 'FIFO' },
-  { id: 'custom', label: '⚙ Конструктор эвристики' },
+  { id: 'custom', label: 'Конструктор эвристики…' },
 ]
 const CRITERIA = [
   { id: 'duration', label: 'длительность операции' },
@@ -64,7 +71,7 @@ function Gantt({ result, pins, onPin }: {
     return [...seen.entries()]
   }, [result])
   const colorIdx = useMemo(() => { const m = new Map<string, number>(); products.forEach(([p], i) => m.set(p, i)); return m }, [products])
-  const colorOf = (pid: string) => ORDER_COLORS[(colorIdx.get(pid) ?? 0) % ORDER_COLORS.length]
+  const colorOf = (pid: string) => orderColor(colorIdx.get(pid) ?? 0)
 
   // Группировка: тип оборудования → станки → полосы.
   const groups = useMemo(() => {
@@ -111,7 +118,7 @@ function Gantt({ result, pins, onPin }: {
         {allCol ? '▸ Развернуть всё' : '▾ Свернуть всё'}
       </button>
       <span className="gantt__hint">⟷ {h1(makespan)} ч ≈ {(makespan / 720).toFixed(1)} мес · {result.gantt.length} операций · {groups.length} групп</span>
-      <button className="btn" onClick={() => setFull((f) => !f)}>{full ? '✕ Свернуть' : '⛶ Весь экран'}</button>
+      <button className="btn" onClick={() => setFull((f) => !f)}><Icon name={full ? 'close' : 'expand'} size={14} />{full ? ' Свернуть' : ' Весь экран'}</button>
     </div>
   )
 
@@ -181,7 +188,7 @@ function Gantt({ result, pins, onPin }: {
                           }}
                           onMouseMove={(e) => { if (!drag) setHover({ x: e.clientX, y: e.clientY, g }) }}
                           onMouseLeave={() => setHover(null)}>
-                          {w > 34 && <span className="gantt2__blabel">{pinned ? '📌 ' : ''}{g.op_name}</span>}
+                          {w > 34 && <span className="gantt2__blabel">{pinned ? '● ' : ''}{g.op_name}</span>}
                         </span>
                       )
                     })}
@@ -244,10 +251,6 @@ function LoadBars({ rows, nameKey }: { rows: ScheduleResult['wc_load']; nameKey:
   )
 }
 
-function Kpi({ k, v, sub, tone }: { k: string; v: string; sub?: string; tone?: 'bad' | 'good' | 'warn' }) {
-  const c = tone ? ` plan__kpi-v--${tone}` : ''
-  return <div className="plan__kpi"><div className="plan__kpi-k">{k}</div><div className={`plan__kpi-v${c}`}>{v}</div>{sub && <div className="plan__kpi-sub">{sub}</div>}</div>
-}
 
 // Конструктор эвристики: [критерий, направление(±), вес]. Тип на уровне модуля,
 // чтобы использовать в сохранении/загрузке пресетов эвристик.
@@ -313,7 +316,7 @@ function HeuristicModal({ crits, setCrits, saved, onSave, onDelete, onLoad, onCl
       <div className="plan__modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="plan__modal-head">
           <div>
-            <h3>⚙ Конструктор эвристики</h3>
+            <h3>Конструктор эвристики</h3>
             <p>Приоритет операции = взвешенная сумма критериев сверху вниз</p>
           </div>
           <button className="plan__modal-x" onClick={onClose} title="Закрыть">✕</button>
@@ -581,7 +584,7 @@ export function PlanScreen() {
         <div className="plan__panel" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <HeurSummary crits={crits} />
           <button className="btn btn--primary" style={{ height: 28 }} onClick={() => setHeurOpen(true)}>
-            ⚙ Настроить эвристику
+            <Icon name="gear" size={14} /> Настроить эвристику
           </button>
         </div>
       )}
@@ -699,51 +702,14 @@ export function PlanScreen() {
 
       {result && k && (
         <>
-          <div className="plan__kpis">
-            <Kpi k="Makespan" v={`${h1(k.makespan_mean)} ч`} sub={`детерм. ${h1(k.makespan)} ч`} />
-            <Kpi k="Makespan CVaR" v={`${h1(k.makespan_cvar)} ч`} sub={`худший ${h1(k.makespan_worst)} ч`} tone="warn" />
-            <Kpi k="Просрочка" v={`${h1(k.tardiness)} ч`} sub={`CVaR ${h1(k.tardiness_cvar)} ч`} tone={k.tardiness > 0 ? 'bad' : 'good'} />
-            <Kpi k="OTD (в срок)" v={pct(k.otd)} sub={`опоздавших ${k.n_late}/${result.n_orders}`} tone={k.otd >= 0.99 ? 'good' : 'warn'} />
-            <Kpi k="Загрузка" v={pct(k.utilization)} sub={`${result.n_machines} станков`} />
-            <Kpi k="Себестоимость работ" v={`${(k.cost / 1e3).toFixed(0)} тыс ₽`}
-                 sub={`${result.n_jobs} операций${k.labor_cost ? ` · труд ${(k.labor_cost / 1e3).toFixed(0)} тыс ₽` : ''}`} />
-          </div>
-          <div className="plan__kpis">
-            <Kpi k="Flow time (ср.)" v={`${h1(k.flow_time_mean_h ?? 0)} ч`} sub="цикл заказа: запуск→выпуск" />
-            <Kpi k="Доля ожидания" v={pct(k.wait_share ?? 0)} sub="время в очередях к станкам"
-                 tone={(k.wait_share ?? 0) > 0.5 ? 'warn' : undefined} />
-            <Kpi k="НЗП (среднее)" v={h1(k.wip_avg ?? 0)} sub="заказов одновременно в работе" />
-            <Kpi k="Проходка" v={`${h1(k.throughput_per_day ?? 0)}/дн`} sub="единиц продукции в день" />
-            <Kpi k="ТО и поломки" v={`${h1(k.maintenance_hours ?? 0)}+${h1(k.breakdown_hours_mean ?? 0)} ч`}
-                 sub="плановое ТО + ср. ремонты (МК)" />
-          </div>
-
-          <div className="plan__bn">
-            <span className="plan__bn-val">{result.bottleneck.wc_name}</span>
-            <span className="plan__bn-text">
-              <strong>Узкое место</strong> — загрузка {pct(result.bottleneck.utilization)}; здесь теряется
-              больше всего времени. Правило <strong>{result.rule}</strong> выбрано как устойчивое к
-              тяжёлому хвосту (минимум целевой функции время+риск).
-              {result.improver && result.improver.accepted > 0 &&
-                ` Локальный поиск улучшил порядок ещё на ${result.improver.improvement_pct.toFixed(1)}% (${result.improver.accepted} шагов).`}
-              {(result.kpi.n_setups ?? 0) > 0 &&
-                ` Переналадок: ${result.kpi.n_setups} (${h1(result.kpi.setup_hours ?? 0)} ч).`}
-              {(result.kpi.maintenance_hours ?? 0) > 0 &&
-                ` Плановое ТО: ${h1(result.kpi.maintenance_hours ?? 0)} ч.`}
-              {(result.kpi.breakdown_hours_mean ?? 0) > 0 &&
-                ` Поломки (ср. по сценариям): ${h1(result.kpi.breakdown_hours_mean ?? 0)} ч — риск учтён в CVaR.`}
-              {' '}Простой станков {h1(result.idle.machine_idle_hours)} ч.{' '}
-              {result.calendar.enabled
-                ? `Рабочий календарь учтён (фонд ${h1(result.calendar.work_fond_hours)} ч в смены).`
-                : 'Календарь выключен (24/7).'}
-            </span>
-          </div>
+          <PlanKpis result={result} />
+          <BottleneckBanner result={result} />
 
           <p className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span>Диаграмма Ганта · {result.n_jobs} операций по станкам · полосы можно перетаскивать</span>
             {pins.size > 0 && (
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', textTransform: 'none', letterSpacing: 0 }}>
-                <span style={{ color: 'var(--accent)' }}>📌 ручных правок: {pins.size}</span>
+                <span className="plan__pins"><Icon name="pin" size={14} /> ручных правок: {pins.size}</span>
                 <button className="btn btn--primary" style={{ height: 24, padding: '0 10px' }}
                         onClick={run} disabled={running}>Пересчитать с правками</button>
                 <button className="btn" style={{ height: 24, padding: '0 10px' }}
@@ -755,7 +721,7 @@ export function PlanScreen() {
             <Gantt result={result} pins={pins} onPin={addPin} />
             <div className="plan__legend">
               {result.program.map((o, i) => (
-                <span key={i}><i style={{ background: ORDER_COLORS[i % ORDER_COLORS.length] }} />{o.product_name} ×{Math.round(o.qty)}</span>
+                <span key={i}><i style={{ background: orderColor(i) }} />{o.product_name} ×{Math.round(o.qty)}</span>
               ))}
               <span><i style={{ background: 'transparent', outline: '1.5px solid var(--intent-danger)' }} />просрочка</span>
             </div>
@@ -772,14 +738,12 @@ export function PlanScreen() {
             <div>
               <p className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>Загрузка оборудования и простои</span>
-                <span style={{ display: 'inline-flex', gap: 4 }}>
-                  <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'types' ? 1 : 0.55 }}
-                          onClick={() => setLoadView('types')}>по типам</button>
-                  <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'machines' ? 1 : 0.55 }}
-                          onClick={() => setLoadView('machines')}>по станкам</button>
-                  <button className="btn" style={{ height: 22, padding: '0 8px', opacity: loadView === 'time' ? 1 : 0.55 }}
-                          onClick={() => setLoadView('time')}>во времени</button>
-                </span>
+                <Segmented
+                  label="Вид загрузки"
+                  value={loadView}
+                  onChange={setLoadView}
+                  options={[{ id: 'types', label: 'по типам' }, { id: 'machines', label: 'по станкам' }, { id: 'time', label: 'во времени' }]}
+                />
               </p>
               <div className="plan__panel">
                 {loadView === 'types' && <LoadBars rows={result.wc_load} nameKey="wc_name" />}
