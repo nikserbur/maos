@@ -7,6 +7,7 @@ import { isEligible } from '../nsi/labor'
 import { KPI_CATALOG, KPI_CATEGORIES } from './kpiCatalog'
 import { kpiDeltaText, kpiParts, kpiText } from './kpiFormat'
 import { KpiDashboard } from './KpiDashboard'
+import { Icon } from '../../shell/icons'
 import './analytics.css'
 
 type Tab = 'kpi' | 'bottleneck' | 'invest' | 'flow'
@@ -119,9 +120,9 @@ export function AnalyticsScreen() {
       </div>
 
       <div className="an__tabs">
-        {([['kpi', '📊 KPI'], ['bottleneck', '⛓ Узкие места'], ['invest', '💰 Инвестпроекты'], ['flow', '🔀 Потоки']] as const)
-          .map(([id, label]) => (
-            <button key={id} className={`an__tab${tab === id ? ' an__tab--on' : ''}`} onClick={() => setTab(id as Tab)}>{label}</button>
+        {([['kpi', 'chart', 'KPI'], ['bottleneck', 'link', 'Узкие места'], ['invest', 'money', 'Инвестпроекты'], ['flow', 'shuffle', 'Потоки']] as const)
+          .map(([id, icon, label]) => (
+            <button key={id} className={`an__tab${tab === id ? ' an__tab--on' : ''}`} onClick={() => setTab(id as Tab)}><Icon name={icon} size={15} />{label}</button>
           ))}
       </div>
 
@@ -210,7 +211,7 @@ function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
           <p className="an__panel-t">Рекомендации (что улучшить)</p>
           {recs.map((r, i) => (
             <div key={i} className="an__rec">
-              <span>💡 {r.text}</span>
+              <span><Icon name="bulb" size={15} />{r.text}</span>
               {r.wct && <button className="btn" onClick={() => onInvest(r.wct!)}>инвест →</button>}
             </div>
           ))}
@@ -392,7 +393,7 @@ function InvestTab({ wcTypes, loads, preselect, nameOfType }: {
         </p>}
         {err && <div className="an__err">{err}</div>}
         <button className="btn btn--primary" style={{ marginTop: 10, height: 30 }} onClick={run} disabled={running}>
-          {running ? 'Считаем (2 прогона оптимизатора)…' : '💰 Рассчитать инвестпроект'}
+          {running ? 'Считаем (2 прогона оптимизатора)…' : 'Рассчитать инвестпроект'}
         </button>
       </div>
 

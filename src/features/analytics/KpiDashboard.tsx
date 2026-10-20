@@ -65,7 +65,7 @@ export function KpiDashboard({ bundle, res }: KpiDashboardProps) {
           </p>
         </div>
         <button className="btn" onClick={() => setEditPins((v) => !v)}>
-          {editPins ? '✓ Готово' : '⚙ Настроить набор'}
+          {editPins ? 'Готово' : 'Настроить набор'}
         </button>
       </div>
 
@@ -153,7 +153,7 @@ function ChartPanel({ idx, chart, series, res, onChange }: {
     onChange({ metrics: chart.metrics.length > 1 ? chart.metrics.filter((m) => m !== key) : chart.metrics })
 
   const TYPES: Array<{ t: ChartType; label: string }> = [
-    { t: 'line', label: '📈 Линия' }, { t: 'area', label: '📉 Область' }, { t: 'bar', label: '📊 Столбики' },
+    { t: 'line', label: 'Линия' }, { t: 'area', label: 'Область' }, { t: 'bar', label: 'Столбики' },
   ]
 
   return (
