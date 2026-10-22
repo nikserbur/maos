@@ -193,3 +193,58 @@
   background: var(--bg-card); border: 1px solid var(--border); }
 .heur__chip button { height: 24px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: var(--fs-12); padding: 0 6px; }
 .heur__chip button:last-child:hover { color: var(--status-down); }
+
+/* ── G2: история прогонов, оглавление результата, «что определило», касса ───── */
+.plan__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.plan__head-actions { display: flex; gap: 8px; flex: none; }
+.pl-runs { display: flex; flex-direction: column; gap: 8px; }
+.pl-runs__table td, .pl-runs__table th { white-space: nowrap; }
+.pl-runs__table .pl-chip { margin-left: 6px; }
+.pl-runs__cmp { padding: 10px 12px; background: var(--bg-panel); border-radius: var(--radius); }
+
+.pl-result { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.pl-result__body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.pl-result__sec { scroll-margin-top: calc(var(--topbar-h) + var(--pipeline-h) + 52px); }
+.pl-toc {
+  position: sticky; top: calc(var(--topbar-h) + var(--pipeline-h) + 4px); z-index: 2; display: flex; gap: 2px; flex-wrap: wrap;
+  padding: 4px; background: color-mix(in oklch, var(--bg-app) 92%, transparent); border: 1px solid var(--border); border-radius: var(--radius-pill);
+}
+.pl-toc__item {
+  height: 26px; padding: 0 12px; border: 0; border-radius: var(--radius-pill); background: none; color: var(--text-muted);
+  font: 600 var(--fs-11) var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.pl-toc__item:hover { background: var(--bg-hover); color: var(--text); }
+.pl-toc__item:focus-visible { outline: none; box-shadow: var(--halo); }
+.pl-toc__item.is-active { background: var(--bg-card); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.pl-toc__item.is-planned { color: var(--text-disabled); }
+
+.pl-drove { padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--block-4); border-radius: var(--radius); }
+.pl-drove__eyebrow { margin: 0 0 8px; color: var(--text-muted); }
+.pl-drove__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pl-drove__row { display: grid; grid-template-columns: minmax(180px, 1fr) 120px minmax(200px, 2fr); gap: 12px; align-items: center; font-size: var(--fs-13); }
+.pl-drove__title { color: var(--text); text-decoration: none; font-weight: 600; }
+.pl-drove__title:hover { color: var(--accent-text); }
+.pl-drove__bar { height: 6px; background: var(--chart-grid); border-radius: 3px; overflow: hidden; }
+.pl-drove__bar span { display: block; height: 100%; background: var(--text-muted); transform-origin: left; }
+.pl-drove__row.is-warn .pl-drove__bar span { background: var(--ochre); }
+.pl-drove__row.is-good .pl-drove__bar span { background: var(--verdigris); }
+.pl-drove__detail { color: var(--text-muted); font-size: var(--fs-12); }
+
+.pl-cash-empty { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 16px; background: var(--bg-card); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
+.pl-cash-empty__t { margin: 0 0 4px; font-weight: 600; }
+.pl-bento--cash .pl-tile--hero { border-left-color: var(--block-5); }
+.pl-pol-wrap { min-width: 220px; }
+.pl-pol { display: block; max-width: 300px; }
+.pl-pol__ci { fill: var(--accent); opacity: 0.14; }
+.pl-pol__line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.pl-pol__dot { fill: var(--accent); }
+.pl-pol__inf { fill: var(--cinnabar); opacity: 0.12; }
+.pl-pol__cur { stroke: var(--ochre); stroke-width: 1; stroke-dasharray: 3 2; }
+.pl-pol__tick { font: 500 8.5px var(--font-mono); fill: var(--text-muted); }
+.pl-tranche { display: flex; align-items: flex-end; gap: 3px; height: 54px; margin: 4px 0; }
+.pl-tranche__col { position: relative; flex: 1; height: 100%; }
+.pl-tranche__col i { position: absolute; left: 0; right: 0; bottom: 0; display: block; border-radius: 2px 2px 0 0; }
+.pl-tranche__p95 { background: color-mix(in oklch, var(--ochre) 25%, transparent); }
+.pl-tranche__p50 { background: var(--ochre); }
+@media (max-width: 760px) { .pl-drove__row { grid-template-columns: 1fr; gap: 4px; } }

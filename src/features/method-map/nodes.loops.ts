@@ -38,8 +38,9 @@ export const LOOP_NODES: readonly MapNode[] = [
   ...formulas('mon.forecast', 'monitoring', ['forecast.backtest']),
 
   { id: 'mon.quality', kind: 'subblock', block: 'monitoring', parent: 'monitoring', shape: 'disc',
-    title: 'CRPS / MASE / покрытие', short: 'Качество прогноза как сигнал: CRPS относительно наивного, MASE, калибровка PIT — статусы по изделиям.',
-    screen: { id: 'monitoring' }, learnMore: 'validation', stage: 'w1' },
+    title: 'CRPS / покрытие / MASE', short: 'Качество прогноза как сигнал: CRPS и покрытие генератора на отложенных месяцах (есть), skill бэктеста цен; MASE по изделиям — после план-факта.',
+    screen: { id: 'scenarios', anchor: 'forecast' }, learnMore: 'validation', stage: 'done' },
+  ...formulas('mon.quality', 'monitoring', ['forecast.crps']),
 
   { id: 'mon.planfact', kind: 'subblock', block: 'monitoring', parent: 'monitoring', shape: 'disc',
     title: 'План-факт и KPI', short: 'KPI последнего плана, узкие места, рекомендации, поток изделий (Санкей), сравнение A/B.',

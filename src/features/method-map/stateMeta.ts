@@ -43,6 +43,8 @@ export const PROVENANCE_LABEL: Readonly<Record<Provenance, string>> = {
   normative: 'норматив',
   manual: 'вручную',
   default: 'по умолчанию',
+  ui: 'подобрано для UI',
+  synthetic: 'синтетика',
 }
 
 /** Состояние узла по происхождению значения его паспорта. */
@@ -57,6 +59,8 @@ export function stateFromProvenance(p: Provenance): NodeState {
       return 'normative'
     case 'manual':
       return 'manual'
+    case 'ui':
+    case 'synthetic':
     default:
       return 'default'
   }

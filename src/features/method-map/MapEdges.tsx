@@ -4,7 +4,7 @@
  * тонкий пунктир. Подпись — на середине кривой, `payload` — в подсказке. Рёбра,
  * касающиеся выбранного/наведённого узла, подсвечиваются, остальные приглушаются.
  */
-import type { EdgePath } from './mapLayout'
+import { LABEL_H, labelWidth, type EdgePath } from './mapLayout'
 import type { MapEdgeKind } from './types'
 
 interface MapEdgesProps {
@@ -16,9 +16,6 @@ interface MapEdgesProps {
 }
 
 const KINDS: readonly MapEdgeKind[] = ['data', 'param', 'feedback', 'control', 'explain']
-
-/** Ширина плашки подписи по длине текста (моно-оценка, без измерения DOM). */
-const labelWidth = (text: string): number => Math.round(text.length * 6.4 + 14)
 
 export function MapEdges({ paths, width, height, focusId, onPick }: MapEdgesProps) {
   const anyFocus = focusId !== null
@@ -42,8 +39,8 @@ export function MapEdges({ paths, width, height, focusId, onPick }: MapEdgesProp
             <path className="mm-edge__hit" d={d} />
             <path className="mm-edge__line" d={d} markerEnd={`url(#mm-arrow-${edge.kind})`} />
             {text && (
-              <g className="mm-edge__label" transform={`translate(${label.x - w / 2}, ${label.y - 9})`}>
-                <rect width={w} height={18} rx={4} />
+              <g className="mm-edge__label" transform={`translate(${label.x - w / 2}, ${label.y - LABEL_H / 2})`}>
+                <rect width={w} height={LABEL_H} rx={4} />
                 <text x={w / 2} y={12.5} textAnchor="middle">{text}</text>
               </g>
             )}

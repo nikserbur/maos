@@ -145,3 +145,7 @@
 .opt2-save input { flex: 1; min-width: 220px; height: 32px; padding: 0 10px; background: var(--bg-input); color: var(--text);
   border: 1px solid var(--border-control); border-radius: var(--radius); font-size: var(--fs-13); }
 .opt2-save__msg { font-size: var(--fs-12); color: var(--status-running); }
+
+/* G2: критерий «из сценария» / «для прогона» у полей формы (UX-V2 §8 п. 3) */
+.opt2-inherit { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.opt2-inherit__t { font-size: var(--fs-11); color: var(--text-muted); }

@@ -23,6 +23,7 @@ export type Unit =
   | 'заказов'
   | 'заказ/сут'
   | 'чел.'
+  | 'нед'
   | '—'
 
 /** Значение для подстановки: число, готовая строка или «нет данных». */
@@ -143,6 +144,7 @@ export function fmtValue(value: FormatInput, unit?: Unit): string {
     case 'ч': return hours(value)
     case 'мин': return `${num(value, 0)}${NBSP}мин`
     case 'мес': return `${num(value, 1)}${NBSP}мес`
+    case 'нед': return `${num(value, 1)}${NBSP}нед`
     case '%': return pct(value)
     case '₽': return money(value)
     case '₽/мес': return `${money(value)}/мес`

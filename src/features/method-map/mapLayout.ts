@@ -32,11 +32,46 @@ export interface Point {
 export interface EdgePath {
   edge: MapEdge
   d: string
-  /** Точка для подписи (середина кривой). */
+  /** Точка для подписи: середина кривой, сдвинутая вдоль неё, если подписи пересекаются (G2). */
   label: Point
   from: Point
   to: Point
   loop: boolean
+  /** Точка кривой по параметру t ∈ [0, 1] — для размещения подписи без наложений. */
+  at: (t: number) => Point
+}
+
+/** Размер плашки подписи ребра (моно-оценка без DOM; та же формула, что в MapEdges). */
+export const LABEL_H = 18
+export const labelWidth = (text: string): number => Math.round(text.length * 6.4 + 14)
+
+interface Box { x: number; y: number; w: number; h: number }
+const boxesOverlap = (a: Box, b: Box): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+const labelBox = (p: Point, text: string): Box => ({ x: p.x - labelWidth(text) / 2, y: p.y - LABEL_H / 2, w: labelWidth(text), h: LABEL_H })
+
+/** Кандидаты позиции подписи вдоль кривой: середина, затем всё дальше от неё к обоим концам. */
+const LABEL_TS = [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78, 0.15, 0.85]
+
+/**
+ * Размещение подписей без наложений (UX-V2 §3.5, замечание G1 при 1440 px): жадно, в порядке
+ * рёбер; подпись сдвигается вдоль своей кривой к первой позиции, свободной от уже поставленных
+ * подписей и от прямоугольников блоков; если свободной нет — остаётся середина.
+ */
+export function placeLabels(paths: readonly EdgePath[], rects: readonly Rect[]): EdgePath[] {
+  const placed: Box[] = []
+  const blocks: Box[] = rects.map((r) => ({ x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 }))
+  return paths.map((p) => {
+    const text = p.edge.label ?? ''
+    if (!text) return p
+    const freeOfLabels = (pt: Point) => !placed.some((o) => boxesOverlap(o, labelBox(pt, text)))
+    const freeOfBlocks = (pt: Point) => !blocks.some((o) => boxesOverlap(o, labelBox(pt, text)))
+    const candidates = p.loop ? [p.label] : LABEL_TS.map((t) => p.at(t))
+    // Жёстко — не накладываться на другие подписи; мягко — не заезжать на блоки (длинная подпись
+    // между соседними блоками может не поместиться в зазор — тогда остаётся на кривой).
+    const pick = candidates.find((pt) => freeOfLabels(pt) && freeOfBlocks(pt)) ?? candidates.find(freeOfLabels) ?? p.label
+    placed.push(labelBox(pick, text))
+    return pick === p.label ? p : { ...p, label: pick }
+  })
 }
 
 export interface Layout {
@@ -88,27 +123,31 @@ function portPoint(r: Rect, side: Side, t: number): Point {
   }
 }
 
-function bezier(p1: Point, p2: Point, s1: Side): { d: string; mid: Point } {
+const cubicAt = (p1: Point, c1: Point, c2: Point, p2: Point) => (t: number): Point => ({
+  x: (1 - t) ** 3 * p1.x + 3 * (1 - t) ** 2 * t * c1.x + 3 * (1 - t) * t ** 2 * c2.x + t ** 3 * p2.x,
+  y: (1 - t) ** 3 * p1.y + 3 * (1 - t) ** 2 * t * c1.y + 3 * (1 - t) * t ** 2 * c2.y + t ** 3 * p2.y,
+})
+
+function bezier(p1: Point, p2: Point, s1: Side): { d: string; mid: Point; at: (t: number) => Point } {
   const horizontal = s1 === 'left' || s1 === 'right'
   const c1 = horizontal ? { x: (p1.x + p2.x) / 2, y: p1.y } : { x: p1.x, y: (p1.y + p2.y) / 2 }
   const c2 = horizontal ? { x: (p1.x + p2.x) / 2, y: p2.y } : { x: p2.x, y: (p1.y + p2.y) / 2 }
-  const at = (t: number) => ({
-    x: (1 - t) ** 3 * p1.x + 3 * (1 - t) ** 2 * t * c1.x + 3 * (1 - t) * t ** 2 * c2.x + t ** 3 * p2.x,
-    y: (1 - t) ** 3 * p1.y + 3 * (1 - t) ** 2 * t * c1.y + 3 * (1 - t) * t ** 2 * c2.y + t ** 3 * p2.y,
-  })
-  return { d: `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`, mid: at(0.5) }
+  const at = cubicAt(p1, c1, c2, p2)
+  return { d: `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`, mid: at(0.5), at }
 }
 
 /** Петля «Стадия 1 → Стадия 2» над блоком. */
-function loopPath(r: Rect): { d: string; mid: Point; from: Point; to: Point } {
+function loopPath(r: Rect): { d: string; mid: Point; from: Point; to: Point; at: (t: number) => Point } {
   const from = { x: r.x + r.w * 0.62, y: r.y }
   const to = { x: r.x + r.w * 0.38, y: r.y }
   const top = r.y - LOOP_RISE
+  const mid = { x: (from.x + to.x) / 2, y: top + LOOP_RISE * 0.25 }
   return {
     d: `M ${from.x} ${from.y} C ${from.x + 10} ${top}, ${to.x - 10} ${top}, ${to.x} ${to.y}`,
-    mid: { x: (from.x + to.x) / 2, y: top + LOOP_RISE * 0.25 },
+    mid,
     from,
     to,
+    at: () => mid,
   }
 }
 
@@ -147,16 +186,16 @@ export function routeEdges(rects: readonly Rect[], edges: readonly MapEdge[] = L
     if (!a || !b) continue
     if (a === b) {
       const l = loopPath(a)
-      out.push({ edge: e, d: l.d, label: l.mid, from: l.from, to: l.to, loop: true })
+      out.push({ edge: e, d: l.d, label: l.mid, from: l.from, to: l.to, loop: true, at: l.at })
       continue
     }
     const p = plan.get(e.id)!
     const from = portPoint(a, p.s1, t.get(`${e.id}:from`) ?? 0.5)
     const to = portPoint(b, p.s2, t.get(`${e.id}:to`) ?? 0.5)
-    const { d, mid } = bezier(from, to, p.s1)
-    out.push({ edge: e, d, label: mid, from, to, loop: false })
+    const { d, mid, at } = bezier(from, to, p.s1)
+    out.push({ edge: e, d, label: mid, from, to, loop: false, at })
   }
-  return out
+  return placeLabels(out, rects)
 }
 
 export function layoutL0(expanded: ReadonlySet<string>, subCounts: Readonly<Record<string, number>>): Layout {

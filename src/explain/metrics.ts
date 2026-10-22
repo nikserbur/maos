@@ -7,6 +7,7 @@
  *   <InfoTip id="plan.makespan" values={{ mean: 1123, det: 980, n: 600 }} />
  */
 import { ANALYTICS_METRICS } from './metrics.analytics'
+import { CASH_METRICS } from './metrics.cash'
 import { FORECAST_METRICS } from './metrics.forecast'
 import { INVEST_METRICS } from './metrics.invest'
 import { OPT_METRICS } from './metrics.opt'
@@ -22,6 +23,7 @@ export const METRIC_LIST: readonly MetricExplain[] = [
   ...FORECAST_METRICS,
   ...INVEST_METRICS,
   ...ANALYTICS_METRICS,
+  ...CASH_METRICS,
 ]
 
 export const METRICS: Readonly<Record<string, MetricExplain>> = Object.freeze(

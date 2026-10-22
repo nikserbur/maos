@@ -3,7 +3,7 @@
  * активный сценарий, размеры справочников, последние ответы Стадии 2 / Стадии 1,
  * KPI и прогноз. Поля необязательные: чего нет — считается неизвестным, а не нулём.
  */
-import type { ForecastResult, KpiBundle, PriceScenario, ScheduleResult, WorkCalendar } from '../../lib/api'
+import type { CashLpResult, FinParams, ForecastResult, KpiBundle, MacroSummary, PassportParam, PriceScenario, ScheduleResult, WorkCalendar } from '../../lib/api'
 import type { OptForm } from '../optimization/optStore'
 import type { OptResultExt } from '../optimization/optTypes'
 import type { PlanParams } from '../plan/planStore'
@@ -32,6 +32,14 @@ export interface DeriveInput {
   plan: { result: ScheduleResult | null; builtAt: number | null; running: boolean; params: PlanParams }
   kpi: KpiBundle | null
   forecast: ForecastResult | null
+  /** Волна G2: серверный паспорт по коду (GET /api/passport); null — недоступен, бейджи по умолчаниям кода. */
+  passport: Readonly<Record<string, PassportParam>> | null
+  /** Волна F: финансовые параметры водопада (GET /api/fin_params). */
+  fin: FinParams | null
+  /** Волна M: сводка обученного макро-генератора (GET /api/macro/summary). */
+  macro: MacroSummary | null
+  /** Волна F: последний результат CVaR-LP с кассой (POST /api/optimize/cash) и когда он получен. */
+  cash: { result: CashLpResult | null; ranAt: number | null; running: boolean }
   /** Момент расчёта (мс); для тестов — детерминированный. */
   now: number
 }
@@ -58,6 +66,10 @@ export function emptyInput(now = 0): DeriveInput {
     plan: { result: null, builtAt: null, running: false, params: EMPTY_PLAN_PARAMS },
     kpi: null,
     forecast: null,
+    passport: null,
+    fin: null,
+    macro: null,
+    cash: { result: null, ranAt: null, running: false },
     now,
   }
 }

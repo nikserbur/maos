@@ -4,6 +4,9 @@ import {
   type SimResults, type SimPlan, type SimPlanSummary, type InvestmentResult, type KpiBundle,
 } from '../../lib/api'
 import { isEligible } from '../nsi/labor'
+import { useCashStore } from '../finance/cashStore'
+import { usePassport } from '../passport/passportStore'
+import { withCashKpis } from './cashKpis'
 import { KPI_CATALOG, KPI_CATEGORIES } from './kpiCatalog'
 import { kpiDeltaText, kpiParts, kpiText } from './kpiFormat'
 import { KpiDashboard } from './KpiDashboard'
@@ -175,6 +178,9 @@ function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
 }) {
   const [cmpId, setCmpId] = useState('')
   const [cmp, setCmp] = useState<KpiBundle | null>(null)
+  // Волна G2: KPI категории «Деньги» — из последнего POST /api/optimize/cash (не из plans.kpi_json).
+  const cash = useCashStore()
+  const passport = usePassport()
   useEffect(() => {
     if (!cmpId) { setCmp(null); return }
     api.analytics.kpi(cmpId).then(setCmp).catch(() => setCmp(null))
@@ -187,7 +193,7 @@ function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
       показатели сохраняются при построении. {res && res.n_machines > 0 && 'Базовые метрики есть во вкладках «Узкие места»/«Потоки».'}
     </p></div>
   )
-  const bundle = b as KpiBundle
+  const bundle = withCashKpis(b as KpiBundle, cash.result, passport.fin)
 
   // Рекомендации (decision-support): выводим действия с количественным обоснованием.
   const recs: Array<{ text: string; wct?: string }> = []
@@ -257,7 +263,13 @@ function KpiDetails({ b, res, loads, plans, planId, onInvest }: {
         if (!items.length) return null
         return (
           <div key={cat} className="an__panel">
-            <p className="an__panel-t">{cat}</p>
+            <p className="an__panel-t">{cat}{cat === 'Деньги' && (
+              <span className="an__muted" style={{ marginLeft: 8, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                {cash.result
+                  ? `· водопад кассы на решении CVaR-LP (${cash.result.n_scenarios} сценариев, ${cash.result.horizon_weeks} нед, ${cash.ranAt ? new Date(cash.ranAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}) — METHODOLOGY-V2 §6.0`
+                  : '· касса ещё не считалась — запустите её в «Плане» (шаг «Результат»), значения появятся здесь'}
+              </span>
+            )}</p>
             <div className="an__kpis">
               {items.map((k) => {
                 const v = k.value(bundle)

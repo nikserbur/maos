@@ -415,3 +415,8 @@
 @media (prefers-reduced-motion: reduce) {
   .mm-node, .mm-edge { transition: none; }
 }
+
+/* G2: серверные статусы паспорта в панели карты (UI / синтетика / в плане) */
+.mm-prov--ui { color: var(--text-muted); }
+.mm-prov--synthetic { color: var(--ochre); }
+.mm-prov--planned { color: var(--text-disabled); }

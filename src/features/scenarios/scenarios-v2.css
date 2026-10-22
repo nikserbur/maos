@@ -1,0 +1,114 @@
+/*
+ * Сценарии V2 (UX-V2 §5): шапка с критерием, три вкладки, группы полей «на что влияют»,
+ * меню режимов, таблица распределений, качество прогноза, сравнение N, шаблоны.
+ * Иерархия масштабом, цвет — семантика блока/состояния, акцент — для действий.
+ */
+.sc2 { display: flex; flex-direction: column; gap: 14px; }
+.sc2-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.sc2-head__main { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 320px; }
+.sc2-head__desc { width: 100%; height: var(--control); padding: 0 8px; background: transparent; border: 1px solid transparent; border-bottom-color: var(--border); color: var(--text-secondary); font: 400 var(--fs-13) var(--font-sans); }
+.sc2-head__desc:focus { outline: none; border-color: var(--focus); border-radius: var(--radius-sm); background: var(--bg-input); }
+.sc2-head__meta { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-muted); }
+.sc2-head__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.sc2-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--radius-pill); border: 1px solid color-mix(in oklch, var(--verdigris) 50%, var(--border)); color: var(--verdigris); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.sc2-chip.is-stress { border-color: color-mix(in oklch, var(--ochre) 55%, var(--border)); color: var(--ochre); }
+.sc2-muted { color: var(--text-muted); font-size: var(--fs-12); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.sc2-badges { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-left: 8px; }
+.sc2-inline { display: inline-flex; gap: 6px; align-items: center; font-size: var(--fs-13); color: var(--text-secondary); flex-wrap: wrap; }
+.sc2-inline .plan__input { width: 9ch; }
+.sc2-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sc2-tabn { font-size: 10px; color: var(--text-muted); margin-right: 4px; }
+.sc2-tabwrap { display: flex; flex-direction: column; gap: 10px; }
+.sc2-tabhint { margin: 0; }
+.sc2-tab { display: flex; flex-direction: column; gap: 16px; }
+
+/* Критерий — единственное место */
+.sc2-criterion { padding: 12px 14px; border: 1px solid var(--border); border-left: 3px solid var(--block-5); border-radius: var(--radius-lg); background: var(--bg-card); }
+.sc2-criterion__row { display: grid; grid-template-columns: minmax(280px, 1.4fr) repeat(2, minmax(200px, 1fr)); gap: 10px; margin-top: 8px; }
+
+/* Группы полей */
+.sc2-group { display: flex; flex-direction: column; gap: 8px; }
+.sc2-group__t { margin: 0; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sc2-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.sc2-fields > .pf-field--lg { grid-column: 1 / -1; }
+.sc2-legacy { padding: 8px 12px; border: 1px dashed var(--border-strong); border-radius: var(--radius); color: var(--text-muted); font-size: var(--fs-13); }
+.sc2-legacy summary { cursor: pointer; }
+.sc2-legacy[open] summary { margin-bottom: 10px; }
+
+/* Меню режимов */
+.sc2-regime { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--block-1); border-radius: var(--radius-lg); }
+.sc2-regime__kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.sc2-kind { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; text-align: left; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-secondary); cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast); }
+.sc2-kind:hover { background: var(--bg-hover); }
+.sc2-kind:focus-visible { outline: none; box-shadow: var(--halo); }
+.sc2-kind.is-on { border-color: var(--verdigris); color: var(--text); background: color-mix(in oklch, var(--verdigris) 9%, var(--bg-card)); }
+.sc2-kind.is-stress.is-on { border-color: var(--ochre); background: color-mix(in oklch, var(--ochre) 9%, var(--bg-card)); }
+.sc2-kind__t { font-weight: 600; font-size: var(--fs-13); display: inline-flex; gap: 6px; align-items: center; }
+.sc2-kind__s { font-size: var(--fs-11); color: var(--text-muted); }
+.sc2-regime__ctl { display: flex; flex-direction: column; gap: 8px; }
+.sc2-regime__ctl input[type='range'] { accent-color: var(--accent); width: 180px; }
+.sc2-regime__strip { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.sc2-joint { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.sc2-joint__cell { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-12); color: var(--text-muted); }
+.sc2-joint__cell b { font-size: var(--fs-16); font-weight: 500; color: var(--text); }
+
+/* Распределения */
+.sc2-bulk { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: var(--bg-panel); border-radius: var(--radius); font-size: var(--fs-13); }
+.sc2-estimate { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sc2-dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.sc2-dtable th { text-align: left; padding: 6px 8px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-strong); }
+.sc2-dtable td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.sc2-dtable tbody tr:not(.sc2-editor-row) { cursor: pointer; }
+.sc2-dtable tbody tr:not(.sc2-editor-row):hover { background: var(--bg-hover); }
+.sc2-dtable tr.is-open { background: color-mix(in oklch, var(--accent) 8%, var(--bg-card)); }
+.sc2-dtable tr.is-raw .sc2-dtable__name { color: var(--text-secondary); }
+.sc2-dtable__name small { display: block; font-size: var(--fs-11); color: var(--text-muted); }
+.sc2-dtable .sc2-hi { color: var(--ochre); }
+.sc2-dtable .pl-chip { margin-left: 6px; }
+.sc2-editor-row td { background: var(--bg-panel); }
+.sc2-editor { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 6px 0; }
+.sc2-corr { margin-top: 6px; }
+.sc2-corr__grid { display: grid; gap: 2px; font-size: var(--fs-11); align-items: center; }
+.sc2-corr__h { text-align: center; color: var(--text-muted); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc2-corr__l { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 6px; }
+.sc2-corr__cell { height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 3px; color: var(--text); font-family: var(--font-mono); }
+
+/* Качество прогноза и веера */
+.sc2-quality { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--block-7); border-radius: var(--radius-lg); }
+.sc2-quality__head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sc2-quality__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.sc2-qtile { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--fs-12); color: var(--text-muted); }
+.sc2-qtile b { font-size: var(--fs-24); font-weight: 300; color: var(--text); }
+.sc2-qtile.is-ok { border-color: color-mix(in oklch, var(--verdigris) 50%, var(--border)); }
+.sc2-qtile.is-warn { border-color: color-mix(in oklch, var(--ochre) 55%, var(--border)); }
+.sc2-qtile.is-bad { border-color: color-mix(in oklch, var(--cinnabar) 55%, var(--border)); }
+.sc2-qtable { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
+.sc2-qtable th { text-align: left; padding: 4px 8px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border-strong); }
+.sc2-qtable td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.sc2-qtable th:not(:first-child):not(:last-child), .sc2-qtable td:not(:first-child):not(:last-child) { text-align: right; }
+.sc2-fans { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.sc2-fan { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.sc2-fan__foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.sc2-contrib { display: flex; flex-direction: column; gap: 3px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: var(--fs-12); }
+.sc2-contrib p { margin: 0; }
+.sc2-contrib__row { display: grid; grid-template-columns: 170px 1fr 60px; gap: 8px; align-items: center; }
+.sc2-contrib__bar { height: 8px; background: var(--chart-grid); border-radius: 2px; overflow: hidden; }
+.sc2-contrib__bar span { display: block; height: 100%; }
+
+/* Сравнение N */
+.sc2-compare { display: flex; flex-direction: column; gap: 12px; }
+.sc2-compare__head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Шаблоны в диалоге */
+.sc2-tpl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+.sc2-tpl__item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; text-align: left; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-secondary); cursor: pointer; }
+.sc2-tpl__item.is-on { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 10%, var(--bg-card)); }
+.sc2-tpl__item:focus-visible { outline: none; box-shadow: var(--halo); }
+.sc2-tpl__name { font-weight: 600; font-size: var(--fs-13); }
+.sc2-tpl__kind { font-size: var(--fs-11); color: var(--verdigris); }
+.sc2-tpl__kind.is-stress { color: var(--ochre); }
+.sc2-tpl__pass { width: 100%; border-collapse: collapse; font-size: var(--fs-12); margin-top: 6px; }
+.sc2-tpl__pass th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--border-strong); }
+.sc2-tpl__pass td { padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+@media (max-width: 1100px) { .sc2-criterion__row { grid-template-columns: 1fr; } }

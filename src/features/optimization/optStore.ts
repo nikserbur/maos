@@ -24,8 +24,19 @@ export interface OptError {
   kind: 'validation' | 'api'
 }
 
+/** Критерий, унаследованный из сценария (UX-V2 §8 п. 3): форма показывает «из сценария» или «переопределено для прогона». */
+export interface OptInherited {
+  scenarioId: string
+  scenarioName: string
+  objective: Objective
+  alpha: string
+  maxShare: string
+}
+
 export interface OptState {
   form: OptForm
+  /** Значения критерия из открытого сценария; null — сценарий не загружен. */
+  inherited: OptInherited | null
   result: OptResultExt | null
   running: boolean
   error: OptError | null
@@ -43,6 +54,7 @@ const INITIAL: OptState = {
     horizonMonths: '12',
     exact: false,
   },
+  inherited: null,
   result: null,
   running: false,
   error: null,
@@ -76,6 +88,24 @@ export function getOptState(): OptState {
 
 export function patchOptForm(patch: Partial<OptForm>): void {
   emit({ ...state, form: { ...state.form, ...patch } })
+}
+
+/** Сценарий открыт: критерий/α/доля наследуются в форму (переопределения прогона сбрасываются при смене сценария). */
+export function inheritCriterion(inh: OptInherited): void {
+  const changedScenario = state.inherited?.scenarioId !== inh.scenarioId
+  const form = changedScenario ? { ...state.form, objective: inh.objective, alpha: inh.alpha, maxShare: inh.maxShare } : state.form
+  emit({ ...state, inherited: inh, form })
+}
+
+/** Какие поля критерия переопределены на прогон относительно сценария. */
+export function criterionOverrides(s: OptState): { objective: boolean; alpha: boolean; maxShare: boolean } {
+  const i = s.inherited
+  if (!i) return { objective: false, alpha: false, maxShare: false }
+  return {
+    objective: s.form.objective !== i.objective,
+    alpha: Number(s.form.alpha) !== Number(i.alpha),
+    maxShare: Number(s.form.maxShare) !== Number(i.maxShare),
+  }
 }
 
 export function startOptRun(): void {

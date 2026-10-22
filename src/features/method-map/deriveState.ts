@@ -8,6 +8,7 @@ import type { DeriveInput } from './deriveInput'
 import { deriveSubblocks } from './deriveNodes'
 import { derivePassports } from './derivePassports'
 import { deriveValuesByMetric } from './deriveValues'
+import { DATASET_PASSPORT } from './params'
 import { NODES, childrenOf, getNode, subblocksOf } from './registry'
 import { STATE_META, stateFromProvenance, worstState } from './stateMeta'
 import { BLOCK_IDS, type MapNode, type MethodMapState, type NodeLive, type ParameterPassport } from './types'
@@ -15,17 +16,24 @@ import { BLOCK_IDS, type MapNode, type MethodMapState, type NodeLive, type Param
 const PLANNED: NodeLive = { state: 'planned' }
 
 /** Лист (параметр / формула / датасет / экран) — по паспорту или по родителю. */
-function leafLive(node: MapNode, parent: NodeLive, passports: Record<string, ParameterPassport>, hasValues: boolean): NodeLive {
+function leafLive(node: MapNode, parent: NodeLive, passports: Record<string, ParameterPassport>, hasValues: boolean, input: DeriveInput): NodeLive {
   if (node.stage && node.stage !== 'done') return { ...PLANNED, badge: 'в плане' }
+  if (node.kind === 'dataset' && DATASET_PASSPORT[node.id] && input.passport?.[DATASET_PASSPORT[node.id]]) {
+    const sp = input.passport[DATASET_PASSPORT[node.id]]
+    if (sp.status === 'синтетика') return { state: 'default', badge: 'синтетика', reason: sp.note || 'synthetic = 1: запрет в обучении и валидации (R7)', updatedAt: parent.updatedAt }
+    return { state: parent.state, badge: `паспорт ${sp.status}`, detail: sp.source || undefined, updatedAt: parent.updatedAt }
+  }
   if (node.kind === 'parameter' && node.paramId) {
     const p = passports[node.paramId]
     if (!p) return { state: 'default' }
     if (p.stage && p.stage !== 'done') return { ...PLANNED, badge: 'в плане' }
     return {
       state: stateFromProvenance(p.provenance),
+      badge: p.deprecated ? 'не используется' : p.status ? `паспорт ${p.status}` : undefined,
       value: p.value ?? undefined,
       unit: p.unit,
-      reason: p.outOfRange ? 'вне разумного диапазона' : undefined,
+      reason: p.outOfRange ? 'вне разумного диапазона' : p.deprecated ? 'ползунок принят API, но в расчёте не участвует (волна M)' : undefined,
+      updatedAt: p.estimatedAt,
     }
   }
   if (node.kind === 'formula') {
@@ -69,7 +77,7 @@ function blockLive(block: string, live: Record<string, NodeLive>): NodeLive {
 
 export function deriveState(input: DeriveInput): MethodMapState {
   const passports = derivePassports(input)
-  const byMetric = deriveValuesByMetric(input.opt.result, input.plan.result, input.forecast)
+  const byMetric = deriveValuesByMetric(input.opt.result, input.plan.result, input.forecast, input.cash.result, input.fin, input.macro)
   const subblocks = deriveSubblocks(input, passports)
 
   const nodes: Record<string, NodeLive> = { ...subblocks }
@@ -81,7 +89,7 @@ export function deriveState(input: DeriveInput): MethodMapState {
     const parent = nodes[node.parent ?? ''] ?? PLANNED
     const metricValues = node.metricId ? byMetric[node.metricId] : undefined
     if (metricValues) values[node.id] = metricValues
-    nodes[node.id] = leafLive(node, parent, passports, Boolean(metricValues))
+    nodes[node.id] = leafLive(node, parent, passports, Boolean(metricValues), input)
   }
   // Подблоки без явного правила (их не должно быть — тест проверяет) считаются по детям.
   for (const node of NODES) {

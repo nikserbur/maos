@@ -59,7 +59,7 @@ export interface ScreenDef {
 export const SCREENS: ScreenDef[] = [
   { id: 'scheme', label: 'Схема предприятия', short: 'Схема', icon: 'scheme', group: 'model', blocks: ['internal'], Component: PlantScene },
   { id: 'nsi', label: 'Справочники', short: 'НСИ', icon: 'nsi', group: 'model', blocks: ['internal', 'distributions'], Component: NsiScreen },
-  { id: 'scenarios', label: 'Сценарии', short: 'Сценарии', icon: 'scenarios', group: 'conditions', blocks: ['external', 'distributions'], pipeline: true, Component: ScenariosHub },
+  { id: 'scenarios', label: 'Сценарии', short: 'Сценарии', icon: 'scenarios', group: 'conditions', blocks: ['external', 'distributions', 'criteria'], pipeline: true, Component: ScenariosHub },
   { id: 'optimization', label: 'Оптимизация', short: 'Портфель', icon: 'optimization', group: 'decide', stage: 2, blocks: ['decisions', 'criteria'], pipeline: true, Component: OptimizationScreen },
   { id: 'plan', label: 'План', short: 'План', icon: 'plan', group: 'decide', stage: 1, blocks: ['internal', 'decisions', 'criteria'], pipeline: true, Component: PlanScreen },
   { id: 'agents', label: 'Агенты', short: 'Агенты', icon: 'sparkle', group: 'decide', blocks: ['agents'], soon: 'волна 3', Component: AgentsStub },

@@ -59,18 +59,46 @@ describe('deriveState', () => {
     expect(s.nodes.internal.reason).toContain('Справочников')
   })
 
-  it('marks parameters by provenance: default, manual and normative «для заметности»', () => {
-    const s = deriveState({ ...filled(), scenario: scenario({ inflation: '0.085', energy: '1.4' }) })
-    expect(s.params['scenario.key_rate']).toMatchObject({ value: 16, provenance: 'manual', owner: 'scenario' })
+  it('marks parameters by provenance: default, manual, deprecated UI sliders and fin_params [К]', () => {
+    const s = deriveState({ ...filled(), scenario: scenario({ inflation: '0.085', energy: '1.4', months: '13' }) })
+    expect(s.params['scenario.months']).toMatchObject({ value: 13, provenance: 'manual', owner: 'scenario' })
     expect(s.params['scenario.fx']).toMatchObject({ value: 1, provenance: 'default' })
     expect(s.params['scenario.inflation']).toMatchObject({ value: 8.5, provenance: 'manual', outOfRange: true })
-    expect(s.params['scenario.energy'].provenance).toBe('normative')
-    expect(s.params['fin.dso']).toMatchObject({ value: null, stage: 'w1' })
+    // Волна M: ползунки приняты API, но не участвуют в расчёте — «ui» + deprecated при любом значении.
+    expect(s.params['scenario.key_rate']).toMatchObject({ value: 16, provenance: 'ui', deprecated: true })
+    expect(s.params['scenario.energy']).toMatchObject({ value: 1.4, provenance: 'ui', deprecated: true })
+    // Слой F реализован: без fin_params — умолчание кода, с ними — калибровка [К].
+    expect(s.params['fin.dso']).toMatchObject({ provenance: 'calibrated', stage: undefined })
     expect(s.nodes['ext.macro'].state).toBe('manual')
     expect(s.nodes['ext.macro'].reason).toContain('Инфляция')
     expect(s.nodes['ext.macro.inflation'].reason).toBe('вне разумного диапазона')
-    expect(s.nodes['ext.macro.energy'].state).toBe('normative')
-    expect(s.nodes['int.finance.dso'].state).toBe('planned')
+    expect(s.nodes['ext.macro.energy']).toMatchObject({ state: 'default', badge: 'не используется' })
+    expect(s.nodes['int.finance.dso'].state).toBe('calibrated')
+    expect(s.nodes['int.finance'].badge).toBe('fin_params не загружены')
+  })
+
+  it('reads provenance from the server passport and flags synthetic datasets', () => {
+    const passport = {
+      'fin.c0': { code: 'fin.c0', block: 'деньги', name: 'C₀', value: '0', unit: '₽', status: 'К' as const, source: 'данных предприятия нет', file_ref: '', note: '', updated_at: '2026-10-22 17:13:33' },
+      'r1.19': { code: 'r1.19', block: 'риск', name: 'α', value: '0.10', unit: '—', status: 'К' as const, source: '', file_ref: '', note: '', updated_at: '2026-10-22 17:13:33' },
+      'macro.generator': { code: 'macro.generator', block: 'макро', name: 'VAR', value: '2 режима', unit: '—', status: 'О' as const, source: 'cbr.ru', file_ref: '', note: '', updated_at: '2026-10-22 17:55:11' },
+      'r1.59': { code: 'r1.59', block: 'данные', name: 'Синтетическая история цен', value: '', unit: '—', status: 'синтетика' as const, source: '', file_ref: '', note: 'synthetic=1', updated_at: '' },
+    }
+    const fin = { entity: 'default', period_type: 'week', effective_from: '2026-01-01', updated_at: '2026-10-22 17:13:33',
+      c0: 0, c_min: 0, credit_limit: 20_000_000, d0: 0, key_rate: 0.16, spread: 0.03, overdraft_spread: 0.1, overdraft_limit: 0,
+      tau_v: 0.22, tau_p: 0.25, tau_soc: 0.3, property_tax_weekly: 0, payroll_fixed_weekly: 0, repair_budget_weekly: 0, other_fixed_weekly: 0,
+      dso_kernel: [0, 0.5, 0.5], pd: 0.02, lgd: 0.45, prepay_share: 0, dpo_weeks: 2, lead_weeks: 1, vat_period_weeks: 13, vat_instalments: 3,
+      vat_instalment_lag_weeks: 4, tax_period_weeks: 4, payroll_weeks: [2, 0], dscr_covenant: 1.2, rate_owner: 0.18, rate_bank: 0.16,
+      beta: 0.05, l_min: 0, horizon_weeks: 0, cash_samples: 300, auto_repay: 0 }
+    const s = deriveState({ ...filled(), passport, fin })
+    expect(s.params['fin.cash0']).toMatchObject({ value: 0, provenance: 'calibrated', status: 'К', sourceText: 'данных предприятия нет' })
+    expect(s.params['fin.credit_rate']).toMatchObject({ value: 19, provenance: 'normative' })
+    expect(s.params['fin.dso'].value).toBe('0 / 0,5 / 0,5')
+    expect(s.params['scenario.alpha']).toMatchObject({ provenance: 'calibrated', status: 'К' }) // [К] никогда не «оценено»
+    expect(s.nodes['int.finance']).toMatchObject({ state: 'calibrated' })
+    expect(s.nodes['int.finance'].badge).toContain('лимит')
+    expect(s.nodes['ext.prices.ds']).toMatchObject({ state: 'default', badge: 'синтетика' })
+    expect(s.nodes['ext.generator'].badge).toBe('сводка генератора не загружена')
   })
 
   it('reports NSI-backed blocks as manual with counts and decisions as not computed', () => {
@@ -96,7 +124,8 @@ describe('deriveState', () => {
     expect(s.nodes['dec.schedule'].state).toBe('estimated')
     expect(s.nodes['dec.schedule'].badge).toContain('EDD')
     expect(s.nodes.decisions.state).toBe('default') // dec.invest/dec.lots остаются по умолчанию — худшее из детей
-    expect(s.nodes.criteria.state).toBe('estimated')
+    expect(s.nodes.criteria.state).toBe('default') // crit.cash — касса не рассчитана (слой F реализован, но не запущен)
+    expect(s.nodes['crit.cash']).toMatchObject({ state: 'default', badge: 'касса не рассчитана' })
     expect(s.nodes['crit.ci'].state).toBe('estimated')
     expect(s.values['crit.profit.f.cvar']).toEqual({ cvar: -120_000, alpha: 0.1, n: 3000 })
     expect(s.values['dec.schedule.f.rule_score']).toMatchObject({ rule: 'EDD', score: 1.2, w_r: 0.5 })

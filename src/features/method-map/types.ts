@@ -23,8 +23,12 @@ export type NodeState =
   | 'unconfigured' | 'default' | 'manual' | 'estimated' | 'calibrated'
   | 'normative' | 'stale' | 'error' | 'planned'
 
-/** Происхождение значения — паспорт параметра (PLAN-V2 §2.5; A2 «наблюдение/оценка/калибровка/норматив»). */
-export type Provenance = 'observed' | 'estimated' | 'calibrated' | 'normative' | 'manual' | 'default'
+/**
+ * Происхождение значения — паспорт параметра (PLAN-V2 §2.5; A2 «наблюдение/оценка/калибровка/норматив»).
+ * Волна G2: `ui` — подобрано для интерфейса (статус «UI» серверного паспорта), `synthetic` — синтетические
+ * данные (`synthetic = 1`, запрет в обучении). Статусы [К] и [НОРМ] никогда не подписываются «оценено».
+ */
+export type Provenance = 'observed' | 'estimated' | 'calibrated' | 'normative' | 'manual' | 'default' | 'ui' | 'synthetic'
 
 /** Единицы паспорта: реестр «i» + единицы внешних условий. */
 export type ParamUnit = Unit | '×' | '%/год' | '%/мес' | 'п.п.' | 'дн' | 'прогонов' | 'мес'
@@ -58,6 +62,10 @@ export interface ParamDef {
   /** Значение по умолчанию кода/НСИ (null — задаёт бэкенд). */
   defaultValue?: number | string | null
   stage?: Stage
+  /** Код строки серверного паспорта (GET /api/passport): статус, источник, note. */
+  passportCode?: string
+  /** Поле принимается API, но в расчёте не используется (волна M: ползунки → режимы). */
+  deprecated?: boolean
 }
 
 export interface ParameterPassport {
@@ -79,6 +87,12 @@ export interface ParameterPassport {
   /** Значение вне разумного диапазона. */
   outOfRange?: boolean
   stage?: Stage
+  /** Серверный паспорт: статус Н/О/К/НОРМ/UI/техн./синтетика, источник, файл, обновлено. */
+  status?: string
+  passportCode?: string
+  sourceText?: string
+  fileRef?: string
+  deprecated?: boolean
 }
 
 export type NodeShape = 'disc' | 'triangle' | 'square' | 'point'

@@ -109,7 +109,7 @@ describe('method-map registry integrity', () => {
   it('maps screens back to blocks and metrics to formula nodes', () => {
     expect(blocksForScreen('optimization')).toContain('decisions')
     expect(blocksForScreen('optimization')).toContain('criteria')
-    expect(blocksForScreen('scenarios')).toEqual(['external', 'distributions'])
+    expect(blocksForScreen('scenarios')).toEqual(expect.arrayContaining(['external', 'distributions', 'criteria'])) // критерий живёт в сценарии (UX-V2 §8)
     expect(blocksForScreen('plan')).toContain('internal')
     expect(nodeForMetric('opt.cvar')?.block).toBe('criteria')
     expect(nodeForMetric('nope.nope')).toBeUndefined()

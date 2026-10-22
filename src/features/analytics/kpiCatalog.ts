@@ -5,10 +5,10 @@ import type { InfoTipValues } from '../../ui/InfoTip'
 export type KpiDir = 'up' | 'down' | 'neutral'
 export type KpiStatus = 'good' | 'warn' | 'bad' | ''
 
-export type KpiCategory = 'Сроки' | 'Ресурсы' | 'Поток' | 'Труд' | 'Надёжность' | 'Экономика'
+export type KpiCategory = 'Сроки' | 'Ресурсы' | 'Поток' | 'Труд' | 'Надёжность' | 'Экономика' | 'Деньги'
 
 /** Единица KPI (подмножество единиц реестра «i», src/explain/format.ts). */
-export type KpiUnit = 'ч' | '%' | 'шт' | 'заказов' | 'ед./сут' | 'заказ/сут' | '₽'
+export type KpiUnit = 'ч' | '%' | 'шт' | 'заказов' | 'ед./сут' | 'заказ/сут' | '₽' | 'нед' | '—'
 
 /** Контекст, которого нет в KPI-блоке плана (для оценок по старым планам). */
 export interface KpiContext {
@@ -75,7 +75,7 @@ const availability = (b: KpiBundle, ctx?: KpiContext) => {
   return Math.max(0, 1 - (K(b, 'maintenance_hours') + K(b, 'breakdown_hours_mean')) / fund)
 }
 
-export const KPI_CATEGORIES: KpiCategory[] = ['Сроки', 'Ресурсы', 'Поток', 'Труд', 'Надёжность', 'Экономика']
+export const KPI_CATEGORIES: KpiCategory[] = ['Сроки', 'Ресурсы', 'Поток', 'Труд', 'Надёжность', 'Экономика', 'Деньги']
 
 /**
  * Реестр KPI: показатель объявлен один раз (имя по ГОСТ, категория, единица,
@@ -180,6 +180,53 @@ export const KPI_CATALOG: KpiDef[] = [
   { code: 'COST', name: 'Себестоимость работ', nameEn: 'Work cost', category: 'Экономика', unit: '₽', dir: 'down',
     formula: 'Σ машинного времени, труда и переналадок (без материалов)', value: (b) => kpiField(b, 'cost'),
     info: 'plan.cost', infoValues: (b) => ({ cost: kpiField(b, 'cost') }) },
+
+  // ── Деньги (METHODOLOGY-V2 §6.0; значения — водопад кассы на решении CVaR-LP, см. withCashKpis) ──
+  { code: 'CASH_MIN_P50', name: 'Минимум кассы (медиана)', nameEn: 'Cash minimum, median', category: 'Деньги', unit: '₽', dir: 'up',
+    formula: 'medᵢ minₜ C_i,t по сценариям водопада', value: (b) => kpiField(b, 'cash_min_p50'),
+    info: 'cash.cash_min_p50', infoValues: (b) => ({ cash_min: kpiField(b, 'cash_min_p50'), n: kpiField(b, 'cash_n'), weeks: kpiField(b, 'cash_weeks') }) },
+  { code: 'CFAR', name: 'CFaR — CVaR минимума кассы', nameEn: 'Cash-flow-at-risk', category: 'Деньги', unit: '₽', dir: 'up',
+    formula: '(1/k′)·Σ худшие k′ сценариев minₜ C_i,t, β [К]', value: (b) => kpiField(b, 'cash_cfar'),
+    info: 'cash.cfar', infoValues: (b) => ({ cfar: kpiField(b, 'cash_cfar'), beta: kpiField(b, 'cash_beta'), n: kpiField(b, 'cash_n'), ci_lo: kpiField(b, 'cash_cfar_lo'), ci_hi: kpiField(b, 'cash_cfar_hi') }),
+    status: (v) => (v >= 0 ? 'good' : 'bad') },
+  { code: 'P_BREACH', name: 'Вероятность кассового разрыва', nameEn: 'P(cash breach)', category: 'Деньги', unit: '%', dir: 'down',
+    formula: '(1/N)·Σᵢ 𝟙[∃t: C_i,t < 0 ∧ лимит исчерпан]', value: (b) => kpiField(b, 'cash_p_breach'),
+    info: 'cash.p_breach', infoValues: (b) => ({ p: kpiField(b, 'cash_p_breach'), ci_lo: kpiField(b, 'cash_p_breach_lo'), ci_hi: kpiField(b, 'cash_p_breach_hi'), warn: kpiField(b, 'cash_thr_breach_warn'), bad: kpiField(b, 'cash_thr_breach_bad') }),
+    status: (v, b) => (v < or0(kpiField(b, 'cash_thr_breach_warn')) ? 'good' : v < or0(kpiField(b, 'cash_thr_breach_bad')) ? 'warn' : 'bad') },
+  { code: 'T_BREACH_P10', name: 'Момент разрыва (10 % квантиль)', nameEn: 'Breach week, P10', category: 'Деньги', unit: 'нед', dir: 'up',
+    formula: 'q₀.₁₀(t*ᵢ) среди сценариев с разрывом', value: (b) => kpiField(b, 'cash_t_breach_p10'),
+    info: 'cash.t_breach_p10', infoValues: (b) => ({ t: kpiField(b, 'cash_t_breach_p10') }) },
+  { code: 'DSCR_MIN_P05', name: 'DSCR, 5 % квантиль минимума', nameEn: 'DSCR min, P05', category: 'Деньги', unit: '—', dir: 'up',
+    formula: 'q₀.₀₅(minₜ CFADS / (Int + PR)); ковенант 1,2 [НОРМ]', value: (b) => kpiField(b, 'cash_dscr_min_p05'),
+    info: 'cash.dscr_min_p05', infoValues: (b) => ({ dscr: kpiField(b, 'cash_dscr_min_p05'), covenant: kpiField(b, 'cash_dscr_covenant'), p_cov: kpiField(b, 'cash_p_covenant') }),
+    status: (v, b) => (v >= or0(kpiField(b, 'cash_dscr_covenant')) ? 'good' : v >= 1 ? 'warn' : 'bad') },
+  { code: 'P_COVENANT', name: 'Вероятность нарушения ковенанта', nameEn: 'P(covenant breach)', category: 'Деньги', unit: '%', dir: 'down',
+    formula: '(1/N)·Σᵢ 𝟙[minₜ DSCR_i,t < 1,2]', value: (b) => kpiField(b, 'cash_p_covenant'),
+    info: 'cash.dscr_min_p05', infoValues: (b) => ({ dscr: kpiField(b, 'cash_dscr_min_p05'), covenant: kpiField(b, 'cash_dscr_covenant'), p_cov: kpiField(b, 'cash_p_covenant') }),
+    status: (v) => (v <= 0 ? 'good' : v < 0.05 ? 'warn' : 'bad') },
+  { code: 'DEBT_PEAK', name: 'Пик выбранного кредита', nameEn: 'Debt peak', category: 'Деньги', unit: '₽', dir: 'down',
+    formula: 'medᵢ maxₜ D_i,t; доля лимита [К]', value: (b) => kpiField(b, 'cash_debt_peak'),
+    info: 'cash.debt_peak', infoValues: (b) => ({ peak: kpiField(b, 'cash_debt_peak'), share: kpiField(b, 'cash_debt_peak_share'), limit: kpiField(b, 'cash_credit_limit') }),
+    status: (_v, b) => { const s = kpiField(b, 'cash_debt_peak_share'); return !Number.isFinite(s) ? '' : s < or0(kpiField(b, 'cash_thr_debt_warn')) ? 'good' : s < or0(kpiField(b, 'cash_thr_debt_bad')) ? 'warn' : 'bad' } },
+  { code: 'INT_COST', name: 'Проценты за горизонт', nameEn: 'Interest cost', category: 'Деньги', unit: '₽', dir: 'down',
+    formula: 'Eᵢ Σₜ r_i,t·D_i,t−1; r = ключевая + спред', value: (b) => kpiField(b, 'cash_int_cost'),
+    info: 'cash.int_cost', infoValues: (b) => ({ int: kpiField(b, 'cash_int_cost'), rate: kpiField(b, 'cash_rate') }) },
+  { code: 'WC_AVG', name: 'Средний оборотный капитал', nameEn: 'Working capital, avg', category: 'Деньги', unit: '₽', dir: 'down',
+    formula: 'Eᵢ (1/T)·Σₜ (AR + запасы + в пути − AP)', value: (b) => kpiField(b, 'cash_wc_avg'),
+    info: 'cash.wc_avg', infoValues: (b) => ({ wc: kpiField(b, 'cash_wc_avg') }) },
+  { code: 'POL', name: 'Цена ликвидности', nameEn: 'Price of liquidity', category: 'Деньги', unit: '₽', dir: 'neutral',
+    formula: 'E[Π]без − E[Π]с L_min; парный бутстреп-ДИ', value: (b) => kpiField(b, 'cash_pol'),
+    info: 'cash.pol', infoValues: (b) => ({ pol: kpiField(b, 'cash_pol'), ci_lo: kpiField(b, 'cash_pol_lo'), ci_hi: kpiField(b, 'cash_pol_hi'), pol_obj: kpiField(b, 'cash_pol_obj'), dual: kpiField(b, 'cash_pol_dual') }) },
+  { code: 'NPV_O', name: 'ЧДД собственника', nameEn: 'NPV, owner', category: 'Деньги', unit: '₽', dir: 'up',
+    formula: 'Σₜ DFₜ(r_O)·CF^O по сценариям; r_O [НОРМ]', value: (b) => kpiField(b, 'cash_npv_owner'),
+    info: 'cash.npv', infoValues: (b) => ({ npv_o: kpiField(b, 'cash_npv_owner'), p_neg: kpiField(b, 'cash_p_npv_neg'), npv_b: kpiField(b, 'cash_npv_bank') }) },
+  { code: 'NPV_B', name: 'ЧДД банка', nameEn: 'NPV, bank', category: 'Деньги', unit: '₽', dir: 'up',
+    formula: 'Σₜ DFₜ(r_B)·(Int + PR − d); участие при E ≥ 0', value: (b) => kpiField(b, 'cash_npv_bank'),
+    info: 'cash.npv', infoValues: (b) => ({ npv_o: kpiField(b, 'cash_npv_owner'), p_neg: kpiField(b, 'cash_p_npv_neg'), npv_b: kpiField(b, 'cash_npv_bank') }),
+    status: (v) => (v >= 0 ? 'good' : 'bad') },
+  { code: 'TAX_PAID', name: 'Налоги за горизонт', nameEn: 'Taxes paid', category: 'Деньги', unit: '₽', dir: 'neutral',
+    formula: 'Eᵢ Σₜ (T_i,t + НДС к уплате_i,t)', value: (b) => kpiField(b, 'cash_tax_paid'),
+    info: 'cash.tax_paid', infoValues: (b) => ({ tax: kpiField(b, 'cash_tax_paid'), tau_v: kpiField(b, 'cash_tau_v'), tau_p: kpiField(b, 'cash_tau_p') }) },
 ]
 
 const BY_CODE = new Map(KPI_CATALOG.map((k) => [k.code, k]))

@@ -1,0 +1,217 @@
+/*
+ * Компоненты паспорта и мастера (UX-V2 §6.2): бейдж происхождения, поле с паспортом,
+ * карточка паспорта, степпер, дифф, дата+часы, прогресс, полоса режимов, веер, плотность.
+ * Иерархия масштабом (§6.4): значение 20 px, единица меньше и muted, происхождение 11 px caps.
+ * Цвет — только семантика состояния/блока; бренд-акцент — для действий. Токены только из tokens.css.
+ */
+
+/* ── Бейдж происхождения ─────────────────────────────────────────────────── */
+.pf-badge {
+  display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 7px;
+  border-radius: var(--radius-pill); border: 1px solid var(--border-strong);
+  font: 600 var(--fs-11) var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); white-space: nowrap; line-height: 1;
+}
+.pf-badge__glyph { font-size: 9px; line-height: 1; }
+.pf-badge--good { color: var(--verdigris); border-color: color-mix(in oklch, var(--verdigris) 55%, var(--border)); }
+.pf-badge--neutral { color: var(--text-secondary); }
+.pf-badge--warn { color: var(--ochre); border-color: color-mix(in oklch, var(--ochre) 55%, var(--border)); }
+.pf-badge--bad { color: var(--cinnabar); border-color: color-mix(in oklch, var(--cinnabar) 55%, var(--border)); }
+.pf-badge--muted { color: var(--text-muted); border-style: dashed; }
+.pf-badge--manual { color: var(--text); border-color: var(--border-control); }
+[data-theme='light'] .pf-badge--warn { color: var(--ochre); }
+
+/* ── Поле с паспортом ────────────────────────────────────────────────────── */
+.pf-field {
+  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 10px 14px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  border-left: 3px solid var(--border-strong);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+.pf-field:focus-within { border-color: var(--focus); box-shadow: var(--halo); }
+.pf-field.is-changed { border-left-color: var(--accent); }
+.pf-field.is-warn { border-left-color: var(--ochre); }
+.pf-field.is-deprecated { border-left-style: dashed; opacity: 0.86; }
+.pf-field.is-deprecated .pf-field__value, .pf-field.is-deprecated .pf-field__input { color: var(--text-muted); text-decoration: line-through solid color-mix(in oklch, var(--text-muted) 60%, transparent); }
+.pf-field__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-field__label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
+.pf-field__row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pf-field__value { font-size: var(--fs-20); font-weight: 300; line-height: 1.1; color: var(--text); }
+.pf-field--lg .pf-field__value { font-size: var(--fs-24); }
+.pf-field__unit { margin-left: 5px; font-size: var(--fs-13); font-weight: 400; color: var(--text-muted); }
+.pf-field__input-wrap { display: inline-flex; align-items: baseline; gap: 6px; }
+.pf-field__input {
+  width: 9ch; height: var(--control); padding: 0 8px; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border-control); border-radius: var(--radius-sm);
+  font: 300 var(--fs-20) var(--font-sans); font-variant-numeric: tabular-nums;
+}
+.pf-field__input:focus-visible { outline: none; box-shadow: var(--halo); border-color: var(--focus); }
+.pf-field__slider { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+.pf-field__changed {
+  display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--accent-text);
+}
+.pf-field__revert { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
+.pf-field__revert:hover { color: var(--accent-hover); }
+.pf-field__warn { font-size: var(--fs-12); color: var(--ochre); }
+.pf-field__meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-muted); }
+.pf-field__owner::before { content: '↳ '; opacity: 0.7; }
+.pf-field__effect { color: var(--text-secondary); }
+.pf-field__note { margin: 0; font-size: var(--fs-12); color: var(--text-muted); line-height: 1.4; }
+.pf-field__actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.pf-field__control { flex: 1; min-width: 0; }
+.pf-field.is-readonly { background: color-mix(in oklch, var(--bg-card) 70%, var(--bg-panel)); }
+
+/* ── Карточка паспорта ───────────────────────────────────────────────────── */
+.pf-pass { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.pf-pass--compact { padding: 8px 10px; gap: 5px; }
+.pf-pass__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.pf-pass__title { font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+.pf-pass__value-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pf-pass__value { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; word-break: break-word; }
+.pf-pass--compact .pf-pass__value { font-size: var(--fs-20); }
+.pf-pass__value.is-warn { color: var(--ochre); }
+.pf-pass__unit { font-size: var(--fs-13); color: var(--text-muted); }
+.pf-pass__meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: var(--fs-12); }
+.pf-pass__meta div { display: contents; }
+.pf-pass__meta dt { color: var(--text-muted); }
+.pf-pass__meta dd { margin: 0; color: var(--text-secondary); word-break: break-word; }
+.pf-pass__note { margin: 0; font-size: var(--fs-12); color: var(--text-muted); line-height: 1.4; }
+.pf-pass__actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── Степпер ─────────────────────────────────────────────────────────────── */
+.pf-stepper { position: sticky; top: calc(var(--topbar-h) + var(--pipeline-h) + 8px); align-self: start; min-width: 212px; }
+.pf-stepper__title { margin: 0 0 8px 12px; color: var(--text-muted); }
+.pf-stepper__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pf-step { --step-color: var(--accent); }
+.pf-step__btn {
+  display: grid; grid-template-columns: 22px 1fr auto 14px; align-items: center; gap: 8px; width: 100%; height: 34px;
+  padding: 0 10px 0 12px; background: none; border: 0; border-left: 2px solid transparent; border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text-secondary); font: 500 var(--fs-13) var(--font-sans); text-align: left; cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+.pf-step__btn:hover { background: var(--bg-hover); color: var(--text); }
+.pf-step__btn:focus-visible { outline: none; box-shadow: var(--halo); }
+.pf-step.is-current .pf-step__btn { background: var(--bg-card); color: var(--text); border-left-color: var(--step-color); }
+.pf-step.is-disabled .pf-step__btn { color: var(--text-disabled); cursor: not-allowed; }
+.pf-step__n { font-size: var(--fs-12); color: var(--text-muted); }
+.pf-step.is-current .pf-step__n { color: var(--step-color); }
+.pf-step__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-step__block { font-size: 10px; color: var(--text-muted); }
+.pf-step__glyph { font-size: 10px; text-align: center; }
+.pf-step__glyph--done { color: var(--verdigris); }
+.pf-step__glyph--warn { color: var(--ochre); }
+.pf-step__glyph--default { color: var(--status-idle); }
+.pf-step__glyph--empty { color: var(--text-disabled); }
+.pf-step__glyph--running { color: var(--accent-text); }
+
+/* ── Дифф «наследовано / изменено / не задано» ───────────────────────────── */
+.pf-diff { display: flex; flex-direction: column; gap: 12px; }
+.pf-diff__summary { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-13); color: var(--text-secondary); }
+.pf-diff__count b { margin-left: 2px; }
+.pf-diff__count--changed { color: var(--accent-text); }
+.pf-diff__count--inherited { color: var(--verdigris); }
+.pf-diff__count--unset { color: var(--ochre); }
+.pf-diff__group { border-left: 2px solid var(--border-strong); padding-left: 12px; }
+.pf-diff__group--changed { border-left-color: var(--accent); }
+.pf-diff__group--inherited { border-left-color: var(--verdigris); }
+.pf-diff__group--unset { border-left-color: var(--ochre); }
+.pf-diff__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.pf-diff__row { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) auto; gap: 10px; align-items: baseline; font-size: var(--fs-13); }
+.pf-diff__label { color: var(--text-secondary); }
+.pf-diff__value { color: var(--text); }
+.pf-diff__base { margin-right: 6px; color: var(--text-muted); text-decoration: line-through; }
+.pf-diff__owner { font-size: var(--fs-12); color: var(--text-muted); }
+.pf-diff__empty { margin: 0; color: var(--text-muted); font-size: var(--fs-13); }
+.pf-link { background: none; border: 0; padding: 0; color: var(--accent-text); font: inherit; cursor: pointer; text-decoration: underline dotted; }
+.pf-link:hover { color: var(--accent-hover); }
+.pf-dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.pf-dtable caption { text-align: left; color: var(--text-muted); padding: 0 0 6px; }
+.pf-dtable th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: var(--fs-12); padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
+.pf-dtable th:not(:first-child), .pf-dtable td:not(:first-child) { text-align: right; }
+.pf-dtable td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.pf-dtable__label { color: var(--text-secondary); }
+.pf-dtable td.is-best { color: var(--verdigris); font-weight: 600; }
+.pf-dtable td.is-worst { color: var(--cinnabar); }
+
+/* ── Дата + часы ─────────────────────────────────────────────────────────── */
+.pf-datehours { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pf-datehours__date {
+  height: var(--control-compact); padding: 0 6px; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border-control); border-radius: var(--radius-sm); font: 500 var(--fs-13) var(--font-sans);
+}
+.pf-datehours__date:focus-visible { outline: none; box-shadow: var(--halo); }
+.pf-datehours__hours { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
+.pf-datehours--compact .pf-datehours__hours { display: block; }
+
+/* ── Прогресс расчёта ────────────────────────────────────────────────────── */
+.pf-progress { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.pf-progress__head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.pf-progress__title { font-weight: 600; }
+.pf-progress__eta { font-size: var(--fs-12); color: var(--text-muted); }
+.pf-progress__bar { position: relative; height: 4px; background: var(--chart-grid); border-radius: 2px; overflow: hidden; }
+.pf-progress__bar span { position: absolute; inset: 0; background: var(--grad-brand); transform-origin: left; transition: transform 250ms linear; }
+.pf-progress__phases { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-12); color: var(--text-muted); }
+.pf-progress__phase { display: inline-flex; align-items: center; gap: 6px; }
+.pf-progress__phase.is-done { color: var(--text-secondary); }
+.pf-progress__phase.is-active { color: var(--text); font-weight: 600; }
+.pf-progress__dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--status-idle); }
+.pf-progress__phase.is-done .pf-progress__dot { background: var(--verdigris); border-color: var(--verdigris); }
+.pf-progress__phase.is-active .pf-progress__dot { background: var(--accent); border-color: var(--accent); animation: pf-pulse 1.1s ease-in-out infinite; }
+@keyframes pf-pulse { 50% { opacity: 0.35; } }
+
+/* ── Полоса режимов ──────────────────────────────────────────────────────── */
+.pf-regimes { display: flex; flex-direction: column; gap: 6px; }
+.pf-regimes__head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.pf-regimes__title { color: var(--text-muted); }
+.pf-regimes.is-stress .pf-regimes__title { color: var(--ochre); }
+.pf-regimes__legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-secondary); }
+.pf-regimes__key { display: inline-flex; align-items: center; gap: 5px; }
+.pf-regimes__key i { width: 10px; height: 10px; border-radius: 2px; }
+.pf-regimes__key.is-forced { color: var(--text); font-weight: 600; }
+.pf-regimes__stay { font-size: var(--fs-11); color: var(--text-muted); }
+.pf-regimes__track { display: flex; gap: 2px; height: 14px; }
+.pf-regimes__month { display: flex; flex: 1; height: 100%; border-radius: 2px; overflow: hidden; }
+.pf-regimes__month i { display: block; height: 100%; min-width: 1px; }
+.pf-regimes__track--flat i { display: block; height: 100%; border-radius: 2px; }
+.pf-regimes__axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
+
+/* ── Веер ────────────────────────────────────────────────────────────────── */
+.pf-fan { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.pf-fan__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pf-fan__title { font-weight: 600; font-size: var(--fs-13); }
+.pf-fan__badges { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.pf-fan__body { position: relative; }
+.pf-fan__svg { display: block; }
+.pf-fan__grid { stroke: var(--chart-grid); stroke-width: 1; }
+.pf-fan__tick { font: 500 9px var(--font-mono); fill: var(--text-muted); }
+.pf-fan__future { fill: var(--accent); opacity: 0.05; }
+.pf-fan__bt { fill: var(--ochre); opacity: 0.08; }
+.pf-fan__now { stroke: var(--text-muted); stroke-width: 0.8; stroke-dasharray: 2 2; }
+.pf-fan__hist { fill: none; stroke: var(--text); stroke-width: 1.5; }
+.pf-fan__fact { fill: var(--ochre); }
+.pf-fan__band { fill: var(--accent); opacity: 0.16; }
+.pf-fan__band--inner { opacity: 0.2; }
+.pf-fan__band--b { fill: var(--ochre); opacity: 0.14; }
+.pf-fan__q { fill: none; stroke: var(--accent); stroke-width: 0.8; opacity: 0.55; stroke-dasharray: 3 2; }
+.pf-fan__p50 { fill: none; stroke: var(--accent); stroke-width: 2; }
+.pf-fan__p50--b { stroke: var(--ochre); }
+.pf-fan__trend { fill: none; stroke: var(--ochre); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.pf-fan__quality {
+  position: absolute; right: 8px; top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px;
+  background: color-mix(in oklch, var(--bg-card) 86%, transparent); border: 1px solid var(--border); border-radius: var(--radius-pill);
+  font-size: var(--fs-11); color: var(--text-secondary);
+}
+.pf-fan__quality.is-ok { border-color: color-mix(in oklch, var(--verdigris) 50%, var(--border)); }
+.pf-fan__quality.is-warn { border-color: color-mix(in oklch, var(--ochre) 60%, var(--border)); color: var(--ochre); }
+
+/* ── Плотность ───────────────────────────────────────────────────────────── */
+.pf-density { display: block; }
+.pf-density__area { fill: var(--accent); opacity: 0.14; }
+.pf-density__line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.pf-density__center { stroke: var(--border-strong); stroke-width: 0.8; stroke-dasharray: 2 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-progress__phase.is-active .pf-progress__dot { animation: none; }
+  .pf-progress__bar span { transition: none; }
+}

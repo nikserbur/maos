@@ -15,9 +15,11 @@ const REQUIRED_IDS = [
   'invest.capex', 'invest.delta_cf', 'invest.npv', 'invest.irr', 'invest.dpp', 'invest.roi', 'invest.next_bottleneck',
   'analytics.bottleneck_rank', 'analytics.labor_constraint', 'analytics.recommendations', 'analytics.sankey',
   'sim.required_operators', 'sim.avg_utilization', 'sim.orders_per_day', 'sim.calibration',
+  // Волна G2: касса (METHODOLOGY-V2 §6.0), CRPS прогноза, веса цели плана.
+  'cash.cfar', 'cash.p_breach', 'cash.dscr_min_p05', 'cash.pol', 'forecast.crps', 'plan.objective_weights',
 ]
 
-const NAMESPACES = ['plan', 'opt', 'forecast', 'invest', 'analytics', 'sim']
+const NAMESPACES = ['plan', 'opt', 'forecast', 'invest', 'analytics', 'sim', 'cash']
 const KEY_FORMAT = /^[A-Za-z0-9_]+$/
 const ID_FORMAT = /^[a-z]+\.[a-z0-9_]+$/
 

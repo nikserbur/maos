@@ -15,32 +15,46 @@ type Live = Record<string, NodeLive>
 const iso = (ms: number | null | undefined): string | undefined => (ms ? new Date(ms).toISOString() : undefined)
 
 function external(input: DeriveInput, passports: Record<string, ParameterPassport>): Live {
-  const { scenario, counts, forecast } = input
-  const macro = ['scenario.key_rate', 'scenario.fx', 'scenario.inflation', 'scenario.demand', 'scenario.volatility',
-    'scenario.market_corr', 'scenario.months', 'scenario.energy', 'scenario.logistics', 'scenario.sanctions', 'scenario.tax_change']
+  const { scenario, counts, forecast, macro } = input
+  // Ползунки волны M (deprecated) не считаются ручным вводом: их значения в расчёт не идут.
+  const used = ['scenario.fx', 'scenario.inflation', 'scenario.demand', 'scenario.volatility', 'scenario.market_corr', 'scenario.months']
     .map((id) => passports[id])
-  const anyManual = macro.some((p) => p.provenance === 'manual')
-  const outOfRange = macro.filter((p) => p.outOfRange)
-  const rate = passports['scenario.key_rate'].value
+  const anyManual = used.some((p) => p.provenance === 'manual')
+  const outOfRange = used.filter((p) => p.outOfRange)
+  const rate = macro ? macro.last_obs.key_pp : passports['scenario.key_rate'].value
   const fx = passports['scenario.fx'].value
   const infl = passports['scenario.inflation'].value
   const fits = forecast?.products.filter((p) => p.fit?.data_driven).length ?? 0
+  const synthetic = forecast?.synthetic || input.passport?.['r1.59']?.status === 'синтетика'
+  const modeLabel = String(passports['macro.mode'].value ?? 'base')
+  const cov = macro?.holdout?.variables
   return {
     'ext.macro': scenario
       ? {
         state: anyManual ? 'manual' : 'default',
         badge: scenario.name,
-        detail: `ставка ${num(Number(rate), 2)} % · курс ×${num(Number(fx), 2)} · инфл. ${num(Number(infl), 2)} %/мес`,
+        detail: `ставка ${num(Number(rate), 1)} %${macro ? ' (ЦБ РФ)' : ''} · курс ×${num(Number(fx), 2)} · инфл. ${num(Number(infl), 2)} %/мес`,
         reason: outOfRange.length ? `вне разумного диапазона: ${outOfRange.map((p) => p.label).join(', ')}` : undefined,
       }
       : { state: 'unconfigured', badge: counts.scenarios ? 'сценарий не выбран' : 'нет сценариев', reason: 'Создайте сценарий из шаблона.' },
     'ext.prices': counts.products === 0
       ? { state: 'unconfigured', badge: 'нет изделий' }
       : forecast
-        ? { state: fits > 0 ? 'estimated' : 'default', badge: `оценено по истории: ${fits} из ${forecast.products.length}` }
-        : { state: 'default', badge: `${counts.sellable} товарных · ${counts.purchased} покупных`, detail: 'прогноз не запрошен' },
-    'ext.generator': { state: 'planned', badge: 'волна 2 · ряды ЦБ РФ' },
-    'ext.regimes': { state: 'planned', badge: 'волна 2' },
+        ? { state: fits > 0 ? 'estimated' : 'default', badge: `оценено по истории: ${fits} из ${forecast.products.length}`,
+          detail: synthetic ? 'история синтетическая — демонстрация' : undefined,
+          reason: synthetic ? 'ts_data.synthetic = 1: обучение и валидация запрещены (R7)' : undefined }
+        : { state: 'default', badge: `${counts.sellable} товарных · ${counts.purchased} покупных`, detail: synthetic ? 'история синтетическая' : 'прогноз не запрошен' },
+    'ext.generator': macro
+      ? { state: 'estimated', badge: `${macro.regimes} режима · блок ${macro.block_months} мес · cbr.ru ${macro.data.first}…${macro.data.last}`,
+        detail: `CRPS ${num(macro.selection.choice.joint_standardized_CRPS_13months, 3)} / персистентность ${num(macro.selection.choice.naive_persistence_joint_CRPS, 3)}`,
+        reason: cov && cov.key_pp.coverage80 < 0.6 ? `покрытие 80 % ставки ${num(cov.key_pp.coverage80, 2)} — недопокрытие, используйте квантильный стресс` : undefined,
+        updatedAt: macro.trained_at }
+      : { state: 'default', badge: 'сводка генератора не загружена', detail: 'GET /api/macro/summary' },
+    'ext.regimes': !scenario
+      ? { state: 'unconfigured', badge: 'нет сценария' }
+      : modeLabel === 'base'
+        ? { state: 'default', badge: 'базовый — прогноз', detail: macro ? `P(спокойный) ${num(macro.holdout ? 1 - (macro.holdout.n ? 0 : 0) : 1, 0)}` : undefined }
+        : { state: 'manual', badge: modeLabel, detail: 'стресс, не прогноз (§2.6б)' },
   }
 }
 
@@ -89,7 +103,11 @@ function internal(input: DeriveInput): Live {
       : r
         ? { state: 'estimated', badge: `рассчитан при построении плана`, updatedAt: iso(plan.builtAt) }
         : { state: 'default', badge: `${counts.purchased} покупных позиций`, detail: 'считается при построении плана' },
-    'int.finance': { state: 'planned', badge: 'волна 1 · слой F' },
+    'int.finance': input.fin
+      ? { state: 'calibrated', badge: `C₀ ${money(input.fin.c0)} · лимит ${money(input.fin.credit_limit)}`,
+        detail: `ставка линии ${num((input.fin.key_rate + input.fin.spread) * 100, 1)} % · DPO ${input.fin.dpo_weeks} нед · [К] данных предприятия нет`,
+        updatedAt: input.fin.updated_at?.replace(' ', 'T') }
+      : { state: 'default', badge: 'fin_params не загружены', detail: 'GET /api/fin_params' },
   }
 }
 
@@ -129,7 +147,7 @@ function decisions(input: DeriveInput): Live {
     'dec.schedule': schedule,
     'dec.lots': counts.products === 0 ? { state: 'unconfigured', badge: 'нет изделий' } : { state: 'default', badge: 'партии из НСИ изделий' },
     'dec.invest': { state: 'default', badge: 'по запросу в «Аналитике»' },
-    'dec.cash': { state: 'planned', badge: 'волна 1 · слой F' },
+    'dec.cash': cashLive(input, 'decision'),
   }
 }
 
@@ -146,11 +164,30 @@ function criteria(input: DeriveInput, passports: Record<string, ParameterPasspor
     'crit.schedule': p && !p.error_soft
       ? { state: 'estimated', badge: `CVaR Cmax ${num(p.kpi.makespan_cvar, 0)} ч · OTD ${pct(p.kpi.otd, 0)}`, updatedAt: iso(input.plan.builtAt) }
       : { state: 'default', badge: 'план не построен' },
-    'crit.cash': { state: 'planned', badge: 'волна 1 · CFaR' },
+    'crit.cash': cashLive(input, 'criterion'),
     'crit.ci': ready && r.oos
       ? { state: 'estimated', badge: `вне выборки: Δ CVaR ${pct(r.oos.gap_cvar, 1)}` }
       : { state: 'planned', badge: 'волна 1 · ДИ, CRN, holdout' },
   }
+}
+
+/** Денежный слой: решение (транши) и критерий (CFaR, P(разрыв)) по последнему POST /api/optimize/cash. */
+function cashLive(input: DeriveInput, kind: 'decision' | 'criterion'): NodeLive {
+  const { cash, fin } = input
+  const r = cash.result
+  if (cash.running) return { state: 'default', badge: 'считаем кассу…' }
+  if (!r) return { state: fin ? 'default' : 'default', badge: 'касса не рассчитана', detail: 'шаг «Результат» мастера плана или «Оптимизация»' }
+  if (r.status !== 'optimal') return { state: 'error', badge: `LP: ${r.status}`, reason: r.reason ?? 'ограничение ликвидности неразрешимо — снизьте L_min' }
+  const w = r.waterfall?.lp_recourse ?? r.waterfall?.rule
+  const at = iso(cash.ranAt)
+  if (kind === 'decision') {
+    const peak = w ? `пик долга ${money(w.debt_peak)} (${pct(w.debt_peak_share, 0)} лимита)` : `CVaR ${money(r.cvar)}`
+    return { state: 'estimated', badge: `${r.financing_stage === 'recourse' ? 'рекурс' : 'график заранее'} · ${r.portfolio.length} изделий`, detail: peak, updatedAt: at }
+  }
+  return w
+    ? { state: 'estimated', badge: `CFaR ${money(w.cfar)} · P(разрыв) ${pct(w.p_breach, 1)}`,
+      detail: `DSCR p05 ${num(w.dscr_min_p05, 1)}${r.price_of_liquidity ? ` · цена ликвидности ${money(r.price_of_liquidity.value)}` : ''}`, updatedAt: at }
+    : { state: 'estimated', badge: `CFaR ${money(r.cfar)}`, updatedAt: at }
 }
 
 function loops(input: DeriveInput): Live {
@@ -165,7 +202,10 @@ function loops(input: DeriveInput): Live {
       ? { state: worse ? 'stale' : 'estimated', badge: `MAPE ${pct(bt.mape, 1)} (наив ${pct(bt.mape_naive, 1)})`, detail: `покрытие ${pct(bt.coverage80, 0)}`,
         reason: worse ? 'прогноз хуже наивного — упростите модель или переоцените' : undefined }
       : { state: 'default', badge: 'прогноз не запрошен' },
-    'mon.quality': { state: 'planned', badge: 'волна 1 · CRPS/MASE' },
+    'mon.quality': input.macro?.holdout
+      ? { state: 'estimated', badge: `CRPS генератора: π ${num(input.macro.holdout.variables.cpi_yoy_pp.mean_CRPS, 2)} · ставка ${num(input.macro.holdout.variables.key_pp.mean_CRPS, 2)} · курс ${num(input.macro.holdout.variables.usd_rub.mean_CRPS, 2)}`,
+        detail: `покрытие 80 %: ${Object.entries(input.macro.holdout.variables).map(([, v]) => num(v.coverage80, 2)).join(' · ')} · MASE по изделиям — после план-факта` }
+      : { state: 'default', badge: 'CRPS генератора не загружен', detail: 'MASE по изделиям — после план-факта (R20)' },
     'mon.planfact': input.kpi?.plan_id
       ? { state: 'estimated', badge: `план-факт: ${input.kpi.plan_id.slice(0, 8)}`, updatedAt: input.kpi.created_at }
       : { state: 'default', badge: 'нет KPI плана' },

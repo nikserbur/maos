@@ -59,6 +59,16 @@ export const DETAIL_EDGES: readonly MapEdge[] = [
   { id: 'e.prices-forecast', from: 'ext.prices', to: 'mon.forecast', kind: 'data', label: 'веер', payload: 'ForecastResult' },
   { id: 'e.planfact-identify', from: 'mon.planfact', to: 'dist.identify', kind: 'feedback', label: 'факт по операциям', payload: 'CalibRow[]' },
   { id: 'e.explain-crit', from: 'llm.explain', to: 'crit.profit', kind: 'explain', label: '«i» → формула' },
+  /* Волны F и M: генератор → портфель и касса; fin_params → транши → CFaR */
+  { id: 'e.gen-portfolio', from: 'ext.generator', to: 'dec.portfolio', kind: 'data', label: 'пути ставка–курс–инфляция', payload: 'macro_mode, pass_through' },
+  { id: 'e.regimes-gen', from: 'ext.regimes', to: 'ext.generator', kind: 'control', label: 'режим / стресс / опора', payload: 'MacroMode' },
+  { id: 'e.gen-cash', from: 'ext.generator', to: 'dec.cash', kind: 'data', label: 'ставка линии по сценарию', payload: 'cash_lp.key_rate' },
+  { id: 'e.fin-cash', from: 'int.finance', to: 'dec.cash', kind: 'data', label: 'касса, лимит, отсрочки', payload: 'fin_params' },
+  { id: 'e.portfolio-cash', from: 'dec.portfolio', to: 'dec.cash', kind: 'data', label: 'те же N сценариев (CRN)', payload: 'cash_samples' },
+  { id: 'e.cash-crit', from: 'dec.cash', to: 'crit.cash', kind: 'data', label: 'водопад на решении', payload: 'waterfall' },
+  { id: 'e.lmin-pol', from: 'dec.cash.l_min', to: 'dec.cash.f.pol', kind: 'param', label: 'L_min' },
+  { id: 'e.beta-cfar', from: 'dec.cash.beta', to: 'crit.cash.f.cfar', kind: 'param', label: 'β' },
+  { id: 'e.crps', from: 'ext.generator.f.crps', to: 'mon.quality', kind: 'data', label: 'CRPS / покрытие', payload: 'holdout' },
   { id: 'e.mentat-schedule', from: 'llm.mentat', to: 'dec.schedule', kind: 'explain', label: 'почему так', payload: 'explain(nodeId)' },
 ]
 

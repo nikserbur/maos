@@ -44,6 +44,9 @@ export function PassportCard({ passport }: { passport: ParameterPassport }) {
       </div>
       <dl className="mm-pass__meta">
         <div><dt>владелец</dt><dd>{OWNER_LABEL[passport.owner]}</dd></div>
+        {passport.status && <div><dt>паспорт</dt><dd>{passport.status}{passport.passportCode ? <span className="mono"> · {passport.passportCode}</span> : null}{passport.deprecated ? ' · не используется в расчёте' : ''}</dd></div>}
+        {passport.sourceText && <div><dt>источник</dt><dd>{passport.sourceText}</dd></div>}
+        {passport.fileRef && <div><dt>в коде</dt><dd className="mono">{passport.fileRef}</dd></div>}
         {range && <div><dt>разумный диапазон</dt><dd className="num">{range}{passport.outOfRange ? ' · ▲ вне' : ''}</dd></div>}
         {passport.estimatedAt && <div><dt>обновлено</dt><dd className="num">{new Date(passport.estimatedAt).toLocaleString('ru-RU')}</dd></div>}
         {passport.id && <div><dt>id</dt><dd className="mono">{passport.id}</dd></div>}

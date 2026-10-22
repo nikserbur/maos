@@ -24,11 +24,10 @@ function formulas(parent: string, block: MapNode['block'], ids: readonly string[
 export const FLOW_NODES: readonly MapNode[] = [
   /* ── [1] Внешние условия ──────────────────────────────────────────────── */
   { id: 'ext.macro', kind: 'subblock', block: 'external', parent: 'external', shape: 'point',
-    title: 'Макро-условия сценария', short: 'Ставка, курс, инфляция, спрос, энергия, логистика, санкции, налоги — ползунки сценария с паспортом.',
+    title: 'Макро-условия сценария', short: 'Инфляция, волатильность, корреляция, курс и спрос прогноза цен — поля сценария с паспортом; ползунки санкций/энергии/логистики/ставки приняты API, но с волны M не используются.',
     screen: { id: 'scenarios', anchor: 'conditions' }, learnMore: 'overview', stage: 'done' },
-  ...params('ext.macro', 'external', ['scenario.key_rate', 'scenario.fx', 'scenario.inflation', 'scenario.demand',
-    'scenario.volatility', 'scenario.market_corr', 'scenario.months', 'scenario.energy', 'scenario.logistics',
-    'scenario.sanctions', 'scenario.tax_change']),
+  ...params('ext.macro', 'external', ['scenario.inflation', 'scenario.volatility', 'scenario.market_corr', 'scenario.fx', 'scenario.demand',
+    'scenario.months', 'scenario.key_rate', 'scenario.energy', 'scenario.logistics', 'scenario.sanctions', 'scenario.tax_change']),
   { id: 'ext.macro.screen', kind: 'screen', block: 'external', parent: 'ext.macro', title: 'Сценарии · условия',
     screen: { id: 'scenarios', anchor: 'conditions' } },
 
@@ -40,13 +39,16 @@ export const FLOW_NODES: readonly MapNode[] = [
     dataset: { table: 'ts_data', registry: 'products' }, screen: { id: 'nsi', anchor: 'products' } },
 
   { id: 'ext.generator', kind: 'subblock', block: 'external', parent: 'external', shape: 'disc',
-    title: 'Макро-генератор VAR → SVD → HMM → блоки', short: 'Совместный процесс «ставка–курс–инфляция» по рядам Банка России; режимы и квантильные стрессы вместо ползунков.',
-    screen: { id: 'scenarios' }, learnMore: 'overview', stage: 'w2' },
-  { id: 'ext.generator.ds', kind: 'dataset', block: 'external', parent: 'ext.generator', title: 'Ряды ЦБ РФ (macro_series)',
-    dataset: { table: 'macro_series' }, stage: 'w2' },
+    title: 'Макро-генератор VAR → SVD → HMM → блоки', short: 'Совместный процесс «ставка–курс–инфляция» по рядам Банка России 2013-09…2026-09 (волна M): 2 режима, блок 4 мес, выбор по CRPS; pass-through на цены и сырьё [К].',
+    screen: { id: 'scenarios', anchor: 'conditions' }, learnMore: 'overview', stage: 'done' },
+  ...params('ext.generator', 'external', ['macro.generator', 'macro.selection_crps', 'macro.holdout_coverage80', 'macro.pt_cpi', 'macro.pt_fx_product', 'macro.pt_fx_raw']),
+  ...formulas('ext.generator', 'external', ['forecast.crps']),
+  { id: 'ext.generator.ds', kind: 'dataset', block: 'external', parent: 'ext.generator', title: 'Ряды ЦБ РФ (macro_series, synthetic = 0)',
+    dataset: { table: 'macro_series' } },
   { id: 'ext.regimes', kind: 'subblock', block: 'external', parent: 'external', shape: 'point',
-    title: 'Режимы и стрессы', short: 'Меню «Базовый / режим навязан / квантильный стресс / исторический эпизод» (METHODOLOGY-V2 §2.6б).',
-    screen: { id: 'scenarios' }, learnMore: 'overview', stage: 'w2' },
+    title: 'Режимы и стрессы', short: 'Меню «Базовый (прогноз) / режим навязан / квантильный стресс / исторический эпизод / опора» вместо ползунков (METHODOLOGY-V2 §2.6б); каждый выбор — в манифест прогона.',
+    screen: { id: 'scenarios', anchor: 'conditions' }, learnMore: 'overview', stage: 'done' },
+  ...params('ext.regimes', 'external', ['macro.mode', 'macro.ref_key']),
 
   /* ── [2] Распределения ────────────────────────────────────────────────── */
   { id: 'dist.prices', kind: 'subblock', block: 'distributions', parent: 'distributions', shape: 'disc',
@@ -107,9 +109,12 @@ export const FLOW_NODES: readonly MapNode[] = [
   ...formulas('int.mrp', 'internal', ['plan.mrp']),
 
   { id: 'int.finance', kind: 'subblock', block: 'internal', parent: 'internal', shape: 'square',
-    title: 'Деньги: касса, кредитная линия, отсрочки', short: 'Водопад кассы по неделям: выручка с отсрочкой → закупки → зарплата → проценты → налоги (METHODOLOGY-V2 §4).',
-    screen: { id: 'plan' }, learnMore: 'overview', stage: 'w1', action: 'cash' },
-  ...params('int.finance', 'internal', ['fin.cash0', 'fin.credit_limit', 'fin.credit_rate', 'fin.dso', 'fin.dpo']),
+    title: 'Деньги: касса, кредитная линия, отсрочки', short: 'Водопад кассы по неделям (волна F): выручка с отсрочкой → закупки → зарплата → проценты → налоги (METHODOLOGY-V2 §4); параметры — fin_params с паспортом [К]/[НОРМ].',
+    screen: { id: 'plan', anchor: 'new/constraints' }, learnMore: 'overview', stage: 'done', action: 'cash' },
+  ...params('int.finance', 'internal', ['fin.cash0', 'fin.credit_limit', 'fin.credit_rate', 'fin.spread', 'fin.dso', 'fin.dpo', 'fin.pd',
+    'fin.repair_budget', 'fin.tau_v', 'fin.tau_p', 'fin.dscr_covenant']),
+  { id: 'int.finance.ds', kind: 'dataset', block: 'internal', parent: 'int.finance', title: 'fin_params · param_passport',
+    dataset: { table: 'fin_params' }, screen: { id: 'plan', anchor: 'new/constraints' } },
 
   /* ── [4] Решения ──────────────────────────────────────────────────────── */
   { id: 'dec.portfolio', kind: 'subblock', block: 'decisions', parent: 'decisions', shape: 'triangle',
@@ -138,8 +143,10 @@ export const FLOW_NODES: readonly MapNode[] = [
   ...formulas('dec.invest', 'decisions', ['invest.capex', 'invest.delta_cf', 'invest.npv', 'invest.irr', 'invest.dpp', 'invest.roi', 'invest.next_bottleneck']),
 
   { id: 'dec.cash', kind: 'subblock', block: 'decisions', parent: 'decisions', shape: 'triangle',
-    title: 'Транши и запасы под кассу', short: 'Когда и сколько брать транш кредитной линии; запасы и поставщик как решение — одна CVaR-LP с потоком денег.',
-    screen: { id: 'plan' }, learnMore: 'overview', stage: 'w1', action: 'cash' },
+    title: 'Транши кредитной линии (CVaR-LP с кассой)', short: 'Когда и сколько брать транш: рекурс d_i,t или «график заранее» d_t внутри одной CVaR-LP с потоком денег (HiGHS, §5.2); запасы как решение — волна 1.',
+    screen: { id: 'plan', anchor: 'new/result' }, learnMore: 'overview', stage: 'done', action: 'cash' },
+  ...params('dec.cash', 'decisions', ['fin.l_min', 'fin.beta']),
+  ...formulas('dec.cash', 'decisions', ['cash.pol', 'cash.debt_peak', 'cash.int_cost']),
 
   /* ── [5] Критерии ─────────────────────────────────────────────────────── */
   { id: 'crit.profit', kind: 'subblock', block: 'criteria', parent: 'criteria', shape: 'triangle',
@@ -155,8 +162,9 @@ export const FLOW_NODES: readonly MapNode[] = [
     'plan.flow_time', 'plan.wip', 'plan.throughput', 'plan.setup_share', 'plan.wait_share', 'plan.machine_load']),
 
   { id: 'crit.cash', kind: 'subblock', block: 'criteria', parent: 'criteria', shape: 'triangle',
-    title: 'CVaR кассы (CFaR), DSCR, цена ликвидности', short: 'CVaR минимального остатка кассы, вероятность разрыва, DSCR; сколько прибыли стоит «касса ≥ 0 в 95 %».',
-    screen: { id: 'plan' }, learnMore: 'overview', stage: 'w1' },
+    title: 'CVaR кассы (CFaR), DSCR, цена ликвидности', short: 'CVaR минимального остатка кассы, вероятность разрыва (ДИ Уилсона), DSCR, ЧДД собственника и банка — KPI §6.0 по водопаду на решении LP.',
+    screen: { id: 'plan', anchor: 'new/result' }, learnMore: 'overview', stage: 'done' },
+  ...formulas('crit.cash', 'criteria', ['cash.cfar', 'cash.p_breach', 'cash.t_breach_p10', 'cash.dscr_min_p05', 'cash.cash_min_p50', 'cash.wc_avg', 'cash.npv', 'cash.tax_paid']),
 
   { id: 'crit.ci', kind: 'subblock', block: 'criteria', parent: 'criteria', shape: 'point',
     title: 'ДИ и протокол доказательности', short: 'Общие случайные числа, holdout, бутстреп-ДИ, Уилкоксон, бенчмарки — METHODOLOGY-V2 §10.',

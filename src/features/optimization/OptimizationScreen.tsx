@@ -12,7 +12,8 @@ import { getDecisionContext, setDecisionContext } from '../../shell/context'
 import { ParetoFrontier, ParetoLegend } from './ParetoFrontier'
 import { ExpectedCard, PriceOfRobustness, RobustHero } from './PortfolioCards'
 import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, StatusChip, Switch, rise } from './kit/kit'
-import { failOptRun, finishOptRun, patchOptForm, startOptRun, useOptStore } from './optStore'
+import { criterionOverrides, failOptRun, finishOptRun, inheritCriterion, patchOptForm, startOptRun, useOptStore } from './optStore'
+import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import { OBJECTIVES, isSoft, type Objective, type OptResultExt, type OptRunParams } from './optTypes'
 import './kit/kit.css'
 import './optimization.css'
@@ -113,7 +114,9 @@ function OosCard({ result }: { result: OptResultExt }) {
 }
 
 export function OptimizationScreen() {
-  const { form, result, running, error } = useOptStore()
+  const store = useOptStore()
+  const { form, result, running, error, inherited } = store
+  const ovr = criterionOverrides(store)
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [wcTypes, setWcTypes] = useState<WorkCenterType[]>([])
@@ -130,11 +133,27 @@ export function OptimizationScreen() {
         const ctx = getDecisionContext().scenarioId
         const start = (ctx && sc.find((x) => x.id === ctx)) || sc[0]
         if (start && !form.scenarioId) patchOptForm({ scenarioId: start.id, horizonMonths: String(start.months || 12) })
+        const cur = sc.find((x) => x.id === (form.scenarioId || start?.id))
+        if (cur) inheritFrom(cur)
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : 'нет связи с сервером'))
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(loadRefs, [])
+
+  /** Критерий живёт в сценарии (UX-V2 §8 п. 3): форма наследует objective / α / max_share. */
+  const inheritFrom = (sc: PriceScenario) => inheritCriterion({
+    scenarioId: sc.id, scenarioName: sc.name,
+    objective: (['cvar', 'worstcase', 'meanvariance', 'minregret'].includes(sc.objective ?? '') ? sc.objective : 'cvar') as Objective,
+    alpha: String(Number(sc.alpha) || 0.1), maxShare: String(Number(sc.max_share) || 0.35),
+  })
+  const InheritBadge = ({ changed, field }: { changed: boolean; field: 'objective' | 'alpha' | 'maxShare' }) => inherited ? (
+    <span className="opt2-inherit">
+      <ProvenanceBadge provenance={changed ? 'manual' : 'default'} title={changed ? 'переопределено для этого прогона' : `из сценария «${inherited.scenarioName}»`} />
+      <span className="opt2-inherit__t">{changed ? 'для прогона' : 'из сценария'}</span>
+      {changed && <button type="button" className="pf-link" onClick={() => patchOptForm({ [field]: inherited[field] } as Partial<typeof form>)}>вернуть</button>}
+    </span>
+  ) : null
 
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
@@ -207,6 +226,7 @@ export function OptimizationScreen() {
             <select value={form.scenarioId} onChange={(e) => {
               const sc = scenarios.find((s) => s.id === e.target.value)
               patchOptForm({ scenarioId: e.target.value, ...(sc?.months ? { horizonMonths: String(sc.months) } : {}) })
+              if (sc) inheritFrom(sc)
               setDecisionContext({ scenarioId: e.target.value })
             }}>
               {scenarios.length === 0 && <option value="">— базовые цены НСИ —</option>}
@@ -214,13 +234,13 @@ export function OptimizationScreen() {
             </select>
           </label>
           <div className="opt2-field">
-            <span className="opt2-field__label">Критерий</span>
+            <span className="opt2-field__label">Критерий <InheritBadge changed={ovr.objective} field="objective" /></span>
             <Segmented label="Критерий робастности" value={form.objective}
               onChange={(id: Objective) => patchOptForm({ objective: id })}
               options={OBJECTIVES.map((o) => ({ id: o.id, label: o.label, title: o.hint }))} />
           </div>
           <label className="opt2-field">
-            <span className="opt2-field__label">α хвоста<InfoTip id="opt.cvar" /></span>
+            <span className="opt2-field__label">α хвоста<InfoTip id="opt.cvar" /> <InheritBadge changed={ovr.alpha} field="alpha" /></span>
             <input type="number" min="0.01" max="0.5" step="0.05" value={form.alpha} onChange={(e) => patchOptForm({ alpha: e.target.value })} />
           </label>
           <label className="opt2-field">
@@ -228,7 +248,7 @@ export function OptimizationScreen() {
             <input type="number" min="200" step="500" value={form.samples} onChange={(e) => patchOptForm({ samples: e.target.value })} />
           </label>
           <label className="opt2-field">
-            <span className="opt2-field__label">Макс. доля изделия</span>
+            <span className="opt2-field__label">Макс. доля изделия <InheritBadge changed={ovr.maxShare} field="maxShare" /></span>
             <input type="number" min="0.1" max="1" step="0.05" value={form.maxShare} onChange={(e) => patchOptForm({ maxShare: e.target.value })} />
           </label>
           <label className="opt2-field">

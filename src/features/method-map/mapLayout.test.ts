@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { L0_EDGES } from './edges'
-import { GRID, SUB_LIST_PAD, SUB_ROW_H, blockRects, dataNeighbours, layoutL0, routeEdges } from './mapLayout'
+import { GRID, LABEL_H, SUB_LIST_PAD, SUB_ROW_H, blockRects, dataNeighbours, labelWidth, layoutL0, placeLabels, routeEdges } from './mapLayout'
 import { subblocksOf } from './registry'
 import { BLOCK_IDS } from './types'
 
@@ -61,5 +61,36 @@ describe('method-map L0 layout', () => {
     expect(dataNeighbours('external').next).toEqual(['distributions', 'agents', 'monitoring'])
     expect(dataNeighbours('decisions').prev).toEqual(['internal', 'distributions'])
     expect(dataNeighbours('llm')).toEqual({ next: [], prev: [] })
+  })
+
+  it('places edge labels without overlapping each other or the blocks (G1 note: 1440 px)', () => {
+    const rects = blockRects(new Set(), SUB_COUNTS)
+    const paths = routeEdges(rects)
+    const box = (p: (typeof paths)[number]) => {
+      const w = labelWidth(p.edge.label ?? '')
+      return { x: p.label.x - w / 2, y: p.label.y - LABEL_H / 2, w, h: LABEL_H }
+    }
+    const labelled = paths.filter((p) => p.edge.label)
+    for (let i = 0; i < labelled.length; i++) {
+      for (let j = i + 1; j < labelled.length; j++) {
+        expect(overlap(box(labelled[i]), box(labelled[j])), `${labelled[i].edge.id} × ${labelled[j].edge.id}`).toBe(false)
+      }
+      // Блоки — мягкое ограничение: если на кривой есть позиция вне блоков, подпись не заезжает на блок.
+      const p = labelled[i]
+      const w = box(p).w
+      const atT = (t: number) => { const q = p.at(t); return { x: q.x - w / 2, y: q.y - LABEL_H / 2, w, h: LABEL_H } }
+      const anyFree = p.loop || [0.15, 0.22, 0.3, 0.4, 0.5, 0.6, 0.7, 0.78, 0.85].some((t) => !rects.some((r) => overlap(atT(t), r)))
+      if (anyFree) for (const r of rects) expect(overlap(box(p), r), `${p.edge.id} над ${r.id}`).toBe(false)
+    }
+    // Подпись остаётся на своей кривой: сдвиг — вдоль пути, не в сторону.
+    for (const p of labelled.filter((x) => !x.loop)) {
+      const onCurve = [0.15, 0.22, 0.3, 0.4, 0.5, 0.6, 0.7, 0.78, 0.85].some((t) => {
+        const q = p.at(t)
+        return Math.abs(q.x - p.label.x) < 1e-6 && Math.abs(q.y - p.label.y) < 1e-6
+      })
+      expect(onCurve, p.edge.id).toBe(true)
+    }
+    // Идемпотентно: повторное размещение уже свободных подписей ничего не двигает.
+    expect(placeLabels(paths, rects).map((p) => p.label)).toEqual(paths.map((p) => p.label))
   })
 })

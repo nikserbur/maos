@@ -6,7 +6,9 @@
  * при сбое запроса карта работает по тому, что уже знает.
  */
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { api, type KpiBundle, type PriceScenario, type WorkCalendar } from '../../lib/api'
+import { api, type KpiBundle, type MacroSummary, type PriceScenario, type WorkCalendar } from '../../lib/api'
+import { useCashStore } from '../finance/cashStore'
+import { usePassport } from '../passport/passportStore'
 import { getDecisionContext, useDecisionContext } from '../../shell/context'
 import { useOptStore } from '../optimization/optStore'
 import { usePlanStore } from '../plan/planStore'
@@ -24,13 +26,15 @@ export interface RefsState {
   full: Readonly<Record<string, PriceScenario>>
   calendar: WorkCalendar | null
   kpi: KpiBundle | null
+  /** Волна M: сводка обученного макро-генератора (режимы, CRPS, покрытие). */
+  macro: MacroSummary | null
   loadedAt: number | null
   error: string | null
 }
 
 const TTL_MS = 60_000
 
-let refs: RefsState = { status: 'idle', counts: EMPTY_COUNTS, scenarios: [], full: {}, calendar: null, kpi: null, loadedAt: null, error: null }
+let refs: RefsState = { status: 'idle', counts: EMPTY_COUNTS, scenarios: [], full: {}, calendar: null, kpi: null, macro: null, loadedAt: null, error: null }
 let inflight: Promise<void> | null = null
 const listeners = new Set<() => void>()
 
@@ -51,9 +55,9 @@ const getSnapshot = (): RefsState => refs
 const has = (v: unknown): boolean => v !== undefined && v !== null && String(v).trim() !== '' && Number(v) > 0
 
 async function fetchRefs(): Promise<void> {
-  const [products, machines, wcTypes, workers, routings, operations, scenarios, calendar, kpi] = await Promise.allSettled([
+  const [products, machines, wcTypes, workers, routings, operations, scenarios, calendar, kpi, macro] = await Promise.allSettled([
     api.products.list(), api.machines.list(), api.workCenterTypes.list(), api.workers.list(),
-    api.routings.list(), api.operations.list(), api.scenarios.list(), api.calendar.get(), api.analytics.kpi(),
+    api.routings.list(), api.operations.list(), api.scenarios.list(), api.calendar.get(), api.analytics.kpi(), api.macro.summary(),
   ])
   const ok = <T,>(r: PromiseSettledResult<T>, fallback: T): T => (r.status === 'fulfilled' ? r.value : fallback)
   const failed = [products, machines, wcTypes, workers, routings, operations, scenarios].filter((r) => r.status === 'rejected')
@@ -79,6 +83,7 @@ async function fetchRefs(): Promise<void> {
     scenarios: ok(scenarios, []),
     calendar: ok(calendar, null as WorkCalendar | null),
     kpi: ok(kpi, null as KpiBundle | null),
+    macro: ok(macro, null as MacroSummary | null),
     loadedAt: Date.now(),
   })
 }
@@ -139,6 +144,8 @@ export function useMethodMapState(): MethodMapLive {
   const context = useDecisionContext()
   const opt = useOptStore()
   const plan = usePlanStore()
+  const cash = useCashStore()
+  const passport = usePassport()
 
   useEffect(() => {
     void ensureRefs()
@@ -161,10 +168,14 @@ export function useMethodMapState(): MethodMapLive {
       plan: { result: plan.result, builtAt: plan.builtAt, running: plan.running, params: plan.params },
       kpi: refsState.kpi,
       forecast: null,
+      passport: passport.status === 'ready' ? passport.byCode : null,
+      fin: passport.fin,
+      macro: refsState.macro,
+      cash: { result: cash.result, ranAt: cash.ranAt, running: cash.running },
       now: Date.now(),
     }
     return deriveState(input)
-  }, [context, scenarioId, scenario, refsState.counts, refsState.calendar, refsState.kpi, opt, plan])
+  }, [context, scenarioId, scenario, refsState.counts, refsState.calendar, refsState.kpi, refsState.macro, opt, plan, cash, passport])
 
   return { state, refs: refsState, scenario, scenarioId, refresh: () => void ensureRefs(true) }
 }

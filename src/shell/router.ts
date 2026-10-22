@@ -32,7 +32,8 @@ export function parseHash(hash: string): HashRoute {
 /** { 'methodology', 'cvar-tail' } → `#/methodology/cvar-tail`. */
 export function buildHash(screenId: string, anchor?: string | null): string {
   const base = `#/${encodeURIComponent(screenId)}`
-  return anchor ? `${base}/${encodeURIComponent(anchor)}` : base
+  // Якорь может быть вложенным («new/launch» у мастера плана): «/» остаётся разделителем, кодируются сегменты.
+  return anchor ? `${base}/${anchor.split('/').map(encodeURIComponent).join('/')}` : base
 }
 
 /** Переход: новая запись истории (работает «Назад»); повтор того же адреса снова оповещает слушателей. */
