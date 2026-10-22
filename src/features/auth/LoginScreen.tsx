@@ -68,6 +68,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
       <div className="login">
         <section className="login__hero" aria-labelledby="login-display">
           <Lockup height={48} className="login__mark" />
+          <p className="login__eyebrow text-caps">haciendo pescaditos de oro</p>
           <h1 className="login__display" id="login-display">Мониторинг и оптимизация</h1>
           <p className="login__lede">
             Прозрачная стохастическая модель предприятия: от схемы цехов и справочников —
@@ -152,7 +153,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            AUREUS v0.65.0 · дипломная работа · {new Date().getFullYear()}
+            PESCADITO v0.65.1 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>

@@ -10,7 +10,7 @@ interface TopBarProps {
   stage?: 1 | 2
 }
 
-/** Глобальная верхняя панель: локап AUREUS, активный экран, переключатель темы. */
+/** Глобальная верхняя панель: локап PESCADITO, активный экран, переключатель темы. */
 export function TopBar({ title, stage }: TopBarProps) {
   const theme = useTheme()
   const nextLabel = theme === 'light' ? 'Тёмная тема' : 'Светлая тема'
@@ -18,7 +18,7 @@ export function TopBar({ title, stage }: TopBarProps) {
   return (
     <header className="topbar">
       <Backdrop variant="shell" />
-      <a className="topbar__brand" href={`#/${DEFAULT_SCREEN_ID}`} aria-label="AUREUS — на главный экран">
+      <a className="topbar__brand" href={`#/${DEFAULT_SCREEN_ID}`} aria-label="PESCADITO — на главный экран">
         <Lockup height={26} title="" />
       </a>
       <span className="topbar__divider" aria-hidden="true" />

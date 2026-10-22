@@ -115,37 +115,39 @@ export function MarkTart({ size = 24, title, className }: MarkProps) {
   )
 }
 
-/** Глифы словесного знака A U R E U S (кегль 28 ед., штрих 5, скос на стыках):
- *  A — Λ без перекладины, бочка R — ультрамариновый диск (как прежний ● в MΛ●S). */
+/** Глифы словесного знака P E S C A D I T O (кегль 28 ед., штрих 5, скос на стыках):
+ *  A — Λ без перекладины, финальная O — ультрамариновый диск (как ● в прежнем MΛ●S).
+ *  «Pescadito de oro» — золотая рыбка полковника Аурелиано Буэндиа: сделать, переплавить, сделать заново. */
 function WordmarkGlyphs() {
   return (
     <>
-      <polyline className="wm__t" points="80,46 91.5,20.5 103,46" />
-      <path className="wm__t" d="M110 20.5 V36 A9 9 0 0 0 128 36 V20.5" />
-      <line className="wm__t" x1="137.5" y1="20.5" x2="137.5" y2="46" />
-      <circle className="wm__o" cx="145" cy="27" r="7" />
-      <line className="wm__t" x1="144" y1="33" x2="154" y2="46" />
-      <path className="wm__t" d="M177 20.5 H160 V46 H177 M160 33.25 H173" />
-      <path className="wm__t" d="M184 20.5 V36 A9 9 0 0 0 202 36 V20.5" />
-      <path className="wm__t" d="M220.23 23.38 A5.75 5.75 0 1 0 215.25 32 A5.75 5.75 0 1 1 210.27 40.63" />
+      <path className="wm__t" d="M80 46 V20.5 H89 A6.5 6.5 0 0 1 89 33.5 H80" />
+      <path className="wm__t" d="M120 20.5 H103 V46 H120 M103 33.25 H116" />
+      <path className="wm__t" d="M137.23 23.38 A5.75 5.75 0 1 0 132.25 32 A5.75 5.75 0 1 1 127.27 40.63" />
+      <path className="wm__t" d="M164.4 25.1 A11 11 0 1 0 164.4 41.4" />
+      <polyline className="wm__t" points="175,46 186.5,20.5 198,46" />
+      <path className="wm__t" d="M205 46 V20.5 H211 A12.75 12.75 0 0 1 211 46 H205" />
+      <line className="wm__t" x1="233.5" y1="20.5" x2="233.5" y2="46" />
+      <path className="wm__t" d="M243 20.5 H261 M252 20.5 V46" />
+      <circle className="wm__o" cx="282" cy="32" r="14" />
     </>
   )
 }
 
 interface WordmarkProps {
-  /** Высота прописной в px (ширина ≈ 5.1 × height). */
+  /** Высота прописной в px (ширина ≈ 7.8 × height). */
   height?: number
   title?: string
   className?: string
 }
 
-/** Словесный знак «ΛU●EUS» без шрифта — из примитивов Кандинского. */
+/** Словесный знак «PESCADIT●» без шрифта — из примитивов Кандинского. */
 export function Wordmark({ height = 14, title, className }: WordmarkProps) {
   return (
     <svg
-      viewBox="80 18 143 28"
+      viewBox="80 18 218 28"
       height={height}
-      width={(height * 143) / 28}
+      width={(height * 218) / 28}
       className={cx('mk wm', className)}
       {...a11y(title)}
     >
@@ -154,13 +156,13 @@ export function Wordmark({ height = 14, title, className }: WordmarkProps) {
   )
 }
 
-/** Локап: знак 1 «Триада» + словесный знак AUREUS (по мотивам A6-logo-lockup.svg, 232 × 64). */
-export function Lockup({ height = 28, title = 'AUREUS', className }: WordmarkProps) {
+/** Локап: знак 1 «Триада» (круг-тело, треугольник-хвост, линия-удочка — рыбка) + словесный знак PESCADITO (304 × 64). */
+export function Lockup({ height = 28, title = 'PESCADITO', className }: WordmarkProps) {
   return (
     <svg
-      viewBox="0 0 232 64"
+      viewBox="0 0 304 64"
       height={height}
-      width={(height * 232) / 64}
+      width={(height * 304) / 64}
       className={cx('mk mk1 lockup', className)}
       {...a11y(title)}
     >
