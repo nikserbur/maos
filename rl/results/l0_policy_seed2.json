@@ -1,0 +1,11 @@
+{
+ "level": "L0",
+ "obs_size": 206,
+ "act_size": 17,
+ "sha256": "8c597368201f5f9a63ff8b93fd6e5db90e1d4580ac2e85d2b27c08b146e2eda1",
+ "source_ckpt": "rl/train/checkpoints/l0_seed2_best.zip",
+ "exported": "2026-10-22",
+ "feature_version": "l0-v1 (kCandFeats=12, kMachFeats=4, kPoolFeats=4, kGlobFeats=6; L2: kOrderFeats=8, kFinFeats=12)",
+ "bytes": 182279,
+ "regenerate": "python -m rl.train.export_onnx --ckpt rl/train/checkpoints/l0_seed2_best.zip --out rl/results/l0_policy_seed2.onnx --level L0"
+}

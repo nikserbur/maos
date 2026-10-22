@@ -1,0 +1,170 @@
+{
+ "ta01": {
+  "lb": 977.0,
+  "bks": 1231,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta02": {
+  "lb": 942.0,
+  "bks": 1244,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta03": {
+  "lb": 921.0,
+  "bks": 1218,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta04": {
+  "lb": 911.0,
+  "bks": 1175,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta05": {
+  "lb": 940.0,
+  "bks": 1224,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta06": {
+  "lb": 889.0,
+  "bks": 1238,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta07": {
+  "lb": 935.0,
+  "bks": 1227,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta08": {
+  "lb": 963.0,
+  "bks": 1217,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta09": {
+  "lb": 982.0,
+  "bks": 1274,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "ta10": {
+  "lb": 911.0,
+  "bks": 1241,
+  "n_jobs": 15,
+  "n_machines": 15
+ },
+ "mk01": {
+  "lb": 36.0,
+  "bks": 40,
+  "n_jobs": 10,
+  "n_machines": 6
+ },
+ "mk02": {
+  "lb": 24.0,
+  "bks": 26,
+  "n_jobs": 10,
+  "n_machines": 6
+ },
+ "mk03": {
+  "lb": 204.0,
+  "bks": 204,
+  "n_jobs": 15,
+  "n_machines": 8
+ },
+ "mk04": {
+  "lb": 48.0,
+  "bks": 60,
+  "n_jobs": 15,
+  "n_machines": 8
+ },
+ "mk05": {
+  "lb": 127.0,
+  "bks": 172,
+  "n_jobs": 15,
+  "n_machines": 4
+ },
+ "mk06": {
+  "lb": 33.0,
+  "bks": 57,
+  "n_jobs": 10,
+  "n_machines": 10
+ },
+ "mk07": {
+  "lb": 133.0,
+  "bks": 139,
+  "n_jobs": 20,
+  "n_machines": 5
+ },
+ "mk08": {
+  "lb": 523.0,
+  "bks": 523,
+  "n_jobs": 20,
+  "n_machines": 10
+ },
+ "mk09": {
+  "lb": 299.0,
+  "bks": 307,
+  "n_jobs": 20,
+  "n_machines": 10
+ },
+ "mk10": {
+  "lb": 165.0,
+  "bks": 197,
+  "n_jobs": 20,
+  "n_machines": 13
+ },
+ "maos-plan1": {
+  "n_orders": 12,
+  "n_machines": 120
+ },
+ "maos-plan2": {
+  "n_orders": 12,
+  "n_machines": 120
+ },
+ "maos-plan3": {
+  "n_orders": 10,
+  "n_machines": 120
+ },
+ "maos-rnd1": {
+  "n_orders": 3,
+  "n_machines": 120
+ },
+ "maos-rnd2": {
+  "n_orders": 4,
+  "n_machines": 120
+ },
+ "maos-rnd3": {
+  "n_orders": 5,
+  "n_machines": 120
+ },
+ "maos-rnd4": {
+  "n_orders": 6,
+  "n_machines": 120
+ },
+ "maos-rnd5": {
+  "n_orders": 8,
+  "n_machines": 120
+ },
+ "maos-rnd6": {
+  "n_orders": 8,
+  "n_machines": 120
+ },
+ "maos-rnd7": {
+  "n_orders": 10,
+  "n_machines": 120
+ },
+ "maos-rnd8": {
+  "n_orders": 12,
+  "n_machines": 120
+ },
+ "maos-rnd9": {
+  "n_orders": 14,
+  "n_machines": 120
+ }
+}

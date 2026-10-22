@@ -1,0 +1,11 @@
+{
+ "level": "L2",
+ "obs_size": 172,
+ "act_size": 118,
+ "sha256": "1b090fab9a4cd1b5db615077d1831297977d5355377c61bf8144667bd77067c0",
+ "source_ckpt": "rl/train/checkpoints/l2_edd_seed3_best.zip",
+ "exported": "2026-10-22",
+ "feature_version": "l0-v1 (kCandFeats=12, kMachFeats=4, kPoolFeats=4, kGlobFeats=6; L2: kOrderFeats=8, kFinFeats=12)",
+ "bytes": 216991,
+ "regenerate": "python -m rl.train.export_onnx --ckpt rl/train/checkpoints/l2_edd_seed3_best.zip --out rl/results/l2_policy_seed3.onnx --level L2"
+}

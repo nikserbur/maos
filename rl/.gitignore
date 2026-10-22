@@ -2,3 +2,9 @@
 __pycache__/
 .pytest_cache/
 macro/data/raw/
+# волна A: сырые бенчмарки (недоверенные данные), собранный модуль, чекпойнты > 5 МБ
+bench/data/raw/*/
+env/*.so
+train/checkpoints/*.zip
+train/checkpoints/*.pt
+train/runs/

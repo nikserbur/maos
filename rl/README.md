@@ -61,3 +61,25 @@ rl/.venv/bin/pytest rl/
 
 `python -m rl.macro.make_fixture` пишет `backend/tests/fixtures/macro_params_small.json` и
 `macro_expected.json` (синтетические параметры + ожидаемые пути) для `test_macrosampler.cpp`.
+
+---
+
+# Волна A — агенты (SimEnv, стенд RL, бенчмарки, правило «RL»)
+
+Отчёт: [docs/research/A1-rl-wave.md](../docs/research/A1-rl-wave.md). Модуль `maos_env` (nanobind) собирается в `rl/env/`:
+
+```bash
+cmake -S backend -B backend/build -DMAOS_BUILD_PYENV=ON \
+  -Dnanobind_DIR="$(rl/.venv/bin/python -m nanobind --cmake_dir)" -DPython_EXECUTABLE=$PWD/rl/.venv/bin/python
+cmake --build backend/build --target maos_env -j8
+rl/.venv/bin/pytest rl/                                   # macro + env + bench
+rl/.venv/bin/python -m rl.bench.instances                 # ta01–ta10, mk01–mk10 (rl/bench/data/raw — недоверенные данные), 12 экземпляров MAOS
+rl/.venv/bin/python -m rl.bench.run_v4 --cpsat-sec 60     # V4 → rl/results/v4_benchmarks.json
+rl/.venv/bin/python -m rl.train.train_l0 --seeds 1 2 3    # L0 MaskablePPO, куррикулум §7.4 → rl/train/checkpoints
+rl/.venv/bin/python -m rl.train.train_l2 --seeds 1 2 3 --l0 rule:EDD   # L2 поверх замороженной L0
+rl/.venv/bin/python -m rl.eval.v5 --n 200 --seeds 1 2 3   # V5 holdout + стрессы + гейт → rl/results/v5_results.json
+rl/.venv/bin/python -m rl.train.export_onnx --ckpt rl/train/checkpoints/l0_seed1_best.zip --out rl/results/l0_policy.onnx
+```
+
+Сервер ищет `l0_policy.onnx`/`l2_policy.onnx` в `$MAOS_RL_POLICY_DIR` → `rl/results`; без них правило `RL`
+в `POST /api/schedule` отвечает `error_soft` с причиной (`GET /api/rl/status`).

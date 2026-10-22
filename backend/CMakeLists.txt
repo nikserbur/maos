@@ -58,7 +58,9 @@ add_library(maos_core STATIC
   src/MacroSampler.cpp
   src/Optimizer.cpp
   src/Passport.cpp
+  src/RlRule.cpp
   src/Scheduler.cpp
+  src/SimEnv.cpp
 )
 target_include_directories(maos_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Волна M: MacroSampler обязан воспроизводить rl/macro/sample.py побитово — без слияния
@@ -71,6 +73,30 @@ target_link_libraries(maos_core PUBLIC
 target_link_libraries(maos_core PRIVATE highs::highs)
 if(UNIX AND NOT APPLE)
   target_link_libraries(maos_core PUBLIC pthread)
+endif()
+
+# ── Волна A: ONNX Runtime (готовая сборка Microsoft, MIT) для правила «RL» (RlRule.cpp) ─────
+# По умолчанию — только macOS/arm64 (архив релиза); иначе OFF → правило RL отвечает понятной ошибкой.
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+  set(_maos_onnx_default ON)
+else()
+  set(_maos_onnx_default OFF)
+endif()
+option(MAOS_WITH_ONNX "Link ONNX Runtime (prebuilt) for the RL rule" ${_maos_onnx_default})
+if(MAOS_WITH_ONNX)
+  FetchContent_Declare(
+    onnxruntime
+    URL https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-osx-arm64-1.20.1.tgz
+    URL_HASH SHA256=b678fc3c2354c771fea4fba420edeccfba205140088334df801e7fc40e83a57a
+  )
+  FetchContent_MakeAvailable(onnxruntime)
+  add_library(onnxruntime SHARED IMPORTED)
+  set_target_properties(onnxruntime PROPERTIES
+    IMPORTED_LOCATION ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.1.20.1.dylib
+    INTERFACE_INCLUDE_DIRECTORIES ${onnxruntime_SOURCE_DIR}/include)
+  target_link_libraries(maos_core PUBLIC onnxruntime)
+  target_compile_definitions(maos_core PUBLIC MAOS_WITH_ONNX=1)
+  set_property(TARGET maos_core APPEND PROPERTY INTERFACE_LINK_OPTIONS "-Wl,-rpath,${onnxruntime_SOURCE_DIR}/lib")
 endif()
 
 add_executable(maos_server
@@ -109,7 +135,9 @@ if(MAOS_BUILD_TESTS)
     tests/test_macrosampler.cpp
     tests/test_optimizer.cpp
     tests/test_planmath.cpp
+    tests/test_rlrule.cpp
     tests/test_scheduler.cpp
+    tests/test_simenv.cpp
   )
   target_link_libraries(maos_tests PRIVATE maos_core GTest::gtest_main)
   target_compile_definitions(maos_tests PRIVATE MAOS_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
@@ -119,3 +147,15 @@ endif()
 
 # Copy schema.sql next to the binary so the server can read it
 configure_file(src/schema.sql ${CMAKE_BINARY_DIR}/schema.sql COPYONLY)
+
+# ── Волна A: nanobind-модуль maos_env для стенда rl/ (не влияет на сервер/тесты) ──
+# Сборка: cmake -S backend -B backend/build -DMAOS_BUILD_PYENV=ON
+#         -Dnanobind_DIR="$(rl/.venv/bin/python -m nanobind --cmake_dir)" -DPython_EXECUTABLE=rl/.venv/bin/python
+option(MAOS_BUILD_PYENV "Build nanobind module maos_env into rl/env/" OFF)
+if(MAOS_BUILD_PYENV)
+  find_package(Python 3.10 COMPONENTS Interpreter Development.Module REQUIRED)
+  find_package(nanobind CONFIG REQUIRED)
+  nanobind_add_module(maos_env NB_STATIC src/pyenv.cpp)
+  target_link_libraries(maos_env PRIVATE maos_core)
+  set_target_properties(maos_env PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../rl/env)
+endif()

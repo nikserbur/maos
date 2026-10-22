@@ -1,0 +1,2937 @@
+{
+ "n": 200,
+ "holdout_seed": 2026102201,
+ "seeds": [
+  1,
+  2,
+  3
+ ],
+ "best_rule": {
+  "maos-plan1": "LPT",
+  "maos-plan2": "SPT",
+  "maos-plan3": "EDD",
+  "maos-rnd1": "EDD",
+  "maos-rnd2": "FIFO",
+  "maos-rnd3": "MWKR",
+  "maos-rnd4": "FIFO",
+  "maos-rnd5": "EDD",
+  "maos-rnd6": "FIFO",
+  "maos-rnd7": "FIFO",
+  "maos-rnd8": "MWKR",
+  "maos-rnd9": "FIFO"
+ },
+ "instances": [
+  "maos-plan1",
+  "maos-plan2",
+  "maos-plan3",
+  "maos-rnd1",
+  "maos-rnd2",
+  "maos-rnd3",
+  "maos-rnd4",
+  "maos-rnd5",
+  "maos-rnd6",
+  "maos-rnd7",
+  "maos-rnd8",
+  "maos-rnd9"
+ ],
+ "policies": [
+  "best_rule",
+  "EDD",
+  "GA",
+  "L0_seed1",
+  "L0_seed2",
+  "L0_seed3",
+  "L2_edd_seed1",
+  "L2_edd_seed2",
+  "L2_edd_seed3"
+ ],
+ "tables": {
+  "crisis": {
+   "regime_share": {
+    "1": 1.0
+   },
+   "metrics": {
+    "best_rule": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3233076394.4402595,
+      "profit_cvar": 3207376726.721385,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 13537964.929238796,
+      "p_breach": 0.0,
+      "makespan_mean_h": 993.4996224006443,
+      "makespan_cvar_h": 1136.605152959139,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3203833040.6250625,
+      "profit_cvar": 3202892159.9604707,
+      "cash_min_cvar": 207342174.09354177,
+      "cash_min_p50": 215759795.9874656,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1192.2037583481222,
+      "makespan_cvar_h": 1396.3179189203834,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66421786.859612525,
+      "profit_cvar": 66298895.233251885,
+      "cash_min_cvar": 1846264.9416322622,
+      "cash_min_p50": 2036547.37711284,
+      "p_breach": 0.0,
+      "makespan_mean_h": 93.69337464395956,
+      "makespan_cvar_h": 107.07572697847085,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37671610.799802266,
+      "profit_cvar": 37596177.75323109,
+      "cash_min_cvar": 1178908.998255217,
+      "cash_min_p50": 1291098.3031385476,
+      "p_breach": 0.0,
+      "makespan_mean_h": 71.17166296841529,
+      "makespan_cvar_h": 87.67323897822033,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82040303.59326239,
+      "profit_cvar": 81787433.3613706,
+      "cash_min_cvar": 2727540.905158637,
+      "cash_min_p50": 2959480.488579139,
+      "p_breach": 0.0,
+      "makespan_mean_h": 311.21018828081316,
+      "makespan_cvar_h": 383.96378723486464,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237528559.10864234,
+      "profit_cvar": 237333195.85618463,
+      "cash_min_cvar": 13468161.598014414,
+      "cash_min_p50": 13615143.243886586,
+      "p_breach": 0.0,
+      "makespan_mean_h": 202.9076358649579,
+      "makespan_cvar_h": 233.46772242682474,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115835739.40926652,
+      "profit_cvar": 115704879.32562804,
+      "cash_min_cvar": 6280272.677153623,
+      "cash_min_p50": 6461828.656131177,
+      "p_breach": 0.0,
+      "makespan_mean_h": 97.97395646178329,
+      "makespan_cvar_h": 110.44070269531028,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93142597.16253765,
+      "profit_cvar": 92998536.06738298,
+      "cash_min_cvar": 3210887.91361437,
+      "cash_min_p50": 3391258.7404594887,
+      "p_breach": 0.0,
+      "makespan_mean_h": 112.55897429824626,
+      "makespan_cvar_h": 170.62153190030298,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128288127.45508438,
+      "profit_cvar": 128162130.59552884,
+      "cash_min_cvar": 5633632.295263468,
+      "cash_min_p50": 5794210.087271194,
+      "p_breach": 0.0,
+      "makespan_mean_h": 115.57873015668983,
+      "makespan_cvar_h": 177.20617820731817,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409545791.9296785,
+      "profit_cvar": 409185222.0686332,
+      "cash_min_cvar": 23234044.907353926,
+      "cash_min_p50": 23470076.75129684,
+      "p_breach": 0.0,
+      "makespan_mean_h": 418.14074832975604,
+      "makespan_cvar_h": 493.1821698724636,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315964380.46086085,
+      "profit_cvar": 315741991.1131545,
+      "cash_min_cvar": 18209444.507507768,
+      "cash_min_p50": 18619612.484508045,
+      "p_breach": 0.0,
+      "makespan_mean_h": 265.84299431400126,
+      "makespan_cvar_h": 313.22285815609376,
+      "tardiness_mean_h": 1.2459525194047978,
+      "otd": 0.9966666666666666,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391456613.8838177,
+      "profit_cvar": 391071312.8238054,
+      "cash_min_cvar": 20306234.301240526,
+      "cash_min_p50": 20654208.832542256,
+      "p_breach": 0.0,
+      "makespan_mean_h": 355.5319232761061,
+      "makespan_cvar_h": 407.95966082718184,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "EDD": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3233361196.965415,
+      "profit_cvar": 3206484320.3373938,
+      "cash_min_cvar": -5127124.456414449,
+      "cash_min_p50": 14225543.567211568,
+      "p_breach": 0.005,
+      "makespan_mean_h": 1037.035301711662,
+      "makespan_cvar_h": 1169.5016083182647,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3196424454.427661,
+      "profit_cvar": 3168229549.873504,
+      "cash_min_cvar": -18228621.600053072,
+      "cash_min_p50": 6367791.94208318,
+      "p_breach": 0.015,
+      "makespan_mean_h": 1032.988606362225,
+      "makespan_cvar_h": 1161.878174455565,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66421786.859612525,
+      "profit_cvar": 66298895.233251885,
+      "cash_min_cvar": 1846264.9416322622,
+      "cash_min_p50": 2036547.37711284,
+      "p_breach": 0.0,
+      "makespan_mean_h": 93.69337464395956,
+      "makespan_cvar_h": 107.07572697847085,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37671610.799802266,
+      "profit_cvar": 37596177.75323109,
+      "cash_min_cvar": 1178908.998255217,
+      "cash_min_p50": 1291098.3031385476,
+      "p_breach": 0.0,
+      "makespan_mean_h": 71.17166296841529,
+      "makespan_cvar_h": 87.67323897822033,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82042428.21404314,
+      "profit_cvar": 81788371.28419383,
+      "cash_min_cvar": 2733037.46509629,
+      "cash_min_p50": 2959885.3787095495,
+      "p_breach": 0.0,
+      "makespan_mean_h": 311.21018828081316,
+      "makespan_cvar_h": 383.96378723486464,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237532298.36897755,
+      "profit_cvar": 237337888.16975135,
+      "cash_min_cvar": 13460319.682767343,
+      "cash_min_p50": 13622713.008306183,
+      "p_breach": 0.0,
+      "makespan_mean_h": 203.07989235476867,
+      "makespan_cvar_h": 233.2112925441329,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115835259.87979683,
+      "profit_cvar": 115705558.98602419,
+      "cash_min_cvar": 6280251.00514807,
+      "cash_min_p50": 6461421.371375786,
+      "p_breach": 0.0,
+      "makespan_mean_h": 108.94637698773592,
+      "makespan_cvar_h": 123.75176903151392,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93142597.16253765,
+      "profit_cvar": 92998536.06738298,
+      "cash_min_cvar": 3210887.91361437,
+      "cash_min_p50": 3391258.7404594887,
+      "p_breach": 0.0,
+      "makespan_mean_h": 112.55897429824626,
+      "makespan_cvar_h": 170.62153190030298,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128289847.06368773,
+      "profit_cvar": 128167657.03604317,
+      "cash_min_cvar": 5638902.880546045,
+      "cash_min_p50": 5799994.395410722,
+      "p_breach": 0.0,
+      "makespan_mean_h": 116.24075230846411,
+      "makespan_cvar_h": 180.61879234268915,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409546695.647516,
+      "profit_cvar": 409186002.5832175,
+      "cash_min_cvar": 23237288.260461308,
+      "cash_min_p50": 23474982.919744365,
+      "p_breach": 0.0,
+      "makespan_mean_h": 418.13295693985316,
+      "makespan_cvar_h": 493.1821698724636,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315960600.34471023,
+      "profit_cvar": 315731366.99324,
+      "cash_min_cvar": 18220985.18916828,
+      "cash_min_p50": 18617661.44216699,
+      "p_breach": 0.0,
+      "makespan_mean_h": 265.78474757793765,
+      "makespan_cvar_h": 313.22389710182915,
+      "tardiness_mean_h": 1.2459525194047978,
+      "otd": 0.9966666666666666,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391435349.2006392,
+      "profit_cvar": 391049004.29298633,
+      "cash_min_cvar": 20672526.69309326,
+      "cash_min_p50": 21018975.04229006,
+      "p_breach": 0.0,
+      "makespan_mean_h": 350.722352498059,
+      "makespan_cvar_h": 399.0624240263491,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "GA": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3233168037.3212056,
+      "profit_cvar": 3207471246.70683,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 18924218.452331126,
+      "p_breach": 0.0,
+      "makespan_mean_h": 994.4168836868829,
+      "makespan_cvar_h": 1145.5299293832184,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3203775383.314591,
+      "profit_cvar": 3202366363.9542823,
+      "cash_min_cvar": 2794862.7054938436,
+      "cash_min_p50": 11914164.42434591,
+      "p_breach": 0.0,
+      "makespan_mean_h": 992.0118274473409,
+      "makespan_cvar_h": 1137.2985701639184,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66412915.33200829,
+      "profit_cvar": 66292712.7137977,
+      "cash_min_cvar": 1843260.7762453835,
+      "cash_min_p50": 2022859.0237837976,
+      "p_breach": 0.0,
+      "makespan_mean_h": 90.47921412553893,
+      "makespan_cvar_h": 106.30610919427701,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37671610.799802266,
+      "profit_cvar": 37596177.75323109,
+      "cash_min_cvar": 1178908.998255217,
+      "cash_min_p50": 1291098.3031385476,
+      "p_breach": 0.0,
+      "makespan_mean_h": 71.17166296841529,
+      "makespan_cvar_h": 87.67323897822033,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82042428.21404314,
+      "profit_cvar": 81788371.28419383,
+      "cash_min_cvar": 2733037.46509629,
+      "cash_min_p50": 2959885.3787095495,
+      "p_breach": 0.0,
+      "makespan_mean_h": 311.21018828081316,
+      "makespan_cvar_h": 383.96378723486464,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237530606.697754,
+      "profit_cvar": 237337630.25808603,
+      "cash_min_cvar": 13466177.59643265,
+      "cash_min_p50": 13618789.810061745,
+      "p_breach": 0.0,
+      "makespan_mean_h": 202.9879039504537,
+      "makespan_cvar_h": 233.53996123271614,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115834520.43835297,
+      "profit_cvar": 115702513.18210582,
+      "cash_min_cvar": 6272438.576117146,
+      "cash_min_p50": 6460754.725167821,
+      "p_breach": 0.0,
+      "makespan_mean_h": 97.90130535187701,
+      "makespan_cvar_h": 110.45407450819316,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93138079.95331112,
+      "profit_cvar": 92995704.93144362,
+      "cash_min_cvar": 3195274.533531653,
+      "cash_min_p50": 3386490.122940175,
+      "p_breach": 0.0,
+      "makespan_mean_h": 100.73880964790304,
+      "makespan_cvar_h": 138.6723316117157,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128267375.73217121,
+      "profit_cvar": 128143594.64180867,
+      "cash_min_cvar": 5608848.539806084,
+      "cash_min_p50": 5778192.654073767,
+      "p_breach": 0.0,
+      "makespan_mean_h": 112.02540450667063,
+      "makespan_cvar_h": 163.8544662993906,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409484348.8391821,
+      "profit_cvar": 409128985.50571555,
+      "cash_min_cvar": 22785150.438386764,
+      "cash_min_p50": 23128346.62836852,
+      "p_breach": 0.0,
+      "makespan_mean_h": 408.8491100687726,
+      "makespan_cvar_h": 491.5401429428299,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315950293.804681,
+      "profit_cvar": 315726982.0996833,
+      "cash_min_cvar": 18211962.365231268,
+      "cash_min_p50": 18504271.00694889,
+      "p_breach": 0.0,
+      "makespan_mean_h": 260.66970791096986,
+      "makespan_cvar_h": 299.76675815966206,
+      "tardiness_mean_h": 1.6598600975522952,
+      "otd": 0.9945833333333333,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391427219.63088083,
+      "profit_cvar": 391043532.62075627,
+      "cash_min_cvar": 20730594.93664443,
+      "cash_min_p50": 21056720.71740175,
+      "p_breach": 0.0,
+      "makespan_mean_h": 340.21562120745847,
+      "makespan_cvar_h": 399.5395529224429,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "L0_seed1": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3236216769.7046375,
+      "profit_cvar": 3223497954.162805,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 197777103.66919732,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1160.8919658012812,
+      "makespan_cvar_h": 1276.7653447445277,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 12513.92,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3199648299.1051497,
+      "profit_cvar": 3189434796.8359256,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 196161584.50378758,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1155.2198741291193,
+      "makespan_cvar_h": 1265.47864942002,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 11869.9,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66324766.25043123,
+      "profit_cvar": 66200965.15359996,
+      "cash_min_cvar": 1847429.0697032823,
+      "cash_min_p50": 2017809.3328520635,
+      "p_breach": 0.0,
+      "makespan_mean_h": 194.97111218145386,
+      "makespan_cvar_h": 203.49973063603892,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 31015.225,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37659054.861062124,
+      "profit_cvar": 37581277.04523082,
+      "cash_min_cvar": 1172638.8760880393,
+      "cash_min_p50": 1281267.1928887246,
+      "p_breach": 0.0,
+      "makespan_mean_h": 122.21048349872436,
+      "makespan_cvar_h": 178.49366309075825,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 9340.265,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82018473.18254578,
+      "profit_cvar": 81768533.07800047,
+      "cash_min_cvar": 3100844.2573248674,
+      "cash_min_p50": 3305248.677650478,
+      "p_breach": 0.0,
+      "makespan_mean_h": 373.4180405009701,
+      "makespan_cvar_h": 409.8330299634965,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 9064.42,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237479843.28777093,
+      "profit_cvar": 237284170.10094228,
+      "cash_min_cvar": 12922423.33680157,
+      "cash_min_p50": 13764091.815981187,
+      "p_breach": 0.0,
+      "makespan_mean_h": 227.8564462767409,
+      "makespan_cvar_h": 245.8948954607451,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 11738.15,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115803434.63356249,
+      "profit_cvar": 115677305.403146,
+      "cash_min_cvar": 5849021.667636912,
+      "cash_min_p50": 6099376.139583193,
+      "p_breach": 0.0,
+      "makespan_mean_h": 201.6565814128886,
+      "makespan_cvar_h": 212.8232484846704,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 19100.615,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93096579.67188801,
+      "profit_cvar": 92951136.57732847,
+      "cash_min_cvar": 3297177.9667866174,
+      "cash_min_p50": 3477854.7577938237,
+      "p_breach": 0.0,
+      "makespan_mean_h": 201.68587850430856,
+      "makespan_cvar_h": 211.66592684548112,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 21575.765,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128208394.28816098,
+      "profit_cvar": 128079033.0909735,
+      "cash_min_cvar": 5687639.681914297,
+      "cash_min_p50": 5840601.531130161,
+      "p_breach": 0.0,
+      "makespan_mean_h": 201.42186675958678,
+      "makespan_cvar_h": 216.89706967639341,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 23377.82,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409370498.5119429,
+      "profit_cvar": 409008113.4888608,
+      "cash_min_cvar": 21706944.00118394,
+      "cash_min_p50": 23826283.556899957,
+      "p_breach": 0.0,
+      "makespan_mean_h": 480.61011002655823,
+      "makespan_cvar_h": 555.932190271016,
+      "tardiness_mean_h": 23.754273708892768,
+      "otd": 0.8910000000000002,
+      "n_wait_mean": 21302.73,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315706575.21372306,
+      "profit_cvar": 315434651.923133,
+      "cash_min_cvar": 18625746.280239172,
+      "cash_min_p50": 18929079.877060607,
+      "p_breach": 0.0,
+      "makespan_mean_h": 333.44969176045953,
+      "makespan_cvar_h": 373.1441104303393,
+      "tardiness_mean_h": 47.873136465127516,
+      "otd": 0.9004166666666665,
+      "n_wait_mean": 39208.755,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391047128.5330803,
+      "profit_cvar": 390581692.8483494,
+      "cash_min_cvar": 11008254.251785317,
+      "cash_min_p50": 15886024.786013294,
+      "p_breach": 0.0,
+      "makespan_mean_h": 404.769430434849,
+      "makespan_cvar_h": 443.29156968044725,
+      "tardiness_mean_h": 84.82386996350756,
+      "otd": 0.8475,
+      "n_wait_mean": 42842.665,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "L0_seed2": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3237773176.4654775,
+      "profit_cvar": 3221455066.1399727,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 35510567.076797605,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1243.151379789526,
+      "makespan_cvar_h": 1397.1278376617556,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 18670.415,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3203026224.1781836,
+      "profit_cvar": 3195929301.838051,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 198022082.18509018,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1235.9406611081608,
+      "makespan_cvar_h": 1379.029676295545,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 18864.21,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66330861.17977799,
+      "profit_cvar": 66206892.14403181,
+      "cash_min_cvar": 1949922.8535218383,
+      "cash_min_p50": 2112954.3509584162,
+      "p_breach": 0.0,
+      "makespan_mean_h": 210.4686880733195,
+      "makespan_cvar_h": 220.06473096589357,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 31796.18,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37649676.78308457,
+      "profit_cvar": 37573992.85763995,
+      "cash_min_cvar": 758629.8545513572,
+      "cash_min_p50": 1317309.9626657174,
+      "p_breach": 0.0,
+      "makespan_mean_h": 183.99250809264925,
+      "makespan_cvar_h": 193.7681544419567,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 7715.24,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82009285.69639252,
+      "profit_cvar": 81764818.19617268,
+      "cash_min_cvar": 3324655.178079178,
+      "cash_min_p50": 3521211.4355989466,
+      "p_breach": 0.0,
+      "makespan_mean_h": 384.1513241255338,
+      "makespan_cvar_h": 425.1464263980647,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 8301.835,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237447653.02727675,
+      "profit_cvar": 237252433.16190696,
+      "cash_min_cvar": 13758015.911049444,
+      "cash_min_p50": 13920207.792776108,
+      "p_breach": 0.0,
+      "makespan_mean_h": 242.60043064796636,
+      "makespan_cvar_h": 276.03093555376523,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 11184.925,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115808803.3548563,
+      "profit_cvar": 115681625.93424396,
+      "cash_min_cvar": 6557700.97781537,
+      "cash_min_p50": 6721165.454796206,
+      "p_breach": 0.0,
+      "makespan_mean_h": 222.3728169352014,
+      "makespan_cvar_h": 229.32306330504125,
+      "tardiness_mean_h": 0.053245828324844605,
+      "otd": 0.9991666666666668,
+      "n_wait_mean": 18079.74,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93062175.25497873,
+      "profit_cvar": 92918346.79484113,
+      "cash_min_cvar": 3235568.6203391934,
+      "cash_min_p50": 3542757.943610847,
+      "p_breach": 0.0,
+      "makespan_mean_h": 216.72181457767488,
+      "makespan_cvar_h": 225.73261807834652,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 18680.945,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128231540.25641224,
+      "profit_cvar": 128103826.32262914,
+      "cash_min_cvar": 5870846.439195992,
+      "cash_min_p50": 6015885.48491566,
+      "p_breach": 0.0,
+      "makespan_mean_h": 214.84149996084355,
+      "makespan_cvar_h": 229.99739726764915,
+      "tardiness_mean_h": 0.03723865572755403,
+      "otd": 0.999375,
+      "n_wait_mean": 21469.21,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409342139.99600357,
+      "profit_cvar": 408913255.13856304,
+      "cash_min_cvar": 23299680.551241167,
+      "cash_min_p50": 23548360.636745945,
+      "p_breach": 0.0,
+      "makespan_mean_h": 504.18117344209054,
+      "makespan_cvar_h": 563.3944042889487,
+      "tardiness_mean_h": 40.69982105729073,
+      "otd": 0.7419999999999999,
+      "n_wait_mean": 27712.03,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315357955.0965307,
+      "profit_cvar": 315117978.3464676,
+      "cash_min_cvar": 18313736.327357225,
+      "cash_min_p50": 18534924.61603479,
+      "p_breach": 0.0,
+      "makespan_mean_h": 371.37259666142745,
+      "makespan_cvar_h": 394.75832531704384,
+      "tardiness_mean_h": 162.87456416897328,
+      "otd": 0.7829166666666666,
+      "n_wait_mean": 41492.125,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 390286570.9308518,
+      "profit_cvar": 389806920.9582316,
+      "cash_min_cvar": 16772577.05631357,
+      "cash_min_p50": 23093025.587284803,
+      "p_breach": 0.0,
+      "makespan_mean_h": 415.253323505448,
+      "makespan_cvar_h": 465.65022642206094,
+      "tardiness_mean_h": 393.9473630105589,
+      "otd": 0.7853571428571429,
+      "n_wait_mean": 37677.2,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "L0_seed3": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3232719330.1984205,
+      "profit_cvar": 3214474083.376365,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 0.0,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1250.684496682606,
+      "makespan_cvar_h": 1427.9812644972706,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 20408.31,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3197314648.6796303,
+      "profit_cvar": 3181125827.360042,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 0.0,
+      "p_breach": 0.0,
+      "makespan_mean_h": 1249.0714507307162,
+      "makespan_cvar_h": 1408.010645307963,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 20172.77,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66275874.50881222,
+      "profit_cvar": 66157726.3603945,
+      "cash_min_cvar": 1274024.9067230646,
+      "cash_min_p50": 2212048.762976395,
+      "p_breach": 0.0,
+      "makespan_mean_h": 238.44132813784097,
+      "makespan_cvar_h": 250.38256716742558,
+      "tardiness_mean_h": 0.2753148067781252,
+      "otd": 0.9969999999999999,
+      "n_wait_mean": 29784.17,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37646901.08930768,
+      "profit_cvar": 37576377.470396794,
+      "cash_min_cvar": 741016.8474730554,
+      "cash_min_p50": 1368628.2186108665,
+      "p_breach": 0.0,
+      "makespan_mean_h": 200.45589715310493,
+      "makespan_cvar_h": 208.78780491671006,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 6709.215,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82003469.90521482,
+      "profit_cvar": 81751541.92115305,
+      "cash_min_cvar": 0.0,
+      "cash_min_p50": 176646.71800219803,
+      "p_breach": 0.0,
+      "makespan_mean_h": 386.2253937408176,
+      "makespan_cvar_h": 424.1373591822192,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 7861.065,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237429126.7887492,
+      "profit_cvar": 237238135.32439667,
+      "cash_min_cvar": 12072771.221078455,
+      "cash_min_p50": 14084190.235604443,
+      "p_breach": 0.0,
+      "makespan_mean_h": 263.4522011560369,
+      "makespan_cvar_h": 299.0792438855714,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 10923.925,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115774756.04386863,
+      "profit_cvar": 115653181.1624715,
+      "cash_min_cvar": 5270809.223968385,
+      "cash_min_p50": 5474391.589546459,
+      "p_breach": 0.0,
+      "makespan_mean_h": 236.9116780933529,
+      "makespan_cvar_h": 248.01190009916832,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 15525.54,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 92994355.4518317,
+      "profit_cvar": 92850990.10777621,
+      "cash_min_cvar": 2969299.782652664,
+      "cash_min_p50": 3313450.2194086453,
+      "p_breach": 0.0,
+      "makespan_mean_h": 235.55685838332346,
+      "makespan_cvar_h": 248.3604007823711,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 19364.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128162555.35393654,
+      "profit_cvar": 128021803.80625792,
+      "cash_min_cvar": 5955227.703480246,
+      "cash_min_p50": 6109257.720276524,
+      "p_breach": 0.0,
+      "makespan_mean_h": 238.4897143388272,
+      "makespan_cvar_h": 253.37526347564784,
+      "tardiness_mean_h": 0.8998635328135688,
+      "otd": 0.991875,
+      "n_wait_mean": 21532.68,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409043102.3149673,
+      "profit_cvar": 408657067.1786336,
+      "cash_min_cvar": 23578246.058830194,
+      "cash_min_p50": 23808098.54055543,
+      "p_breach": 0.0,
+      "makespan_mean_h": 507.70681636596436,
+      "makespan_cvar_h": 585.7192764379759,
+      "tardiness_mean_h": 125.11111559123182,
+      "otd": 0.8345000000000001,
+      "n_wait_mean": 26376.57,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315275575.575007,
+      "profit_cvar": 315049072.76711,
+      "cash_min_cvar": 17706483.28197805,
+      "cash_min_p50": 18664829.96514028,
+      "p_breach": 0.0,
+      "makespan_mean_h": 380.897695097689,
+      "makespan_cvar_h": 404.0938255788409,
+      "tardiness_mean_h": 168.88031779975682,
+      "otd": 0.8516666666666667,
+      "n_wait_mean": 42060.305,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 390552641.1086186,
+      "profit_cvar": 390044505.72428834,
+      "cash_min_cvar": 12652963.178817559,
+      "cash_min_p50": 17641953.456581786,
+      "p_breach": 0.0,
+      "makespan_mean_h": 486.33773957767187,
+      "makespan_cvar_h": 540.4532278119277,
+      "tardiness_mean_h": 355.9274586931959,
+      "otd": 0.8217857142857143,
+      "n_wait_mean": 37708.525,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "L2_edd_seed1": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3216598059.3758807,
+      "profit_cvar": 3202044599.7579904,
+      "cash_min_cvar": -129862054.06861468,
+      "cash_min_p50": 210021825.63904363,
+      "p_breach": 0.24,
+      "makespan_mean_h": 1037.035301711662,
+      "makespan_cvar_h": 1169.5016083182647,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 7.935,
+      "move_kinds": {
+       "finance": 1587
+      },
+      "share_episodes_with_moves": 1.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3182643868.0793195,
+      "profit_cvar": 3170190939.233156,
+      "cash_min_cvar": -193939077.22115323,
+      "cash_min_p50": 205443547.90670162,
+      "p_breach": 0.25,
+      "makespan_mean_h": 1032.988606362225,
+      "makespan_cvar_h": 1161.878174455565,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 6.975,
+      "move_kinds": {
+       "finance": 1395
+      },
+      "share_episodes_with_moves": 1.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66421786.859612525,
+      "profit_cvar": 66298895.233251885,
+      "cash_min_cvar": 1846264.9416322622,
+      "cash_min_p50": 2036547.37711284,
+      "p_breach": 0.0,
+      "makespan_mean_h": 93.69337464395956,
+      "makespan_cvar_h": 107.07572697847085,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37671610.799802266,
+      "profit_cvar": 37596177.75323109,
+      "cash_min_cvar": 1178908.998255217,
+      "cash_min_p50": 1291098.3031385476,
+      "p_breach": 0.0,
+      "makespan_mean_h": 71.17166296841529,
+      "makespan_cvar_h": 87.67323897822033,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82042428.21404314,
+      "profit_cvar": 81788371.28419383,
+      "cash_min_cvar": 2733037.46509629,
+      "cash_min_p50": 2959885.3787095495,
+      "p_breach": 0.0,
+      "makespan_mean_h": 311.21018828081316,
+      "makespan_cvar_h": 383.96378723486464,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237532298.36897755,
+      "profit_cvar": 237337888.16975135,
+      "cash_min_cvar": 13460319.682767343,
+      "cash_min_p50": 13622713.008306183,
+      "p_breach": 0.0,
+      "makespan_mean_h": 203.07989235476867,
+      "makespan_cvar_h": 233.2112925441329,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115835259.87979683,
+      "profit_cvar": 115705558.98602419,
+      "cash_min_cvar": 6280251.00514807,
+      "cash_min_p50": 6461421.371375786,
+      "p_breach": 0.0,
+      "makespan_mean_h": 108.94637698773592,
+      "makespan_cvar_h": 123.75176903151392,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93142597.16253765,
+      "profit_cvar": 92998536.06738298,
+      "cash_min_cvar": 3210887.91361437,
+      "cash_min_p50": 3391258.7404594887,
+      "p_breach": 0.0,
+      "makespan_mean_h": 112.55897429824626,
+      "makespan_cvar_h": 170.62153190030298,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128289847.06368773,
+      "profit_cvar": 128167657.03604317,
+      "cash_min_cvar": 5638902.880546045,
+      "cash_min_p50": 5799994.395410722,
+      "p_breach": 0.0,
+      "makespan_mean_h": 116.24075230846411,
+      "makespan_cvar_h": 180.61879234268915,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409269329.76265,
+      "profit_cvar": 406443556.4703671,
+      "cash_min_cvar": 23237288.260461308,
+      "cash_min_p50": 23474982.919744365,
+      "p_breach": 0.0,
+      "makespan_mean_h": 418.13295693985316,
+      "makespan_cvar_h": 493.1821698724636,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.135,
+      "move_kinds": {
+       "finance": 27
+      },
+      "share_episodes_with_moves": 0.045
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 313595529.55010355,
+      "profit_cvar": 312615825.16621995,
+      "cash_min_cvar": 36854845.69914232,
+      "cash_min_p50": 37248920.84100336,
+      "p_breach": 0.0,
+      "makespan_mean_h": 265.8327251986998,
+      "makespan_cvar_h": 313.23057155643903,
+      "tardiness_mean_h": 1.2861496291888317,
+      "otd": 0.99625,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 6.0,
+      "move_kinds": {
+       "merge": 400,
+       "finance": 800
+      },
+      "share_episodes_with_moves": 1.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391435349.2006392,
+      "profit_cvar": 391049004.29298633,
+      "cash_min_cvar": 20672526.69309326,
+      "cash_min_p50": 21018975.04229006,
+      "p_breach": 0.0,
+      "makespan_mean_h": 350.722352498059,
+      "makespan_cvar_h": 399.0624240263491,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "L2_edd_seed2": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3233256421.909291,
+      "profit_cvar": 3205375902.124938,
+      "cash_min_cvar": -10297819.762796259,
+      "cash_min_p50": 14259697.508214116,
+      "p_breach": 0.01,
+      "makespan_mean_h": 1037.955614679421,
+      "makespan_cvar_h": 1169.5714902421366,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 3.0,
+      "move_kinds": {
+       "merge": 400,
+       "split": 200
+      },
+      "share_episodes_with_moves": 1.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3196424454.427661,
+      "profit_cvar": 3168229549.873504,
+      "cash_min_cvar": -18228621.600053072,
+      "cash_min_p50": 6367791.94208318,
+      "p_breach": 0.015,
+      "makespan_mean_h": 1032.988606362225,
+      "makespan_cvar_h": 1161.878174455565,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66421786.859612525,
+      "profit_cvar": 66298895.233251885,
+      "cash_min_cvar": 1846264.9416322622,
+      "cash_min_p50": 2036547.37711284,
+      "p_breach": 0.0,
+      "makespan_mean_h": 93.69337464395956,
+      "makespan_cvar_h": 107.07572697847085,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37671610.799802266,
+      "profit_cvar": 37596177.75323109,
+      "cash_min_cvar": 1178908.998255217,
+      "cash_min_p50": 1291098.3031385476,
+      "p_breach": 0.0,
+      "makespan_mean_h": 71.17166296841529,
+      "makespan_cvar_h": 87.67323897822033,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82042428.21404314,
+      "profit_cvar": 81788371.28419383,
+      "cash_min_cvar": 2733037.46509629,
+      "cash_min_p50": 2959885.3787095495,
+      "p_breach": 0.0,
+      "makespan_mean_h": 311.21018828081316,
+      "makespan_cvar_h": 383.96378723486464,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237532298.36897755,
+      "profit_cvar": 237337888.16975135,
+      "cash_min_cvar": 13460319.682767343,
+      "cash_min_p50": 13622713.008306183,
+      "p_breach": 0.0,
+      "makespan_mean_h": 203.07989235476867,
+      "makespan_cvar_h": 233.2112925441329,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115835259.87979683,
+      "profit_cvar": 115705558.98602419,
+      "cash_min_cvar": 6280251.00514807,
+      "cash_min_p50": 6461421.371375786,
+      "p_breach": 0.0,
+      "makespan_mean_h": 108.94637698773592,
+      "makespan_cvar_h": 123.75176903151392,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93142597.16253765,
+      "profit_cvar": 92998536.06738298,
+      "cash_min_cvar": 3210887.91361437,
+      "cash_min_p50": 3391258.7404594887,
+      "p_breach": 0.0,
+      "makespan_mean_h": 112.55897429824626,
+      "makespan_cvar_h": 170.62153190030298,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128289847.06368773,
+      "profit_cvar": 128167657.03604317,
+      "cash_min_cvar": 5638902.880546045,
+      "cash_min_p50": 5799994.395410722,
+      "p_breach": 0.0,
+      "makespan_mean_h": 116.24075230846411,
+      "makespan_cvar_h": 180.61879234268915,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409546695.647516,
+      "profit_cvar": 409186002.5832175,
+      "cash_min_cvar": 23237288.260461308,
+      "cash_min_p50": 23474982.919744365,
+      "p_breach": 0.0,
+      "makespan_mean_h": 418.13295693985316,
+      "makespan_cvar_h": 493.1821698724636,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315955841.7102797,
+      "profit_cvar": 315728115.65822256,
+      "cash_min_cvar": 18224641.0801628,
+      "cash_min_p50": 18614513.684824385,
+      "p_breach": 0.0,
+      "makespan_mean_h": 265.7946993933524,
+      "makespan_cvar_h": 313.23315957707365,
+      "tardiness_mean_h": 1.2459525194047978,
+      "otd": 0.9966666666666666,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 3.0,
+      "move_kinds": {
+       "merge": 400,
+       "split": 200
+      },
+      "share_episodes_with_moves": 1.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391435349.2006392,
+      "profit_cvar": 391049004.29298633,
+      "cash_min_cvar": 20672526.69309326,
+      "cash_min_p50": 21018975.04229006,
+      "p_breach": 0.0,
+      "makespan_mean_h": 350.722352498059,
+      "makespan_cvar_h": 399.0624240263491,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    },
+    "L2_edd_seed3": {
+     "maos-plan1": {
+      "n": 200,
+      "profit_mean": 3233361196.965415,
+      "profit_cvar": 3206484320.3373938,
+      "cash_min_cvar": -5127124.456414449,
+      "cash_min_p50": 14225543.567211568,
+      "p_breach": 0.005,
+      "makespan_mean_h": 1037.035301711662,
+      "makespan_cvar_h": 1169.5016083182647,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan2": {
+      "n": 200,
+      "profit_mean": 3196424454.427661,
+      "profit_cvar": 3168229549.873504,
+      "cash_min_cvar": -18228621.600053072,
+      "cash_min_p50": 6367791.94208318,
+      "p_breach": 0.015,
+      "makespan_mean_h": 1032.988606362225,
+      "makespan_cvar_h": 1161.878174455565,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-plan3": {
+      "n": 200,
+      "profit_mean": 66421786.859612525,
+      "profit_cvar": 66298895.233251885,
+      "cash_min_cvar": 1846264.9416322622,
+      "cash_min_p50": 2036547.37711284,
+      "p_breach": 0.0,
+      "makespan_mean_h": 93.69337464395956,
+      "makespan_cvar_h": 107.07572697847085,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd1": {
+      "n": 200,
+      "profit_mean": 37671610.799802266,
+      "profit_cvar": 37596177.75323109,
+      "cash_min_cvar": 1178908.998255217,
+      "cash_min_p50": 1291098.3031385476,
+      "p_breach": 0.0,
+      "makespan_mean_h": 71.17166296841529,
+      "makespan_cvar_h": 87.67323897822033,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd2": {
+      "n": 200,
+      "profit_mean": 82042428.21404314,
+      "profit_cvar": 81788371.28419383,
+      "cash_min_cvar": 2733037.46509629,
+      "cash_min_p50": 2959885.3787095495,
+      "p_breach": 0.0,
+      "makespan_mean_h": 311.21018828081316,
+      "makespan_cvar_h": 383.96378723486464,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd3": {
+      "n": 200,
+      "profit_mean": 237532298.36897755,
+      "profit_cvar": 237337888.16975135,
+      "cash_min_cvar": 13460319.682767343,
+      "cash_min_p50": 13622713.008306183,
+      "p_breach": 0.0,
+      "makespan_mean_h": 203.07989235476867,
+      "makespan_cvar_h": 233.2112925441329,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd4": {
+      "n": 200,
+      "profit_mean": 115835259.87979683,
+      "profit_cvar": 115705558.98602419,
+      "cash_min_cvar": 6280251.00514807,
+      "cash_min_p50": 6461421.371375786,
+      "p_breach": 0.0,
+      "makespan_mean_h": 108.94637698773592,
+      "makespan_cvar_h": 123.75176903151392,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd5": {
+      "n": 200,
+      "profit_mean": 93142597.16253765,
+      "profit_cvar": 92998536.06738298,
+      "cash_min_cvar": 3210887.91361437,
+      "cash_min_p50": 3391258.7404594887,
+      "p_breach": 0.0,
+      "makespan_mean_h": 112.55897429824626,
+      "makespan_cvar_h": 170.62153190030298,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd6": {
+      "n": 200,
+      "profit_mean": 128289847.06368773,
+      "profit_cvar": 128167657.03604317,
+      "cash_min_cvar": 5638902.880546045,
+      "cash_min_p50": 5799994.395410722,
+      "p_breach": 0.0,
+      "makespan_mean_h": 116.24075230846411,
+      "makespan_cvar_h": 180.61879234268915,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd7": {
+      "n": 200,
+      "profit_mean": 409546695.647516,
+      "profit_cvar": 409186002.5832175,
+      "cash_min_cvar": 23237288.260461308,
+      "cash_min_p50": 23474982.919744365,
+      "p_breach": 0.0,
+      "makespan_mean_h": 418.13295693985316,
+      "makespan_cvar_h": 493.1821698724636,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd8": {
+      "n": 200,
+      "profit_mean": 315960600.34471023,
+      "profit_cvar": 315731366.99324,
+      "cash_min_cvar": 18220985.18916828,
+      "cash_min_p50": 18617661.44216699,
+      "p_breach": 0.0,
+      "makespan_mean_h": 265.78474757793765,
+      "makespan_cvar_h": 313.22389710182915,
+      "tardiness_mean_h": 1.2459525194047978,
+      "otd": 0.9966666666666666,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     },
+     "maos-rnd9": {
+      "n": 200,
+      "profit_mean": 391435349.2006392,
+      "profit_cvar": 391049004.29298633,
+      "cash_min_cvar": 20672526.69309326,
+      "cash_min_p50": 21018975.04229006,
+      "p_breach": 0.0,
+      "makespan_mean_h": 350.722352498059,
+      "makespan_cvar_h": 399.0624240263491,
+      "tardiness_mean_h": 0.0,
+      "otd": 1.0,
+      "n_wait_mean": 0.0,
+      "moves_per_episode": 0.0,
+      "move_kinds": {},
+      "share_episodes_with_moves": 0.0
+     }
+    }
+   },
+   "comparisons": {
+    "L0_seed1": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -0.0005325619151583104,
+       "ci95": [
+        -0.0010576076790486434,
+        -0.000269167080361219
+       ],
+       "mean": -0.0004642776563563951,
+       "wilcoxon_p": 0.0341796875,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": -0.0009580753662549799,
+       "ci95": [
+        -0.00956909764383217,
+        0.0005895696797208247
+       ],
+       "mean": -0.007596013255604886,
+       "wilcoxon_p": 0.365234375,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 69.71546211711428,
+       "ci95": [
+        46.79946899998801,
+        92.48340735108637
+       ],
+       "mean": 68.98732599528711,
+       "wilcoxon_p": 0.00146484375,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        19.501440266723034
+       ],
+       "mean": 12.933777301510254,
+       "wilcoxon_p": 0.25,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_GA": {
+      "d_cvar_profit": {
+       "iqm": -0.000473270543139956,
+       "ci95": [
+        -0.0009824454253301888,
+        -0.0002565757865586658
+       ],
+       "mean": -0.00041025437048256426,
+       "wilcoxon_p": 0.0341796875,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": -0.00044182793326179195,
+       "ci95": [
+        -0.002355837611446437,
+        0.0006825816562361107
+       ],
+       "mean": -0.0022408920437455584,
+       "wilcoxon_p": 0.51953125,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 83.86560003416652,
+       "ci95": [
+        64.97223090711697,
+        113.93465358906714
+       ],
+       "mean": 89.62365351115368,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        19.3634710740072
+       ],
+       "mean": 12.899285003331295,
+       "wilcoxon_p": 0.25,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_EDD": {
+      "d_cvar_profit": {
+       "iqm": -0.00041921934977843,
+       "ci95": [
+        -0.0007720652077707941,
+        0.0015408164650956458
+       ],
+       "mean": 0.0004622660429346532,
+       "wilcoxon_p": 0.2333984375,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_cvar_cash": {
+       "iqm": 2.8990127897785646e-05,
+       "ci95": [
+        -0.0026440153732399017,
+        0.0018490639272549627
+       ],
+       "mean": -0.001683599844912732,
+       "wilcoxon_p": 0.9697265625,
+       "n_instances": 12,
+       "win_share": 0.5833333333333334
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        -0.0016666666666666668,
+        0.0
+       ],
+       "mean": -0.0016666666666666668,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_makespan_h": {
+       "iqm": 76.56136209528692,
+       "ci95": [
+        59.489856000027444,
+        97.97652936154681
+       ],
+       "mean": 78.04969119623338,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        19.501440266723034
+       ],
+       "mean": 12.933777301510254,
+       "wilcoxon_p": 0.25,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    },
+    "L0_seed2": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -0.000715587987993691,
+       "ci95": [
+        -0.0015261564594496485,
+        -0.0003326128574915454
+       ],
+       "mean": -0.0006494719455253881,
+       "wilcoxon_p": 0.0341796875,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": 0.0005893683819699834,
+       "ci95": [
+        -0.00634682758540262,
+        0.0016730905009868728
+       ],
+       "mean": -0.005820136779266614,
+       "wilcoxon_p": 0.8310546875,
+       "n_instances": 12,
+       "win_share": 0.6666666666666666
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 96.79293641871628,
+       "ci95": [
+        68.86768882083248,
+        114.469083650967
+       ],
+       "mean": 101.22788729802886,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.015080747342066441,
+       "ci95": [
+        0.0,
+        60.668381697458756
+       ],
+       "mean": 49.697190016789214,
+       "wilcoxon_p": 0.0625,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_GA": {
+      "d_cvar_profit": {
+       "iqm": -0.0006512098413546329,
+       "ci95": [
+        -0.0014559945641662334,
+        -0.0002964967417918858
+       ],
+       "mean": -0.0005954607302158826,
+       "wilcoxon_p": 0.0341796875,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": 0.0008076596946341719,
+       "ci95": [
+        -0.003053744100025888,
+        0.0018341919307210324
+       ],
+       "mean": -0.0004648477492237055,
+       "wilcoxon_p": 0.46484375,
+       "n_instances": 12,
+       "win_share": 0.6666666666666666
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 109.60739526328912,
+       "ci95": [
+        89.34701847428225,
+        156.70541067774047
+       ],
+       "mean": 121.86421481389543,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.015080747342066441,
+       "ci95": [
+        0.0,
+        60.53041250474292
+       ],
+       "mean": 49.66269771861025,
+       "wilcoxon_p": 0.0625,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_EDD": {
+      "d_cvar_profit": {
+       "iqm": -0.0005433671736261536,
+       "ci95": [
+        -0.001150882017525445,
+        0.001290187416711806
+       ],
+       "mean": 0.0002774580758950221,
+       "wilcoxon_p": 0.2333984375,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_cvar_cash": {
+       "iqm": 0.001127679820496764,
+       "ci95": [
+        -0.002764005881080733,
+        0.002859967051224643
+       ],
+       "mean": 9.233160759461081e-05,
+       "wilcoxon_p": 0.2333984375,
+       "n_instances": 12,
+       "win_share": 0.8333333333333334
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        -0.0016666666666666668,
+        0.0
+       ],
+       "mean": -0.0016666666666666668,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_makespan_h": {
+       "iqm": 103.44115643153911,
+       "ci95": [
+        83.20417452181262,
+        139.39105255517396
+       ],
+       "mean": 110.29025249897514,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.015080747342066441,
+       "ci95": [
+        0.0,
+        60.668381697458756
+       ],
+       "mean": 49.697190016789214,
+       "wilcoxon_p": 0.0625,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    },
+    "L0_seed3": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -0.001177464478158302,
+       "ci95": [
+        -0.0020802563230563906,
+        -0.0004976632836318979
+       ],
+       "mean": -0.0014430963041209078,
+       "wilcoxon_p": 0.02099609375,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": -0.0065023303636371245,
+       "ci95": [
+        -0.017368907693645994,
+        -0.0014637872856215447
+       ],
+       "mean": -0.012765060807594429,
+       "wilcoxon_p": 0.0068359375,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 118.43661459556101,
+       "ci95": [
+        87.67166293536432,
+        135.0833439017509
+       ],
+       "mean": 120.32647500953802,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.19586305659861566,
+       "ci95": [
+        0.0,
+        77.25588300981582
+       ],
+       "mean": 54.15400982536429,
+       "wilcoxon_p": 0.0625,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_GA": {
+      "d_cvar_profit": {
+       "iqm": -0.001110463984549109,
+       "ci95": [
+        -0.0020094747332969763,
+        -0.0004961998027789758
+       ],
+       "mean": -0.001389111357540462,
+       "wilcoxon_p": 0.02099609375,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": -0.0046638199659164315,
+       "ci95": [
+        -0.010712298690968614,
+        -0.0006224171271281592
+       ],
+       "mean": -0.0074098694234144375,
+       "wilcoxon_p": 0.0244140625,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 132.65451184177917,
+       "ci95": [
+        107.8523836454095,
+        177.39989050174722
+       ],
+       "mean": 140.96280252540458,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.19586305659861566,
+       "ci95": [
+        0.0,
+        77.12136304691785
+       ],
+       "mean": 54.11951752718533,
+       "wilcoxon_p": 0.0625,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_EDD": {
+      "d_cvar_profit": {
+       "iqm": -0.0009065314451392126,
+       "ci95": [
+        -0.0016784509810261312,
+        0.00039369452148968346
+       ],
+       "mean": -0.0005170391796387219,
+       "wilcoxon_p": 0.20361328125,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_cvar_cash": {
+       "iqm": -0.004426802485652802,
+       "ci95": [
+        -0.010682886650342942,
+        0.00026518041296959055
+       ],
+       "mean": -0.0068525499096056056,
+       "wilcoxon_p": 0.04248046875,
+       "n_instances": 12,
+       "win_share": 0.3333333333333333
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        -0.0016666666666666668,
+        0.0
+       ],
+       "mean": -0.0016666666666666668,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.16666666666666666
+      },
+      "d_makespan_h": {
+       "iqm": 125.53745266751851,
+       "ci95": [
+        102.34340347293126,
+        158.3731265773252
+       ],
+       "mean": 129.38884021048432,
+       "wilcoxon_p": 0.00048828125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.19586305659861566,
+       "ci95": [
+        0.0,
+        77.25588300981582
+       ],
+       "mean": 54.15400982536429,
+       "wilcoxon_p": 0.0625,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    },
+    "L2_edd_seed1": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -0.00028339392574112384,
+       "ci95": [
+        -0.004463081488808411,
+        8.081185383337973e-06
+       ],
+       "mean": -0.002368454529810326,
+       "wilcoxon_p": 0.1640625,
+       "n_instances": 12,
+       "win_share": 0.3333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": 8.136044291625328e-06,
+       "ci95": [
+        -0.013394469384407614,
+        0.0003231040816380962
+       ],
+       "mean": -0.008782289540091009,
+       "wilcoxon_p": 0.8203125,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.08
+       ],
+       "mean": 0.04083333333333333,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 0.02741084998464771,
+       "ci95": [
+        -1.6062106674055816,
+        3.7952538480558324
+       ],
+       "mean": -9.058367065882766,
+       "wilcoxon_p": 0.84375,
+       "n_instances": 12,
+       "win_share": 0.3333333333333333
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.003349759148669492,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_GA": {
+      "d_cvar_profit": {
+       "iqm": -0.00027284520086516144,
+       "ci95": [
+        -0.0043843938687908495,
+        3.538718907907334e-05
+       ],
+       "mean": -0.0023145012425238704,
+       "wilcoxon_p": 0.556640625,
+       "n_instances": 12,
+       "win_share": 0.5
+      },
+      "d_cvar_cash": {
+       "iqm": 4.260909759946143e-05,
+       "ci95": [
+        -0.013409821264376981,
+        0.0004744113278394312
+       ],
+       "mean": -0.003426746408887772,
+       "wilcoxon_p": 0.6953125,
+       "n_instances": 12,
+       "win_share": 0.5
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.08
+       ],
+       "mean": 0.04083333333333333,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 7.238029234247347,
+       "ci95": [
+        2.468397535753575,
+        19.86404223856721
+       ],
+       "mean": 11.57796044998379,
+       "wilcoxon_p": 0.001953125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": -0.03114253903028863,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "gate_pass": false
+     },
+     "vs_EDD": {
+      "d_cvar_profit": {
+       "iqm": 0.0,
+       "ci95": [
+        -0.002460948444126292,
+        0.0
+       ],
+       "mean": -0.0014430261126853292,
+       "wilcoxon_p": 0.25,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_cvar_cash": {
+       "iqm": 0.0,
+       "ci95": [
+        -0.012859160278707997,
+        0.0
+       ],
+       "mean": -0.002881096187437043,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.07833333333333332
+       ],
+       "mean": 0.03916666666666666,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.003998135063511654,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.003349759148669492,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    },
+    "L2_edd_seed2": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -6.023560378500472e-06,
+       "ci95": [
+        -0.00022540370324363165,
+        8.920732974025566e-06
+       ],
+       "mean": -0.0009547359578325299,
+       "wilcoxon_p": 0.42578125,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_cvar_cash": {
+       "iqm": 8.136044291625328e-06,
+       "ci95": [
+        -0.0010672800742069274,
+        3.849544172197433e-05
+       ],
+       "mean": -0.006043756043827422,
+       "wilcoxon_p": 0.91015625,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0033333333333333335
+       ],
+       "mean": 0.0020833333333333333,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 0.02741084998464771,
+       "ci95": [
+        -1.6125379777743187,
+        3.7952538480558324
+       ],
+       "mean": -8.984843135681803,
+       "wilcoxon_p": 0.84375,
+       "n_instances": 12,
+       "win_share": 0.3333333333333333
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_GA": {
+      "d_cvar_profit": {
+       "iqm": 1.2557330448841142e-05,
+       "ci95": [
+        -0.00021524701932426258,
+        6.946061461966303e-05
+       ],
+       "mean": -0.0009006656933756002,
+       "wilcoxon_p": 0.431640625,
+       "n_instances": 12,
+       "win_share": 0.6666666666666666
+      },
+      "d_cvar_cash": {
+       "iqm": 2.135775028594353e-05,
+       "ci95": [
+        -0.0010906232300522312,
+        0.0001372112016250955
+       ],
+       "mean": -0.000688437086680844,
+       "wilcoxon_p": 0.845703125,
+       "n_instances": 12,
+       "win_share": 0.5
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0033333333333333335
+       ],
+       "mean": 0.0020833333333333333,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 7.231691600022782,
+       "ci95": [
+        2.4558807081600595,
+        19.857863045198258
+       ],
+       "mean": 11.651484380184753,
+       "wilcoxon_p": 0.001953125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": -0.034492298178958124,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "gate_pass": false
+     },
+     "vs_EDD": {
+      "d_cvar_profit": {
+       "iqm": 0.0,
+       "ci95": [
+        -3.4301059624686593e-06,
+        0.0
+       ],
+       "mean": -2.9424760011574296e-05,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_cvar_cash": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": -0.00013229996803098944,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0004166666666666667,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0033172718049172545
+       ],
+       "mean": 0.0775220652644748,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    },
+    "L2_edd_seed3": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -4.308527915716559e-06,
+       "ci95": [
+        -0.00011103895155708182,
+        8.920732974025566e-06
+       ],
+       "mean": -0.0009253086915852853,
+       "wilcoxon_p": 0.49609375,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_cvar_cash": {
+       "iqm": 7.376259948496894e-06,
+       "ci95": [
+        -0.0005341763389870645,
+        3.582774851618569e-05
+       ],
+       "mean": -0.005911444324983751,
+       "wilcoxon_p": 0.91015625,
+       "n_instances": 12,
+       "win_share": 0.4166666666666667
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0016666666666666668
+       ],
+       "mean": 0.0016666666666666668,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 0.02741084998464771,
+       "ci95": [
+        -1.6141966136767774,
+        3.7952538480558324
+       ],
+       "mean": -9.062365200946278,
+       "wilcoxon_p": 0.84375,
+       "n_instances": 12,
+       "win_share": 0.3333333333333333
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     },
+     "vs_GA": {
+      "d_cvar_profit": {
+       "iqm": 1.4272439376414341e-05,
+       "ci95": [
+        -9.925614952674985e-05,
+        7.095476747831717e-05
+       ],
+       "mean": -0.0008712391986943289,
+       "wilcoxon_p": 0.431640625,
+       "n_instances": 12,
+       "win_share": 0.6666666666666666
+      },
+      "d_cvar_cash": {
+       "iqm": 1.942923438423071e-05,
+       "ci95": [
+        -0.0005658668271050792,
+        0.00013533089862092525
+       ],
+       "mean": -0.0005561291884808478,
+       "wilcoxon_p": 0.845703125,
+       "n_instances": 12,
+       "win_share": 0.5
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0016666666666666668
+       ],
+       "mean": 0.0016666666666666668,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 7.230032964120324,
+       "ci95": [
+        2.4526049022527037,
+        19.856245875193363
+       ],
+       "mean": 11.573962314920278,
+       "wilcoxon_p": 0.001953125,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": -0.034492298178958124,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.08333333333333333
+      },
+      "gate_pass": false
+     },
+     "vs_EDD": {
+      "d_cvar_profit": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_cvar_cash": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    },
+    "GA": {
+     "vs_best_rule": {
+      "d_cvar_profit": {
+       "iqm": -4.372843200849642e-05,
+       "ci95": [
+        -0.00010511066647095448,
+        -2.246265741341417e-06
+       ],
+       "mean": -5.407916148459107e-05,
+       "wilcoxon_p": 0.0185546875,
+       "n_instances": 12,
+       "win_share": 0.25
+      },
+      "d_cvar_cash": {
+       "iqm": -4.814020077553947e-05,
+       "ci95": [
+        -0.00045657418026090257,
+        1.3845349684143223e-05
+       ],
+       "mean": -0.005355303833144052,
+       "wilcoxon_p": 0.16015625,
+       "n_instances": 12,
+       "win_share": 0.25
+      },
+      "d_p_breach": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.0,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "d_makespan_h": {
+       "iqm": -3.550843657060161,
+       "ci95": [
+        -10.081160172436423,
+        -0.5223154054874731
+       ],
+       "mean": -20.636327515866554,
+       "wilcoxon_p": 0.01953125,
+       "n_instances": 12,
+       "win_share": 0.6666666666666666
+      },
+      "d_tardiness_h": {
+       "iqm": 0.0,
+       "ci95": [
+        0.0,
+        0.0
+       ],
+       "mean": 0.034492298178958124,
+       "wilcoxon_p": 1.0,
+       "n_instances": 12,
+       "win_share": 0.0
+      },
+      "gate_pass": false
+     }
+    }
+   }
+  }
+ },
+ "sec": 9011.280946016312
+}

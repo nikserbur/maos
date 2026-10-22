@@ -410,6 +410,63 @@ export interface SchedImprover {
   history?: Array<{ gen: number; best: number; mean: number }>
   makespan_mean_rule?: number; makespan_mean_final?: number
 }
+/* ── Волна A: агент RL — статус политики, структурные ходы (контракт UX-V2 §4.7) ───── */
+export type MoveKind = 'reroute' | 'reassign' | 'reorder' | 'split' | 'merge' | 'transfer'
+  | 'outsource' | 'shift' | 'drop' | 'finance' | 'shift_plus' | 'shift_minus'
+export type MoveStatus = 'proposed' | 'accepted' | 'rejected' | 'applied' | 'frozen'
+export interface MoveImpact {
+  profit: { e_before: number; e_after: number; cvar_before: number; cvar_after: number }
+  cash: { min_cash_cvar_before: number; min_cash_cvar_after: number; p_gap_before: number; p_gap_after: number }
+  schedule: { cmax_e_delta_h: number; cmax_cvar_delta_h: number; otd_delta: number; tardiness_delta_h: number }
+  /** На тех же N сценариях (CRN): доля прогонов, где пакет лучше, и бутстреп-ДИ выигрыша CVaR(Π). */
+  win_share: number
+  ci95: [number, number]
+}
+export interface MoveJustification {
+  regime: { id: string; label: string; share: number }
+  scenarios: Array<{ idx: number; key_rate?: number; fx?: number; price_shock?: number; lead_delay_h?: number; gain: number }>
+  map_nodes: string[]
+  text?: string
+}
+export interface StructuralMove {
+  id: string
+  kind: MoveKind
+  status: MoveStatus
+  targets: { order_idx?: number[]; op_ids?: string[]; machine_ids?: string[]; product_ids?: string[]; org_unit_ids?: string[] }
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  impact: MoveImpact
+  justification: MoveJustification
+  depends_on?: string[]
+  masks_checked: string[]
+  proposed_at: string
+  agent: { level: 'L0' | 'L2'; policy_version: string; seed: number }
+  week?: number
+}
+export interface AgentGuardrails {
+  alpha: number
+  objective: 'cvar_profit' | 'cvar_profit_cash' | 'cvar_cash'
+  allowed: Record<string, boolean>
+  limits: { max_moves: number; max_orders_share: number; max_shift_days: number; max_outsource_share: number }
+  frozen: Array<{ op_id?: string; order_idx?: number; machine_id?: string; reason?: string }>
+  rejected_masks: Array<{ kind: MoveKind; targets: StructuralMove['targets']; reason: string }>
+  owner: 'project' | 'run'
+}
+export interface MovesResult {
+  run_id: string
+  baseline_run_id: string
+  moves: StructuralMove[]
+  totals: MoveImpact
+  guardrails: AgentGuardrails
+  n_scenarios?: number
+  l2_makespan_h?: number
+}
+export interface RlPolicyInfo { ok: boolean; path: string; sha256: string; obs_size: number; act_size: number; meta: Record<string, unknown> }
+export interface RlStatus { available: boolean; onnxruntime: boolean; dir: string; error: string; l0: RlPolicyInfo; l2: RlPolicyInfo; note: string }
+/** Сводка правила RL в событийной среде (по средним длительностям). */
+export interface RlEval { makespan_h: number; tardiness_h: number; n_decisions: number; n_wait: number; policy_sha256: string }
+export interface RlInstanceParams { program?: Array<{ product_id: string; qty: number; due_hours?: number }>; use_calendar?: boolean }
+
 export interface ScheduleResult {
   rule: string; samples: number; alpha: number
   weights: { time: number; cost: number; risk: number }
@@ -424,6 +481,9 @@ export interface ScheduleResult {
   kpi: SchedKpi; rules: SchedRule[]; warnings: string[]
   portfolio_horizon_hours?: number
   improver?: SchedImprover | null
+  /** Волна A: структурные ходы агента L2 (rule='RL'); null без RL. */
+  moves?: MovesResult | null
+  rl?: RlEval | null
   plan_id?: string; error_soft?: boolean
 }
 export interface ScheduleParams {
@@ -556,6 +616,12 @@ export const api = {
 
   projects: {
     list: () => get<{ projects: string[]; current: string }>('/projects'),
+  },
+
+  /** Волна A: политика RL (правило «RL» Стадии 1) и экспорт экземпляра для стенда rl/. */
+  rl: {
+    status: () => get<RlStatus>('/rl/status'),
+    instance: (p: RlInstanceParams = {}) => post<Record<string, unknown> & { name: string; n_orders: number }>('/rl/instance', p),
   },
 
   simulation: {

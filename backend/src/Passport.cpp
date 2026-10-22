@@ -134,6 +134,46 @@ const Row kCode[] = {
 
 /* Волна M: обученный макро-генератор (блок [1]) и pass-through §2.4. Статусы по §10.2:
    генератор — О (cbr.ru, n = 157, валидация CRPS), опора — НОРМ, эластичности предприятия — К (Р8). */
+/* Волна A (RL): константы среды SimEnv, награды, обучения и базовых линий — все [К]/[НОРМ]/техн.
+   (данных предприятия нет, Р8); значения — см. docs/research/A1-rl-wave.md §2 и rl/train/*.py. */
+const Row kRl[] = {
+  { "rl.k_max_cands", "агенты", "Слотов кандидатов в наблюдении L0 (очередь усекается по EDD-порядку)", "16", "шт", "К", "A4 §3: фиксированный размер для ONNX", "SimEnv.h:EnvConfig.kMaxCands" },
+  { "rl.k_max_orders", "агенты", "Слотов заказов в наблюдении/действиях L2", "16", "шт", "К", "—", "SimEnv.h:EnvConfig.kMaxOrders" },
+  { "rl.k_max_wct", "агенты", "Слотов типов РЦ в наблюдении L2 (очередь по типу)", "32", "шт", "К", "—", "SimEnv.h:EnvConfig.kMaxWct" },
+  { "rl.horizon_weeks", "агенты", "Горизонт эпизода/кассы H_P", "26", "нед", "К", "§7.2, развилка Р1", "SimEnv.h:EnvConfig.horizonWeeks" },
+  { "rl.max_moves_per_week", "агенты", "Структурных ходов L2 за недельную эпоху", "3", "шт", "К", "§7.3; лимит пакета UX §4.10", "SimEnv.h:EnvConfig.maxMovesPerWeek" },
+  { "rl.max_shift_weeks", "агенты", "Предел сдвига даты запуска заказа", "4", "нед", "К", "UX §4.10: «сдвиг ≤ 10 дн» → 4 нед для недельной сетки", "SimEnv.cpp:kMaxShiftWeeks" },
+  { "rl.max_batches", "агенты", "Потолок transfer-партий при дроблении", "16", "шт", "НОРМ", "r1.10", "SimEnv.cpp:kMaxBatches" },
+  { "rl.outsource_lead_hours", "агенты", "Срок поставки при аутсорсинге полуфабриката (нет outsourcing_offers)", "72", "ч", "К", "§7.3в: коммерческих предложений нет", "SimEnv.cpp:instance_from_db" },
+  { "rl.outsource_markup", "агенты", "Цена аутсорсинга = материальная себестоимость × markup", "1.3", "—", "К", "§7.3в «цена = себестоимость × 1.3»", "SimEnv.cpp:instance_from_db" },
+  { "rl.outsource_prepay", "агенты", "Доля предоплаты поставщику аутсорсинга (маска C_t+U_t ≥ предоплата)", "0.5", "доля", "К", "§7.3", "SimEnv.cpp:instance_from_db" },
+  { "rl.reward.c_tard", "агенты", "Вес Δ оценки просрочки в плотной награде L0", "1.0", "—", "К", "§7.3а; A4 §2.2", "SimEnv.h:EnvConfig.cTard" },
+  { "rl.reward.c_setup", "агенты", "Вес наладки в плотной награде L0", "0.5", "—", "К", "§7.3а", "SimEnv.h:EnvConfig.cSetup" },
+  { "rl.reward.w_profit", "агенты", "Вес прибыли (терминальная награда, доля стоимости портфеля)", "1.0", "—", "К", "§7.3 награда L2", "SimEnv.h:EnvConfig.wProfit" },
+  { "rl.reward.w_cash", "агенты", "Вес минимума кассы (терминальная награда)", "1.0", "—", "К", "§7.3", "SimEnv.h:EnvConfig.wCash" },
+  { "rl.reward.lambda_breach", "агенты", "Штраф за кассовый разрыв (ковенант — ½)", "1.0", "—", "К", "§7.3 λ_cov", "SimEnv.h:EnvConfig.lambdaBreach" },
+  { "rl.reward.c_energy", "агенты", "Вес энергии в награде L0 (кВт·ч по типам отсутствуют)", "0", "—", "К", "§7.3а: e_w нет в НСИ → 0", "SimEnv.cpp (не используется)" },
+  { "rl.tard_penalty_per_week", "агенты", "Договорной штраф за просрочку, доля стоимости заказа в неделю", "0.01", "доля/нед", "К", "договоров нет", "SimEnv.h:EnvConfig.tardPenaltyPerWeek" },
+  { "rl.tard_penalty_cap", "агенты", "Потолок штрафа за просрочку", "0.2", "доля", "К", "договоров нет", "SimEnv.h:EnvConfig.tardPenaltyCap" },
+  { "rl.repair_cost_mul", "агенты", "Стоимость ремонта = часы ремонта × ставка типа × mul", "1.0", "—", "К", "бюджета ТОиР нет", "SimEnv.h:EnvConfig.repairCostMul" },
+  { "rl.wait_window", "агенты", "WAIT допустим, если ближайшее завершение ≤ Δ", "240", "мин", "К", "§7.3а «в пределах Δ»; без окна политика выучивала 98 % WAIT", "SimEnv.h:EnvConfig.waitWindowMin" },
+  { "rl.reward.c_wait", "агенты", "Цена простоя при WAIT: c_W·Δt/масштаб", "0.5", "—", "К", "начисляется самому WAIT (A1 §2.4)", "SimEnv.h:EnvConfig.cWait" },
+  { "rl.cash_risk_flag", "агенты", "Флаг «касса в зоне риска» в наблюдении L0: C_t < порог", "0", "доля стоимости портфеля", "К", "§7.3а (P(C<0) > 10 % — после волны F2)", "SimEnv.cpp:kCashRiskShare" },
+  { "rl.fin_scale", "агенты", "Экземпляры MAOS: лимит линии 15 % и касса 5 % стоимости портфеля", "0.15 / 0.05", "доля", "К", "лимит демо (20 млн ₽) несопоставим с заказами", "rl/bench/instances.py:FIN_SCALE" },
+  { "rl.crn.streams", "агенты", "Потоки CRN по идентичности джобы: 1 — длительности, 2 — поломки; дефолт — [seed, 911]", "splitmix64", "—", "техн.", "§11.3а", "SimEnv.cpp:job_rng; rl/env/scenarios.py" },
+  { "rl.ppo.net", "агенты", "Сеть политики/критика MaskablePPO", "MLP [128,128]", "—", "К", "sb3-contrib; A4 §3 (MLP до внимания)", "rl/train/train_l0.py:PPO" },
+  { "rl.ppo.hyper", "агенты", "n_steps, batch, lr, γ, λ_GAE, clip, epochs", "512, 256, 3e-4, 0.995, 0.95, 0.2, 4", "—", "К", "типовые PPO", "rl/train/train_l0.py:PPO" },
+  { "rl.ppo.entropy", "агенты", "Отжиг энтропии по стадиям куррикулума", "0.02 → 0.01 → 0.003", "—", "К", "AI Economist (Zheng 2022)", "rl/train/train_l0.py:ENT" },
+  { "rl.curriculum", "агенты", "Стадии §7.4: малые/без поломок → все/хвосты → + кризисный режим → L2", "шаги 60k/100k/100k; L2 30k", "шт", "К", "§7.4", "rl/train/train_l0.py; train_l2.py" },
+  { "rl.valid", "агенты", "Валидация ранней остановки: seed и сценариев на экземпляр", "777, 4", "—", "НОРМ", "§10.2а п.3 (отдельный seed, не holdout)", "rl/train/common.py:EvalSpec" },
+  { "rl.holdout", "агенты", "Отложенные сценарии V5: seed, N на экземпляр", "2026102201, 200", "—", "НОРМ", "§10.2а п.1", "rl/eval/v5.py" },
+  { "rl.bootstrap_b", "агенты", "Бутстреп-выборок для ДИ IQM", "2000", "шт", "НОРМ", "rliable", "rl/train/common.py:paired_bootstrap_ci" },
+  { "rl.ga_baseline", "агенты", "ГА-базовая линия: сценариев, поколений, время, seed", "8, 30, 30 с, 1000", "—", "НОРМ", "как GaImprover Стадии 1", "rl/eval/v5.py" },
+  { "rl.cpsat_limit", "агенты", "Лимит времени CP-SAT (V4)", "60", "с", "НОРМ", "§10.1 V4", "rl/bench/run_v4.py" },
+  { "rl.gate", "агенты", "Гейт самоулучшения: 95 %-ДИ IQM ΔCVaR_0.1(Π) > 0 и ΔCVaR_0.05(C_min) ≥ 0", "—", "—", "НОРМ", "§7.4, §10.2а п.1", "rl/eval/v5.py:compare" },
+  { "rl.policy_version", "агенты", "Версия/SHA256 политики ONNX правила «RL»", "см. rl/results/l0_policy.json", "—", "техн.", "A1 §5", "RlRule.cpp" },
+};
+
 const Row kMacro[] = {
   { "macro.generator", "макро", "VAR(1)+SVD+HMM+блоки: A, Σ, V, P_HMM, μ_HMM, b, число режимов", "2 режима, блок 4 мес, ρ(A)=0.949, ранг 3", "—", "О", "cbr.ru 2013-09…2026-09, n_obs=157; выбор по CRPS на 24 целях 2021–2022 (rl/macro/params/learning.json)", "rl/macro/fit.py; MacroSampler.cpp" },
   { "macro.selection_crps", "макро", "Совместный стандартизованный CRPS выбранной модели / персистентности", "0.976 / 1.141", "—", "О", "24 перекрывающихся цели, 384 пути; learning.json", "rl/macro/anchored.py:select" },
@@ -225,6 +265,7 @@ void migrate(Database& db) {
   seed_rows(db, kFinance, sizeof(kFinance) / sizeof(kFinance[0]));
   seed_rows(db, kCode, sizeof(kCode) / sizeof(kCode[0]));
   seed_rows(db, kMacro, sizeof(kMacro) / sizeof(kMacro[0]));
+  seed_rows(db, kRl, sizeof(kRl) / sizeof(kRl[0]));
   for (const char* code : kDeprecatedUi)
     db.exec("UPDATE param_passport SET note='подобрано для UI — не используется в расчёте (волна M: заменено MacroSampler)', "
             "updated_at=datetime('now') WHERE code=? AND COALESCE(note,'') NOT LIKE 'подобрано для UI%'", { code });

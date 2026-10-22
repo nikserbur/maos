@@ -1,0 +1,54 @@
+{
+ "seed": 3,
+ "l0": "rule:EDD",
+ "validations": [
+  {
+   "steps": 6000,
+   "sec": 19.104521989822388,
+   "iqm_profit_l2": 0.99992956978371,
+   "iqm_profit_ref": 1.0001025173591331,
+   "moves_per_episode": 1.125,
+   "score": -0.00017294757542318795
+  },
+  {
+   "steps": 12000,
+   "sec": 38.23327827453613,
+   "iqm_profit_l2": 1.0001025173591331,
+   "iqm_profit_ref": 1.0001025173591331,
+   "moves_per_episode": 0.0,
+   "score": 0.0
+  },
+  {
+   "steps": 18000,
+   "sec": 57.4612991809845,
+   "iqm_profit_l2": 0.9997994108338671,
+   "iqm_profit_ref": 1.0001025173591331,
+   "moves_per_episode": 3.75,
+   "score": -0.0003031065252659948
+  },
+  {
+   "steps": 24000,
+   "sec": 76.01141023635864,
+   "iqm_profit_l2": 0.9901286910718271,
+   "iqm_profit_ref": 1.0001025173591331,
+   "moves_per_episode": 6.75,
+   "score": -0.009973826287306031
+  },
+  {
+   "steps": 30000,
+   "sec": 94.60538697242737,
+   "iqm_profit_l2": 0.9941047620287581,
+   "iqm_profit_ref": 1.0001025173591331,
+   "moves_per_episode": 8.125,
+   "score": -0.005997755330375054
+  }
+ ],
+ "best": {
+  "steps": 12000,
+  "sec": 38.23327827453613,
+  "iqm_profit_l2": 1.0001025173591331,
+  "iqm_profit_ref": 1.0001025173591331,
+  "moves_per_episode": 0.0,
+  "score": 0.0
+ }
+}

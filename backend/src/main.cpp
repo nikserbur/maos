@@ -10,6 +10,8 @@
 #include "Database.h"
 #include "Finance.h"
 #include "MacroSampler.h"
+#include "RlRule.h"
+#include "SimEnv.h"
 #include "Optimizer.h"
 #include "Passport.h"
 #include "PlanMath.h"
@@ -3090,6 +3092,32 @@ static void persist_schedule(Database& db, const std::string& planId, const json
   }
 }
 
+/* ── Волна A: статус политики RL и экспорт экземпляра SimEnv ───────────────────────── */
+static void register_rl(httplib::Server& svr, Database& db) {
+  svr.Get("/api/rl/status", [](const httplib::Request&, httplib::Response& res) {
+    try { ok(res, maos::rl::status()); } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  // Экземпляр (модель + программа + календари + экономика) в формате rl/env — для стенда/бенчмарков.
+  svr.Post("/api/rl/instance", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      std::vector<std::pair<std::string,double>> prog; std::vector<double> due;
+      if (body.contains("program") && body["program"].is_array())
+        for (auto& o : body["program"]) {
+          const std::string pid = jstr(o, "product_id"); if (pid.empty()) continue;
+          prog.push_back({ pid, o.contains("qty") ? std::stod(jstr(o, "qty")) : 1.0 });
+          due.push_back(o.contains("due_hours") ? std::stod(jstr(o, "due_hours")) : 0.0);
+        }
+      const std::string uc = jstr(body, "use_calendar");
+      const bool useCal = !(uc == "0" || uc == "false");
+      maos::env::Instance inst = maos::env::instance_from_db(db, prog, due, useCal);
+      json j = maos::env::instance_to_json(inst);
+      j["n_orders"] = (int)inst.orders.size();
+      ok(res, j);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
 static void register_schedule(httplib::Server& svr, Database& db) {
   svr.Post("/api/schedule", [&db](const httplib::Request& req, httplib::Response& res) {
     try {
@@ -3954,6 +3982,11 @@ int main(int argc, char* argv[]) {
                  "оптимизация — по i.i.d. фактору v0.63 с предупреждением.\n";
   }
 
+  // Волна A: политика RL (ONNX) — при отсутствии правило «RL» отвечает понятной ошибкой.
+  maos::rl::load_default();
+  { const json rs = maos::rl::status();
+    std::cout << "RL policy: " << (rs.value("available", false) ? ("загружена, " + rs["l0"].value("path", std::string())) : ("нет (" + rs.value("error", std::string()) + ")")) << "\n"; }
+
   httplib::Server svr;
 
   // CORS pre-flight
@@ -4008,7 +4041,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.66.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.69.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.
@@ -4111,6 +4144,7 @@ int main(int argc, char* argv[]) {
 
   // Расписание производства (Стадия 1)
   register_schedule(svr, db);
+  register_rl(svr, db);
 
   // Рабочий календарь (смены)
   register_calendar(svr, db);
