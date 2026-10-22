@@ -264,7 +264,7 @@ export function OptimizationScreen() {
 
       {result && !soft && (
         <div className="opt2-grid">
-          <RobustHero result={result} footer={result.run_id && (
+          <RobustHero result={result} nameOf={nameOf} footer={result.run_id && (
             <div className="opt2-save">
               <input value={planName} placeholder="Название производственной программы…" onChange={(e) => setPlanName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && savePlan()} />

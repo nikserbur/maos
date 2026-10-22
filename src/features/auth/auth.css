@@ -10,19 +10,28 @@
   overflow-x: hidden;
   overflow-y: auto;
   isolation: isolate;
+  /* общая левая линия с .ga-hud */
+  --brand-rail: clamp(20px, 4vw, 56px);
 }
 
 .login {
   position: relative;
-  z-index: 1;
+  z-index: 3; /* выше ga-hud по слою, клики — только у карточки */
   min-height: 100%;
-  max-width: 1240px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 400px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
   align-items: center;
-  gap: clamp(32px, 6vw, 104px);
-  padding: clamp(24px, 5vw, 72px) clamp(20px, 5vw, 72px);
+  gap: clamp(40px, 7vw, 120px);
+  /* герой на одной вертикали с панелью ГА; карточка справа */
+  padding:
+    clamp(24px, 5vw, 72px)
+    clamp(36px, 6vw, 96px)
+    clamp(24px, 5vw, 72px)
+    var(--brand-rail);
+  pointer-events: none; /* иначе перекрывает кнопку «Настройки» ГА */
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
@@ -37,17 +46,17 @@
   min-width: 0;
 }
 .login__mark {
-  width: 64px;
-  height: auto;
+  width: auto;
+  height: clamp(36px, 5vw, 48px);
   margin-bottom: 0;
-  filter: drop-shadow(0 18px 40px color-mix(in oklch, var(--ink) 55%, transparent));
+  filter: drop-shadow(0 14px 32px color-mix(in oklch, var(--ink) 45%, transparent));
   animation: maos-login-rise var(--dur-slow) var(--ease-out) both;
 }
 .login__eyebrow {
   color: var(--text-secondary);
 }
 .login__display {
-  max-width: 13ch;
+  max-width: 16ch;
   font-family: var(--font-display);
   font-size: clamp(var(--fs-32), 3.6vw, var(--fs-44));
   font-weight: 300;
@@ -99,6 +108,7 @@
 /* ── Card ────────────────────────────────────────────────────────────────── */
 .login__card {
   position: relative;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -210,11 +220,14 @@
   .login {
     grid-template-columns: minmax(0, 1fr);
     max-width: 480px;
+    margin: 0 auto;
     align-content: start;
     gap: var(--space-8);
+    padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 28px);
   }
   .login__mark {
-    width: 112px;
+    height: 36px;
+    width: auto;
     margin-bottom: 0;
   }
   .login__display {

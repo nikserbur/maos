@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState, type FormEvent } from 'react'
 import { api } from '../../lib/api'
 import { Backdrop } from '../../brand/Backdrop'
-import { Lockup, MarkCircles } from '../../brand/Logo'
+import { Lockup } from '../../brand/Logo'
 import './auth.css'
 
 const GaLandscape = lazy(() => import('../../brand/landscape/GaLandscape'))
@@ -66,11 +66,9 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         : <Backdrop variant="login" />}
 
       <div className="login">
-        {/* Бренд-момент: «Несколько кругов» — мир → завод → цех; линза — план встречает факт. */}
         <section className="login__hero" aria-labelledby="login-display">
-          <MarkCircles drift size={64} className="login__mark" />
-          <p className="login__eyebrow text-caps">MAOS · мониторинг и оптимизация производства</p>
-          <h1 className="login__display" id="login-display">Цифровой двойник производства</h1>
+          <Lockup height={48} className="login__mark" />
+          <h1 className="login__display" id="login-display">Мониторинг и оптимизация</h1>
           <p className="login__lede">
             Прозрачная стохастическая модель предприятия: от схемы цехов и справочников —
             к устойчивому портфелю и расписанию.
@@ -154,7 +152,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            MAOS v0.62.1 · дипломная работа · {new Date().getFullYear()}
+            MAOS v0.62.2 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>

@@ -19,17 +19,29 @@
 
 .ga-hud {
   position: absolute;
-  left: clamp(20px, 4vw, 56px);
-  bottom: clamp(20px, 4vh, 48px);
-  width: 280px;
-  padding: var(--space-4);
+  left: var(--brand-rail, clamp(20px, 4vw, 56px));
+  bottom: clamp(16px, 3vh, 40px);
+  width: min(300px, calc(100vw - 40px));
+  /* не выше низа героя (~360 px от верха): настройки прокручиваются внутри */
+  max-height: clamp(220px, calc(100dvh - 410px), 560px);
+  display: flex;
+  flex-direction: column;
   border-radius: var(--radius-lg);
   border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-  background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
+  background: color-mix(in oklch, var(--bg-elevated) 92%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in oklch, white 6%, transparent), var(--shadow-2);
   font-size: var(--fs-12);
   color: var(--text-secondary);
   z-index: 2;
+  overflow: hidden;
+  pointer-events: auto;
+}
+.ga-hud__scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-4);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .ga-hud__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--space-3); }
 .ga-hud__title { color: var(--ochre); }
@@ -64,7 +76,114 @@
 .ga-hud__target { stroke: var(--cinnabar); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
 .ga-hud__status { margin: var(--space-2) 0 0; color: var(--text-secondary); }
 .ga-hud__status.is-done { color: var(--ochre); }
-.ga-hud__caption { margin: var(--space-2) 0 0; font-size: 10.5px; line-height: 1.5; color: var(--text-muted); }
+.ga-hud__caption { margin: var(--space-3) 0 0; font-size: 10.5px; line-height: 1.5; color: var(--text-muted); }
+
+/* настройки — как opt2-field / dk-card */
+.ga-hud__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: var(--space-3);
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ga-hud__toggle:hover { color: var(--text); }
+.ga-hud__toggle-chevron { color: var(--ochre); font-size: 10px; }
+
+.ga-hud__settings {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ga-hud__sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}
+.ga-hud__slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ga-hud__slider-lab {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ga-hud__slider-lab b {
+  font-weight: 500;
+  font-size: var(--fs-12);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ga-hud__slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  margin: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--border) 80%, var(--bg-input));
+  outline: none;
+  cursor: pointer;
+}
+.ga-hud__slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ochre);
+  border: 2px solid color-mix(in oklch, var(--bg-elevated) 70%, var(--ochre));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--ochre) 35%, transparent);
+  cursor: pointer;
+}
+.ga-hud__slider input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ochre);
+  border: 2px solid color-mix(in oklch, var(--bg-elevated) 70%, var(--ochre));
+  cursor: pointer;
+}
+.ga-hud__slider input[type="range"]:focus-visible {
+  box-shadow: var(--halo);
+}
+.ga-hud__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+.ga-hud__actions .btn {
+  flex: 1;
+  height: 32px;
+  padding: 0 var(--space-3);
+  font-size: var(--fs-12);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .ga-landscape { animation: none; }

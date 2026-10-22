@@ -1,10 +1,50 @@
 import type { ReactNode } from 'react'
-import type { OptMetrics } from '../../lib/api'
+import type { OptMetrics, OptPortfolio } from '../../lib/api'
 import { money, num, pct, signed } from '../../explain/format'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
 import { StatusChip, rise } from './kit/kit'
 import { ProfitDistribution, ProfitLegend } from './ProfitDistribution'
 import { objectiveLabel, type OptResultExt } from './optTypes'
+
+/* ── Состав портфеля: изделия × объём × вклад ───────────────────────────── */
+function PortfolioComposition({
+  pf, nameOf, label = 'Состав портфеля',
+}: {
+  pf: OptPortfolio
+  nameOf: (id: string) => string
+  label?: string
+}) {
+  const items = [...pf.items].filter((it) => it.qty > 0).sort((a, b) => b.contribution - a.contribution)
+  if (items.length === 0) return <p className="opt-note">Портфель пуст.</p>
+  const maxRisk = Math.max(1e-9, ...items.map((it) => Math.abs(it.risk_contribution)))
+  const d = pf.diversification
+  return (
+    <div className="opt-pf" aria-label={label}>
+      <div className="opt-pf__head">
+        <p className="text-caps opt-eyebrow">{label}</p>
+        <div className="pf-div">
+          <span className="pf-div__chip">{num(d.n_products, 0)} изд.</span>
+          <span className="pf-div__chip" title="Индекс Херфиндаля — Хиршмана">HHI {num(d.hhi, 2)}</span>
+          <span className={`pf-div__chip${d.concentration > 0.55 ? ' pf-div__chip--warn' : ''}`}>
+            конц. {pct(d.concentration, 0)}
+          </span>
+        </div>
+      </div>
+      <ul className="pf-items">
+        {items.map((it) => (
+          <li className="pf-item" key={it.product_id}>
+            <span className="pf-item__name" title={nameOf(it.product_id)}>{nameOf(it.product_id)}</span>
+            <span className="pf-item__qty num">{num(it.qty, 0)}</span>
+            <span className="pf-item__risk" title={`Вклад в риск: ${pct(it.risk_contribution)}`}>
+              <span className="pf-item__risk-bar" style={{ width: `${(Math.abs(it.risk_contribution) / maxRisk) * 100}%` }} />
+              <span className="pf-item__risk-pct">{money(it.contribution)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 /* ── Плитка KPI ─────────────────────────────────────────────────────────── */
 interface KpiProps {
@@ -49,10 +89,11 @@ function metricValues(m: OptMetrics, n: number, alpha: number) {
 /* ── Герой: устойчивый портфель + распределение прибыли ─────────────────── */
 interface HeroProps {
   result: OptResultExt
+  nameOf: (id: string) => string
   footer?: ReactNode
 }
 
-export function RobustHero({ result, footer }: HeroProps) {
+export function RobustHero({ result, nameOf, footer }: HeroProps) {
   const m = result.robust.metrics
   const v = metricValues(m, result.samples, result.alpha)
   const d = result.robust.diversification
@@ -76,6 +117,8 @@ export function RobustHero({ result, footer }: HeroProps) {
           <Kpi size="hero" dot="u" label="Ожидаемая прибыль" tip="opt.expected" values={v.expected} value={money(m.expected)} />
         </div>
       </div>
+
+      <PortfolioComposition pf={result.robust} nameOf={nameOf} />
 
       <div className="opt-hero__chart">
         <ProfitDistribution histogram={result.histogram} metrics={m} alpha={result.alpha} samples={result.samples} />
