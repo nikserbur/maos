@@ -51,6 +51,7 @@ find_package(SQLite3 REQUIRED)
 add_library(maos_core STATIC
   src/Database.cpp
   src/ExactCvar.cpp
+  src/GaImprover.cpp
   src/Optimizer.cpp
   src/Scheduler.cpp
 )
@@ -94,6 +95,7 @@ if(MAOS_BUILD_TESTS)
   enable_testing()
   add_executable(maos_tests
     tests/test_finance.cpp
+    tests/test_ga.cpp
     tests/test_planmath.cpp
     tests/test_scheduler.cpp
   )

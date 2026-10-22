@@ -4,7 +4,7 @@ import { Refs, Section } from '../blocks'
 interface KpiRow { name: string; ids: string; def: string; unit: string }
 
 const KPIS: readonly KpiRow[] = [
-  { name: 'Длина расписания', ids: 'makespan', def: 'E[Cmax] по Монте-Карло на итоговом расписании (после локального поиска); детерминированное значение — вторичное', unit: 'ч' },
+  { name: 'Длина расписания', ids: 'makespan', def: 'E[Cmax] по Монте-Карло на итоговом расписании (после ГА); детерминированное значение — вторичное', unit: 'ч' },
   { name: 'CVaR длины расписания', ids: 'makespan_cvar', def: 'среднее худших ⌊α·N⌋ прогонов (верхний хвост)', unit: 'ч' },
   { name: 'Суммарная просрочка / OTD', ids: 'tardiness, otd', def: 'Σ max(0, Cⱼ − dⱼ); доля заказов без просрочки', unit: 'ч / %' },
   { name: 'Загрузка', ids: 'utilization', def: 'Σ продуктивного времени ресурса / Σ его календарного фонда за горизонт (ISO 22400 APT/PBT); ТО и ремонты не входят в занятость', unit: '%' },

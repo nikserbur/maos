@@ -1,4 +1,5 @@
 #include "Scheduler.h"
+#include "GaImprover.h"
 #include "PlanMath.h"
 #include <algorithm>
 #include <array>
@@ -780,49 +781,113 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // ── Детальное расписание выбранного правила (по средним — для Ганта) ──
   auto key = priorities(chosenRule, jobs, orderWork, p.customRule);
 
-  // ── Локальный поиск ПОВЕРХ лучшего правила («Требования эвристики» §4:
-  // диспетч-правило — только стартовая точка). Возмущаем приоритеты шумом,
-  // оцениваем score на подвыборке сценариев, принимаем улучшения (hill climbing).
+  // ── Улучшение ПОВЕРХ правил («Требования эвристики» §4: диспетч-правило —
+  // только стартовая точка). Генетический алгоритм по ключам приоритетов
+  // (GaImprover.h). Хромосома сжатая: веса составного правила по 5 нормированным
+  // критериям + сдвиг приоритета каждого заказа,
+  //   key_i = Σ_c w_c·norm_c(i) + δ_заказ(i),
+  // — десятки генов вместо тысяч операций (иначе мутация лишь перемешивает очередь),
+  // и любое правило — точка этого пространства (EDD: w_срок=1; FIFO: δ_k=k/K).
+  // Пригодность — та же F на ОБУЧАЮЩИХ сценариях [0, NS). Результат принимается,
+  // только если F лучше и на ОТЛОЖЕННЫХ сценариях [NS, NS+NV): иначе выигрыш мог
+  // быть подгонкой под конкретные сэмплы (оптимистичный сдвиг).
   json improverJson = nullptr;
-  bool keyImproved = false;                              // ключ изменён локальным поиском
+  bool keyImproved = false;                              // ключ изменён ГА
   {
-    const int IT = ((int)jobs.size() > 3000) ? 0 : std::max(0, p.improveIters);
-    if (IT > 0) {
-      const int NS = std::min(N, 30);                    // подвыборка сценариев для оценки
-      auto scoreOf = [&](const std::vector<double>& k2) {
+    const int G = ((int)jobs.size() > 3000) ? 0 : std::max(0, p.improveIters);
+    if (G > 0) {
+      const int NS = std::min(30, N / 2);                // обучающие сценарии
+      const int NV = std::min(N - NS, 120);              // отложенные — проверка вне выборки
+      auto scoreOn = [&](const std::vector<double>& k2, int s0, int s1) {
         SimOut det2 = simulate(m, jobs, k2, durMean, cal, calByM, pinMap);
         int nl2; double tardDet2 = order_tardiness(jobs, det2, nOrders, due, nl2);
-        std::vector<double> mks(NS), tards(NS);
-        for (int s = 0; s < NS; ++s) {
+        std::vector<double> mks(s1 - s0), tards(s1 - s0);
+        for (int s = s0; s < s1; ++s) {
           std::mt19937 brng(p.seed + 7919u * (unsigned)s);
           SimOut so = simulate(m, jobs, k2, durMC[s], cal, calByM, pinMap, &brng);
-          mks[s] = so.makespan; int n3; tards[s] = order_tardiness(jobs, so, nOrders, due, n3);
+          mks[s - s0] = so.makespan; int n3; tards[s - s0] = order_tardiness(jobs, so, nOrders, due, n3);
         }
         double mkMean = mean_of(mks), mkCv = cvar_upper(mks, p.alpha);
         return p.wTime * mkMean + p.wRisk * (mkCv - mkMean)
              + p.wCost * det2.setupMinutes + 0.5 * mean_of(tards) + 0.001 * tardDet2;
       };
-      std::mt19937 irng(p.seed + 777);
-      std::normal_distribution<double> nz(0.0, 1.0);
-      double lo = 1e300, hi = -1e300;
-      for (double v : key) { lo = std::min(lo, v); hi = std::max(hi, v); }
-      const double scale = (hi > lo ? hi - lo : 1.0) * 0.05;
-      std::vector<double> bestKey = key;
-      double cur = scoreOf(bestKey);
-      const double before = cur;
-      int accepted = 0;
-      std::uniform_int_distribution<size_t> pick(0, key.size() - 1);
-      for (int it2 = 0; it2 < IT; ++it2) {
-        std::vector<double> candK = bestKey;
-        const size_t nPerturb = std::max<size_t>(1, candK.size() / 5);
-        for (size_t q = 0; q < nPerturb; ++q) candK[pick(irng)] += nz(irng) * scale;
-        double sc = scoreOf(candK);
-        if (sc < cur) { cur = sc; bestKey = std::move(candK); ++accepted; }
-      }
-      if (accepted > 0) { key = bestKey; keyImproved = true; }
-      improverJson = { {"iterations", IT}, {"accepted", accepted},
-                       {"score_before", before}, {"score_after", cur},
-                       {"improvement_pct", before > 0 ? (before - cur) / before * 100.0 : 0.0} };
+      const std::array<const char*, 5> kCrit = { "due", "rem", "duration", "inputs", "setup" };
+      const int C = (int)kCrit.size();
+      std::vector<std::vector<double>> norm(C);
+      for (int c = 0; c < C; ++c) norm[c] = priorities("CUSTOM", jobs, orderWork, { { kCrit[c], 1.0 } });
+      auto decode = [&](const std::vector<double>& g) {
+        std::vector<double> k2(jobs.size());
+        for (size_t i = 0; i < jobs.size(); ++i) {
+          double v = g[C + jobs[i].orderIdx];
+          for (int c = 0; c < C; ++c) v += g[c] * norm[c][i];
+          k2[i] = v;
+        }
+        return k2;
+      };
+      // Затравки — правила в этом пространстве (CR и MS — линейные приближения).
+      auto genome = [&](std::initializer_list<double> w) {
+        std::vector<double> g(C + nOrders, 0.0);
+        std::copy(w.begin(), w.end(), g.begin());
+        return g;
+      };
+      auto ruleGenome = [&](const std::string& r) {
+        if (r == "CUSTOM") {
+          std::vector<double> g(C + nOrders, 0.0);
+          for (auto& [cn, w] : p.customRule)
+            for (int c = 0; c < C; ++c) if (cn == kCrit[c]) g[c] += w;
+          return g;
+        }
+        if (r == "SPT")  return genome({ 0, 0, 1 });
+        if (r == "LPT")  return genome({ 0, 0, -1 });
+        if (r == "MWKR") return genome({ 0, -1 });
+        if (r == "MS")   return genome({ 1, -1 });
+        if (r == "CR")   return genome({ 1, -0.5 });
+        if (r == "FIFO") {
+          std::vector<double> g(C + nOrders, 0.0);
+          for (int k = 0; k < nOrders; ++k) g[C + k] = (k + 1.0) / nOrders;
+          return g;
+        }
+        return genome({ 1 });                            // EDD
+      };
+      std::vector<std::vector<double>> seeds = { ruleGenome(chosenRule) };
+      for (size_t ri = 0; ri < rules.size(); ++ri)
+        if (ri != bestR) seeds.push_back(ruleGenome(rules[ri]));
+      GaConfig gc;
+      gc.generations = G;
+      gc.seed = p.seed + 777;
+      gc.sigma0 = 0.1;                                   // ≈ 10 % шкалы нормированного критерия
+      gc.mutationRate = 0.15;
+      gc.swapBegin = C;                                  // обмен — только приоритетами заказов
+      gc.stallGens = 8;
+      const GaResult ga = run_key_ga(seeds, [&](const std::vector<double>& g) { return scoreOn(decode(g), 0, NS); }, gc);
+      // Базовая линия — НАСТОЯЩИЙ ключ выбранного правила (затравка CR/MS приближённая).
+      const double trainRule = scoreOn(key, 0, NS);
+      const std::vector<double> gaKey = decode(ga.bestKey);
+      const double valRule = NV > 0 ? scoreOn(key, NS, NS + NV) : trainRule;
+      const double valGa   = NV > 0 ? scoreOn(gaKey, NS, NS + NV) : ga.bestScore;
+      const bool adopted = ga.bestScore < trainRule && valGa < valRule;
+      if (adopted) { key = gaKey; keyImproved = true; }
+      auto gainPct = [](double before, double after) { return before > 0 ? (before - after) / before * 100.0 : 0.0; };
+      json hist = json::array();
+      for (const GaGeneration& h : ga.history) hist.push_back({ {"gen", h.gen}, {"best", h.best}, {"mean", h.mean} });
+      improverJson = {
+        {"method", "ga"},
+        {"iterations", (int)ga.history.size() - 1},       // выполнено поколений
+        {"population", gc.popSize}, {"evaluations", ga.evaluations}, {"seeds", (int)seeds.size()},
+        {"accepted", adopted ? ga.improvements : 0},      // улучшений рекорда (0 — не принят)
+        {"adopted", adopted},
+        {"stopped", ga.stoppedByTime ? "time" : ga.stoppedByStall ? "stall" : "generations"},
+        {"score_before", trainRule},
+        {"score_after", adopted ? ga.bestScore : trainRule},
+        {"improvement_pct", adopted ? gainPct(trainRule, ga.bestScore) : 0.0},
+        {"genes", (int)ga.bestKey.size()},
+        {"weights", { {"due", ga.bestKey[0]}, {"rem", ga.bestKey[1]}, {"duration", ga.bestKey[2]},
+                      {"inputs", ga.bestKey[3]}, {"setup", ga.bestKey[4]} }},
+        {"train_scenarios", NS},
+        {"validation", { {"scenarios", NV}, {"score_rule", valRule}, {"score_ga", valGa},
+                         {"improvement_pct", gainPct(valRule, valGa)} }},
+        {"history", hist},
+      };
     }
   }
 

@@ -112,7 +112,7 @@ export function DispatchSection() {
     <Section
       id="dispatch-rules"
       stages={[
-        ['done', '7 статических правил, конструктор CUSTOM, локальный поиск 30 итераций'],
+        ['done', '7 статических правил, конструктор CUSTOM, ГА поверх правил с проверкой вне выборки'],
         ['w2', 'ATC/COVERT, эталон CP-SAT, бенчмарки Taillard и Brandimarte'],
         ['w3', 'обучаемый диспетчер (RL)'],
       ]}
@@ -128,12 +128,19 @@ export function DispatchSection() {
       <p>Классика для одного станка: SPT оптимально для ΣC<sub>j</sub> (Smith, 1956), EDD минимизирует максимальное
         запаздывание (Jackson, 1955), а задача 1‖ΣT<sub>j</sub> NP-трудна (Du &amp; Leung, 1990) — универсально лучшего
         правила нет. В MAOS все правила прогоняются на одних и тех же сценариях (CRN), выбирается лучшее по F, затем
-        локальный поиск возмущает ключи приоритета.</p>
+        генетический алгоритм ищет составное правило, засевая популяцию всеми семью.</p>
+      <Formula note="d̃, r̃em, p̃, ĩn, s̃ — критерии, нормированные в [0, 1]; δ — сдвиг приоритета заказа. EDD — точка w_срок = 1, FIFO — δₖ = k/K.">
+        key<sub>j</sub> = w<sub>срок</sub>·d̃<sub>j</sub> + w<sub>ост</sub>·r̃em<sub>j</sub> + w<sub>длит</sub>·p̃<sub>j</sub> + w<sub>вх</sub>·ĩn<sub>j</sub> + w<sub>нал</sub>·s̃<sub>j</sub> + δ<sub>заказ(j)</sub>
+      </Formula>
+      <p>Хромосома — пять весов и K сдвигов заказов (десятки генов вместо тысяч операций, иначе мутация лишь
+        перемешивает очередь). Отбор — турнир, скрещивание смещено к лучшему родителю (BRKGA), мутация — гауссов шум
+        и обмен приоритетами двух заказов, две лучшие особи сохраняются. Пригодность — F на обучающих сценариях;
+        итог принимается, только если F лучше и на отложенных.</p>
       <Figure id="dispatch-rules" caption="Четыре операции на одном станке в порядке четырёх правил; красное — просрочка Cⱼ − dⱼ, ▲ — лучшее значение ΣC и ΣT." />
       <Callout tone="fix" title="Поправка: расписание полуактивное">
         Операции добавляются в конец занятости станка без вставки в окна — расписание <b>полуактивное</b>, а не
-        «активное». CR и MS статические (без текущего момента). Локальный поиск оценивается на первых 30 сценариях —
-        тех же, что идут в отчёт (in-sample); нужна отложенная выборка.
+        «активное». CR и MS статические (без текущего момента). Прежний локальный поиск оценивался на тех же
+        сценариях, что идут в отчёт (in-sample); ГА проверяется на отложенных сценариях.
       </Callout>
       <Refs items={[
         'Jackson J.R. (1955) Scheduling a production line to minimize maximum tardiness. Research Report 43, Management Science Research Project, UCLA.',
@@ -141,6 +148,8 @@ export function DispatchSection() {
         'Du J., Leung J.Y.-T. (1990) Minimizing total tardiness on one machine is NP-hard. Math. Oper. Res. 15(3):483–495.',
         'Panwalkar S., Iskander W. (1977) A survey of scheduling rules. Oper. Res. 25(1):45–61.',
         'Giffler B., Thompson G. (1960) Algorithms for solving production-scheduling problems. Oper. Res. 8(4):487–503.',
+        'Bean J.C. (1994) Genetic algorithms and random keys for sequencing and optimization. ORSA J. Comput. 6(2):154–160.',
+        'Gonçalves J.F., Resende M.G.C. (2011) Biased random-key genetic algorithms for combinatorial optimization. J. Heuristics 17(5):487–525.',
       ]} />
     </Section>
   )

@@ -231,9 +231,20 @@ export interface SchedKpi {
   maintenance_hours?: number; breakdown_hours_mean?: number
   flow_time_mean_h?: number; wait_share?: number; wip_avg?: number; throughput_per_day?: number
 }
+/** ГА поверх диспетч-правил (Стадия 1): обучение на NS сценариях, проверка на отложенных. */
 export interface SchedImprover {
+  method?: 'ga'
   iterations: number; accepted: number
   score_before: number; score_after: number; improvement_pct: number
+  adopted?: boolean
+  population?: number; evaluations?: number; seeds?: number; genes?: number
+  stopped?: 'generations' | 'stall' | 'time'
+  train_scenarios?: number
+  validation?: { scenarios: number; score_rule: number; score_ga: number; improvement_pct: number }
+  /** Найденное составное правило: веса нормированных критериев (+ сдвиги заказов). */
+  weights?: { due: number; rem: number; duration: number; inputs: number; setup: number }
+  history?: Array<{ gen: number; best: number; mean: number }>
+  makespan_mean_rule?: number; makespan_mean_final?: number
 }
 export interface ScheduleResult {
   rule: string; samples: number; alpha: number

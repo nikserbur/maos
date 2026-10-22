@@ -34,7 +34,7 @@ struct ScheduleParams {
   unsigned seed  = 42;
   double tailWeight = -1;             // <0 → из операций; иначе глобальный override
   bool   useCalendar = true;          // учитывать рабочий календарь (смены/выходные)
-  int    improveIters = 30;           // итераций локального поиска поверх правила (0 = выкл)
+  int    improveIters = 30;           // поколений ГА поверх правил (0 = выкл); см. GaImprover.h
   std::vector<SchedPin> pins;         // ручные правки Ганта (перетаскивание операций)
   // Конструктор эвристики: взвешенная комбинация критериев (знак веса = направление).
   // Критерии: duration | due | rem | inputs | setup. Пример «длинные раньше, из них

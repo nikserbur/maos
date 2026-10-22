@@ -8,6 +8,7 @@ import { QueueChart } from './QueueChart'
 import { LaborWarning } from '../nsi/LaborWarning'
 import { PlanKpis } from './PlanKpis'
 import { BottleneckBanner } from './BottleneckBanner'
+import { GaImproverCard } from './GaImproverCard'
 import { Segmented } from './ui'
 import { colorVar } from './ganttModel'
 import { Icon } from '../../shell/icons'
@@ -704,6 +705,7 @@ export function PlanScreen() {
         <>
           <PlanKpis result={result} />
           <BottleneckBanner result={result} />
+          {result.improver && <GaImproverCard imp={result.improver} rule={result.rule} />}
 
           <p className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span>Диаграмма Ганта · {result.n_jobs} операций по станкам · полосы можно перетаскивать</span>
@@ -736,7 +738,7 @@ export function PlanScreen() {
 
           <div className="plan__grid2">
             <div>
-              <p className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="plan__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>Загрузка оборудования и простои</span>
                 <Segmented
                   label="Вид загрузки"
@@ -744,7 +746,7 @@ export function PlanScreen() {
                   onChange={setLoadView}
                   options={[{ id: 'types', label: 'по типам' }, { id: 'machines', label: 'по станкам' }, { id: 'time', label: 'во времени' }]}
                 />
-              </p>
+              </div>
               <div className="plan__panel">
                 {loadView === 'types' && <LoadBars rows={result.wc_load} nameKey="wc_name" />}
                 {loadView === 'machines' && <LoadBars rows={result.machine_load} nameKey="machine_name" />}

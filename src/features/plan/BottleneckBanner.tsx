@@ -29,8 +29,8 @@ export function BottleneckBanner({ result }: { result: ScheduleResult }) {
           сценариях длительностей.
         </p>
         <div className="pl-bn__chips">
-          {imp && imp.accepted > 0 && (
-            <Chip tone="good">локальный поиск −{num(imp.improvement_pct, 1)} % · {imp.accepted} шагов</Chip>
+          {imp?.adopted && imp.validation && (
+            <Chip tone="good">ГА −{num(imp.validation.improvement_pct, 1)} % вне выборки</Chip>
           )}
           {(k.n_setups ?? 0) > 0 && <Chip tone="warn">переналадок {k.n_setups} · {hours(k.setup_hours ?? 0)}</Chip>}
           {(k.maintenance_hours ?? 0) > 0 && <Chip>плановое ТО {hours(k.maintenance_hours ?? 0)}</Chip>}

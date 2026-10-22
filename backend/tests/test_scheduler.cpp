@@ -231,6 +231,40 @@ TEST(Scheduler, B5_MonteCarloKpisComeFromFinalImprovedSchedule) {
   EXPECT_NEAR(r.at("improver").at("makespan_mean_final").get<double>(), det, 0.05);
 }
 
+// ГА Стадии 1: улучшение принимается только при выигрыше на ОТЛОЖЕННЫХ сценариях;
+// отчёт содержит проверку вне выборки и кривую сходимости (рекорд не ухудшается).
+TEST(Scheduler, GA_AdoptsOnlyWithOutOfSampleGainAndReportsConvergence) {
+  Fixture f;
+  f.wct("A"); f.wct("B"); f.wct("C");
+  f.machine("ma", "A"); f.machine("mb", "B"); f.machine("mc", "C");
+  f.product("X"); f.product("Y"); f.product("Z");
+  f.op("X", "x1", 10, "A", 600, 0, {}, 0.1); f.op("X", "x2", 20, "B", 60, 0, {}, 0.1);
+  f.op("Y", "y1", 10, "A", 60, 0, {}, 0.1);  f.op("Y", "y2", 20, "B", 600, 0, {}, 0.1);
+  f.op("Z", "z1", 10, "C", 6, 0, {}, 0.1);
+  auto p = params({ {"X", 1, 100.0}, {"Y", 1, 100.1}, {"Z", 1, 1000.0} }, "auto");
+  p.improveIters = 20;
+  const json r = maos::run_schedule(f.db, p);
+  const json& imp = r.at("improver");
+  ASSERT_TRUE(imp.is_object());
+  EXPECT_EQ(imp.at("method"), "ga");
+  EXPECT_EQ(imp.at("seeds").get<int>(), 7);                  // все 7 правил — затравки
+  EXPECT_EQ(imp.at("train_scenarios").get<int>(), 30);
+  const json& val = imp.at("validation");
+  EXPECT_EQ(val.at("scenarios").get<int>(), 30);              // N=60: 30 обучение + 30 проверка
+  if (imp.at("adopted").get<bool>()) {
+    EXPECT_LT(val.at("score_ga").get<double>(), val.at("score_rule").get<double>());
+    EXPECT_LT(imp.at("score_after").get<double>(), imp.at("score_before").get<double>());
+  } else {
+    EXPECT_EQ(imp.at("accepted").get<int>(), 0);
+    EXPECT_DOUBLE_EQ(imp.at("improvement_pct").get<double>(), 0.0);
+  }
+  const json& h = imp.at("history");
+  ASSERT_GE(h.size(), 2u);
+  for (size_t g = 1; g < h.size(); ++g)
+    EXPECT_LE(h[g].at("best").get<double>(), h[g - 1].at("best").get<double>());
+  EXPECT_LE(r.at("kpi").at("makespan").get<double>(), 12.0 + kEps);   // лучший порядок найден
+}
+
 // B9: загрузка = обработка / календарный фонд; наладка — отдельно (setup_share).
 TEST(Scheduler, B9_SetupIsNotProductiveTimeAndHasOwnShare) {
   Fixture f;
