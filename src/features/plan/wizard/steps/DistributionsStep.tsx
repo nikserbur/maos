@@ -11,7 +11,7 @@ import { DensityMini } from '../../../../ui/DensityMini'
 import { ParamField } from '../../../../ui/ParamField'
 import { useRefs } from '../../../method-map/useMethodMapState'
 import { usePassport } from '../../../passport/passportStore'
-import { Chip } from '../../ui'
+import { Chip } from '../../../../ui/kit'
 import type { WizardData } from '../useWizardData'
 import { effectiveFields, isChanged, useWizard, wizardActions } from '../wizardStore'
 

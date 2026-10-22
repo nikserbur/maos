@@ -8,7 +8,7 @@ import { api, type MacroRegimes, type MacroSampleResult, type MacroSummary } fro
 import { num, pct } from '../../explain/format'
 import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import { RegimeStrip } from '../../ui/RegimeStrip'
-import { Chip } from '../plan/ui'
+import { Chip } from '../../ui/kit'
 import { DEFAULT_MENU, fromMacroMode, regimeLabel, regimeMenuReducer, toMacroMode, type RegimeKind } from './regimeMenu'
 import './scenarios-v2.css'
 

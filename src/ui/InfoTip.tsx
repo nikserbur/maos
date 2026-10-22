@@ -42,17 +42,19 @@ export interface InfoTipProps {
   placement?: Placement
   /** Доступное имя кнопки; по умолчанию «Как считается: <название>». */
   label?: string
+  /** Примечание вызывающего экрана — показывается в поповере после метода (заметки полей, X1 §3.1). */
+  note?: ReactNode
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-export function InfoTip({ id, values, placement = 'bottom-start', label }: InfoTipProps) {
+export function InfoTip({ id, values, placement = 'bottom-start', label, note }: InfoTipProps) {
   const entry = getMetric(id)
   if (!entry) {
     // Неизвестный id: в продакшене — ничего; в разработке — заметная пустая метка без консоли.
     return import.meta.env.DEV ? <span className="infotip infotip--missing" aria-hidden="true">i</span> : null
   }
-  return <InfoTipControl entry={entry} values={values} placement={placement} label={label} />
+  return <InfoTipControl entry={entry} values={values} placement={placement} label={label} note={note} />
 }
 
 interface ControlProps {
@@ -60,9 +62,10 @@ interface ControlProps {
   values?: InfoTipValues
   placement: Placement
   label?: string
+  note?: ReactNode
 }
 
-function InfoTipControl({ entry, values, placement, label }: ControlProps) {
+function InfoTipControl({ entry, values, placement, label, note }: ControlProps) {
   const [open, setOpen] = useState(false)
   // Триггер — обычный ref без setState: при размонтировании сотен плиток KPI floating-ui
   // не получает колбэков с null (это и роняло экран «Maximum update depth exceeded»).
@@ -106,14 +109,14 @@ function InfoTipControl({ entry, values, placement, label }: ControlProps) {
       </button>
       {open && (
         <InfoTipPopover anchor={triggerRef.current} placement={placement} popId={popId} titleId={titleId} onClose={close}>
-          <InfoTipContent entry={entry} values={values} titleId={titleId} onClose={() => close(true)} onNavigate={() => close(false)} mapNode={nodeForMetric(entry.id)?.id} />
+          <InfoTipContent entry={entry} values={values} titleId={titleId} onClose={() => close(true)} onNavigate={() => close(false)} mapNode={nodeForMetric(entry.id)?.id} note={note} />
         </InfoTipPopover>
       )}
     </>
   )
 }
 
-interface PopoverProps {
+export interface PopoverProps {
   anchor: HTMLElement | null
   placement: Placement
   popId: string
@@ -126,7 +129,7 @@ interface PopoverProps {
  * Поповер живёт только пока открыт: useFloating монтируется вместе с ним и получает якорь
  * через `elements.reference`, а не через ref-колбэк триггера.
  */
-function InfoTipPopover({ anchor, placement, popId, titleId, onClose, children }: PopoverProps) {
+export function InfoTipPopover({ anchor, placement, popId, titleId, onClose, children }: PopoverProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
   const focusedRef = useRef(false)
   const { refs, floatingStyles, placement: actualPlacement, isPositioned } = useFloating({
@@ -233,13 +236,15 @@ export interface InfoTipContentProps {
   onNavigate?: () => void
   /** Узел «Карты методологии» для ссылки «Узел на карте →» (UX-V2 §2.6). */
   mapNode?: string
+  /** Примечание вызывающего экрана (после оговорок). */
+  note?: ReactNode
 }
 
 /**
  * Содержимое «i»: формула с подстановкой, обозначения, метод, оговорки, схема, ссылки.
  * Переиспользуется панелью узла карты как встроенный блок (та же вёрстка).
  */
-export function InfoTipContent({ entry, values, titleId, onClose, onNavigate, mapNode }: InfoTipContentProps) {
+export function InfoTipContent({ entry, values, titleId, onClose, onNavigate, mapNode, note }: InfoTipContentProps) {
   const parts = bindFormulaParts(entry.formula, values, entry.variables)
   const diagram = getDiagram(entry.diagram)
   const mapNodeId = mapNode ?? entry.mapNode
@@ -303,6 +308,13 @@ export function InfoTipContent({ entry, values, titleId, onClose, onNavigate, ma
           <ul className="infotip-pop__caveats">
             {entry.caveats.map((c, i) => <li key={i}>{c}</li>)}
           </ul>
+        </section>
+      )}
+
+      {note && (
+        <section className="infotip-pop__sec">
+          <p className="infotip-pop__label">Примечание</p>
+          <div className="infotip-pop__text">{note}</div>
         </section>
       )}
 

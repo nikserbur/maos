@@ -83,7 +83,7 @@
 .pd-bar { transition: opacity var(--dur-fast); }
 .pd-bar.is-hot { opacity: 0.75; }
 .pd-tail { fill: color-mix(in oklch, var(--cinnabar) 12%, transparent); }
-.pd-tail-label { fill: var(--cinnabar); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.pd-tail-label { fill: var(--cinnabar); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
 .pd-outline { fill: none; stroke: var(--ochre); stroke-width: 1.6; stroke-dasharray: 4 3; opacity: 0.9; }
 .pd-zero { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 2 3; }
 .pd-var { stroke: var(--text); stroke-width: 1.5; }
@@ -95,9 +95,9 @@
 .pd-mark--r { fill: var(--cinnabar); }
 .pd-worst { fill: var(--status-down); }
 .pd-bracket { fill: none; stroke: var(--text-muted); stroke-width: 1; }
-.pd-lbl { fill: var(--text-secondary); font-size: 11px; }
+.pd-lbl { fill: var(--text-secondary); font-size: var(--fs-11); }
 .pd-lbl--strong { fill: var(--text); font-weight: 600; }
-.pd-lbl--mono { font-family: var(--font-mono); font-size: 10.5px; fill: var(--text-muted); }
+.pd-lbl--mono { font-family: var(--font-mono); font-size: var(--fs-11); fill: var(--text-muted); }
 .pd-sw-tail { background: color-mix(in oklch, var(--cinnabar) 28%, transparent); }
 .pd-sw-ink { background: var(--text); }
 .pd-sw-r { background: var(--cinnabar); border-radius: 50%; }

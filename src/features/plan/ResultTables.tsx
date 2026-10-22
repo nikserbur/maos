@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react'
 import type { ScheduleResult } from '../../lib/api'
 import { hours, num, pct } from '../../explain/format'
-import { Chip } from './ui'
+import { Chip } from '../../ui/kit'
 
 type Dir = 'asc' | 'desc'
 interface Sort<K extends string> { key: K; dir: Dir }

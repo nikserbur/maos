@@ -17,7 +17,7 @@ interface SceneEnvironmentProps {
 const GROUND = {
   dark: { lawn: '#3d5640', lawnCell: '#40573f', lawnSection: '#4f6b4a' },
   light: { lawn: '#4a6d45', lawnCell: '#46603f', lawnSection: '#5b7a52' },
-  floor: '#2b2f36', floorCell: '#3a3f47', floorSection: '#4a5562',
+  floor: '#2b2f36',
 } as const
 
 /** Небо = вертикальный градиент по направлению взгляда: горизонт = туман = --bg-app. */
@@ -165,10 +165,12 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
         position={[0, 0, 0]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor={indoor ? GROUND.floorCell : lawn.lawnCell}
+        /* В цехе сетка пола приглушена до уровня сетки графиков `--chart-grid`
+           (X1 §1 п. 3): станки — главное, а не клетки под ними. */
+        cellColor={indoor ? colors.chartGrid : lawn.lawnCell}
         sectionSize={10}
         sectionThickness={1}
-        sectionColor={indoor ? GROUND.floorSection : lawn.lawnSection}
+        sectionColor={indoor ? colors.chartGrid : lawn.lawnSection}
         fadeDistance={extent * 2.2}
         fadeStrength={1.6}
       />

@@ -5,6 +5,7 @@
  * «Открыть экран» (с контекстом решения), «Запустить», «Подробнее в Методике», MENTAT.
  */
 import { useId, type CSSProperties, type ReactNode } from 'react'
+import { dateTime } from '../../explain/format'
 import { getDiagram } from '../../diagrams'
 import { methodologyHref } from '../../explain/anchors'
 import { getMetric } from '../../explain/metrics'
@@ -103,7 +104,7 @@ export function NodePanel({ nodeId, live, onClose, onSelect }: NodePanelProps) {
   const diagram = getDiagram(node.diagram)
   const screen = screenFor(node)
   const stage = node.stage ?? (node.kind === 'block' ? undefined : getNode(node.parent ?? '')?.stage)
-  const updated = l.updatedAt ? new Date(l.updatedAt).toLocaleString('ru-RU') : null
+  const updated = l.updatedAt ? dateTime(l.updatedAt) : null
 
   return (
     <aside className="mm-panel" aria-labelledby={titleId} style={{ '--block': block.colorVar } as CSSProperties}>

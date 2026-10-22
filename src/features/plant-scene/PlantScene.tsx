@@ -10,24 +10,20 @@ import { EditorPanel } from './EditorPanel'
 import { SimulationLayer, createSimState } from './SimulationLayer'
 import { SimulationPanel } from './SimulationPanel'
 import { Breadcrumbs } from './Breadcrumbs'
-import { STATUS_META, type ObjectKind } from './types'
+import { CameraFit } from './CameraFit'
+import { SceneLegend } from './SceneLegend'
+import { SceneModeBar, type SceneUiMode } from './SceneModeBar'
+import { useDevHooks } from './useDevHooks'
+import type { ObjectKind } from './types'
 import { graphReducer, initialGraphState } from './graph/graphReducer'
 import { buildGraphFromDb, hasChildren } from './graph/sceneModel'
 import { api, type Machine, type WorkCenterType, type Operation, type Flow } from '../../lib/api'
 import './scene.css'
 
-function Legend() {
-  return (
-    <div className="legend" aria-hidden>
-      <div className="legend__title">Статус</div>
-      {Object.values(STATUS_META).map((meta) => (
-        <div className="legend__row" key={meta.label}>
-          <span className="legend__dot" style={{ background: meta.color }} />
-          {meta.label}
-        </div>
-      ))}
-    </div>
-  )
+/** Клавиши схемы не перехватываем из полей ввода. */
+const isTypingTarget = (t: EventTarget | null): boolean => {
+  const el = t as HTMLElement | null
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
 }
 
 export default function PlantScene() {
@@ -38,6 +34,7 @@ export default function PlantScene() {
   const [operations, setOperations] = useState<Operation[]>([])
   const [loading, setLoading]       = useState(true)
   const [simOn, setSimOn]           = useState(false)
+  const [fitToken, setFitToken]     = useState(0)
   const sim = useRef(createSimState())
 
   // Дебаунс PUT-ов раскладки (перемещение/переименование тянут запросы пачками).
@@ -63,44 +60,7 @@ export default function PlantScene() {
   }
 
   useEffect(() => { loadGraph() }, [])
-
-  // DEV-only: детерминированный вход в цех для визуальной верификации из консоли
-  // (window.__maos.enterShop(i) / .root()). В прод-сборку не попадает.
-  useEffect(() => {
-    if (!import.meta.env.DEV) return
-    const factories = () => state.graph.nodes.filter((n) => n.refType === 'factory')
-    // Цеха текущего завода (когда мы внутри завода) — для верификации входа.
-    const shops = () => state.graph.nodes.filter(
-      (n) => n.refType === 'shop' && n.parentId === state.currentParentId)
-    Object.assign(window, {
-      __maos: {
-        factories: () => factories().map((f, i) => `${i}: ${f.title}`),
-        enterFactory: (sel: number | string = 0) => {
-          const list = factories()
-          const f = typeof sel === 'number'
-            ? list[sel]
-            : list.find((x) => x.title.toLowerCase().includes(String(sel).toLowerCase()))
-          if (f) dispatch({ type: 'ENTER_NODE', id: f.id })
-          return f?.title ?? null
-        },
-        shops: () => shops().map((s, i) => `${i}: ${s.title}`),
-        enterShop: (sel: number | string = 0) => {
-          const list = shops()
-          const shop = typeof sel === 'number'
-            ? list[sel]
-            : list.find((s) => s.title.toLowerCase().includes(String(sel).toLowerCase()))
-          if (shop) dispatch({ type: 'ENTER_NODE', id: shop.id })
-          return shop?.title ?? null
-        },
-        selectMachine: (i = 0) => {
-          const ms = state.graph.nodes.filter((n) => n.parentId === state.currentParentId && n.refType === 'machine')
-          if (ms[i]) dispatch({ type: 'NODE_CLICK', id: ms[i].id })
-          return ms[i]?.title ?? null
-        },
-        root: () => dispatch({ type: 'GO_TO_LEVEL', index: 0 }),
-      },
-    })
-  }, [state.graph, state.currentParentId])
+  useDevHooks(state, dispatch)
 
   // useMemo обязателен: новые массивы на каждый рендер ломали useMemo в FlowLinks/
   // Facility (deps [nodes, edges]) — сеть дорог и обвязка пересчитывались на каждый
@@ -139,6 +99,34 @@ export default function PlantScene() {
     for (const n of state.graph.nodes) if (n.refType === 'machine' && n.parentId) mm.set(n.id, n.parentId)
     return mm
   }, [state.graph])
+
+  // Один переключатель режимов: симуляция — поверх режима просмотра графа.
+  const uiMode: SceneUiMode = simOn ? 'sim' : state.mode
+  const setUiMode = (m: SceneUiMode) => {
+    if (m === 'sim') { setSimOn(true); dispatch({ type: 'SET_MODE', mode: 'view' }); return }
+    setSimOn(false)
+    dispatch({ type: 'SET_MODE', mode: m })
+  }
+
+  // Клавиатура: F — вписать (3D-уровни), Esc — снять выделение/отменить связь, иначе уровень выше.
+  const keyRef = useRef({ level, connecting: state.connecting, selectedId: state.selectedId, depth: state.path.length })
+  keyRef.current = { level, connecting: state.connecting, selectedId: state.selectedId, depth: state.path.length }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return
+      const k = keyRef.current
+      if (e.code === 'KeyF') {
+        if (k.level === 'world') return
+        e.preventDefault()
+        setFitToken((t) => t + 1)
+      } else if (e.key === 'Escape') {
+        if (k.connecting || k.selectedId) dispatch({ type: 'CLEAR_SELECTION' })
+        else if (k.depth > 1) dispatch({ type: 'GO_TO_LEVEL', index: k.depth - 2 })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   /** Дебаунс-обёртка для частых PUT (позиция, имя). */
   const persistDebounced = (key: string, fn: () => Promise<unknown>) => {
@@ -290,112 +278,112 @@ export default function PlantScene() {
     await loadGraph()
   }
 
+  const hint = state.connecting
+    ? 'Связь: нажмите на целевой узел · Esc / клик на пустое — отмена'
+    : level === 'world'
+      ? 'ЛКМ — выбор · 2×ЛКМ — на площадку · колесо — зум · перетаскивание — панорама'
+      : 'ЛКМ — выбор · 2×ЛКМ — внутрь · колесо — зум · ПКМ — панорама · F — вписать · Esc — назад'
+
   return (
     <div className="scene">
-      <div className="scene__canvas">
-        {/* Мировой уровень — 2D-карта (DOM, вне R3F). Площадка/цех — 3D Canvas.
-            Условие ПОДНЯТО над <Canvas>, чтобы 2D-карта была обычным DOM-компонентом
-            (без второго WebGL-контекста, без rAF — скриншотится в фоне сразу). */}
-        {level === 'world' ? (
-          <WorldMap2D
-            nodes={nodes}
-            edges={edges}
-            graph={state.graph}
-            selectedId={state.selectedId}
-            editing={editing}
-            onSelect={handleSelect}
-            onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-            onMove={handleMove}
-            onBackground={() => dispatch({ type: 'CLEAR_SELECTION' })}
+      <SceneModeBar mode={uiMode} onMode={setUiMode} level={level} count={nodes.length}
+                    onFit={() => setFitToken((t) => t + 1)} />
+      <div className="scene__body">
+        <div className="scene__canvas">
+          {/* Мировой уровень — 2D-карта (DOM, вне R3F). Площадка/цех — 3D Canvas.
+              Условие ПОДНЯТО над <Canvas>, чтобы 2D-карта была обычным DOM-компонентом
+              (без второго WebGL-контекста, без rAF — скриншотится в фоне сразу). */}
+          {level === 'world' ? (
+            <WorldMap2D
+              nodes={nodes}
+              edges={edges}
+              graph={state.graph}
+              selectedId={state.selectedId}
+              editing={editing}
+              onSelect={handleSelect}
+              onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+              onMove={handleMove}
+              onBackground={() => dispatch({ type: 'CLEAR_SELECTION' })}
+            />
+          ) : (
+            <Canvas
+              shadows
+              dpr={[1, 1.5]}
+              /* near=1.5 (было 0.1) — ГЛАВНЫЙ фикс z-fighting: точность буфера глубины
+                 определяется отношением far/near. 0.1/1000 давало «частокол» мерцаний
+                 на всех плоских декалях (тени, разметка, полосы, кольца) у земли;
+                 1.5/1500 повышает точность на порядок. Камера не ближе 8 ед. к цели
+                 (OrbitControls minDistance), поэтому near=1.5 ничего не срезает.
+                 logarithmicDepthBuffer НЕ используем — он ломает polygonOffset декалей. */
+              camera={{ position: [46, 36, 50], fov: 44, near: 1.5, far: 1500 }}
+              onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
+            >
+              <SceneEnvironment indoor={indoor} extent={extent} />
+              {/* Автофит — при входе в цех; F/«Вписать» — на любом 3D-уровне. */}
+              <CameraFit nodes={nodes} levelKey={state.currentParentId ?? ''} autoFit={indoor} fitToken={fitToken} />
+              <Suspense fallback={null}>
+                {level === 'site' ? <Facility nodes={nodes} /> : <WorkshopInterior nodes={nodes} />}
+                {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
+                <PlantLayout
+                  graph={state.graph}
+                  nodes={nodes}
+                  edges={edges}
+                  selectedId={state.selectedId}
+                  connectFrom={state.connectFrom}
+                  connecting={state.connecting}
+                  editing={editing}
+                  indoor={indoor}
+                  onSelect={handleSelect}
+                  onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+                  onMove={handleMove}
+                  onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
+                />
+              </Suspense>
+            </Canvas>
+          )}
+
+          <Loader />
+
+          {simOn && <SimulationPanel sim={sim} onClose={() => setSimOn(false)} />}
+
+          <Breadcrumbs
+            path={state.path}
+            onNavigate={(index) => dispatch({ type: 'GO_TO_LEVEL', index })}
           />
-        ) : (
-          <Canvas
-            shadows
-            dpr={[1, 1.5]}
-            /* near=1.5 (было 0.1) — ГЛАВНЫЙ фикс z-fighting: точность буфера глубины
-               определяется отношением far/near. 0.1/1000 давало «частокол» мерцаний
-               на всех плоских декалях (тени, разметка, полосы, кольца) у земли;
-               1.5/1500 повышает точность на порядок. Камера не ближе 8 ед. к цели
-               (OrbitControls minDistance), поэтому near=1.5 ничего не срезает.
-               logarithmicDepthBuffer НЕ используем — он ломает polygonOffset декалей. */
-            camera={{ position: [46, 36, 50], fov: 44, near: 1.5, far: 1500 }}
-            onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
-          >
-            <SceneEnvironment indoor={indoor} extent={extent} />
-            <Suspense fallback={null}>
-              {level === 'site' ? <Facility nodes={nodes} /> : <WorkshopInterior nodes={nodes} />}
-              {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
-              <PlantLayout
-                graph={state.graph}
-                nodes={nodes}
-                edges={edges}
-                selectedId={state.selectedId}
-                connectFrom={state.connectFrom}
-                connecting={state.connecting}
-                editing={editing}
-                indoor={indoor}
-                onSelect={handleSelect}
-                onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-                onMove={handleMove}
-                onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
-              />
-            </Suspense>
-          </Canvas>
-        )}
+          <SceneLegend />
 
-        <Loader />
-
-        <button className="btn" style={{ position: 'absolute', top: 16, right: simOn ? 412 : 16, zIndex: 6 }}
-                onClick={() => setSimOn((v) => !v)}
-                title="Проиграть построенный план на 3D-схеме (материальный поток, занятость станков)">
-          {simOn ? '⏹ Выйти из симуляции' : '▶ Симуляция'}
-        </button>
-        {simOn && <SimulationPanel sim={sim} onClose={() => setSimOn(false)} />}
-
-        <Breadcrumbs
-          path={state.path}
-          onNavigate={(index) => dispatch({ type: 'GO_TO_LEVEL', index })}
-        />
-        <Legend />
-
-        {loading && (
-          <div className="scene__hint mono" style={{ top: 16, bottom: 'auto' }}>
-            Загрузка схемы из НСИ…
-          </div>
-        )}
-
-        <div className="scene__hint mono">
-          {state.connecting
-            ? 'Связь: нажмите на целевой узел · Escape / клик на пустое — отмена'
-            : 'ЛКМ — выбор · 2×ЛКМ — внутрь узла · колесо — зум · ПКМ — панорама'}
+          {loading && (
+            <div className="scene__hint scene__hint--top mono" role="status">Загрузка схемы из НСИ…</div>
+          )}
+          <div className="scene__hint mono">{hint}</div>
         </div>
-      </div>
 
-      <EditorPanel
-        mode={state.mode}
-        connecting={state.connecting}
-        selectedNode={selected}
-        hasChildren={selected ? hasChildren(state.graph, selected.id) : false}
-        machines={machines}
-        wcTypes={wcTypes}
-        operations={operations}
-        atRoot={atRoot}
-        currentShopName={currentShop?.title ?? null}
-        onCreateShop={handleCreateShop}
-        onChangeShopKind={handleChangeShopKind}
-        onToggleMode={() => dispatch({ type: 'SET_MODE', mode: editing ? 'view' : 'edit' })}
-        onAddMachine={handleAddMachine}
-        onRename={handleRename}
-        onDelete={handleDeleteNode}
-        onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-        onClose={() => dispatch({ type: 'CLEAR_SELECTION' })}
-        onLinkMachine={(nodeId, machineId) =>
-          dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId })
-        }
-        onCreateMachine={handleCreateMachine}
-        onChangeMachineType={handleChangeMachineType}
-        onChangeKind={(nodeId, kind) => dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })}
-      />
+        <EditorPanel
+          mode={state.mode}
+          connecting={state.connecting}
+          selectedNode={selected}
+          hasChildren={selected ? hasChildren(state.graph, selected.id) : false}
+          machines={machines}
+          wcTypes={wcTypes}
+          operations={operations}
+          atRoot={atRoot}
+          level={level}
+          currentShopName={currentShop?.title ?? null}
+          onCreateShop={handleCreateShop}
+          onChangeShopKind={handleChangeShopKind}
+          onAddMachine={handleAddMachine}
+          onRename={handleRename}
+          onDelete={handleDeleteNode}
+          onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
+          onClose={() => dispatch({ type: 'CLEAR_SELECTION' })}
+          onLinkMachine={(nodeId, machineId) =>
+            dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId })
+          }
+          onCreateMachine={handleCreateMachine}
+          onChangeMachineType={handleChangeMachineType}
+          onChangeKind={(nodeId, kind) => dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })}
+        />
+      </div>
     </div>
   )
 }

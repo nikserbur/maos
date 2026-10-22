@@ -1,0 +1,270 @@
+/*
+ * Единый UI-кит экранов (X1 §10 2.1): шапка, сегменты/табы, чипы, скелетоны, пустые состояния,
+ * баннер ошибки, таблица данных, секции, карточки/bento. Префикс dk- (исторический «decide kit»).
+ * Слит из optimization/kit, nsi/kit и plan/ui — только токены (src/styles/tokens.css), обе темы.
+ */
+@import './surfaces.css';
+@import './table.css';
+
+/* ── Появление секций: fade + 4px, stagger 40 мс через --i ──────────────── */
+.dk-rise {
+  animation: dk-rise var(--dur) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+@keyframes dk-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Шапка экрана ───────────────────────────────────────────────────────── */
+.dk-head {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-4);
+}
+.dk-head__text { min-width: 0; max-width: 78ch; }
+.dk-head__eyebrow { margin: 0 0 var(--space-1); color: var(--accent-text); }
+.dk-head__title {
+  font-family: var(--font-display);
+  font-size: clamp(var(--fs-20), 1.1rem + 0.6vw, 28px);
+  font-weight: 500;
+  line-height: var(--lh-display);
+  letter-spacing: -0.012em;
+  color: var(--text);
+  text-wrap: balance;
+}
+.dk-head__blocks { display: inline-flex; margin-left: var(--space-3); vertical-align: middle; }
+.dk-head__sub {
+  margin-top: var(--space-2);
+  font-size: var(--fs-13);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.dk-head__actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.dk-head__rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--grad-brand);
+  /* маска читает только альфу: любой непрозрачный токен */
+  -webkit-mask-image: linear-gradient(90deg, transparent, var(--text) 12%, var(--text) 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, var(--text) 12%, var(--text) 88%, transparent);
+  opacity: 0.7;
+}
+
+/* ── Сегментный переключатель / табы-пилюли (индикатор = clip-path, измеряется) ── */
+.dk-seg {
+  --pad: 3px;
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  flex: none;
+  padding: var(--pad);
+  max-width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  isolation: isolate;
+}
+/* fit — ширина по содержимому (табы с разной длиной подписей, счётчики). */
+.dk-seg--fit { display: inline-flex; gap: 2px; }
+.dk-seg__ind {
+  position: absolute;
+  inset: var(--pad);
+  z-index: 0;
+  pointer-events: none;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border-strong);
+  clip-path: inset(0 var(--r, 100%) 0 var(--l, 0) round var(--radius-pill));
+  transition: clip-path var(--dur) var(--ease-out);
+}
+[data-theme='light'] .dk-seg__ind { box-shadow: var(--shadow-2), inset 0 0 0 1px var(--border); }
+.dk-seg__opt {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.dk-seg--sm .dk-seg__opt { height: 22px; padding: 0 var(--space-2); font-size: var(--fs-11); }
+.dk-seg--lg .dk-seg__opt { height: 30px; padding: 0 var(--space-4); font-size: var(--fs-13); font-weight: 500; }
+.dk-seg__opt:hover:not(:disabled) { color: var(--text-secondary); }
+.dk-seg__opt.is-on { color: var(--text); }
+.dk-seg__opt.is-on > svg { color: var(--accent-text); }
+.dk-seg__opt:disabled { color: var(--text-disabled); }
+.dk-seg__opt:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-seg__count { font-size: var(--fs-11); font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Переключатель ──────────────────────────────────────────────────────── */
+.dk-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.dk-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.dk-switch__track {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.dk-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform var(--dur) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.dk-switch input:checked + .dk-switch__track { background: var(--accent); border-color: var(--accent); }
+.dk-switch input:checked + .dk-switch__track .dk-switch__knob { transform: translateX(12px); background: var(--on-accent); }
+.dk-switch input:focus-visible + .dk-switch__track { box-shadow: var(--halo); }
+
+/* ── Чип статуса ────────────────────────────────────────────────────────── */
+.dk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--bg-input) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.dk-chip--running { color: var(--status-running); border-color: color-mix(in oklch, var(--status-running) 36%, transparent); background: color-mix(in oklch, var(--status-running) 10%, transparent); }
+.dk-chip--setup { color: var(--ochre); border-color: color-mix(in oklch, var(--status-setup) 40%, transparent); background: color-mix(in oklch, var(--status-setup) 10%, transparent); }
+.dk-chip--down { color: var(--status-down); border-color: color-mix(in oklch, var(--status-down) 40%, transparent); background: color-mix(in oklch, var(--status-down) 10%, transparent); }
+.dk-chip--info { color: var(--accent-text); border-color: color-mix(in oklch, var(--status-info) 36%, transparent); background: color-mix(in oklch, var(--status-info) 10%, transparent); }
+.dk-chip--idle { color: var(--text-muted); }
+.dk-chip--accent { color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 30%, transparent); background: color-mix(in oklch, var(--accent) 14%, transparent); }
+.dk-chip .num { color: var(--text); }
+.dk-chip--sm { height: 18px; padding: 0 6px; font-size: var(--fs-11); }
+
+/* ── Скелетоны ──────────────────────────────────────────────────────────── */
+.dk-skel {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--bg-hover) 80%, transparent);
+  border-radius: var(--radius-sm);
+}
+.dk-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--bone) 7%, transparent), transparent);
+  animation: dk-shimmer 1.4s var(--ease-in-out) infinite;
+}
+[data-theme='light'] .dk-skel::after { background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--bone) 70%, transparent), transparent); }
+@keyframes dk-shimmer { to { transform: translateX(100%); } }
+
+/* ── Баннер ошибки ──────────────────────────────────────────────────────── */
+.dk-err {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: color-mix(in oklch, var(--status-down) 9%, var(--bg-card));
+  border: 1px solid color-mix(in oklch, var(--status-down) 38%, transparent);
+  border-radius: var(--radius-lg);
+}
+.dk-err--setup {
+  background: color-mix(in oklch, var(--status-setup) 8%, var(--bg-card));
+  border-color: color-mix(in oklch, var(--status-setup) 38%, transparent);
+}
+.dk-err__glyph { flex: none; font-size: var(--fs-14); }
+.dk-err__text { flex: 1; min-width: 0; line-height: var(--lh-body); text-wrap: pretty; }
+.dk-err__title { font-weight: 600; }
+.dk-err__detail { color: var(--text-secondary); word-break: break-word; }
+.dk-err .btn { flex: none; }
+
+/* ── Пустое состояние ───────────────────────────────────────────────────── */
+.dk-empty {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  min-height: 260px;
+  padding: var(--space-8) var(--space-6);
+  overflow: hidden;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  isolation: isolate;
+}
+.dk-empty--sm { min-height: 160px; gap: var(--space-5); padding: var(--space-5); }
+.dk-empty__art,
+.dk-empty__body { position: relative; z-index: 1; }
+.dk-empty__art { width: min(280px, 100%); }
+.dk-empty--sm .dk-empty__art { width: min(180px, 100%); }
+.dk-empty__art svg { display: block; width: 100%; height: auto; }
+.dk-empty__body { max-width: 44ch; }
+.dk-empty__title { font-family: var(--font-display); font-size: var(--fs-16); font-weight: 500; color: var(--text); }
+.dk-empty__text { margin-top: var(--space-2); font-size: var(--fs-13); color: var(--text-muted); text-wrap: pretty; }
+.dk-empty__action { margin-top: var(--space-4); display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
+.dk-kand__line { stroke: var(--text); stroke-width: 1.5; stroke-linecap: square; opacity: 0.55; }
+.dk-kand__line--thin { stroke-width: 1; stroke-dasharray: 3 4; opacity: 0.4; }
+.dk-kand__u { fill: var(--ultramarine); }
+.dk-kand__ring { fill: none; stroke: var(--ultramarine); stroke-width: 1; opacity: 0.45; }
+.dk-kand__o { fill: var(--ochre-fill); }
+.dk-kand__r { fill: var(--cinnabar); }
+.dk-kand__b { fill: var(--text); }
+.dk-empty__mark { display: block; width: 120px; height: 80px; margin: 0 auto; }
+.dk-empty__mark .dk-kand__line { stroke-width: 1; opacity: 0.5; }
+.dk-kand__ink { fill: none; stroke: var(--bone); stroke-opacity: 0.8; }
+.dk-kand__bone { fill: var(--bone); fill-opacity: 0.8; }
+.dk-kand__flow { fill: none; stroke: var(--verdigris); stroke-width: 3; stroke-linecap: round; }
+.dk-empty--sm .dk-empty__mark { width: 84px; height: 56px; }
+
+.dk-skel-stack { display: flex; flex-direction: column; gap: var(--space-3); }
+.dk-skel-row { display: flex; gap: var(--space-3); align-items: center; }
+
+/* ── Мелочи ─────────────────────────────────────────────────────────────── */
+.dk-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dk-rise, .dk-tip { animation: none; }
+  .dk-skel::after { animation: none; display: none; }
+  .dk-seg__ind, .dk-switch__knob { transition: none; }
+}

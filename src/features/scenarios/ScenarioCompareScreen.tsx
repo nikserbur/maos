@@ -8,6 +8,9 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type MacroMode, type MacroModeName, type MacroRegimes, type PriceScenario, type Product, type ScenarioPayload, type PriceDistribution } from '../../lib/api'
 import { setDecisionContext } from '../../shell/context'
 import { BlockChips } from '../../ui/BlockChip'
+import { IconButton } from '../../ui/kit'
+import { Icon } from '../../shell/icons'
+import { num, pct } from '../../explain/format'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { invalidateScenario, useRefs, ensureRefs } from '../method-map/useMethodMapState'
 import { ScenarioCompare } from './ScenarioCompare'
@@ -136,25 +139,29 @@ export function ScenarioCompareScreen() {
       <aside className="scn__side">
         <div className="scn__side-top">
           <span className="scn__side-title">Сценарии</span>
-          <button className="btn btn--primary scn__new" title="Создать сценарий из шаблона" onClick={() => setCreateOpen(true)}>＋</button>
+          <IconButton icon="plus" variant="primary" title="Создать сценарий из шаблона" onClick={() => setCreateOpen(true)} />
         </div>
         <div className="scn__side-blocks"><BlockChips blocks={['external', 'distributions', 'criteria']} /></div>
-        <button className={`scn__cmpbtn${compareMode ? ' scn__cmpbtn--on' : ''}`} onClick={() => { setCompareMode((m) => !m); setSel([]) }}>⇄ Сравнить сценарии{compareMode && sel.length ? ` (${sel.length})` : ''}</button>
+        <div className="scn__cmpwrap">
+          <IconButton icon="shuffle" pressed={compareMode} title="Сравнить два и более сценариев" onClick={() => { setCompareMode((m) => !m); setSel([]) }}>
+            Сравнить сценарии{compareMode && sel.length ? ` (${num(sel.length, 0)})` : ''}
+          </IconButton>
+        </div>
         <div className="scn__list">
           {scenarios.map((sc) => {
             const active = compareMode ? sel.includes(sc.id) : sc.id === openId
             const regime = regimeLabel(fromMacroMode(sc.macro_mode), regimes?.regimes.map((r) => r.label))
             return (
               <button key={sc.id} className={`scn__item${active ? ' scn__item--active' : ''}`} onClick={() => (compareMode ? toggle(sc.id) : openScenario(sc.id))}>
-                {compareMode && <span className={`scn__check${sel.includes(sc.id) ? ' scn__check--on' : ''}`}>{sel.includes(sc.id) ? '✓' : ''}</span>}
+                {compareMode && <span className={`scn__check${sel.includes(sc.id) ? ' scn__check--on' : ''}`}>{sel.includes(sc.id) && <Icon name="check" size={12} />}</span>}
                 <span className="scn__item-main">
                   <span className="scn__item-name">{sc.name}</span>
-                  <span className="scn__item-sub">{OBJECTIVES[sc.objective || 'cvar'] ?? 'CVaR'} · α {Math.round((Number(sc.alpha) || 0.1) * 100)} % · {regime.isForecast ? 'прогноз' : 'стресс'}</span>
+                  <span className="scn__item-sub">{OBJECTIVES[sc.objective || 'cvar'] ?? 'CVaR'} · α {pct(Number(sc.alpha) || 0.1, 0)} · {regime.isForecast ? 'прогноз' : 'стресс'}</span>
                 </span>
               </button>
             )
           })}
-          {!scenarios.length && <p className="scn__empty">Нет сценариев.<br />«＋» — создать из шаблона.</p>}
+          {!scenarios.length && <p className="scn__empty">Нет сценариев.<br />«+» — создать из шаблона.</p>}
         </div>
       </aside>
 
@@ -165,7 +172,7 @@ export function ScenarioCompareScreen() {
           <ScenarioTabs key={selected.id} sc={selected} products={products} saveStatus={saveStatus[selected.id]} regimes={regimes} macro={refs.macro}
             onPatch={patch} onSetDist={setDist} onSetDists={setDists} onClone={() => clone(selected.id)} onRemove={() => setRemoveId(selected.id)} />
         ) : (
-          <div className="scn__placeholder">Выберите сценарий слева или создайте новый («＋»).</div>
+          <div className="scn__placeholder">Выберите сценарий слева или создайте новый («+»).</div>
         )}
       </main>
 

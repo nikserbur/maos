@@ -5,7 +5,7 @@
 }
 .shub__tab {
   background: transparent; border: 1px solid transparent; border-bottom: none;
-  color: var(--text-muted, #8a929c); font-size: 13px; padding: 8px 14px;
+  color: var(--text-muted, #8a929c); font-size: var(--fs-13); padding: 8px 14px;
   border-radius: 8px 8px 0 0; cursor: pointer;
 }
 .shub__tab:hover { color: var(--text, #e6e9ee); }

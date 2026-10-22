@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DASH,
+  dateTime,
   MINUS,
   NBSP,
   bindFormula,
@@ -159,5 +160,16 @@ describe('bindFormula', () => {
 
   it('lists placeholders in order of appearance', () => {
     expect(placeholders('{a} + {b_2} − {a}')).toEqual(['a', 'b_2', 'a'])
+  })
+})
+
+describe('dateTime', () => {
+  it('формат бэкенда «ГГГГ-ММ-ДД ЧЧ:ММ:СС» → дд.мм.гггг, чч:мм', () => {
+    expect(dateTime('2026-10-22 18:35:10')).toBe('22.10.2026, 18:35')
+    expect(dateTime('2026-10-22 18:35:10', { time: false })).toBe('22.10.2026')
+  })
+  it('пусто и мусор → тире', () => {
+    expect(dateTime(null)).toBe('—')
+    expect(dateTime('не дата')).toBe('—')
   })
 })

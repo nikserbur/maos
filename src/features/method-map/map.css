@@ -239,7 +239,7 @@
 .mm-sub.is-selected { color: var(--text); background: color-mix(in oklch, var(--accent) 16%, transparent); }
 .mm-sub.is-planned { color: var(--text-muted); }
 .mm-sub__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mm-sub__stage { font-size: 10px; color: var(--text-muted); }
+.mm-sub__stage { font-size: var(--fs-11); color: var(--text-muted); }
 
 /* ── Глифы состояний (CSS, как glyphs.css) ──────────────────────────────── */
 .mm-glyph { display: inline-block; flex: none; width: 9px; height: 9px; vertical-align: -1px; }
@@ -334,7 +334,7 @@
 .mm-row:hover { background: var(--bg-hover); }
 .mm-row:focus-visible { outline: none; box-shadow: var(--halo); }
 .mm-row.is-selected { background: color-mix(in oklch, var(--accent) 14%, transparent); }
-.mm-row__kind { flex: none; font-size: 10px; color: var(--text-muted); letter-spacing: 0.04em; }
+.mm-row__kind { flex: none; font-size: var(--fs-11); color: var(--text-muted); letter-spacing: 0.04em; }
 .mm-row__arrow { flex: none; color: var(--text-muted); }
 .mm-row__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mm-row__badge { flex: none; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-11); color: var(--text-muted); }
@@ -356,7 +356,7 @@
 .mm-prov--estimated, .mm-prov--calibrated, .mm-prov--observed { color: var(--verdigris); }
 .mm-prov--manual { color: var(--text-secondary); }
 .mm-ptable { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
-.mm-ptable th { padding: 4px 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); text-align: left; border-bottom: 1px solid var(--border); }
+.mm-ptable th { padding: 4px 6px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); text-align: left; border-bottom: 1px solid var(--border); }
 .mm-ptable th.num, .mm-ptable td.num { text-align: right; }
 .mm-ptable td { padding: 5px 6px; border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent); vertical-align: middle; }
 .mm-ptable tr.is-warn td { background: color-mix(in oklch, var(--status-setup) 8%, transparent); }

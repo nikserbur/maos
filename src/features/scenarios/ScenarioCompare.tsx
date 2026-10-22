@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { api, type OptResult, type PriceScenario } from '../../lib/api'
 import { money, num, pct } from '../../explain/format'
 import { DiffTable, type DiffTableRow } from '../../ui/DiffList'
-import { InlineError } from '../plan/ui'
+import { InlineError } from '../../ui/kit'
 import { fromMacroMode, regimeLabel } from './regimeMenu'
 import './scenarios-v2.css'
 

@@ -5,6 +5,7 @@
  * `MacroMode` (JSON в `price_scenarios.macro_mode`). Слово «прогноз» — только для базового.
  */
 import type { MacroMode, MacroModeName, MacroRef, MacroStress } from '../../lib/api'
+import { num, pct } from '../../explain/format'
 
 export type RegimeKind = 'base' | 'regime' | 'quantile' | 'episode'
 
@@ -90,7 +91,25 @@ export function regimeLabel(s: RegimeMenuState, regimeNames: readonly string[] =
   switch (s.kind) {
     case 'base': return { text: 'базовый — прогноз', isForecast: true }
     case 'regime': return { text: `режим «${regimeNames[s.regime] ?? s.regime}» навязан — стресс`, isForecast: false }
-    case 'quantile': return { text: `квантильный стресс q = ${s.quantile.toFixed(2)}`, isForecast: false }
+    case 'quantile': return { text: `квантильный стресс q = ${num(s.quantile, 2)}`, isForecast: false }
     case 'episode': return { text: `исторический эпизод ${s.episode} (${s.episodeMonths} мес)`, isForecast: false }
   }
+}
+
+export interface RegimeShare {
+  label: string
+  /** Доля режима (0…1) — по образцу путей или по истории. */
+  share: number
+}
+
+/**
+ * Одна строка-сводка свёрнутой секции «Режимы генератора» (X1 §3.1):
+ * «базовый · 92 % спокойный / 8 % кризис · CRPS 0,98». Без долей/CRPS — только режим.
+ */
+export function regimeSummary(s: RegimeMenuState, shares: readonly RegimeShare[], crps: number | null | undefined, regimeNames: readonly string[] = []): string {
+  const head = regimeLabel(s, regimeNames.length ? regimeNames : shares.map((r) => r.label)).text.replace(' — прогноз', '').replace(' — стресс', '')
+  const parts = [head]
+  if (shares.length) parts.push(shares.map((r) => `${pct(r.share, 0)} ${r.label}`).join(' / '))
+  if (typeof crps === 'number' && Number.isFinite(crps)) parts.push(`CRPS ${num(crps, 2)}`)
+  return parts.join(' · ')
 }

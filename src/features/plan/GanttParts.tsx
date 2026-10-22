@@ -6,7 +6,7 @@ import { hours, num } from '../../explain/format'
 import type { Palette } from './ganttModel'
 import { barSegments } from './ganttModel'
 import type { PlanBar } from './types'
-import { Chip } from './ui'
+import { Chip } from '../../ui/kit'
 
 export const slotClass = (slot: number | null): string => (slot === null ? 'pl-cx' : `pl-c${slot}`)
 

@@ -6,10 +6,6 @@
 }
 .forecast.is-refetching .forecast__grid { opacity: 0.55; transition: opacity var(--dur-fast) var(--ease-out); }
 .forecast__head { margin-bottom: var(--space-4); }
-.forecast__eyebrow { margin: 0 0 var(--space-1); color: var(--text-muted); }
-.forecast__title { font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; line-height: var(--lh-display); margin: 0 0 var(--space-1); }
-.forecast__blocks { display: inline-flex; margin-left: var(--space-3); vertical-align: middle; }
-.forecast__desc { color: var(--text-muted); font-size: var(--fs-13); line-height: var(--lh-body); max-width: 84ch; margin: 0; }
 
 /* ── Параметры ───────────────────────────────────────────────────────────── */
 .forecast__controls {

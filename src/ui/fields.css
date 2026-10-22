@@ -12,7 +12,7 @@
   font: 600 var(--fs-11) var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap; line-height: 1;
 }
-.pf-badge__glyph { font-size: 9px; line-height: 1; }
+.pf-badge__glyph { font-size: var(--fs-11); line-height: 1; }
 .pf-badge--good { color: var(--verdigris); border-color: color-mix(in oklch, var(--verdigris) 55%, var(--border)); }
 .pf-badge--neutral { color: var(--text-secondary); }
 .pf-badge--warn { color: var(--status-setup); border-color: color-mix(in oklch, var(--status-setup) 55%, var(--border)); }
@@ -38,6 +38,8 @@
 .pf-field__row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .pf-field__value { font-size: var(--fs-20); font-weight: 300; line-height: 1.1; color: var(--text); }
 .pf-field--lg .pf-field__value { font-size: var(--fs-24); }
+.pf-field--md { min-width: 0; }
+.pf-field--md .pf-field__label { min-width: 0; flex-wrap: wrap; }
 .pf-field__unit { margin-left: 5px; font-size: var(--fs-13); font-weight: 400; color: var(--text-muted); }
 .pf-field__input-wrap { display: inline-flex; align-items: baseline; gap: 6px; }
 .pf-field__input {
@@ -47,6 +49,19 @@
 }
 .pf-field__input:focus-visible { outline: none; box-shadow: var(--halo); border-color: var(--focus); }
 .pf-field__slider { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+/* Свёрнутый ползунок (X1 §3.1): лежит в нижнем поле карточки и проявляется по фокусу
+   или намерению навести; высота карточки не меняется, Tab на ползунок тоже его открывает. */
+.pf-field--collapsed { padding-bottom: 18px; }
+.pf-field--collapsed .pf-field__slider {
+  position: absolute; left: 14px; right: 12px; bottom: 3px; width: auto; margin: 0; height: 12px;
+  opacity: 0; transform: translateY(2px);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.pf-field--collapsed:focus-within .pf-field__slider, .pf-field--collapsed.is-peek .pf-field__slider { opacity: 1; transform: none; }
+.pf-field--collapsed .pf-field__slider:not(:focus-visible) { pointer-events: none; }
+.pf-field--collapsed:focus-within .pf-field__slider, .pf-field--collapsed.is-peek .pf-field__slider { pointer-events: auto; }
+/* Греческие буквы в caps-подписях не переводятся в верхний регистр («α хвоста», а не «Α ХВОСТА»). */
+.pf-nocaps { text-transform: none; }
 .pf-field__changed {
   display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--accent-text);
@@ -97,8 +112,8 @@
 .pf-step__n { font-size: var(--fs-12); color: var(--text-muted); }
 .pf-step.is-current .pf-step__n { color: var(--step-color); }
 .pf-step__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pf-step__block { font-size: 10px; color: var(--text-muted); }
-.pf-step__glyph { font-size: 10px; text-align: center; }
+.pf-step__block { font-size: var(--fs-11); color: var(--text-muted); }
+.pf-step__glyph { font-size: var(--fs-11); text-align: center; }
 .pf-step__glyph--done { color: var(--verdigris); }
 .pf-step__glyph--warn { color: var(--status-setup); }
 .pf-step__glyph--default { color: var(--status-idle); }
@@ -174,7 +189,7 @@
 .pf-regimes__month { display: flex; flex: 1; height: 100%; border-radius: 2px; overflow: hidden; }
 .pf-regimes__month i { display: block; height: 100%; min-width: 1px; }
 .pf-regimes__track--flat i { display: block; height: 100%; border-radius: 2px; }
-.pf-regimes__axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
+.pf-regimes__axis { display: flex; justify-content: space-between; font-size: var(--fs-11); color: var(--text-muted); }
 
 /* ── Веер ────────────────────────────────────────────────────────────────── */
 /* Веер — на chart-системе (src/ui/charts/Fan); здесь только строка качества под заголовком. */

@@ -14,7 +14,7 @@ import {
 } from './ganttModel'
 import { parseIsoDate } from './wizard/dates'
 import { barsOf, type PlanBar } from './types'
-import { Segmented } from './ui'
+import { Segmented } from '../../ui/kit'
 import { useShops } from './useShops'
 import './charts.css'
 

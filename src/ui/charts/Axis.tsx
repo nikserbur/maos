@@ -3,6 +3,7 @@
  * (никогда пунктир), ≤ 4–5 линий; ось — `--chart-axis`; подписи — `--text-muted` 11 px
  * `tabular-nums`, компактные значения через форматтеры chart-системы.
  */
+import { TICK_CHAR_W, TICK_GAP, placeXLabels } from './axisLayout'
 
 interface GridProps {
   ticks: ReadonlyArray<number>
@@ -56,27 +57,33 @@ interface XAxisProps {
   step?: number
   x0: number
   x1: number
+  /** Ширина символа подписи, px (моно 11 px ≈ 6,7). */
+  charW?: number
+  /** Зазор между соседними подписями, px. */
+  gap?: number
+  /** Повернуть подписи на −30° (якорь — конец строки); нужна полоса оси `X_AXIS_ROTATED_H`. */
+  rotate?: boolean
 }
 
-/** Базовая линия + подписи оси X (категории/даты): по центру деления, у краёв прижаты к плоту, наезжающие — пропускаются. */
-export function XAxis({ labels, xAt, y, step = 1, x0, x1 }: XAxisProps) {
-  const n = labels.length
-  const placed: Array<{ i: number; tx: number }> = []
-  let lastRight = -Infinity
-  labels.forEach((lb, i) => {
-    if (!(i % step === 0 || i === n - 1)) return
-    const half = lb.length * 3.3
-    const tx = Math.max(x0 + half - 8, Math.min(x1 - half + 8, xAt(i)))
-    if (tx - half < lastRight + 8) return
-    placed.push({ i, tx })
-    lastRight = tx + half
-  })
+/** Высота полосы оси X без поворота подписей, px. */
+export const X_AXIS_H = 28
+/** Высота полосы оси X при повёрнутых подписях (длина подписи ≈ 11 символов), px. */
+export const X_AXIS_ROTATED_H = 52
+
+/**
+ * Базовая линия + подписи оси X (категории/даты): по центру деления, у краёв прижаты к плоту,
+ * наезжающие — пропускаются, при большом числе пропусков — равномерный шаг (placeXLabels).
+ */
+export function XAxis({ labels, xAt, y, step = 1, x0, x1, charW = TICK_CHAR_W, gap = TICK_GAP, rotate = false }: XAxisProps) {
+  const xs = labels.map((_, i) => xAt(i))
+  // При повороте ширина проекции подписи на ось ≈ cos 30° от исходной — берём её для зазоров.
+  const placed = placeXLabels(labels, xs, x0, x1, rotate ? charW * 0.87 : charW, gap, step)
   return (
     <g className="ch-axis ch-axis--x" aria-hidden="true">
       <line className="ch-baseline" x1={x0} x2={x1} y1={y} y2={y} />
-      {placed.map(({ i, tx }) => (
-        <text key={i} x={tx} y={y + 16} textAnchor="middle" className="ch-tick">{labels[i]}</text>
-      ))}
+      {placed.map(({ i, tx }) => rotate
+        ? <text key={i} x={tx} y={y + 14} textAnchor="end" transform={`rotate(-30 ${tx} ${y + 14})`} className="ch-tick">{labels[i]}</text>
+        : <text key={i} x={tx} y={y + 16} textAnchor="middle" className="ch-tick">{labels[i]}</text>)}
     </g>
   )
 }

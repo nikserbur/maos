@@ -1,0 +1,50 @@
+/*
+ * Меню действий «⋯» единого кита: всплывающий список под кнопкой, опасный пункт отделён
+ * волосяной линией и окрашен тоном статуса «down». Только токены, обе темы.
+ */
+.dk-menu { position: relative; display: inline-flex; }
+.dk-menu .btn.is-open { background: var(--bg-hover); }
+.dk-menu__list {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  z-index: var(--z-overlay);
+  min-width: 180px;
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  animation: dk-rise var(--dur-fast) var(--ease-out) both;
+}
+.dk-menu--end .dk-menu__list { right: 0; }
+.dk-menu--start .dk-menu__list { left: 0; }
+.dk-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control);
+  padding: 0 var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 500 var(--fs-13) var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.dk-menu__item:hover:not(:disabled) { background: var(--bg-hover); }
+.dk-menu__item:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-menu__item:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.dk-menu__item--danger { color: var(--status-down); }
+.dk-menu__item--danger:not(:first-child) { margin-top: var(--space-1); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+.dk-menu__item--danger:hover:not(:disabled) { background: color-mix(in oklch, var(--status-down) 12%, transparent); }
+.dk-menu__label { flex: 1; min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dk-menu__list { animation: none; }
+}

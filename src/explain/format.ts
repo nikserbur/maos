@@ -221,3 +221,21 @@ export function bindFormula(
 ): string {
   return bindFormulaParts(formula, values, variables).map((p) => p.text).join('')
 }
+
+/* ── Дата и время ─────────────────────────────────────────────────────────── */
+const DT_FULL = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+const DT_DATE = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short' })
+
+function toDate(v: string | number | Date): Date {
+  if (v instanceof Date) return v
+  // Бэкенд отдаёт «ГГГГ-ММ-ДД ЧЧ:ММ:СС» без зоны — трактуем как локальное время.
+  return new Date(typeof v === 'string' ? v.replace(' ', 'T') : v)
+}
+
+/** Дата и время по-русски: dateTime('2026-10-22 18:35:10') = «22.10.2026, 18:35»; пусто/мусор → «—». */
+export function dateTime(v: string | number | Date | null | undefined, opts: { time?: boolean } = {}): string {
+  if (v === null || v === undefined || v === '') return DASH
+  const d = toDate(v)
+  if (Number.isNaN(d.getTime())) return DASH
+  return (opts.time ?? true ? DT_FULL : DT_DATE).format(d)
+}

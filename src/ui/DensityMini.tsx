@@ -3,6 +3,7 @@
  * распределения и относительной σ; центр — пунктир. Только токены темы; aria — текстом.
  */
 import type { DistType } from '../lib/api'
+import { pct } from '../explain/format'
 import './fields.css'
 
 interface DensityMiniProps {
@@ -29,8 +30,11 @@ export function densityPoints(type: DistType, rel: number, w: number, h: number)
   const xs = Array.from({ length: 61 }, (_, i) => (i / 60 - 0.5) * 2.4)
   const ys = xs.map(pdf)
   const my = Math.max(...ys) || 1
-  return xs.map((x, i) => `${((x / 2.4 + 0.5) * w).toFixed(1)},${(h - 3 - (ys[i] / my) * (h - 8)).toFixed(1)}`).join(' ')
+  return xs.map((x, i) => `${r1((x / 2.4 + 0.5) * w)},${r1(h - 3 - (ys[i] / my) * (h - 8))}`).join(' ')
 }
+
+/** Координата SVG с одним знаком после точки (точка — синтаксис SVG, не локаль). */
+const r1 = (v: number): number => Math.round(v * 10) / 10
 
 const TYPE_LABEL: Record<DistType, string> = {
   normal: 'нормальное', lognormal: 'логнормальное', triangular: 'треугольное', uniform: 'равномерное',
@@ -41,7 +45,7 @@ export function DensityMini({ type, rel, width = 150, height = 46, label }: Dens
   const pts = densityPoints(type, rel, width, height)
   return (
     <svg className="pf-density" viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img"
-         aria-label={label ?? `Плотность: ${TYPE_LABEL[type]}, σ ${Math.round(rel * 100)} % от центра`}>
+         aria-label={label ?? `Плотность: ${TYPE_LABEL[type]}, σ ${pct(rel, 0)} от центра`}>
       <polygon className="pf-density__area" points={`0,${height} ${pts} ${width},${height}`} />
       <polyline className="pf-density__line" points={pts} />
       <line className="pf-density__center" x1={width / 2} y1={2} x2={width / 2} y2={height - 3} />

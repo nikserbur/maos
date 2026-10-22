@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { api } from '../../../lib/api'
 import { useWorkCenterTypes, useProducts } from '../useNsi'
 import type { EditCtx } from '../CreateDialog'
+import { Icon } from '../../../shell/icons'
 
 interface Props {
   onSuccess: () => void
@@ -181,8 +182,8 @@ export function OperationForm({ onSuccess, edit }: Props) {
                 </select>
                 <input className="form__input" type="number" min="0" step="0.001" style={{ width: 90 }}
                        value={r.qty} onChange={(e) => setInput(i, { qty: e.target.value })} placeholder="кол-во" />
-                <button type="button" className="btn btn--danger" style={{ height: 28, padding: '0 8px' }}
-                        onClick={() => delInput(i)}>✕</button>
+                <button type="button" className="btn btn--danger btn--icon" title="Убрать вход" aria-label="Убрать вход"
+                        onClick={() => delInput(i)}><Icon name="close" size={14} /></button>
               </div>
             ))}
             <button type="button" className="btn" style={{ marginTop: 2 }} onClick={addInput}>+ Добавить вход</button>

@@ -6,9 +6,9 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { api, type KpiBundle, type SimPlanSummary } from '../../lib/api'
-import { hours, money, num, pct } from '../../explain/format'
+import { dateTime, hours, money, num, pct } from '../../explain/format'
 import { DiffTable, type DiffTableRow } from '../../ui/DiffList'
-import { Chip, SkeletonRows } from './ui'
+import { Chip, DataTable, SkeletonRows, type DataColumn } from '../../ui/kit'
 import './plan-screen.css'
 
 export interface RunRow {
@@ -19,7 +19,7 @@ export interface RunRow {
   kpi: KpiBundle | null
 }
 
-const fmtDate = (s: string) => new Date(s.replace(' ', 'T')).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+const fmtDate = (s: string) => dateTime(s)
 const kpiOf = (b: KpiBundle | null, f: string): number => (b && typeof b.kpi?.[f] === 'number' ? b.kpi[f] : Number.NaN)
 
 export function mergeRuns(plans: readonly SimPlanSummary[], series: readonly KpiBundle[]): RunRow[] {
@@ -72,39 +72,37 @@ export function RunsTable({ currentId, onOpen, canOpen, limit = 12 }: RunsTableP
   if (error) return <p className="pl-note">История прогонов недоступна: {error}</p>
   if (!rows) return <SkeletonRows rows={4} label="Загрузка прогонов" />
   if (rows.length === 0) return <p className="pl-note">Прогонов ещё нет — постройте первый план через «Новый план».</p>
+  const otdOf = (r: RunRow) => kpiOf(r.kpi, 'otd')
+  const openable = (r: RunRow) => Boolean(onOpen) && (canOpen ? canOpen(r.id) : true)
+  const cols: DataColumn<RunRow>[] = [
+    { key: 'cmp', title: <span className="dk-vh">Сравнить</span>, sortable: false, hint: 'Отметьте два прогона для сравнения',
+      render: (r) => <input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)}
+                            onClick={(e) => e.stopPropagation()} onChange={() => toggle(r.id)} /> },
+    { key: 'when', title: 'Когда', num: true, get: (r) => r.createdAt, className: 'dk-td-name',
+      render: (r) => <>{fmtDate(r.createdAt)}{r.id === currentId && <Chip tone="accent">текущий</Chip>}</> },
+    { key: 'ops', title: 'Операций', num: true, get: (r) => r.nTasks, render: (r) => num(r.nTasks, 0) },
+    { key: 'mk', title: 'E[Cmax]', num: true, get: (r) => kpiOf(r.kpi, 'makespan_mean') || r.makespan, render: (r) => hours(kpiOf(r.kpi, 'makespan_mean') || r.makespan, 0) },
+    { key: 'cvar', title: 'CVaR', num: true, get: (r) => kpiOf(r.kpi, 'makespan_cvar'), render: (r) => hours(kpiOf(r.kpi, 'makespan_cvar'), 0) },
+    { key: 'otd', title: 'OTD', num: true, get: otdOf,
+      render: (r) => { const otd = otdOf(r); return Number.isFinite(otd) ? <Chip tone={otd >= 0.99 ? 'good' : otd >= 0.9 ? 'warn' : 'bad'}>{pct(otd, 0)}</Chip> : '—' } },
+    { key: 'util', title: 'Загрузка', num: true, get: (r) => kpiOf(r.kpi, 'utilization'), render: (r) => pct(kpiOf(r.kpi, 'utilization'), 0) },
+    { key: 'bn', title: 'Узкое место', get: (r) => r.kpi?.bottleneck?.wc_name ?? '' , render: (r) => r.kpi?.bottleneck?.wc_name ?? '—' },
+    { key: 'open', title: <span className="dk-vh">Открыть</span>, sortable: false, className: 'pl-runs__open',
+      render: (r) => (openable(r) && r.id !== currentId ? <span className="pf-link dk-table__hover">открыть →</span> : null) },
+  ]
   return (
     <div className="pl-runs">
-      <table className="pl-table pl-table--tight pl-runs__table">
-        <thead>
-          <tr>
-            <th scope="col" aria-label="Сравнить" title="Отметьте два прогона для сравнения" />
-            <th scope="col">Когда</th><th scope="col" className="num">Операций</th><th scope="col" className="num">E[Cmax]</th><th scope="col" className="num">CVaR</th>
-            <th scope="col" className="num">OTD</th><th scope="col" className="num">Загрузка</th><th scope="col">Узкое место</th><th scope="col" />
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((r) => {
-            const otd = kpiOf(r.kpi, 'otd')
-            const openable = Boolean(onOpen) && (canOpen ? canOpen(r.id) : true)
-            const current = r.id === currentId
-            return (
-              <tr key={r.id} className={`${current ? 'is-chosen' : ''}${openable ? ' is-openable' : ''}`}
-                  title={openable ? 'Открыть прогон' : onOpen ? NO_FULL_RESULT : undefined}
-                  onClick={openable ? () => onOpen?.(r) : undefined}>
-                <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} /></td>
-                <td className="num pl-td-name">{fmtDate(r.createdAt)}{current && <Chip tone="accent">текущий</Chip>}</td>
-                <td className="num">{num(r.nTasks, 0)}</td>
-                <td className="num">{hours(kpiOf(r.kpi, 'makespan_mean') || r.makespan, 0)}</td>
-                <td className="num">{hours(kpiOf(r.kpi, 'makespan_cvar'), 0)}</td>
-                <td className="num">{Number.isFinite(otd) ? <Chip tone={otd >= 0.99 ? 'good' : otd >= 0.9 ? 'warn' : 'bad'}>{pct(otd, 0)}</Chip> : '—'}</td>
-                <td className="num">{pct(kpiOf(r.kpi, 'utilization'), 0)}</td>
-                <td>{r.kpi?.bottleneck?.wc_name ?? '—'}</td>
-                <td className="pl-runs__open">{openable && !current && <span className="pf-link">открыть →</span>}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <DataTable
+        className="pl-runs__table"
+        columns={cols}
+        rows={visible}
+        rowKey={(r) => r.id}
+        tight
+        caption="История прогонов"
+        onRowClick={onOpen ? (r) => { if (openable(r)) onOpen(r) } : undefined}
+        rowClassName={(r) => (r.id === currentId ? 'is-chosen' : undefined)}
+        rowTitle={(r) => (openable(r) ? 'Открыть прогон' : onOpen ? NO_FULL_RESULT : undefined)}
+      />
       {rows.length > limit && (
         <button type="button" className="pf-link" onClick={() => setShowAll((v) => !v)}>
           {showAll ? 'свернуть' : `показать все ${num(rows.length, 0)}`}

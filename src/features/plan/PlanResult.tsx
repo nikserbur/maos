@@ -19,7 +19,7 @@ import { QueueChart } from './QueueChart'
 import { ResultToc, type TocItem } from './ResultToc'
 import { RulesTable, WorkersTable } from './ResultTables'
 import { WhatDrove } from './WhatDrove'
-import { Section, Segmented } from './ui'
+import { Section, Segmented } from '../../ui/kit'
 import './plan.css'
 import './plan-screen.css'
 

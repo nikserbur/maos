@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_MENU, fromMacroMode, regimeLabel, regimeMenuReducer, toMacroMode } from './regimeMenu'
+import { NBSP } from '../../explain/format'
+import { DEFAULT_MENU, fromMacroMode, regimeLabel, regimeMenuReducer, regimeSummary, toMacroMode } from './regimeMenu'
 
 describe('regime / stress menu reducer (§2.6б)', () => {
   it('starts as the base forecast and serialises to the plain name', () => {
@@ -36,6 +37,19 @@ describe('regime / stress menu reducer (§2.6б)', () => {
     expect(fromMacroMode('{broken')).toEqual(DEFAULT_MENU)
     expect(fromMacroMode('iid_v063')).toEqual(DEFAULT_MENU)
     expect(fromMacroMode({ mode: 'regime' })).toMatchObject({ kind: 'regime' })
+  })
+
+  it('formats the quantile label through the ru formatter (ru locale, comma)', () => {
+    const q = regimeMenuReducer(DEFAULT_MENU, { type: 'quantile', quantile: 0.9 })
+    expect(regimeLabel(q).text).toBe('квантильный стресс q = 0,9')
+  })
+
+  it('builds the one-line summary for the collapsed regimes section', () => {
+    const shares = [{ label: 'спокойный', share: 0.92 }, { label: 'кризис', share: 0.08 }]
+    expect(regimeSummary(DEFAULT_MENU, shares, 0.976)).toBe(`базовый · 92${NBSP}% спокойный / 8${NBSP}% кризис · CRPS 0,98`)
+    expect(regimeSummary(DEFAULT_MENU, [], null)).toBe('базовый')
+    const forced = regimeMenuReducer(DEFAULT_MENU, { type: 'regime', regime: 1 })
+    expect(regimeSummary(forced, shares, undefined)).toBe(`режим «кризис» навязан · 92${NBSP}% спокойный / 8${NBSP}% кризис`)
   })
 
   it('reset returns the default and identical actions do not create new objects', () => {

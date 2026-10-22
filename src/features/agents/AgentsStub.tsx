@@ -5,8 +5,7 @@
  * «Волна 3» в «Методике»), без заглушечного текста: что будет, откуда читать, куда идти.
  */
 import { methodologyHref } from '../../explain/anchors'
-import { EmptyState, ScreenHeader, StatusChip, rise } from '../optimization/kit/kit'
-import '../optimization/kit/kit.css'
+import { EmptyState, ScreenHeader, StatusChip, rise } from '../../ui/kit'
 import './agents.css'
 
 const COMING: ReadonlyArray<{ title: string; what: string; where: string }> = [

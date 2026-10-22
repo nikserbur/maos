@@ -10,7 +10,7 @@ import type { ScheduleResult } from '../../lib/api'
 import { hours, money, num, pct } from '../../explain/format'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
 import { FundBar, type FundParts } from './kpiParts'
-import { Chip } from './ui'
+import { Chip } from '../../ui/kit'
 import { kpiOf, loadsOf, machineBusyHours, machineFundHours, type Tone } from './types'
 
 const WAIT_WARN = 0.5

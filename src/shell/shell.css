@@ -204,7 +204,7 @@
 .rail__group {
   flex: none;
   padding: 2px 0 1px;
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;

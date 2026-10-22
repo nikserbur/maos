@@ -3,6 +3,7 @@ import {
   api,
   type PriceScenario, type PriceDistribution, type Product, type DistType,
 } from '../../lib/api'
+import { num, pct } from '../../explain/format'
 import './scenarios.css'
 
 const DIST_TYPES: Array<{ id: DistType; label: string }> = [
@@ -13,6 +14,8 @@ const DIST_TYPES: Array<{ id: DistType; label: string }> = [
 ]
 
 const numStr = (v: number | string | undefined) => (v === undefined || v === null ? '' : String(v))
+/** Координата SVG с одним знаком после точки (синтаксис SVG, не локаль). */
+const r1 = (v: number): number => Math.round(v * 10) / 10
 
 /** Мини-график распределения цены (форма по типу + ширина по волатильности CV). */
 function MiniDist({ type, mean, std }: { type: string; mean: number; std: number }) {
@@ -28,11 +31,11 @@ function MiniDist({ type, mean, std }: { type: string; mean: number; std: number
     else if (type === 'triangular') y = Math.max(0, 1 - Math.abs(x - 0.5) / (sigmaX * 2.2))
     else if (type === 'lognormal') { const z = (Math.log(Math.max(0.05, x)) - Math.log(0.42)) / (sigmaX + 0.18); y = Math.exp(-0.5 * z * z) }
     else { const z = (x - 0.5) / sigmaX; y = Math.exp(-0.5 * z * z) }
-    pts.push(`${(x * W).toFixed(1)},${(H - 3 - y * (H - 7)).toFixed(1)}`)
+    pts.push(`${r1(x * W)},${r1(H - 3 - y * (H - 7))}`)
   }
   const line = 'M' + pts.join(' L')
   return (
-    <svg width={W} height={H} aria-hidden style={{ display: 'block' }}>
+    <svg className="scn__mini" width={W} height={H} aria-hidden>
       <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--accent)" opacity="0.16" />
       <path d={line} fill="none" stroke="var(--focus)" strokeWidth="1.5" />
       <line x1={W / 2} y1="2" x2={W / 2} y2={H - 2} stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="2 2" />
@@ -142,7 +145,7 @@ export function ScenariosScreen() {
       <div className="scn__list">
         <div className="scn__list-head">
           <span className="scn__list-title">Сценарии</span>
-          <button className="btn btn--primary" style={{ height: 24, padding: '0 8px' }} onClick={createScenario}>
+          <button className="btn btn--primary scn__new-btn" onClick={createScenario}>
             + Новый
           </button>
         </div>
@@ -163,7 +166,7 @@ export function ScenariosScreen() {
         ) : (
           <>
             <div className="scn__editor-head">
-              <div style={{ flex: 1 }}>
+              <div className="scn__editor-name">
                 <input className="scn__name-input" value={draft.name}
                        onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </div>
@@ -184,7 +187,7 @@ export function ScenariosScreen() {
               <input type="range" min="0" max="0.95" step="0.05"
                      value={Number(draft.market_corr ?? 0.5)}
                      onChange={(e) => setDraft({ ...draft, market_corr: e.target.value })} />
-              <span className="scn__corr-val">{Number(draft.market_corr ?? 0.5).toFixed(2)}</span>
+              <span className="scn__corr-val">{num(Number(draft.market_corr ?? 0.5), 2)}</span>
               <span className="scn__hint">
                 {Number(draft.market_corr ?? 0.5) >= 0.7
                   ? 'Высокая — цены ходят вместе, диверсификация слабее (системный риск).'
@@ -239,7 +242,7 @@ export function ScenariosScreen() {
                                  title="Чувствительность цены к рынку (0 — независима, 1 — полностью)"
                                  onChange={(e) => setDist(p.id, { beta: e.target.value })} />
                         </td>
-                        <td className={`scn__cv${cv > 0.2 ? ' scn__cv--high' : ''}`}>{(cv * 100).toFixed(0)}%</td>
+                        <td className={`scn__cv${cv > 0.2 ? ' scn__cv--high' : ''}`}>{pct(cv, 0)}</td>
                         <td><MiniDist type={d.dist_type} mean={mean} std={sd} /></td>
                       </tr>
                     )
@@ -249,7 +252,7 @@ export function ScenariosScreen() {
             )}
           </>
         )}
-        {error && <div className="scn__hint" style={{ color: 'var(--intent-danger)' }}>{error}</div>}
+        {error && <div className="scn__hint scn__hint--error">{error}</div>}
       </div>
     </div>
   )

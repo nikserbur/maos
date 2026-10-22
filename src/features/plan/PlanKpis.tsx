@@ -7,7 +7,7 @@
 import type { CashLpResult, ScheduleResult } from '../../lib/api'
 import { hours, money, num, pct } from '../../explain/format'
 import { KpiTable } from './KpiTable'
-import { Chip } from './ui'
+import { Chip } from '../../ui/kit'
 import { FmtValue, TailStrip, Tile, Value } from './kpiParts'
 import { kpiOf, type Tone } from './types'
 import './kpi.css'

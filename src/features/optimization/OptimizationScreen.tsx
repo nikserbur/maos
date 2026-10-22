@@ -6,16 +6,15 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { api, type OptPortfolio, type OptimizeParams, type PriceScenario, type Product, type WorkCenterType } from '../../lib/api'
-import { money, num, pct } from '../../explain/format'
+import { dateTime, money, num, pct } from '../../explain/format'
 import { InfoTip } from '../../ui/InfoTip'
 import { getDecisionContext, setDecisionContext } from '../../shell/context'
 import { ParetoFrontier, ParetoLegend } from './ParetoFrontier'
 import { ExpectedCard, PriceOfRobustness, RobustHero } from './PortfolioCards'
-import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, StatusChip, Switch, rise } from './kit/kit'
+import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, StatusChip, Switch, rise } from '../../ui/kit'
 import { criterionOverrides, failOptRun, finishOptRun, inheritCriterion, patchOptForm, startOptRun, useOptStore } from './optStore'
 import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import { OBJECTIVES, isSoft, type Objective, type OptResultExt, type OptRunParams } from './optTypes'
-import './kit/kit.css'
 import './optimization.css'
 import './opt-screen.css'
 
@@ -198,7 +197,7 @@ export function OptimizationScreen() {
   const savePlan = async () => {
     if (!result?.run_id) return
     try {
-      const p = await api.optimize.savePlan(result.run_id, planName.trim() || `Оптимизация ${new Date().toLocaleString('ru')}`)
+      const p = await api.optimize.savePlan(result.run_id, planName.trim() || `Оптимизация ${dateTime(Date.now())}`)
       setSavedMsg(`Программа «${p.name}» сохранена (${p.orders} изделий) — откройте «План».`)
       setPlanName('')
     } catch (e) {
@@ -240,7 +239,7 @@ export function OptimizationScreen() {
               options={OBJECTIVES.map((o) => ({ id: o.id, label: o.label, title: o.hint }))} />
           </div>
           <label className="opt2-field">
-            <span className="opt2-field__label">α хвоста<InfoTip id="opt.cvar" /> <InheritBadge changed={ovr.alpha} field="alpha" /></span>
+            <span className="opt2-field__label"><span className="no-caps">α</span> хвоста<InfoTip id="opt.cvar" /> <InheritBadge changed={ovr.alpha} field="alpha" /></span>
             <input type="number" min="0.01" max="0.5" step="0.05" value={form.alpha} onChange={(e) => patchOptForm({ alpha: e.target.value })} />
           </label>
           <label className="opt2-field">

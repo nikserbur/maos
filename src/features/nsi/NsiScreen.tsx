@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
-import { REGISTRIES } from './registries'
+import { useState, useEffect, useMemo } from 'react'
+import { REGISTRIES, type RegistryColumn } from './registries'
 import { CreateDialog } from './CreateDialog'
 import { RoutingScreen } from './routing/RoutingScreen'
 import { api, type WorkCenterType, type Product } from '../../lib/api'
 import { KIND_META } from '../plant-scene/graph/sceneModel'
 import { useHashRoute } from '../../shell/router'
+import { dateTime, fmtValue } from '../../explain/format'
+import { Icon } from '../../shell/icons'
+import { DataTable, ScreenHeader, type DataColumn } from '../../ui/kit'
 import './nsi.css'
 
 type AnyRow = Record<string, unknown>
@@ -30,34 +33,33 @@ const STATUS_LABELS: Record<string, string> = {
   '0': 'Нет',
 }
 
-function cellText(
-  col: string,
-  val: unknown,
-  wcTypes: WorkCenterType[],
-  products: Product[],
-): string {
-  if (val === null || val === undefined || val === '') return '—'
-  const s = String(val)
+const YES_NO = (s: string) => (s === '1' ? 'Да' : 'Нет')
 
-  if (col === 'wc_type_id') {
-    const t = wcTypes.find((x) => x.id === s)
-    return t ? t.name : s
+/** Текст ячейки: FK → имя, коды → подписи, числа/даты — через format.ts. */
+function cellText(col: RegistryColumn, val: unknown, wcTypes: WorkCenterType[], products: Product[]): string {
+  if (val === null || val === undefined || val === '') return '—'
+  if (col.num) return fmtValue(typeof val === 'number' ? val : Number(val), col.unit)
+  const s = String(val)
+  switch (col.key) {
+    case 'wc_type_id': return wcTypes.find((x) => x.id === s)?.name ?? s
+    case 'parent_id': { const p = products.find((x) => x.id === s); return p ? `${p.code} ${p.name}` : s }
+    case 'product_id': { const p = products.find((x) => x.id === s); return p ? `${p.code} ${p.name}` : s }
+    case 'kind': return KIND_LABELS[s] ?? s
+    case 'status': return STATUS_LABELS[s] ?? s
+    case 'created_at': return dateTime(s)
+    case 'interchangeable':
+    case 'purchased':
+    case 'setup_required': return YES_NO(s)
+    default: return Array.isArray(val) ? String((val as unknown[]).length) : s
   }
-  if (col === 'parent_id') {
-    const p = products.find((x) => x.id === s)
-    return p ? `${p.code} ${p.name}` : s
-  }
-  if (col === 'kind') return KIND_LABELS[s] ?? s
-  if (col === 'status') return STATUS_LABELS[s] ?? s
-  if (col === 'interchangeable') return s === '1' ? 'Да' : 'Нет'
-  if (col === 'purchased') return s === '1' ? 'Да' : 'Нет'
-  if (Array.isArray(val)) return String((val as unknown[]).length)
-  return s
 }
+
+const roleOf = (row: AnyRow) =>
+  String(row.purchased) === '1' ? 'Сырьё (вход)' : String(row.sellable) === '1' ? 'Товар' : 'Полуфабрикат'
 
 /**
  * Справочники: `#/nsi/<реестр>` — реестр в адресе (переживает F5), `#/nsi/routing/<id|new>` —
- * конструктор техкарты экраном вместо модала (G3 1.4).
+ * конструктор техкарты экраном вместо модала (G3 1.4). Таблица — DataTable кита (G3 2.1).
  */
 export function NsiScreen() {
   const { anchor, navigate } = useHashRoute()
@@ -102,6 +104,18 @@ export function NsiScreen() {
       )
     : rows
 
+  const columns = useMemo<DataColumn<AnyRow>[]>(() => active.columns.map((col, i) => ({
+    key: col.key,
+    title: col.title,
+    num: col.num,
+    rowHeader: i === 0,
+    get: (row) => (col.key === 'role' ? roleOf(row) : col.num ? Number(row[col.key]) : cellText(col, row[col.key], wcTypes, products)),
+    render: (row) => (col.key === 'role' ? roleOf(row) : cellText(col, row[col.key], wcTypes, products)),
+  })), [active, wcTypes, products])
+
+  const groupBy = active.groupBy
+  const groupFn = useMemo(() => (groupBy ? (row: AnyRow) => String(row[groupBy] ?? '—') : undefined), [groupBy])
+
   const handleCreated = () => {
     setCreateOpen(false)
     fetchRows()
@@ -114,6 +128,7 @@ export function NsiScreen() {
 
   const openCreate = () => (activeId === 'routing' ? navigate('nsi', 'routing/new') : setCreateOpen(true))
   const openRow = (row: AnyRow) => (activeId === 'routing' ? navigate('nsi', `routing/${String(row.id ?? '')}`) : setEditRow(row))
+  const rowHint = activeId === 'routing' ? 'Открыть конструктор техкарты' : 'Открыть для редактирования'
 
   return (
     <div className="nsi">
@@ -129,11 +144,13 @@ export function NsiScreen() {
       )}
 
       <aside className="nsi__list">
-        <div className="nsi__list-title">Реестры</div>
+        <div className="nsi__list-title text-caps">Реестры</div>
         {REGISTRIES.map((registry) => (
           <button
             key={registry.id}
+            type="button"
             className={registry.id === activeId ? 'nsi__item nsi__item--active' : 'nsi__item'}
+            aria-current={registry.id === activeId ? 'true' : undefined}
             onClick={() => { setActiveId(registry.id); setSearch('') }}
           >
             {registry.title}
@@ -142,70 +159,47 @@ export function NsiScreen() {
       </aside>
 
       <section className="nsi__panel">
-        <header className="nsi__head">
-          <div>
-            <h1 className="nsi__title">{active.title}</h1>
-            <p className="nsi__desc">{active.description}</p>
-          </div>
-          <button className="btn btn--primary" onClick={openCreate}>
-            + Создать
-          </button>
-        </header>
+        <ScreenHeader
+          eyebrow="Модель · справочники"
+          title={active.title}
+          subtitle={active.description}
+          blocks={['internal']}
+          actions={(
+            <button type="button" className="btn btn--primary" onClick={openCreate}>
+              <Icon name="plus" size={14} />Создать
+            </button>
+          )}
+        />
 
         <div className="nsi__toolbar">
-          <input
-            className="nsi__search"
-            placeholder="Поиск по реестру…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <span className="nsi__count mono">
+          <label className="nsi__search-wrap">
+            <Icon name="search" size={14} />
+            <input
+              className="nsi__search"
+              placeholder="Поиск по реестру…"
+              aria-label="Поиск по реестру"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <span className="nsi__count num" aria-live="polite">
             {loading ? 'Загрузка…' : `${filtered.length} записей`}
           </span>
         </div>
 
-        <div className="nsi__table-wrap">
-          <table className="nsi__table">
-            <thead>
-              <tr>
-                {active.columns.map((col) => (
-                  <th key={col.key}>{col.title}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr className="nsi__empty">
-                  <td colSpan={active.columns.length}>Загрузка…</td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr className="nsi__empty">
-                  <td colSpan={active.columns.length}>
-                    {rows.length === 0
-                      ? 'Записей нет — нажмите «+ Создать» для добавления.'
-                      : 'Ничего не найдено.'}
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((row, i) => (
-                  <tr key={String(row.id ?? row.tab_no ?? i)}
-                      className="nsi__row--clickable"
-                      onClick={() => openRow(row)}
-                      title={activeId === 'routing' ? 'Открыть конструктор техкарты' : 'Открыть для редактирования'}>
-                    {active.columns.map((col) => (
-                      <td key={col.key}>
-                        {col.key === 'role'
-                          ? (String(row.purchased) === '1' ? 'Сырьё (вход)'
-                             : String(row.sellable) === '1' ? 'Товар' : 'Полуфабрикат')
-                          : cellText(col.key, row[col.key], wcTypes, products)}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          className="nsi__table-wrap"
+          framed
+          columns={columns}
+          rows={filtered}
+          rowKey={(row, i) => String(row.id ?? row.tab_no ?? i)}
+          groupBy={groupFn}
+          loading={loading}
+          onRowClick={openRow}
+          rowTitle={() => rowHint}
+          caption={`Реестр: ${active.title}`}
+          empty={rows.length === 0 ? 'Записей нет — нажмите «Создать», чтобы добавить первую.' : 'Ничего не найдено.'}
+        />
       </section>
     </div>
   )

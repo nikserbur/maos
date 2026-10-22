@@ -3,7 +3,7 @@
  * всех экранов. Палитра — только `--chart-*`; числа — только через src/explain/format.ts.
  */
 export { ChartFrame, Legend, Swatch, DataTwin, ChartEmpty, type ChartTable } from './ChartFrame'
-export { Grid, XAxis, YAxis, Crosshair, Marker } from './Axis'
+export { Grid, XAxis, YAxis, Crosshair, Marker, X_AXIS_H, X_AXIS_ROTATED_H } from './Axis'
 export { ChartTooltip, type TipRow } from './Tooltip'
 export { LineChart, AreaChart, ColumnChart, Cartesian, columnPath, type Series, type CartesianProps, type CartesianKind } from './Cartesian'
 export { BarList, type BarRow } from './BarList'
@@ -16,3 +16,4 @@ export { Sankey, type SankeyLink } from './Sankey'
 export { seriesColor, colorOf, CHART_SLOTS, type LegendItem, type SwatchShape } from './palette'
 export { useMeasuredWidth, useHoverIndex } from './hooks'
 export * from './scale'
+export { placeXLabels, overlaps, TICK_CHAR_W, TICK_GAP, type PlacedLabel } from './axisLayout'

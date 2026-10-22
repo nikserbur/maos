@@ -19,7 +19,7 @@ import { PlanWizard } from './wizard/PlanWizard'
 import { runSchedule } from './wizard/runSchedule'
 import { effectiveFields, useWizard } from './wizard/wizardStore'
 import { cachedPlanIds, planActions, usePlanStore } from './planStore'
-import { Chip, InlineError } from './ui'
+import { Chip, InlineError } from '../../ui/kit'
 import './plan.css'
 import './plan-screen.css'
 

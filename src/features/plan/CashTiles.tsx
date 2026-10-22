@@ -8,7 +8,7 @@
  */
 import type { CashLpResult } from '../../lib/api'
 import { money, num, pct } from '../../explain/format'
-import { StatusChip, type Tone as ChipTone } from '../optimization/kit/kit'
+import { StatusChip, type Tone as ChipTone } from '../../ui/kit'
 import { InfoTip } from '../../ui/InfoTip'
 import { FmtValue, SubLabel, Tile, Value } from './kpiParts'
 import './kpi.css'

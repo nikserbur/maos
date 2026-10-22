@@ -13,7 +13,7 @@ import { StateLegend } from '../../../../ui/StateLegend'
 import { macroModeLabel } from '../../../method-map/derivePassports'
 import { useRefs } from '../../../method-map/useMethodMapState'
 import { usePassport } from '../../../passport/passportStore'
-import { Chip } from '../../ui'
+import { Chip } from '../../../../ui/kit'
 import type { WizardData } from '../useWizardData'
 import { useWizard, wizardActions } from '../wizardStore'
 

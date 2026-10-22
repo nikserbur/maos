@@ -18,6 +18,10 @@ export interface ThemeColors {
   /** Фон приложения — горизонт неба и туман 3D, фон карты. */
   readonly bgApp: string
   readonly bgPanel: string
+  /** Приглушённый текст — подписи городов на карте. */
+  readonly textMuted: string
+  /** Линии сетки графиков — сетка пола цеха (X1 §1 п. 3). */
+  readonly chartGrid: string
   /** Постоянные полюса бренда (одинаковы в обеих темах). */
   readonly ink: string
   readonly bone: string
@@ -37,6 +41,8 @@ type ScalarKey = Exclude<keyof ThemeColors, 'theme' | 'status' | 'chart'>
 const SCALAR_TOKENS: Readonly<Record<ScalarKey, string>> = {
   bgApp: '--bg-app',
   bgPanel: '--bg-panel',
+  textMuted: '--text-muted',
+  chartGrid: '--chart-grid',
   ink: '--ink',
   bone: '--bone',
   accent: '--accent',
@@ -61,13 +67,13 @@ const CHART_TOKENS = Array.from({ length: 8 }, (_, i) => `--chart-${i + 1}`)
  */
 const FALLBACK: Readonly<Record<Theme, ThemeColors>> = {
   dark: {
-    theme: 'dark', bgApp: '#0d0f16', bgPanel: '#13161d', ink: '#171a24', bone: '#f2eee6',
+    theme: 'dark', bgApp: '#0d0f16', bgPanel: '#13161d', textMuted: '#9b9ea7', chartGrid: '#282b33', ink: '#171a24', bone: '#f2eee6',
     accent: '#4366e8', focus: '#90aefe', ultramarine: '#4366e8', verdigris: '#58c8ad', ochre: '#e9af41',
     status: { running: '#5bcc80', setup: '#f2b036', idle: '#969eb2', down: '#f75e54' },
     chart: ['#4a81eb', '#efa831', '#47b497', '#dc5426', '#95d4f6', '#924da6', '#f3e657', '#83807a'],
   },
   light: {
-    theme: 'light', bgApp: '#f8f5ef', bgPanel: '#f0ece5', ink: '#171a24', bone: '#f2eee6',
+    theme: 'light', bgApp: '#f8f5ef', bgPanel: '#f0ece5', textMuted: '#5c606a', chartGrid: '#e4e1db', ink: '#171a24', bone: '#f2eee6',
     accent: '#3250d8', focus: '#3250d8', ultramarine: '#3250d8', verdigris: '#107460', ochre: '#955e00',
     status: { running: '#12773d', setup: '#c8800d', idle: '#5e636f', down: '#b7191c' },
     chart: ['#304ccc', '#cd821a', '#22876b', '#cf3b18', '#4a9dc5', '#6d2981', '#642627', '#888681'],

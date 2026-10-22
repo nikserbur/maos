@@ -1,0 +1,164 @@
+/*
+ * Поверхности экранов группы «Решения»: слоистые карточки, bento-сетка, KPI, легенда/подсказка
+ * старых графиков «Портфеля», поля и CTA. Префикс dk-; только токены, обе темы.
+ */
+/* ── Слоистая карточка ──────────────────────────────────────────────────── */
+.dk-card {
+  position: relative;
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 97%, var(--bone)), var(--bg-card));
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--bone) 5%, transparent), var(--shadow-1);
+}
+[data-theme='light'] .dk-card {
+  background: var(--bg-card);
+  border-color: var(--border);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--ink) 6%, transparent), var(--shadow-1);
+}
+.dk-card--hero {
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in oklch, var(--ultramarine) 14%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 97%, var(--bone)), var(--bg-card));
+  border-color: color-mix(in oklch, var(--ultramarine) 34%, var(--border));
+}
+[data-theme='light'] .dk-card--hero {
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in oklch, var(--ultramarine) 7%, transparent), transparent 60%),
+    var(--bg-card);
+}
+.dk-card--quiet {
+  background: color-mix(in oklch, var(--bg-panel) 70%, var(--bg-card));
+  box-shadow: none;
+}
+.dk-card--flush { padding: 0; overflow: hidden; }
+.dk-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.dk-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text);
+}
+.dk-card__meta { font-size: var(--fs-12); color: var(--text-muted); }
+
+/* ── Bento-сетка (12 колонок) ───────────────────────────────────────────── */
+.dk-bento {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.dk-span-3 { grid-column: span 3; }
+.dk-span-4 { grid-column: span 4; }
+.dk-span-5 { grid-column: span 5; }
+.dk-span-6 { grid-column: span 6; }
+.dk-span-7 { grid-column: span 7; }
+.dk-span-8 { grid-column: span 8; }
+.dk-span-12 { grid-column: 1 / -1; }
+.dk-stack { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+@media (max-width: 1180px) {
+  .dk-span-3, .dk-span-4, .dk-span-5 { grid-column: span 6; }
+  .dk-span-6, .dk-span-7, .dk-span-8 { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .dk-bento > * { grid-column: 1 / -1; }
+}
+
+/* ── KPI ────────────────────────────────────────────────────────────────── */
+.dk-kpi { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.dk-kpi__label { display: inline-flex; align-items: center; color: var(--text-muted); }
+.dk-kpi__value { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; color: var(--text); }
+.dk-kpi__value--md { font-size: var(--fs-20); font-weight: 400; line-height: 1.15; font-variant-numeric: tabular-nums lining-nums; }
+.dk-kpi__value--sm { font-size: var(--fs-16); font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums lining-nums; }
+.dk-kpi__sub { font-size: var(--fs-12); color: var(--text-muted); }
+.dk-tone-good { color: var(--status-running); }
+.dk-tone-bad { color: var(--status-down); }
+.dk-tone-warn { color: var(--status-setup); }
+
+/* ── Легенда графиков: чипы с точкой ────────────────────────────────────── */
+.dk-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: var(--fs-12); color: var(--text-muted); }
+.dk-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.dk-legend__sw { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--sw, var(--chart-1)); }
+.dk-legend__sw--line { width: 16px; height: 0; border-radius: 0; background: none; border-top: 2px solid var(--sw, var(--chart-1)); }
+.dk-legend__sw--dash { width: 16px; height: 0; border-radius: 0; background: none; border-top: 2px dashed var(--sw, var(--chart-1)); }
+.dk-legend__sw--area { width: 14px; height: 10px; border-radius: 2px; background: color-mix(in oklch, var(--sw, var(--chart-1)) 30%, transparent); }
+.dk-legend__sw--tri { width: 0; height: 0; border-radius: 0; background: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 9px solid var(--sw, var(--ochre-fill)); }
+.dk-legend__sw--sq { border-radius: 1px; }
+
+/* ── Подсказка графика (перекрестие) ────────────────────────────────────── */
+.dk-plot { position: relative; }
+.dk-plot svg { display: block; overflow: visible; }
+.dk-plot__hit { fill: transparent; cursor: crosshair; }
+.dk-tip {
+  position: absolute;
+  z-index: 2;
+  min-width: 156px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: maos-fade-in var(--dur-fast) var(--ease-out);
+}
+.dk-tip__title { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; font-weight: 600; color: var(--text); }
+.dk-tip__row { display: flex; justify-content: space-between; gap: var(--space-4); font-variant-numeric: tabular-nums; }
+.dk-tip__row b { font-weight: 500; color: var(--text); }
+.dk-axis { font-size: var(--fs-11); fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dk-axis--title { font-size: var(--fs-11); letter-spacing: 0.02em; }
+.dk-grid { stroke: var(--chart-grid); stroke-width: 1; stroke-dasharray: 2 4; }
+.dk-baseline { stroke: var(--chart-axis); stroke-width: 1; }
+.dk-cross { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+
+/* InfoTip внутри плотных строк: появляется на hover/фокусе строки. */
+.dk-reveal .infotip { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.dk-reveal:hover .infotip,
+.dk-reveal:focus-within .infotip,
+.dk-reveal .infotip[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .dk-reveal .infotip { opacity: 1; } }
+
+/* ── Поля ───────────────────────────────────────────────────────────────── */
+.dk-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dk-field__label { display: inline-flex; align-items: center; color: var(--text-muted); }
+.dk-input,
+.dk-select {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.dk-input:hover:not(:disabled), .dk-select:hover:not(:disabled) { border-color: var(--text-muted); }
+.dk-input:focus, .dk-select:focus { outline: none; border-color: var(--focus); box-shadow: var(--halo); }
+.dk-input::placeholder { color: var(--text-muted); opacity: 0.75; }
+
+/* Основная кнопка группы: лёгкий градиент ultramarine → hover. */
+.dk-cta.btn--primary {
+  height: 32px;
+  padding: 0 var(--space-4);
+  background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 82%, var(--accent-hover)), var(--accent));
+  box-shadow: var(--shadow-1), inset 0 1px 0 color-mix(in oklch, var(--bone) 16%, transparent);
+}
+.dk-cta.btn--primary:disabled { background: var(--bg-card); box-shadow: none; }
+

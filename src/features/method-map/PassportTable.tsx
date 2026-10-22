@@ -4,7 +4,7 @@
  * блока/подблока/формулы: значение · единица · происхождение · диапазон · «изм.».
  */
 import { buildHash } from '../../shell/router'
-import { fmtValue } from '../../explain/format'
+import { dateTime, fmtValue } from '../../explain/format'
 import { PROVENANCE_LABEL, STAGE_LABEL, stateFromProvenance } from './stateMeta'
 import { StateGlyph } from './StateGlyph'
 import type { ParameterPassport } from './types'
@@ -48,7 +48,7 @@ export function PassportCard({ passport }: { passport: ParameterPassport }) {
         {passport.sourceText && <div><dt>источник</dt><dd>{passport.sourceText}</dd></div>}
         {passport.fileRef && <div><dt>в коде</dt><dd className="mono">{passport.fileRef}</dd></div>}
         {range && <div><dt>разумный диапазон</dt><dd className="num">{range}{passport.outOfRange ? ' · ▲ вне' : ''}</dd></div>}
-        {passport.estimatedAt && <div><dt>обновлено</dt><dd className="num">{new Date(passport.estimatedAt).toLocaleString('ru-RU')}</dd></div>}
+        {passport.estimatedAt && <div><dt>обновлено</dt><dd className="num">{dateTime(passport.estimatedAt)}</dd></div>}
         {passport.id && <div><dt>id</dt><dd className="mono">{passport.id}</dd></div>}
       </dl>
       {passport.note && <p className="mm-pass__note">{passport.note}</p>}

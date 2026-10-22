@@ -1,3 +1,5 @@
+import type { Unit } from '../../explain/format'
+
 /**
  * Определения реестров НСИ. Ключи колонок (key) точно соответствуют
  * именам полей в ответах API — src/lib/api.ts.
@@ -5,6 +7,10 @@
 export interface RegistryColumn {
   key: string
   title: string
+  /** Числовая колонка: вправо, tabular-nums, сортировка по числу; форматируется через format.ts. */
+  num?: boolean
+  /** Единица для fmtValue (₽, ч, %, …). */
+  unit?: Unit
 }
 
 export interface RegistryDef {
@@ -12,6 +18,8 @@ export interface RegistryDef {
   title: string
   description: string
   columns: RegistryColumn[]
+  /** Группировать строки по значению колонки (липкие подзаголовки в таблице). */
+  groupBy?: string
 }
 
 export const REGISTRIES: RegistryDef[] = [
@@ -20,9 +28,9 @@ export const REGISTRIES: RegistryDef[] = [
     title: 'Типы оборудования',
     description:
       'Классы взаимозаменяемого оборудования. Задаются при внедрении и определяют параметры оборудования.',
+    groupBy: 'group_name',
     columns: [
       { key: 'name',           title: 'Наименование' },
-      { key: 'group_name',     title: 'Группа' },
       { key: 'kind',           title: '3D-вид' },
       { key: 'interchangeable', title: 'Взаимозам.' },
     ],
@@ -51,9 +59,9 @@ export const REGISTRIES: RegistryDef[] = [
       { key: 'role',       title: 'Роль' },
       { key: 'unit',       title: 'Ед.' },
       { key: 'parent_id',  title: 'Входит в' },
-      { key: 'stock',      title: 'Остаток' },
-      { key: 'demand_max', title: 'Спрос/год' },
-      { key: 'base_price', title: 'Цена, ₽' },
+      { key: 'stock',      title: 'Остаток', num: true },
+      { key: 'demand_max', title: 'Спрос в год', num: true },
+      { key: 'base_price', title: 'Цена', num: true, unit: '₽' },
       { key: 'purchased',  title: 'Покупное' },
     ],
   },
@@ -63,7 +71,6 @@ export const REGISTRIES: RegistryDef[] = [
     description:
       'Маршрут изготовления изделия — последовательность операций. Создание техкарты = задание последовательности операций.',
     columns: [
-      { key: 'id',         title: 'Код' },
       { key: 'name',       title: 'Название' },
       { key: 'product_id', title: 'Изделие' },
       { key: 'created_at', title: 'Создано' },
@@ -77,7 +84,7 @@ export const REGISTRIES: RegistryDef[] = [
     columns: [
       { key: 'id',            title: 'Код' },
       { key: 'name',          title: 'Наименование' },
-      { key: 'order_no',      title: '№' },
+      { key: 'order_no',      title: '№', num: true },
       { key: 'op_type',       title: 'Тип' },
       { key: 'wc_types',      title: 'Типы оборуд.' },
       { key: 'setup_required', title: 'Наладка' },
@@ -93,7 +100,7 @@ export const REGISTRIES: RegistryDef[] = [
       { key: 'first_name', title: 'Имя' },
       { key: 'org_unit',  title: 'Подразделение' },
       { key: 'position',  title: 'Должность' },
-      { key: 'grade',     title: 'Разряд' },
+      { key: 'grade',     title: 'Разряд', num: true },
     ],
   },
 ]

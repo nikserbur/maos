@@ -44,6 +44,17 @@ describe('resolveThemeColors', () => {
     expect(complete).toBe(true)
     expect(colors.status.running).toBe(oklchToHex(0.56, 0.2, 268))
     expect(colors.chart).toHaveLength(8)
+    expect(colors.textMuted).toBe(oklchToHex(0.56, 0.2, 268))
+    expect(colors.chartGrid).toBe(oklchToHex(0.56, 0.2, 268))
+  })
+
+  it('exposes map-label and floor-grid tokens with per-theme fallbacks', () => {
+    const dark = resolveThemeColors('dark', () => '').colors
+    const light = resolveThemeColors('light', () => '').colors
+    expect(dark.textMuted).toBe('#9b9ea7')
+    expect(dark.chartGrid).toBe('#282b33')
+    expect(light.textMuted).toBe('#5c606a')
+    expect(light.chartGrid).toBe('#e4e1db')
   })
 
   it('falls back to the theme table when a variable is missing or unparsable', () => {

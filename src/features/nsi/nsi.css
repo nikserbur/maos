@@ -1,129 +1,97 @@
+/* Справочники: список реестров слева — шапка кита, поиск и DataTable справа. Только токены. */
 .nsi {
   height: 100%;
   display: flex;
   min-height: 0;
 }
 
-/* Registry list */
+/* ── Список реестров ─────────────────────────────────────────────────────── */
 .nsi__list {
   width: 232px;
   flex: 0 0 auto;
-  padding: 12px 8px;
+  padding: var(--space-3) var(--space-2);
   overflow-y: auto;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
 }
 .nsi__list-title {
-  padding: 4px 8px 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2) var(--space-2);
   color: var(--text-muted);
 }
 .nsi__item {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
-  font-size: 14px;
+  padding: var(--space-2) 10px;
+  font-size: var(--fs-14);
   color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: var(--radius);
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 .nsi__item:hover {
   color: var(--text);
   background: var(--bg-input);
 }
+.nsi__item:focus-visible { outline: none; box-shadow: var(--halo); }
 .nsi__item--active {
   color: var(--text);
   background: var(--bg-card);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Registry panel */
+/* ── Панель реестра ──────────────────────────────────────────────────────── */
 .nsi__panel {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 24px;
+  padding: var(--space-5) var(--space-6);
   overflow: hidden;
-}
-.nsi__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-.nsi__title {
-  font-size: 20px;
-  font-weight: 600;
-}
-.nsi__desc {
-  margin-top: 4px;
-  max-width: 640px;
-  color: var(--text-secondary);
 }
 .nsi__toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 16px 0 12px;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 var(--space-3);
 }
-.nsi__search {
+.nsi__search-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   flex: 0 0 300px;
-  height: var(--control-compact);
+  height: var(--control);
   padding: 0 10px;
-  color: var(--text);
+  color: var(--text-muted);
   background: var(--bg-input);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
+.nsi__search-wrap:hover { border-color: var(--text-muted); }
+.nsi__search-wrap:focus-within { border-color: var(--focus); box-shadow: var(--halo); }
+.nsi__search {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.nsi__search::placeholder { color: var(--text-muted); opacity: 0.75; }
 .nsi__count {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
-.nsi__table-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-.nsi__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.nsi__table th {
-  position: sticky;
-  top: 0;
-  padding: 10px 12px;
-  text-align: left;
-  white-space: nowrap;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-.nsi__table td {
-  padding: 10px 12px;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
-}
-.nsi__empty td {
-  padding: 32px 12px;
-  text-align: center;
-  color: var(--text-muted);
-}
+.nsi__table-wrap { flex: 1 1 auto; }
 
 .nsi .btn:disabled,
 .nsi__search:disabled {
   opacity: 0.6;
   cursor: default;
 }
-
-/* Кликабельная строка реестра — открыть для редактирования */
-.nsi__row--clickable { cursor: pointer; }
-.nsi__row--clickable:hover td { background: var(--bg-input); }

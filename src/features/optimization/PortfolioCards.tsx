@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { OptMetrics, OptPortfolio } from '../../lib/api'
 import { money, num, pct, signed } from '../../explain/format'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
-import { StatusChip, rise } from './kit/kit'
+import { StatusChip, rise } from '../../ui/kit'
 import { ProfitDistribution, ProfitLegend } from './ProfitDistribution'
 import { objectiveLabel, type OptResultExt } from './optTypes'
 

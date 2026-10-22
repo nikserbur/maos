@@ -7,6 +7,7 @@
  * [К] и [НОРМ] никогда не становятся «оценено». Чистая функция.
  */
 import type { PassportParam } from '../../lib/api'
+import { num } from '../../explain/format'
 import type { DeriveInput } from './deriveInput'
 import { PARAM_LIST } from './params'
 import type { ParamDef, ParameterPassport, Provenance } from './types'
@@ -56,7 +57,7 @@ function liveValue(def: ParamDef, input: DeriveInput): number | string | null | 
     case 'macro.selection_crps': return macro ? macro.selection.choice.joint_standardized_CRPS_13months : undefined
     case 'macro.holdout_coverage80': {
       const v = macro?.holdout?.variables
-      return v ? `π ${v.cpi_yoy_pp.coverage80.toFixed(2)} · ставка ${v.key_pp.coverage80.toFixed(2)} · курс ${v.usd_rub.coverage80.toFixed(2)}` : undefined
+      return v ? `π ${num(v.cpi_yoy_pp.coverage80, 2)} · ставка ${num(v.key_pp.coverage80, 2)} · курс ${num(v.usd_rub.coverage80, 2)}` : undefined
     }
     case 'macro.ref_key': return macro ? macro.last_obs.key_pp : undefined
     case 'dist.beta_default': {

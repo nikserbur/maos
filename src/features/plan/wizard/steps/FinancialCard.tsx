@@ -11,7 +11,7 @@ import { money, num, pct } from '../../../../explain/format'
 import { ParamField } from '../../../../ui/ParamField'
 import { ProvenanceBadge } from '../../../../ui/ProvenanceBadge'
 import { saveFinParams, usePassport } from '../../../passport/passportStore'
-import { Chip } from '../../ui'
+import { Chip } from '../../../../ui/kit'
 import { effectiveFields, isChanged, useWizard, wizardActions } from '../wizardStore'
 
 type Draft = Partial<Pick<FinParams, 'c0' | 'credit_limit' | 'spread' | 'dpo_weeks' | 'pd' | 'repair_budget_weekly' | 'tau_v' | 'tau_p' | 'dscr_covenant'>>

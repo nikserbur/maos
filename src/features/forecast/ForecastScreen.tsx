@@ -6,7 +6,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { api, type ForecastResult, type ForecastProduct, type ForecastFit, type PriceScenario, type PriceDistribution } from '../../lib/api'
-import { BlockChips } from '../../ui/BlockChip'
+import { ScreenHeader } from '../../ui/kit'
 import { FanChart, type FanQuality } from '../../ui/FanChart'
 import { Legend, fanLegend } from '../../ui/charts'
 import { Icon } from '../../shell/icons'
@@ -107,17 +107,15 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distr
 
   return (
     <div className={`forecast${loading && res ? ' is-refetching' : ''}`}>
-      {!embedded && <header className="forecast__head">
-        <p className="text-caps forecast__eyebrow">Наблюдение · блок [7]</p>
-        <h1 className="forecast__title">
-          Мониторинг: внешние условия и прогноз цен
-          <span className="forecast__blocks"><BlockChips blocks={['monitoring', 'external']} /></span>
-        </h1>
-        <p className="forecast__desc">
-          История → тренд (EMD) + гармоники + случайный остаток (распределение по AIC) → Монте-Карло с учётом
-          макрофакторов. Веер — P10/P50/P90; кнопка «развернуть» на карточке — значения по месяцам и настройка цены.
-        </p>
-      </header>}
+      {!embedded && (
+        <ScreenHeader
+          eyebrow="Наблюдение · блок [7]"
+          title="Мониторинг: внешние условия и прогноз цен"
+          blocks={['monitoring', 'external']}
+          subtitle="История → тренд (EMD) + гармоники + случайный остаток (распределение по AIC) → Монте-Карло с учётом макрофакторов. Веер — P10/P50/P90; кнопка «развернуть» на карточке — значения по месяцам и настройка цены."
+          className="forecast__head"
+        />
+      )}
 
       {!embedded && <section className="forecast__controls" aria-label="Параметры прогноза">
         <label>Сценарий

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { num } from '../../../explain/format'
 import { api } from '../../../lib/api'
 import { useProducts } from '../useNsi'
 import type { EditCtx } from '../CreateDialog'
@@ -214,8 +215,8 @@ export function ProductForm({ onSuccess, edit }: Props) {
       )}
       {sellable && !compTooBig && availMarket !== null && (
         <span className="form__hint" style={demandClamped ? { color: 'var(--intent-warning)' } : undefined}>
-          Доступный вам рынок: <b>{availMarket.toLocaleString('ru')} {unit}/год</b> (ёмкость {nMkt.toLocaleString('ru')} − конкуренты {nComp.toLocaleString('ru')}).
-          {demandClamped && <> Спрос {nDem.toLocaleString('ru')} выше — фактически продастся не более {availMarket.toLocaleString('ru')}.</>}
+          Доступный вам рынок: <b>{num(availMarket, 0)} {unit}/год</b> (ёмкость {num(nMkt, 0)} − конкуренты {num(nComp, 0)}).
+          {demandClamped && <> Спрос {num(nDem, 0)} выше — фактически продастся не более {num(availMarket, 0)}.</>}
         </span>
       )}
 

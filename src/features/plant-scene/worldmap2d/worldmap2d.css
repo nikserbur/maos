@@ -9,6 +9,9 @@
 }
 .wm2d__map { position: absolute; inset: 0; }
 .wm2d .maplibregl-map { font-family: var(--font-sans); }
+/* Фолбэк для тёмной темы (X1 §1 п. 1): даже светлая подложка остаётся ≤ L 0,3 — фильтр
+   только на WebGL-холсте, пины/карточки (DOM-соседи холста) не затемняются. */
+:root:not([data-theme='light']) .wm2d .maplibregl-canvas { filter: saturate(0.6) brightness(0.85); }
 
 /* ── Пин-маркер ───────────────────────────────────────────────────────────────
    Корневой элемент маркера НЕ трогаем по position/transform — иначе перебиваем
@@ -59,7 +62,7 @@
   place-items: center;
   width: 15px;
   height: 15px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1;
   background: var(--ink);
   border-radius: var(--radius-pill);
@@ -169,3 +172,6 @@
 }
 .wm2d .maplibregl-ctrl-attrib a { color: var(--text-secondary); }
 .wm2d .maplibregl-ctrl-attrib.maplibregl-compact { background: var(--bg-elevated); }
+
+/* Контейнер React-портала карточки (MapCard) внутри popup — без собственного оформления. */
+.wm2d-card { display: block; }

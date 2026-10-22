@@ -95,7 +95,7 @@
 .pl-bar.is-pinned { outline: 1.5px dashed var(--accent-text); outline-offset: 1px; }
 .pl-bar__setup { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--status-setup) 0 2px, transparent 2px 4px); box-shadow: inset -1px 0 0 var(--status-setup); }
 .pl-bar__down { position: absolute; right: 0; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--status-down) 0 2px, var(--ink) 2px 4px); }
-.pl-bar__label { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 0; padding: 0 6px; overflow: hidden; font-size: 10.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
+.pl-bar__label { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 0; padding: 0 6px; overflow: hidden; font-size: var(--fs-11); font-weight: 500; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
 
 .pl-gtip {
   position: fixed; z-index: var(--z-popover); pointer-events: none; width: max-content; max-width: 280px;
@@ -105,8 +105,8 @@
 .pl-gtip__title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text); }
 .pl-gtip__op { margin-top: 2px; color: var(--text-secondary); }
 .pl-gtip__grid { display: grid; grid-template-columns: auto auto; gap: 2px var(--space-3); margin-top: var(--space-2); color: var(--text-muted); }
-.pl-gtip__grid dd { margin: 0; text-align: right; color: var(--text); font-family: var(--font-mono); font-size: 11px; }
-.pl-gtip .pl-chip { margin-top: var(--space-2); }
+.pl-gtip__grid dd { margin: 0; text-align: right; color: var(--text); font-family: var(--font-mono); font-size: var(--fs-11); }
+.pl-gtip .dk-chip { margin-top: var(--space-2); }
 
 .pl-gantt-full {
   position: fixed; inset: 0; z-index: var(--z-modal); display: flex; flex-direction: column; gap: var(--space-3);
@@ -122,14 +122,14 @@
 .pl-qc svg { display: block; width: 100%; height: auto; overflow: visible; }
 .pl-qc__gl { stroke: var(--chart-grid); stroke-width: 1; stroke-dasharray: 2 4; }
 .pl-qc__base { stroke: var(--chart-axis); stroke-width: 1; }
-.pl-qc__tick { fill: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
+.pl-qc__tick { fill: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-11); }
 .pl-qc__line { fill: none; stroke: var(--chart-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pl-qc__s0 { stop-color: var(--chart-2); stop-opacity: 0.28; }
 .pl-qc__s1 { stop-color: var(--chart-2); stop-opacity: 0; }
 .pl-qc__cross { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .pl-qc__dot { fill: var(--chart-2); stroke: var(--bg-card); stroke-width: 2; }
 .pl-qc__peak { fill: var(--status-down); stroke: var(--bg-card); stroke-width: 1.5; }
-.pl-qc__peak-label { fill: var(--status-down); font-family: var(--font-mono); font-size: 10px; font-weight: 600; }
+.pl-qc__peak-label { fill: var(--status-down); font-family: var(--font-mono); font-size: var(--fs-11); font-weight: 600; }
 .pl-qc__tip {
   position: absolute; top: var(--space-2); z-index: 5; pointer-events: none; min-width: 150px;
   padding: var(--space-2) var(--space-3); border-radius: var(--radius); font-size: var(--fs-12);
@@ -145,7 +145,7 @@
 .pl-load__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-secondary); }
 .pl-load__val { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .pl-load__val b { color: var(--text); font-weight: 600; }
-.pl-load__val .pl-chip { height: 18px; padding: 0 6px; font-size: var(--fs-11); }
+.pl-load__val .dk-chip { height: 18px; padding: 0 6px; font-size: var(--fs-11); }
 .pl-load__infra { margin-top: var(--space-2); padding: var(--space-3); border-radius: var(--radius); font-size: var(--fs-12); color: var(--text-muted); background: color-mix(in oklch, var(--status-idle) 8%, transparent); border: 1px dashed color-mix(in oklch, var(--status-idle) 35%, transparent); }
 .pl-load__infra b { color: var(--text-secondary); }
 

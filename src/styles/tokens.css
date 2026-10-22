@@ -54,14 +54,14 @@
   --status-running-solid: oklch(0.48 0.120 152); /* #10703a badge fill + white 6.2 */
   --status-down-solid: oklch(0.52 0.190 27); /* #be2323 badge fill + white 6.1 */
 
-  /* ── Charts (fill slots 1–6 first; all ≥3:1 vs card; min CVD ΔE 8.3) ─── */
+  /* ── Charts (slots 1–6 first; validator dataviz: 6 слотов PASS обе темы, 8-й — нейтральный «прочее») */
   --chart-1: oklch(0.62 0.17 262); /* #4a81eb ultramarine */
-  --chart-2: oklch(0.78 0.15 75); /* #efa831 ochre */
-  --chart-3: oklch(0.70 0.11 172); /* #47b497 verdigris */
+  --chart-2: oklch(0.66 0.15 75); /* #c78200 ochre — полоса светлоты 0.48–0.67 (G3b §3, валидатор dataviz) */
+  --chart-3: oklch(0.64 0.11 172); /* #2ea186 verdigris (G3b §3) */
   --chart-4: oklch(0.62 0.18 38); /* #dc5426 cinnabar */
-  --chart-5: oklch(0.84 0.08 232); /* #95d4f6 sky */
+  --chart-5: oklch(0.66 0.12 232); /* #2f9ecf sky — порог хроматичности и полоса светлоты (G3b §3) */
   --chart-6: oklch(0.54 0.15 318); /* #924da6 violet */
-  --chart-7: oklch(0.91 0.16 104); /* #f3e657 lemon */
+  --chart-7: oklch(0.64 0.18 104); /* #9f9000 lemon → olive, отделён от серого «прочее» (G3b §3) */
   --chart-8: oklch(0.60 0.01 85); /* #83807a grey «прочее» */
   --chart-other: var(--chart-8);
   --chart-grid: oklch(0.29 0.014 268); /* #282b33 gridlines */
@@ -74,6 +74,7 @@
     sans-serif; /* headings ≥ 20px only */
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono',
     Menlo, Consolas, monospace;
+  --fs-9: 9px; /* micro caps only: rail group labels, tip markers */
   --fs-11: 11px; /* caps labels, 600, +0.06em */
   --fs-12: 12px; /* meta */
   --fs-13: 13px; /* body, tables */
@@ -83,6 +84,7 @@
   --fs-24: 24px;
   --fs-32: 32px; /* KPI hero, Onest 300 */
   --fs-44: 44px; /* login display, Unbounded 300 */
+  --fs-code: 0.88em; /* inline code / units inside running text */
   --lh-body: 1.45;
   --lh-display: 1.15;
 
@@ -241,9 +243,9 @@
   --chart-2: oklch(0.67 0.14 68); /* #cd821a */
   --chart-3: oklch(0.56 0.10 170); /* #22876b */
   --chart-4: oklch(0.57 0.19 34); /* #cf3b18 */
-  --chart-5: oklch(0.66 0.10 232); /* #4a9dc5 */
-  --chart-6: oklch(0.42 0.15 318); /* #6d2981 */
-  --chart-7: oklch(0.36 0.09 22); /* #642627 oxblood */
+  --chart-5: oklch(0.58 0.13 232); /* #1c87b8 sky — контраст ≥ 3:1 (G3b §3) */
+  --chart-6: oklch(0.48 0.15 318); /* #8139a0 violet (G3b §3) */
+  --chart-7: oklch(0.46 0.14 30); /* #973023 oxblood, ΔE к фиолету ≥ 15 (G3b §3) */
   --chart-8: oklch(0.62 0.008 85); /* #888681 grey «прочее» */
   --chart-grid: oklch(0.91 0.008 85); /* #e4e1db */
   --chart-axis: oklch(0.66 0.014 268); /* #8e929b */

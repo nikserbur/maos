@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent } from 'react'
 import { api } from '../../../lib/api'
 import { navigateTo } from '../../../shell/router'
-import { PillTabs } from '../kit/PillTabs'
+import { PillTabs } from '../../../ui/kit'
 import { fmtValue } from '../../../explain/format'
 import { invalidateNsi, useOperations, useProducts, useWorkCenterTypes } from '../useNsi'
 import type { GraphCanvasHandle } from '../../../ui/graph-canvas'

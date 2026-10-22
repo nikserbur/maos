@@ -15,7 +15,7 @@ import { usePassport } from '../../../passport/passportStore'
 import { HeurSummary, HeuristicModal } from '../../HeuristicModal'
 import { loadPresets, savePresets, writeCurrentCrits, type HeuristicPresets, type PresetsSource } from '../../heuristicPresets'
 import { RULES, type Crit } from '../../types'
-import { Chip, Segmented } from '../../ui'
+import { Chip, Segmented } from '../../../../ui/kit'
 import type { WizardData } from '../useWizardData'
 import { effectiveFields, isChanged, useWizard, wizardActions, type CashCriterion, type RiskPreset } from '../wizardStore'
 

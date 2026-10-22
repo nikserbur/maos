@@ -161,18 +161,15 @@
 /* ── История прогонов: строка открывает прогон ───────────────────────────── */
 .pl-runs { display: flex; flex-direction: column; gap: var(--space-2); }
 .pl-runs__table td, .pl-runs__table th { white-space: nowrap; }
-.pl-runs__table .pl-chip { margin-left: 6px; }
-.pl-runs__table tr.is-openable { cursor: pointer; }
+.pl-runs__table .dk-chip { margin-left: 6px; }
 .pl-runs__open { width: 1%; }
-.pl-runs__open .pf-link { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
-.pl-runs__table tr.is-openable:hover .pl-runs__open .pf-link, .pl-runs__table tr.is-openable:focus-within .pl-runs__open .pf-link { opacity: 1; }
 .pl-runs__cmp { padding: var(--space-3); background: var(--bg-panel); border-radius: var(--radius); }
 .pl-history { margin-top: var(--space-2); }
 
 /* ── Результат: липкое оглавление top:0 внутри скролл-контейнера .plan (X1 §5 п. 1) ── */
 .pl-result { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
 .pl-result__body { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.pl-result__sec, .pl-result .pl-sec { scroll-margin-top: 48px; }
+.pl-result__sec, .pl-result .dk-sec { scroll-margin-top: 48px; }
 .pl-toc {
   position: sticky; top: calc(var(--space-6) * -1); z-index: 20; display: flex; gap: 2px; flex-wrap: wrap;
   margin: 0 calc(var(--space-6) * -1); padding: var(--space-2) var(--space-6);

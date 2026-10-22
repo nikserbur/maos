@@ -5,7 +5,7 @@
 import type { SchedImprover } from '../../lib/api'
 import { hours, num } from '../../explain/format'
 import { InfoTip } from '../../ui/InfoTip'
-import { Chip } from './ui'
+import { Chip } from '../../ui/kit'
 
 /** Координата SVG с точностью 0,1 px (без toFixed — числа только через format.ts). */
 const px = (v: number) => Math.round(v * 10) / 10

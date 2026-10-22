@@ -1,0 +1,90 @@
+/*
+ * Таблица данных и секции единого кита: липкая caps-шапка, сортировка, числовые колонки вправо,
+ * липкие подзаголовки групп, кликабельные строки. Префикс dk-; только токены, обе темы.
+ */
+/* ── Секция экрана: заголовок · мета · инструменты ──────────────────────── */
+.dk-sec { display: flex; flex-direction: column; gap: var(--space-3); }
+.dk-sec__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.dk-sec__title { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-16); font-weight: 600; color: var(--text); }
+.dk-sec__meta { color: var(--text-muted); font-size: var(--fs-12); }
+.dk-sec__tools { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* ── Таблица данных: без вертикалей, липкая caps-шапка, сортировка, группы ── */
+.dk-table-wrap { position: relative; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--radius-lg); }
+.dk-table-wrap--framed { border: 1px solid var(--border); }
+.dk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-13); }
+.dk-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px var(--space-3);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-feature-settings: 'case';
+  text-align: left;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.dk-table th.num, .dk-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums slashed-zero; }
+.dk-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px calc(var(--space-2) * -1);
+  padding: 4px var(--space-2);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.dk-table th.num .dk-table__sort { flex-direction: row-reverse; }
+.dk-table__sort:hover { color: var(--text); background: var(--bg-hover); }
+.dk-table__sort:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-table__arrow { width: 0.9em; color: var(--text-disabled); font-family: var(--font-mono); }
+th[aria-sort='ascending'] .dk-table__arrow, th[aria-sort='descending'] .dk-table__arrow { color: var(--accent-text); }
+.dk-table td {
+  padding: 9px var(--space-3);
+  color: var(--text-secondary);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  vertical-align: middle;
+}
+.dk-table--tight td { padding: 6px var(--space-3); }
+.dk-table td.dk-td-name, .dk-table th[scope='row'] { color: var(--text); font-weight: 500; text-align: left; }
+.dk-table tbody th[scope='row'] { padding: 9px var(--space-3); font-size: var(--fs-13); font-weight: 500; color: var(--text); text-align: left; background: transparent; border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent); vertical-align: middle; }
+.dk-table tbody tr.is-open td, .dk-table tbody tr.is-open th[scope='row'] { background: color-mix(in oklch, var(--accent) 9%, transparent); color: var(--text); }
+.dk-table--tight th[scope='row'] { padding: 6px var(--space-3); }
+.dk-table tbody tr:last-child td, .dk-table tbody tr:last-child th[scope='row'] { border-bottom: 0; }
+.dk-table tbody tr { transition: background-color var(--dur-fast) var(--ease-out); }
+.dk-table tbody tr:hover td, .dk-table tbody tr:hover th[scope='row'] { background: var(--bg-hover); }
+.dk-table tr.is-click { cursor: pointer; }
+.dk-table tr.is-click:hover td, .dk-table tr.is-click:hover th[scope='row'] { color: var(--text); }
+.dk-table tr.is-click:focus-visible { outline: none; }
+.dk-table tr.is-click:focus-visible td, .dk-table tr.is-click:focus-visible th[scope='row'] { background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--focus); }
+.dk-table tr.is-chosen td, .dk-table tr.is-chosen th[scope='row'] { background: color-mix(in oklch, var(--accent) 9%, transparent); color: var(--text); }
+.dk-table tr.is-alert td:first-child, .dk-table tr.is-alert th[scope='row'] { box-shadow: inset 2px 0 0 var(--status-down); }
+.dk-table__group th {
+  position: sticky;
+  top: 34px;
+  z-index: 1;
+  padding: 6px var(--space-3);
+  font-size: var(--fs-11);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--bg-panel) 60%, var(--bg-card));
+  border-bottom: 1px solid var(--border);
+}
+.dk-table__group th .num { margin-left: var(--space-2); color: var(--text-muted); font-weight: 500; letter-spacing: 0; }
+.dk-table td.dk-td-empty { padding: var(--space-5) var(--space-3); color: var(--text-muted); }
+.dk-table__hover { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.dk-table tr:hover .dk-table__hover, .dk-table tr:focus-within .dk-table__hover { opacity: 1; }
+@media (hover: none) { .dk-table__hover { opacity: 1; } }
+

@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
 import { api, type Machine, type Worker, type WorkCenterType } from '../../lib/api'
+import { num } from '../../explain/format'
+import { DataTable, ErrorBanner, type DataColumn } from '../../ui/kit'
 import { laborBottlenecks, type LaborLoad } from './labor'
+
+const COLUMNS: DataColumn<LaborLoad>[] = [
+  { key: 'typeName', title: 'Тип оборудования', rowHeader: true },
+  { key: 'machines', title: 'Станков', num: true, render: (l) => num(l.machines, 0) },
+  { key: 'operators', title: 'Операторов', num: true, render: (l) => num(l.operators, 0) },
+  { key: 'cap', title: 'Параллельно', num: true, render: (l) => `${num(l.cap, 0)} из ${num(l.machines, 0)}` },
+]
 
 /**
  * Предупреждение «не хватает операторов»: по каждому типу РЦ сравнивает число
  * станков с числом допущенных рабочих. Если рабочих меньше — лишние станки
  * простаивают в ожидании оператора (параллелизм ограничен числом операторов).
- * Тихо ничего не рисует, если узких мест по труду нет.
+ * Тихо ничего не рисует, если узких мест по труду нет. Баннер и таблица — из кита.
  */
 export function LaborWarning({ compact = false }: { compact?: boolean }) {
   const [rows, setRows] = useState<LaborLoad[] | null>(null)
@@ -22,40 +31,12 @@ export function LaborWarning({ compact = false }: { compact?: boolean }) {
   if (!rows || rows.length === 0) return null
 
   return (
-    <div style={{
-      padding: compact ? '9px 11px' : '11px 14px', borderRadius: compact ? 10 : 12,
-      background: 'color-mix(in srgb, var(--intent-warning, #d9822b) 12%, var(--bg-card, #12161c))',
-      border: '1px solid color-mix(in srgb, var(--intent-warning, #d9822b) 55%, transparent)',
-      fontSize: compact ? 12 : 12.5,
-    }}>
-      <b style={{ color: 'var(--intent-warning, #d9822b)' }}>⚠ Не хватает операторов</b>
-      <p style={{ margin: '3px 0 6px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-        Станки этих типов не смогут работать все сразу — параллелизм ограничен числом
-        допущенных рабочих. Добавьте операторам допуск (реестр «Рабочие» → галочки допусков)
-        или введите новых.
-      </p>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? 11 : 11.5 }}>
-        <thead>
-          <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
-            <th style={{ padding: '2px 4px' }}>Тип оборудования</th>
-            <th style={{ padding: '2px 4px', textAlign: 'center' }}>Станков</th>
-            <th style={{ padding: '2px 4px', textAlign: 'center' }}>Операторов</th>
-            <th style={{ padding: '2px 4px', textAlign: 'center' }}>Параллельно</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((l) => (
-            <tr key={l.typeId} style={{ borderTop: '1px solid var(--border)' }}>
-              <td style={{ padding: '3px 4px' }}>{l.typeName}</td>
-              <td style={{ padding: '3px 4px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{l.machines}</td>
-              <td style={{ padding: '3px 4px', textAlign: 'center', color: 'var(--intent-danger)', fontVariantNumeric: 'tabular-nums' }}>{l.operators}</td>
-              <td style={{ padding: '3px 4px', textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                {l.cap} из {l.machines}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ErrorBanner
+      tone="setup"
+      title="Не хватает операторов"
+      message="Станки этих типов не смогут работать все сразу — параллелизм ограничен числом допущенных рабочих. Добавьте операторам допуск (реестр «Рабочие» → галочки допусков) или введите новых."
+    >
+      <DataTable columns={COLUMNS} rows={rows} rowKey={(l) => l.typeId} tight={compact} caption="Нехватка операторов по типам оборудования" />
+    </ErrorBanner>
   )
 }
