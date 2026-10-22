@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { ContactShadows, Grid, OrbitControls } from '@react-three/drei'
 import { useThemeColors, type ThemeColors } from './themeColors'
+import { scenePalette } from './scenePalette'
 
 interface SceneEnvironmentProps {
   /** true — внутри цеха (закрытая площадка); false — открытая территория с травой. */
@@ -9,16 +10,6 @@ interface SceneEnvironmentProps {
   /** Габарит сцены (расстояние до самого дальнего объекта) — туман/тени под него. */
   extent?: number
 }
-
-/**
- * Декоративные цвета земли/сетки (материалы 3D, AUDIT §5 — исключение из правила токенов).
- * В тёмной теме газон глубже и спокойнее, чтобы не спорить с сумеречным небом.
- */
-const GROUND = {
-  dark: { lawn: '#3d5640', lawnCell: '#40573f', lawnSection: '#4f6b4a' },
-  light: { lawn: '#4a6d45', lawnCell: '#46603f', lawnSection: '#5b7a52' },
-  floor: '#2b2f36',
-} as const
 
 /** Небо = вертикальный градиент по направлению взгляда: горизонт = туман = --bg-app. */
 interface SkyPalette { horizon: THREE.Color; glow: THREE.Color; zenith: THREE.Color }
@@ -102,8 +93,8 @@ function SkyDome({ palette }: { palette: SkyPalette }) {
 export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironmentProps) {
   const colors = useThemeColors()
   const palette = useMemo(() => skyPalette(colors, indoor), [colors, indoor])
-  const lawn = GROUND[colors.theme]
-  const ground = indoor ? GROUND.floor : lawn.lawn
+  const pal = scenePalette(colors)
+  const ground = indoor ? pal.floor : pal.lawn
   const horizon = colors.bgApp
 
   // Туман: завод по умолчанию чёткий (near ≈ за самым дальним цехом от камеры),
@@ -127,19 +118,19 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
 
       {/* В цехе — РОВНЫЙ свет (ряды верхних ламп), почти без теней: яркие
           hemisphere+ambient. На улице — солнечный ключевой свет с тенями. */}
-      <hemisphereLight args={[indoor ? '#dfe8f5' : '#eaf4ff', ground, indoor ? 0.85 : 0.9]} />
+      <hemisphereLight args={[pal.n[8], ground, indoor ? 0.85 : 0.9]} />
       <ambientLight intensity={indoor ? 0.6 : 0.45} />
       {/* Направленный свет с картой теней — ТОЛЬКО на улице. В цехе карта теней
           давала «частокол» акне на тёмном полу под скользящим углом; заводской
           цех освещён равномерно, поэтому indoor тени не строим вовсе. Внутри
           оставляем слабый направленный свет БЕЗ теней — только для объёма граней. */}
       {indoor ? (
-        <directionalLight position={[24, 34, 16]} intensity={0.5} color="#fff6e8" />
+        <directionalLight position={[24, 34, 16]} intensity={0.5} color={pal.lamp} />
       ) : (
         <directionalLight
           position={[30, 40, 18]}
           intensity={1.35}
-          color="#fff6e8"
+          color={pal.lamp}
           castShadow
           shadow-mapSize={[4096, 4096]}
           shadow-bias={-0.0002}
@@ -167,10 +158,10 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
         cellThickness={0.5}
         /* В цехе сетка пола приглушена до уровня сетки графиков `--chart-grid`
            (X1 §1 п. 3): станки — главное, а не клетки под ними. */
-        cellColor={indoor ? colors.chartGrid : lawn.lawnCell}
+        cellColor={indoor ? colors.chartGrid : pal.lawnCell}
         sectionSize={10}
         sectionThickness={1}
-        sectionColor={indoor ? colors.chartGrid : lawn.lawnSection}
+        sectionColor={indoor ? colors.chartGrid : pal.lawnSection}
         fadeDistance={extent * 2.2}
         fadeStrength={1.6}
       />
@@ -180,7 +171,7 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
           дорог/площадок (иначе z-fighting). */}
       {!indoor && (
         <ContactShadows position={[0, 0.008, 0]} scale={shadowScale} far={22} blur={1.8} opacity={0.32}
-                        color="#000000" resolution={512} />
+                        color={pal.n[0]} resolution={512} />
       )}
 
       <OrbitControls makeDefault target={[1, 1, 0]} enablePan

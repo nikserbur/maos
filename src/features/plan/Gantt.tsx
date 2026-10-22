@@ -4,7 +4,7 @@
  * от начала горизонта (часы без даты старта), зум/fit, сворачиваемые группы, подсказка (GanttTip),
  * drag&drop полосы = ручная правка «не раньше» (пин). Разметка — классы `pl-gantt*` из charts.css.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { ScheduleResult } from '../../lib/api'
 import { hours, num } from '../../explain/format'
 import { Icon } from '../../shell/icons'
@@ -45,6 +45,8 @@ export function Gantt({ result, pins, onPin, startDate = null }: GanttProps) {
   const [hover, setHover] = useState<{ x: number; y: number; g: PlanBar } | null>(null)
   const [drag, setDrag] = useState<{ idx: number; startX: number; orig: number } | null>(null)
   const [dragDx, setDragDx] = useState(0)
+  /** Клавиатурный курсор по полосам дорожки: ←/→ — соседняя операция, Home/End, Esc — снять (X1 §7 A11y). */
+  const [kbd, setKbd] = useState<{ machine: string; idx: number } | null>(null)
 
   const palette = useMemo(() => buildPalette(result.program, bars), [result.program, bars])
   const effGrouping: GanttGrouping = hasShops ? grouping : 'wc'
@@ -85,6 +87,28 @@ export function Gantt({ result, pins, onPin, startDate = null }: GanttProps) {
     if (drag && onPin) onPin(drag.idx, Math.max(0, drag.orig + dragDx / effPx))
     setDrag(null); setDragDx(0)
   }
+  // Клавиатура на дорожке: подсказка якорится к полосе по геометрии дорожки (как перекрестие графиков).
+  const showKbd = (track: HTMLElement, mc: { id: string; bars: PlanBar[] }, idx: number) => {
+    const g = mc.bars[idx]
+    if (!g) return
+    const rect = track.getBoundingClientRect()
+    setKbd({ machine: mc.id, idx })
+    setHover({ x: rect.left + startOf(g) * effPx + Math.min(40, (g.end - g.start) * effPx / 2), y: rect.top + 10, g })
+  }
+  const onTrackKey = (e: KeyboardEvent<HTMLElement>, mc: { id: string; bars: PlanBar[] }) => {
+    const n = mc.bars.length
+    if (n === 0) return
+    const cur = kbd?.machine === mc.id ? kbd.idx : -1
+    let next: number | null = null
+    if (e.key === 'ArrowRight') next = Math.min(n - 1, cur + 1)
+    else if (e.key === 'ArrowLeft') next = Math.max(0, (cur < 0 ? n : cur) - 1)
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = n - 1
+    else if (e.key === 'Escape') { setKbd(null); setHover(null); e.preventDefault(); return }
+    else return
+    e.preventDefault()
+    showKbd(e.currentTarget, mc, next)
+  }
 
   const toolbar = (
     <div className="pl-gtb">
@@ -109,20 +133,21 @@ export function Gantt({ result, pins, onPin, startDate = null }: GanttProps) {
   )
 
   const chart = (
-    <div ref={scrollRef} className={`pl-gantt${full ? ' pl-gantt--full' : ''}`}
+    <div ref={scrollRef} className={`pl-gantt${full ? ' pl-gantt--full' : ''}`} role="figure"
+         aria-label={`Диаграмма Ганта: ${num(bars.length, 0)} операций на ${groups.reduce((a, g) => a + g.machines.length, 0)} станках, длина ${hours(makespan, 0)}`}
          onMouseLeave={() => { setHover(null); if (drag) endDrag() }}
          onMouseMove={(e) => { if (drag) { setDragDx(e.clientX - drag.startX); setHover(null) } }}
          onMouseUp={() => { if (drag) endDrag() }}>
       <div className="pl-gantt__inner" style={{ width: LANE_W + trackW }}>
         <div className="pl-gantt__axis">
-          <span className="pl-gantt__corner text-caps" style={{ width: LANE_W }}>{start ? 'дата' : 'часы'}</span>
+          <span className="pl-gantt__corner text-caps">{start ? 'дата' : 'часы'}</span>
           <span className="pl-gantt__ticks" style={{ width: trackW }}>
             {ticks.map((t) => (
               <span key={t} className={`pl-gantt__tick${isMajorTick(t, step) ? ' is-major' : ''}`} style={{ left: t * effPx }}>{fmtTickDate(t, step, start)}</span>
             ))}
           </span>
         </div>
-        <div className="pl-gantt__grid" style={{ left: LANE_W, width: trackW }} aria-hidden="true">
+        <div className="pl-gantt__grid" style={{ width: trackW }} aria-hidden="true">
           {ticks.map((t) => <span key={t} className={`pl-gantt__gl${isMajorTick(t, step) ? ' is-major' : ''}`} style={{ left: t * effPx }} />)}
         </div>
         {groups.map((grp) => {
@@ -130,7 +155,7 @@ export function Gantt({ result, pins, onPin, startDate = null }: GanttProps) {
           return (
             <div key={grp.wc}>
               <div className="pl-grow pl-grow--head">
-                <span className="pl-glane" style={{ width: LANE_W }}>
+                <span className="pl-glane">
                   <button type="button" className="pl-ghead" aria-expanded={open} onClick={() => toggle(grp.wc)} title={grp.name}>
                     <span className="pl-ghead__caret" aria-hidden="true">▾</span>
                     <span>{grp.name}</span>
@@ -141,14 +166,16 @@ export function Gantt({ result, pins, onPin, startDate = null }: GanttProps) {
               </div>
               {open && grp.machines.map((mc) => (
                 <div className="pl-grow" key={mc.id}>
-                  <span className="pl-glane" style={{ width: LANE_W }} title={mc.name}><span>{mc.name}</span></span>
-                  <span className="pl-gtrack" style={{ width: trackW }}>
-                    {mc.bars.map((g) => {
+                  <span className="pl-glane" title={mc.name}><span>{mc.name}</span></span>
+                  <span className="pl-gtrack" style={{ width: trackW }} tabIndex={0} role="group"
+                        aria-label={`${mc.name}: ${num(mc.bars.length, 0)} операций; стрелки — по операциям`}
+                        onKeyDown={(e) => onTrackKey(e, mc)} onBlur={() => { if (kbd?.machine === mc.id) { setKbd(null); setHover(null) } }}>
+                    {mc.bars.map((g, bi) => {
                       const w = Math.max(MIN_BAR_PX, (g.end - g.start) * effPx)
                       const s = startOf(g)
                       const pinned = pins.has(g.job_idx)
                       const seg = barSegments(g)
-                      const cls = `pl-bar ${slotClass(palette.slotOf(g.product_id))}${g.late ? ' is-late' : ''}${pinned ? ' is-pinned' : ''}${onPin ? ' is-draggable' : ''}${drag?.idx === g.job_idx ? ' is-dragging' : ''}`
+                      const cls = `pl-bar ${slotClass(palette.slotOf(g.product_id))}${g.late ? ' is-late' : ''}${pinned ? ' is-pinned' : ''}${onPin ? ' is-draggable' : ''}${drag?.idx === g.job_idx ? ' is-dragging' : ''}${kbd?.machine === mc.id && kbd.idx === bi ? ' is-kbd' : ''}`
                       const geom: CSSProperties = { left: s * effPx, width: w }
                       return (
                         <span key={g.job_idx} className={cls} style={geom}

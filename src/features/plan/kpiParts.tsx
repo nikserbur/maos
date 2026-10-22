@@ -1,10 +1,12 @@
 /**
  * Детали KPI-плиток: плитка с подписью и «i», крупное значение с единицей, полоса хвоста
- * риска (дет. ○ · E ● · CVaR ▲ · худший ■), разложение фонда станков, спарклайн очереди.
+ * риска (дет. ○ · E ● · CVaR ▲ · худший ■) и разложение фонда станков — на примитивах
+ * chart-системы (`RangeStrip`, `StackBar`), без inline-стилей.
  */
 import type { ReactNode } from 'react'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
-import { NBSP, num } from '../../explain/format'
+import { hours, num } from '../../explain/format'
+import { RangeStrip, StackBar, type RangeMark, type StackSegment } from '../../ui/charts'
 
 /* ── Плитка ──────────────────────────────────────────────────────────────── */
 
@@ -60,34 +62,23 @@ export function FmtValue({ text, size }: { text: string; size?: 'hero' | 'md' })
 
 interface TailProps { det: number; mean: number; cvar: number; worst: number }
 
+/** Подписи: E — герой выше; числом только CVaR и худший (X1: ≤ 14 чисел выше сгиба). */
 export function TailStrip({ det, mean, cvar, worst }: TailProps) {
-  const lo = Math.min(det, mean, cvar)
-  const hi = Math.max(worst, cvar, mean)
-  const span = Math.max(1e-9, hi - lo)
-  const pos = (v: number) => 3 + ((v - lo) / span) * 94
-  const marks = [
-    { key: 'det', v: det, cls: 'glyph-idle', label: 'детерминированное' },
-    { key: 'cvar', v: cvar, cls: 'glyph-setup', label: 'CVaR' },
-    { key: 'worst', v: worst, cls: 'glyph-down', label: 'худший прогон' },
+  const marks: RangeMark[] = [
+    { key: 'det', value: det, label: 'детерминированное (Гант)', glyph: 'ring', tone: 'idle' },
+    { key: 'mean', value: mean, label: 'E[Cmax]', glyph: 'dot', tone: 'accent' },
+    { key: 'cvar', value: cvar, label: 'CVaR', glyph: 'triangle', tone: 'warn', showValue: true },
+    { key: 'worst', value: worst, label: 'худший прогон', glyph: 'square', tone: 'danger', showValue: true },
   ]
   return (
     <div>
-      <div className="pl-tail" aria-hidden="true">
-        <span className="pl-tail__track" />
-        {worst > cvar && <span className="pl-tail__zone" style={{ left: `${pos(cvar)}%`, width: `${pos(worst) - pos(cvar)}%` }} />}
-        {marks.map((m) => (
-          <span key={m.key} className={`pl-tail__m ${m.cls}`} style={{ left: `${pos(m.v)}%` }} title={`${m.label}: ${num(m.v, 1)} ч`} />
-        ))}
-        <span className="pl-tail__m is-mean" style={{ left: `${pos(mean)}%` }} title={`E[Cmax]: ${num(mean, 1)} ч`}>
-          <span className="pl-tail__dot" />
-        </span>
-      </div>
-      {/* Подписи: E — герой выше, детерминированное — по наведению; числом только CVaR и худший (X1: ≤ 14 чисел). */}
+      <RangeStrip marks={marks} fmt={(v) => num(v, 1)} zone={worst > cvar ? [cvar, worst] : undefined} zoneLabel="хвост CVaR…худший"
+        ariaLabel={`Длина расписания: детерминированная ${hours(det)}, E ${hours(mean)}, CVaR ${hours(cvar)}, худший прогон ${hours(worst)}`} />
       <div className="pl-fund-legend">
-        <span className="glyph-idle" title={`детерминированное (Гант): ${num(det, 1)} ч`}>дет.</span>
+        <span className="glyph-idle" title={`детерминированное (Гант): ${hours(det)}`}>дет.</span>
         <span className="pl-tail__key">E[Cmax]</span>
-        <span className="glyph-setup">CVaR <span className="num">{num(cvar, 1)}</span></span>
-        <span className="glyph-down">худший <span className="num">{num(worst, 1)}</span>{NBSP}ч</span>
+        <span className="glyph-setup">CVaR</span>
+        <span className="glyph-down">худший, ч</span>
       </div>
     </div>
   )
@@ -97,49 +88,15 @@ export function TailStrip({ det, mean, cvar, worst }: TailProps) {
 
 export interface FundParts { busy: number; setup: number; down: number; idle: number }
 
+/** Состояния станка — цвета статусов вместе с глифами (● ▲ ■ ○), ТО/ремонт — ещё и штриховкой. */
 export function FundBar({ busy, setup, down, idle }: FundParts) {
   const total = busy + setup + down + idle
   if (total <= 0) return null
-  const w = (v: number) => `${(v / total) * 100}%`
-  const parts = [
-    { key: 'busy', v: busy, cls: 'pl-fund__busy', glyph: 'glyph-running', label: 'обработка' },
-    { key: 'setup', v: setup, cls: 'pl-fund__setup', glyph: 'glyph-setup', label: 'переналадки' },
-    { key: 'down', v: down, cls: 'pl-fund__down', glyph: 'glyph-down', label: 'ТО и ремонты' },
-    { key: 'idle', v: idle, cls: 'pl-fund__idle', glyph: 'glyph-idle', label: 'простой' },
-  ]
-  return (
-    <>
-      <div className="pl-fund" role="img"
-           aria-label={parts.map((p) => `${p.label} ${num(p.v, 0)} ч`).join(', ')}>
-        {parts.map((p) => p.v > 0 && <span key={p.key} className={p.cls} style={{ width: w(p.v) }} />)}
-      </div>
-      <div className="pl-fund-legend">
-        {parts.map((p) => (
-          <span key={p.key} className={p.glyph}>{p.label} <span className="num">{num(p.v, 0)}{NBSP}ч</span></span>
-        ))}
-        <span>фонд <span className="num">{num(total, 0)}{NBSP}ч</span></span>
-      </div>
-    </>
-  )
-}
-
-/* ── Спарклайн ───────────────────────────────────────────────────────────── */
-
-export function Sparkline({ points, label }: { points: ReadonlyArray<{ t: number; queued: number }>; label: string }) {
-  if (points.length < 2) return null
-  const tMax = Math.max(1e-9, ...points.map((p) => p.t))
-  const qMax = Math.max(1, ...points.map((p) => p.queued))
-  const xy = points.map((p) => `${(p.t / tMax) * 100},${32 - (p.queued / qMax) * 30}`)
-  return (
-    <svg className="pl-spark" viewBox="0 0 100 34" preserveAspectRatio="none" role="img" aria-label={label}>
-      <defs>
-        <linearGradient id="pl-spark-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" className="pl-spark__s0" />
-          <stop offset="100%" className="pl-spark__s1" />
-        </linearGradient>
-      </defs>
-      <polygon className="pl-spark__area" points={`0,34 ${xy.join(' ')} 100,34`} />
-      <polyline className="pl-spark__line" points={xy.join(' ')} />
-    </svg>
-  )
+  const segments: StackSegment[] = [
+    { key: 'busy', label: 'обработка', value: busy, color: 'var(--status-running)', glyph: 'glyph-running' },
+    { key: 'setup', label: 'переналадки', value: setup, color: 'var(--status-setup)', glyph: 'glyph-setup' },
+    { key: 'down', label: 'ТО и ремонты', value: down, color: 'var(--status-down)', glyph: 'glyph-down', hatched: true },
+    { key: 'idle', label: 'простой', value: idle, color: 'var(--chart-grid)', glyph: 'glyph-idle' },
+  ].filter((s) => s.value > 0)
+  return <StackBar segments={segments} fmt={(v) => hours(v, 0)} total={`фонд ${hours(total, 0)}`} ariaLabel={`Фонд станков ${hours(total, 0)}: ${segments.map((s) => `${s.label} ${hours(s.value, 0)}`).join(', ')}`} />
 }

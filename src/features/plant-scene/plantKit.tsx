@@ -18,82 +18,91 @@
  * Сплошная геометрия получает castShadow (площадки/подошвы — ещё receiveShadow).
  */
 import type { ReactNode } from 'react'
+import type { ScenePalette } from './scenePalette'
+import { useScenePalette, themed } from './scenePalette'
 
 type Vec3 = [number, number, number]
 
 /* ──────────────────────────────────────────────────────────────────────────
    ЗАФИКСИРОВАННАЯ ПАЛИТРА (clean-isometric). Не «плыть» от этих семейств.
    ────────────────────────────────────────────────────────────────────────── */
-const C = {
+const colorsOf = (pal: ScenePalette) => ({
   // Резервуары / ёмкости / сферы
-  tankWhite:  '#eceae4',
-  tankSilver: '#d7dade',
-  tankCream:  '#e7e0d2',
-  tankBlue:   '#cdd9e2',
+  tankWhite:  pal.n[8],
+  tankSilver: pal.n[7],
+  tankCream:  pal.n[7],
+  tankBlue:   pal.blue.l,
   // Полированная сталь колонн/аппаратов
-  polished:   '#c9ced6',
+  polished:   pal.n[7],
   // Конструктивная сталь (рамы, лестницы, перила, опоры, сёдла, ноги)
-  steelMid:   '#7c848c',
-  steelDark:  '#3b424a',
+  steelMid:   pal.n[4],
+  steelDark:  pal.n[1],
   // Технологические трубы (цветовая кодировка)
-  pipeBlue:   '#3f7cc0',
-  pipeOrange: '#e0863a',
-  pipeYellow: '#e2b93a',
-  pipeGreen:  '#4f9e6a',
-  pipeGray:   '#9aa1a8',
+  pipeBlue:   pal.blue.m,
+  pipeOrange: pal.orange.m,
+  pipeYellow: pal.yellow.l,
+  pipeGreen:  pal.green.m,
+  pipeGray:   pal.n[5],
   // Бетон (подошвы, плинтусы, обваловка, дороги)
-  concreteLt: '#b7bbc0',
-  concreteMd: '#6a7076',
+  concreteLt: pal.n[6],
+  concreteMd: pal.n[3],
   // Фасады
-  facadeWhite: '#e8e6e0',
-  facadeGray:  '#c2bcb2',
-  facadeOrange:'#d98b45',
+  facadeWhite: pal.n[8],
+  facadeGray:  pal.n[6],
+  facadeOrange:pal.orange.l,
   // Освещённые окна
-  glass:      '#223240',
-  glassGlow:  '#e0b64a',
-  frame:      '#444b53',
+  glass:      pal.n[1],
+  glassGlow:  pal.lamp,
+  frame:      pal.n[2],
   // Безопасность / полосатые трубы
-  red:        '#c23a2f',
+  red:        pal.red.m,
   // Кровля
-  roof:       '#3d444d',
-  hvac:       '#9aa1a8',
-} as const
+  roof:       pal.n[2],
+  hvac:       pal.n[5],
+} as const)
+const useC = themed(colorsOf)
 
 /**
  * `M` — материал-хелпер. Каждое поле возвращает набор пропсов, которые
  * раскладываются прямо в <meshStandardMaterial {...M.tankWhite()} />. Держит
  * материалы слегка чистыми/глянцевыми ради «3D-render» вида; без текстур.
  */
-export const M = {
-  tankWhite:  () => ({ color: C.tankWhite,  roughness: 0.5,  metalness: 0.15 }),
-  tankSilver: () => ({ color: C.tankSilver, roughness: 0.5,  metalness: 0.15 }),
-  tankCream:  () => ({ color: C.tankCream,  roughness: 0.5,  metalness: 0.15 }),
-  tankBlue:   () => ({ color: C.tankBlue,   roughness: 0.5,  metalness: 0.15 }),
-  polished:   () => ({ color: C.polished,   roughness: 0.35, metalness: 0.4 }),
-  steel:      () => ({ color: C.steelMid,   roughness: 0.55, metalness: 0.35 }),
-  steelDark:  () => ({ color: C.steelDark,  roughness: 0.55, metalness: 0.35 }),
-  pipeBlue:   () => ({ color: C.pipeBlue,   roughness: 0.45, metalness: 0.35 }),
-  pipeOrange: () => ({ color: C.pipeOrange, roughness: 0.45, metalness: 0.35 }),
-  pipeYellow: () => ({ color: C.pipeYellow, roughness: 0.45, metalness: 0.35 }),
-  pipeGreen:  () => ({ color: C.pipeGreen,  roughness: 0.45, metalness: 0.35 }),
-  pipeGray:   () => ({ color: C.pipeGray,   roughness: 0.45, metalness: 0.35 }),
-  concreteLt: () => ({ color: C.concreteLt, roughness: 0.95 }),
-  concreteMd: () => ({ color: C.concreteMd, roughness: 0.95 }),
-  facadeWhite:() => ({ color: C.facadeWhite, roughness: 0.8 }),
-  facadeGray: () => ({ color: C.facadeGray,  roughness: 0.8 }),
-  facadeOrange:() => ({ color: C.facadeOrange, roughness: 0.8 }),
-  window:     (glow = 0.5) => ({
-    color: C.glass, emissive: C.glassGlow, emissiveIntensity: glow,
-    roughness: 0.2, metalness: 0.3,
-  }),
-  frame:      () => ({ color: C.frame, roughness: 0.55, metalness: 0.3 }),
-  red:        () => ({ color: C.red, roughness: 0.5, metalness: 0.1 }),
-  roof:       () => ({ color: C.roof, roughness: 0.9 }),
-  hvac:       () => ({ color: C.hvac, roughness: 0.6, metalness: 0.25 }),
-} as const
+export const useM = themed((pal) => {
+  const C = colorsOf(pal)
+  return {
+    tankWhite:  () => ({ color: C.tankWhite,  roughness: 0.5,  metalness: 0.15 }),
+    tankSilver: () => ({ color: C.tankSilver, roughness: 0.5,  metalness: 0.15 }),
+    tankCream:  () => ({ color: C.tankCream,  roughness: 0.5,  metalness: 0.15 }),
+    tankBlue:   () => ({ color: C.tankBlue,   roughness: 0.5,  metalness: 0.15 }),
+    polished:   () => ({ color: C.polished,   roughness: 0.35, metalness: 0.4 }),
+    steel:      () => ({ color: C.steelMid,   roughness: 0.55, metalness: 0.35 }),
+    steelDark:  () => ({ color: C.steelDark,  roughness: 0.55, metalness: 0.35 }),
+    pipeBlue:   () => ({ color: C.pipeBlue,   roughness: 0.45, metalness: 0.35 }),
+    pipeOrange: () => ({ color: C.pipeOrange, roughness: 0.45, metalness: 0.35 }),
+    pipeYellow: () => ({ color: C.pipeYellow, roughness: 0.45, metalness: 0.35 }),
+    pipeGreen:  () => ({ color: C.pipeGreen,  roughness: 0.45, metalness: 0.35 }),
+    pipeGray:   () => ({ color: C.pipeGray,   roughness: 0.45, metalness: 0.35 }),
+    concreteLt: () => ({ color: C.concreteLt, roughness: 0.95 }),
+    concreteMd: () => ({ color: C.concreteMd, roughness: 0.95 }),
+    facadeWhite:() => ({ color: C.facadeWhite, roughness: 0.8 }),
+    facadeGray: () => ({ color: C.facadeGray,  roughness: 0.8 }),
+    facadeOrange:() => ({ color: C.facadeOrange, roughness: 0.8 }),
+    window:     (glow = 0.5) => ({
+      color: C.glass, emissive: C.glassGlow, emissiveIntensity: glow,
+      roughness: 0.2, metalness: 0.3,
+    }),
+    frame:      () => ({ color: C.frame, roughness: 0.55, metalness: 0.3 }),
+    red:        () => ({ color: C.red, roughness: 0.5, metalness: 0.1 }),
+    roof:       () => ({ color: C.roof, roughness: 0.9 }),
+    hvac:       () => ({ color: C.hvac, roughness: 0.6, metalness: 0.25 }),
+  } as const
+})
 
 /** Цвета технологических труб по индексу — для параллельных ниток. */
-const PIPE_COLORS = [C.pipeBlue, C.pipeOrange, C.pipeYellow, C.pipeGreen, C.pipeGray] as const
+const usePipeColors = themed((pal) => {
+  const C = colorsOf(pal)
+  return [C.pipeBlue, C.pipeOrange, C.pipeYellow, C.pipeGreen, C.pipeGray] as const
+})
 
 /** Детерминированный хэш 0..1 из числового seed и ключа. */
 function hash01(seed: number, key: number): number {
@@ -114,6 +123,7 @@ function hash01(seed: number, key: number): number {
 export function Railing({
   len, h = 0.95, position = [0, 0, 0], rotation = [0, 0, 0],
 }: { len: number; h?: number; position?: Vec3; rotation?: [number, number, number] }) {
+  const M = useM()
   const n = Math.max(2, Math.round(len))
   const posts = Array.from({ length: n + 1 }, (_, i) => -len / 2 + (i / n) * len)
   return (
@@ -140,6 +150,7 @@ export function Railing({
 export function Platform({
   w, d, h = 0.95, position = [0, 0, 0],
 }: { w: number; d: number; h?: number; position?: Vec3 }) {
+  const M = useM()
   return (
     <group position={position}>
       <mesh castShadow receiveShadow>
@@ -160,6 +171,7 @@ export function Platform({
 export function RingPlatform({
   r, h = 0.95, width = 0.7, position = [0, 0, 0],
 }: { r: number; h?: number; width?: number; position?: Vec3 }) {
+  const M = useM()
   const rr = r + width / 2
   const n = Math.max(8, Math.round(rr * 3))
   const posts = Array.from({ length: n }, (_, i) => (i / n) * Math.PI * 2)
@@ -190,6 +202,7 @@ export function RingPlatform({
 export function CagedLadder({
   h, position = [0, 0, 0], rotation = [0, 0, 0],
 }: { h: number; position?: Vec3; rotation?: [number, number, number] }) {
+  const M = useM()
   const rungN = Math.max(3, Math.round(h / 0.3))
   const hoopN = Math.max(2, Math.round(h / 1.2))
   const width = 0.42
@@ -224,6 +237,7 @@ export function CagedLadder({
 export function SwitchbackStair({
   h, w = 1.0, position = [0, 0, 0], rotation = [0, 0, 0],
 }: { h: number; w?: number; position?: Vec3; rotation?: [number, number, number] }) {
+  const M = useM()
   const flights = Math.max(2, Math.round(h / 1.6))
   const rise = h / flights
   const run = w * 1.6
@@ -303,6 +317,7 @@ export function SwitchbackStair({
 export function Nozzle({
   dir = '+z', r = 0.12, len = 0.4, position = [0, 0, 0],
 }: { dir?: '+x' | '-x' | '+z' | '-z'; r?: number; len?: number; position?: Vec3 }) {
+  const M = useM()
   const rot: [number, number, number] =
     dir === '+z' ? [Math.PI / 2, 0, 0]
     : dir === '-z' ? [-Math.PI / 2, 0, 0]
@@ -325,8 +340,11 @@ export function Nozzle({
  * маховик смотрит вверх; локально труба идёт вдоль X.
  */
 export function Valve({
-  r = 0.14, position = [0, 0, 0], color = C.pipeBlue,
+  r = 0.14, position = [0, 0, 0], color: colorProp,
 }: { r?: number; position?: Vec3; color?: string }) {
+  const C = useC()
+  const M = useM()
+  const color = colorProp ?? C.pipeBlue
   return (
     <group position={position}>
       <mesh castShadow>
@@ -350,8 +368,10 @@ export function Valve({
  * точке x=0.
  */
 export function PipeElbow({
-  r = 0.12, y = 3, run = 0.8, position = [0, 0, 0], color = C.pipeBlue,
+  r = 0.12, y = 3, run = 0.8, position = [0, 0, 0], color: colorProp,
 }: { r?: number; y?: number; run?: number; position?: Vec3; color?: string }) {
+  const C = useC()
+  const color = colorProp ?? C.pipeBlue
   const mat = { color, roughness: 0.45, metalness: 0.35 }
   return (
     <group position={position}>
@@ -380,6 +400,7 @@ export function PipeElbow({
 export function DistillationColumn({
   h = 8, r = 0.7, position = [0, 0, 0],
 }: { h?: number; r?: number; position?: Vec3 }) {
+  const M = useM()
   const skirtH = h * 0.12
   const bodyY = skirtH
   const bodyH = h - skirtH
@@ -420,6 +441,7 @@ export function DistillationColumn({
  * верхняя площадка + короткая лестница-клетка.
  */
 export function SphereVessel({ r = 1.6, position = [0, 0, 0] }: { r?: number; position?: Vec3 }) {
+  const M = useM()
   const legN = 8
   const legH = r * 0.9
   const cy = legH + r
@@ -464,6 +486,7 @@ export function SphereVessel({ r = 1.6, position = [0, 0, 0] }: { r?: number; po
 export function StorageTank({
   r = 2, h = 3, position = [0, 0, 0],
 }: { r?: number; h?: number; position?: Vec3 }) {
+  const M = useM()
   return (
     <group position={position}>
       <mesh position={[0, 0.1, 0]} receiveShadow>
@@ -491,6 +514,7 @@ export function StorageTank({
 export function TankFarm({
   n = 3, r = 1.6, h = 3, gap = 1.2, position = [0, 0, 0],
 }: { n?: number; r?: number; h?: number; gap?: number; position?: Vec3 }) {
+  const M = useM()
   const step = r * 2 + gap
   const span = (n - 1) * step
   const bundR = span / 2 + r + 0.8
@@ -523,6 +547,7 @@ export function TankFarm({
 export function HorizontalDrum({
   len = 3, r = 0.6, position = [0, 0, 0],
 }: { len?: number; r?: number; position?: Vec3 }) {
+  const M = useM()
   const cy = r + 0.5
   return (
     <group position={position}>
@@ -555,6 +580,7 @@ export function HorizontalDrum({
 export function Reactor({
   h = 4, r = 1.1, position = [0, 0, 0],
 }: { h?: number; r?: number; position?: Vec3 }) {
+  const M = useM()
   const skirtH = h * 0.22
   const coneH = r * 0.9
   const bodyH = h - skirtH - coneH
@@ -590,6 +616,8 @@ export function Reactor({
 export function PipeBridge({
   len = 12, pipes = 4, y = 3, position = [0, 0, 0],
 }: { len?: number; pipes?: number; y?: number; position?: Vec3 }) {
+  const M = useM()
+  const PIPE_COLORS = usePipeColors()
   const bays = Math.max(2, Math.round(len / 4))
   const spacing = 0.32
   const offs = Array.from({ length: pipes }, (_, i) => (i - (pipes - 1) / 2) * spacing)
@@ -632,6 +660,8 @@ export function PipeBridge({
 export function GroundPipeRack({
   len = 8, pipes = 3, y = 0.6, position = [0, 0, 0],
 }: { len?: number; pipes?: number; y?: number; position?: Vec3 }) {
+  const M = useM()
+  const PIPE_COLORS = usePipeColors()
   const sleepers = Math.max(2, Math.round(len / 3))
   const spacing = 0.3
   const offs = Array.from({ length: pipes }, (_, i) => (i - (pipes - 1) / 2) * spacing)
@@ -665,6 +695,8 @@ export function GroundPipeRack({
 export function CoolingTower({
   r = 2.4, h = 5, steam = true, position = [0, 0, 0],
 }: { r?: number; h?: number; steam?: boolean; position?: Vec3 }) {
+  const pal = useScenePalette()
+  const M = useM()
   const waist = r * 0.6
   const topR = r * 0.78
   const lowerH = h * 0.62
@@ -692,7 +724,7 @@ export function CoolingTower({
       {steam && (
         <mesh position={[0, h + 0.4, 0]}>
           <cylinderGeometry args={[topR * 0.85, topR * 0.6, 0.15, 24]} />
-          <meshStandardMaterial color="#f2f4f6" transparent opacity={0.12} roughness={1} />
+          <meshStandardMaterial color={pal.n[8]} transparent opacity={0.12} roughness={1} />
         </mesh>
       )}
     </group>
@@ -707,6 +739,7 @@ export function CoolingTower({
 export function Chimney({
   h = 8, r = 0.5, striped = true, flare = false, position = [0, 0, 0],
 }: { h?: number; r?: number; striped?: boolean; flare?: boolean; position?: Vec3 }) {
+  const M = useM()
   const bands = striped ? Math.max(4, Math.round(h / 1.2)) : 1
   const bandH = h / bands
   return (
@@ -753,6 +786,7 @@ export function Chimney({
 export function HotStoves({
   n = 3, r = 1, h = 5, gap = 0.6, position = [0, 0, 0],
 }: { n?: number; r?: number; h?: number; gap?: number; position?: Vec3 }) {
+  const M = useM()
   const step = r * 2 + gap
   const span = (n - 1) * step
   return (
@@ -796,6 +830,7 @@ export function HotStoves({
 function WindowGrid({
   w, h, rows, cols, glow = 0.5,
 }: { w: number; h: number; rows: number; cols: number; glow?: number }) {
+  const M = useM()
   const cw = w / cols, ch = h / rows
   const panes: ReactNode[] = []
   for (let ry = 0; ry < rows; ry++) {
@@ -826,6 +861,7 @@ function WindowGrid({
 export function ControlBuilding({
   w = 6, d = 4, h = 4, position = [0, 0, 0],
 }: { w?: number; d?: number; h?: number; position?: Vec3 }) {
+  const M = useM()
   return (
     <group position={position}>
       <mesh position={[0, 0.1, 0]} receiveShadow>
@@ -875,6 +911,7 @@ export function ControlBuilding({
 export function SiloGroup({
   n = 4, r = 1, h = 5, gap = 0.5, position = [0, 0, 0],
 }: { n?: number; r?: number; h?: number; gap?: number; position?: Vec3 }) {
+  const M = useM()
   const step = r * 2 + gap
   const span = (n - 1) * step
   const hopperH = r * 0.9
@@ -921,6 +958,7 @@ export function SiloGroup({
 export function ConveyorGallery({
   len = 8, rise = 4, position = [0, 0, 0],
 }: { len?: number; rise?: number; position?: Vec3 }) {
+  const M = useM()
   const angle = Math.atan2(rise, len)
   const diag = Math.hypot(len, rise)
   const supports = Math.max(2, Math.round(len / 3))
@@ -958,6 +996,7 @@ export function ConveyorGallery({
 export function SteelHall({
   w = 10, d = 7, h = 5, sawtooth = false, position = [0, 0, 0],
 }: { w?: number; d?: number; h?: number; sawtooth?: boolean; position?: Vec3 }) {
+  const M = useM()
   return (
     <group position={position}>
       <mesh position={[0, 0.1, 0]} receiveShadow>
@@ -1005,6 +1044,8 @@ export function SteelHall({
 export function Substation({
   w = 4, d = 3, n = 2, position = [0, 0, 0],
 }: { w?: number; d?: number; n?: number; position?: Vec3 }) {
+  const pal = useScenePalette()
+  const M = useM()
   const step = w / n
   return (
     <group position={position}>
@@ -1028,7 +1069,7 @@ export function Substation({
                 {[0, 1, 2].map((k) => (
                   <mesh key={k} position={[0, 0.15 + k * 0.18, 0]}>
                     <cylinderGeometry args={[0.1 - k * 0.02, 0.12 - k * 0.02, 0.14, 10]} />
-                    <meshStandardMaterial color="#d8d4cc" roughness={0.6} metalness={0.1} />
+                    <meshStandardMaterial color={pal.n[7]} roughness={0.6} metalness={0.1} />
                   </mesh>
                 ))}
               </group>

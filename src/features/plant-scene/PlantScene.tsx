@@ -75,7 +75,7 @@ export default function PlantScene() {
   const editing  = state.mode === 'edit'
 
   // Уровень иерархии определяется типом узла в currentParentId:
-  //   null → МИР (WorldMap); refType 'factory' → ПЛОЩАДКА (Facility);
+  //   null → МИР (WorldMap2D); refType 'factory' → ПЛОЩАДКА (Facility);
   //   refType 'shop' → ЦЕХ (WorkshopInterior).
   const currentNode = state.graph.nodes.find((n) => n.id === state.currentParentId) ?? null
   const level: 'world' | 'site' | 'shop' =

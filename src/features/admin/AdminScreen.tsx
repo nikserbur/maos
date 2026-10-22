@@ -8,8 +8,10 @@ const ACTION_LABEL: Record<string, string> = {
   CREATE: 'создание', UPDATE: 'изменение', DELETE: 'удаление',
   RUN: 'прогон', LOGIN: 'вход',
 }
-/** Тип действия — чип с глифом (никогда цветной текст): удаление ■, создание ●, прогон ◆. */
-const ACTION_TONE: Record<string, ChipTone> = { DELETE: 'down', CREATE: 'running', RUN: 'info', UPDATE: 'idle', LOGIN: 'idle' }
+/** Цвет несёт только «удаление» (необратимое); остальные типы действий — нейтральный чип. */
+const ACTION_TONE: Record<string, ChipTone> = { DELETE: 'down' }
+/** Сколько прав роли показывать чипами; остальные — «+N». */
+const PERMS_SHOWN = 3
 
 type ActionFilter = 'all' | 'CREATE' | 'UPDATE' | 'DELETE' | 'RUN' | 'LOGIN'
 const FILTERS: ReadonlyArray<{ id: ActionFilter; label: string }> = [
@@ -93,14 +95,22 @@ export function AdminScreen() {
 
         <section className="dk-card adm__panel" aria-labelledby="adm-roles-t">
           <h2 className="adm__panel-title text-caps" id="adm-roles-t">Роли и права (RBAC)</h2>
-          {roles.map((r) => (
-            <div className="adm__role" key={r.id}>
-              <div className="adm__role-name">{r.name}</div>
-              <div className="adm__perms">
-                {perms(r.permissions).map((p) => <span className="adm__perm mono" key={p}>{p}</span>)}
+          {roles.map((r) => {
+            const list = perms(r.permissions)
+            return (
+              <div className="adm__role" key={r.id}>
+                <div className="adm__role-name">{r.name}</div>
+                <div className="adm__perms">
+                  {list.slice(0, PERMS_SHOWN).map((p) => <span className="adm__perm mono" key={p}>{p}</span>)}
+                  {list.length > PERMS_SHOWN && (
+                    <span className="adm__perm adm__perm--more mono" title={list.slice(PERMS_SHOWN).join(', ')}>
+                      +{list.length - PERMS_SHOWN}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {roles.length === 0 && <div className="adm__empty">Нет ролей.</div>}
         </section>
       </div>

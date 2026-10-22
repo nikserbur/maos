@@ -3,19 +3,11 @@ import type { SceneNode } from './graph/sceneModel'
 import { Decorations } from './Decorations'
 import { RailYard } from './RailYard'
 import { railSpur } from './siteLayout'
+import { useScenePalette } from './scenePalette'
 
 const FENCE_H = 2.4
-const PANEL_COLOR = '#3a4048'          // тёмное полупрозрачное полотно (рабица)
-const RAIL_COLOR = '#7c848c'           // металлический профиль перил
-const POST_COLOR = '#4c5550'           // столб (металл)
-const PLINTH_COLOR = '#8b8f92'         // бетонный цоколь понизу
 /** Отступ забора от крайних цехов (крупные здания + проезд по периметру). */
 const MARGIN = 16
-
-/** Тон газона — база из SceneEnvironment (#4a6d45), плюс две вариации для «полос покоса». */
-const GRASS_BASE = '#4a6d45'
-const GRASS_LIGHT = '#567c4d'
-const GRASS_DARK = '#41603d'
 
 /** Детерминированный псевдослучайный шум из числа (Math.random недоступен). */
 const hash = (i: number) => { const s = Math.sin(i * 127.1 + 11.7) * 43758.5453; return s - Math.floor(s) }
@@ -27,19 +19,20 @@ const hash2 = (a: number, b: number) => hash(a * 73.13 + b * 19.71 + 3.7)
 interface PostProps { x: number; z: number; h?: number; w?: number }
 /** Столб забора: бетонный цоколь + металлическая стойка + шапка. */
 function Post({ x, z, h = FENCE_H + 0.5, w = 0.26 }: PostProps) {
+  const pal = useScenePalette()
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
         <boxGeometry args={[w + 0.14, 0.36, w + 0.14]} />
-        <meshStandardMaterial color={PLINTH_COLOR} roughness={0.95} />
+        <meshStandardMaterial color={pal.n[4]} roughness={0.95} />
       </mesh>
       <mesh position={[0, h / 2 + 0.2, 0]} castShadow>
         <boxGeometry args={[w, h, w]} />
-        <meshStandardMaterial color={POST_COLOR} metalness={0.55} roughness={0.5} />
+        <meshStandardMaterial color={pal.n[2]} metalness={0.55} roughness={0.5} />
       </mesh>
       <mesh position={[0, h + 0.24, 0]} castShadow>
         <boxGeometry args={[w + 0.08, 0.1, w + 0.08]} />
-        <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial color={pal.n[4]} metalness={0.6} roughness={0.4} />
       </mesh>
     </group>
   )
@@ -47,6 +40,7 @@ function Post({ x, z, h = FENCE_H + 0.5, w = 0.26 }: PostProps) {
 
 /** Прямой пролёт забора: цоколь + полотно-рабица + верхний/нижний рельс + столбы. */
 function FenceRun({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: number }) {
+  const pal = useScenePalette()
   const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
   const len = Math.hypot(x2 - x1, z2 - z1)
   const angle = Math.atan2(-(z2 - z1), x2 - x1)
@@ -58,21 +52,21 @@ function FenceRun({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: 
       {/* бетонный цоколь по всей длине */}
       <mesh position={[cx, 0.22, cz]} rotation={[0, angle, 0]} castShadow receiveShadow>
         <boxGeometry args={[len, 0.44, 0.18]} />
-        <meshStandardMaterial color={PLINTH_COLOR} roughness={0.95} />
+        <meshStandardMaterial color={pal.n[4]} roughness={0.95} />
       </mesh>
       {/* полотно-рабица — тонкая полупрозрачная тёмная панель */}
       <mesh position={[cx, FENCE_H / 2 + 0.5, cz]} rotation={[0, angle, 0]}>
         <boxGeometry args={[len, FENCE_H - 0.1, 0.04]} />
-        <meshStandardMaterial color={PANEL_COLOR} metalness={0.5} roughness={0.55} transparent opacity={0.55} />
+        <meshStandardMaterial color={pal.n[1]} metalness={0.5} roughness={0.55} transparent opacity={0.55} />
       </mesh>
       {/* нижний и верхний металлические рельсы */}
       <mesh position={[cx, 0.55, cz]} rotation={[0, angle, 0]}>
         <boxGeometry args={[len, 0.08, 0.1]} />
-        <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial color={pal.n[4]} metalness={0.6} roughness={0.4} />
       </mesh>
       <mesh position={[cx, FENCE_H + 0.35, cz]} rotation={[0, angle, 0]} castShadow>
         <boxGeometry args={[len, 0.12, 0.14]} />
-        <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial color={pal.n[4]} metalness={0.6} roughness={0.4} />
       </mesh>
       {posts.map(([px, pz], i) => <Post key={i} x={px} z={pz} />)}
     </group>
@@ -81,6 +75,7 @@ function FenceRun({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: 
 
 /** Сторожевая вышка в углу. */
 function WatchTower({ x, z }: { x: number; z: number }) {
+  const pal = useScenePalette()
   const legH = 7
   const legs: [number, number][] = [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]]
   return (
@@ -88,20 +83,20 @@ function WatchTower({ x, z }: { x: number; z: number }) {
       {legs.map(([lx, lz], i) => (
         <mesh key={i} position={[lx, legH / 2, lz]} castShadow>
           <boxGeometry args={[0.3, legH, 0.3]} />
-          <meshStandardMaterial color={POST_COLOR} metalness={0.4} roughness={0.6} />
+          <meshStandardMaterial color={pal.n[2]} metalness={0.4} roughness={0.6} />
         </mesh>
       ))}
       <mesh position={[0, legH + 1.2, 0]} castShadow>
         <boxGeometry args={[3.2, 2.4, 3.2]} />
-        <meshStandardMaterial color="#7c8a76" metalness={0.3} roughness={0.7} />
+        <meshStandardMaterial color={pal.n[4]} metalness={0.3} roughness={0.7} />
       </mesh>
       <mesh position={[0, legH + 3, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
         <coneGeometry args={[2.6, 1.6, 4]} />
-        <meshStandardMaterial color="#564b3a" roughness={0.9} />
+        <meshStandardMaterial color={pal.n[2]} roughness={0.9} />
       </mesh>
       <mesh position={[0, legH, 0]}>
         <boxGeometry args={[3.6, 0.2, 3.6]} />
-        <meshStandardMaterial color="#4c5550" />
+        <meshStandardMaterial color={pal.n[2]} />
       </mesh>
     </group>
   )
@@ -109,12 +104,12 @@ function WatchTower({ x, z }: { x: number; z: number }) {
 
 // ─── Пешеходная тропинка (тонкая, светлая — отличается от дорог) ──────────────
 // Дороги (въезд + подъезд к парковке) вынесены в FlowLinks — здесь только пешеходная тропа.
-const PATH_COLOR = '#b9b2a2'       // светлый песчано-серый (брусчатка/грунт), не асфальт
 const PATH_W = 1.2                 // узкая: пешеходная, уже проезжей части
 const PATH_Y = 0.045               // чуть выше газона (0.02), но ниже дорожного полотна (0.05)
 
 /** Один прямой отрезок тропинки: тонкий светлый плоский квад (без осевой/бордюров). */
 function PathSegment({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: number }) {
+  const pal = useScenePalette()
   const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
   const len = Math.hypot(x2 - x1, z2 - z1)
   const angle = Math.atan2(-(z2 - z1), x2 - x1)
@@ -125,7 +120,7 @@ function PathSegment({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z
           сегменты неверно → «рваная» тропинка. Чуть длиннее — перекрытие стыков. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[len + PATH_W, PATH_W]} />
-        <meshStandardMaterial color={PATH_COLOR} roughness={1} />
+        <meshStandardMaterial color={pal.n[6]} roughness={1} />
       </mesh>
     </group>
   )
@@ -137,6 +132,7 @@ function PathSegment({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z
  * Тоньше и светлее дорог, без жёлтой осевой и бордюров.
  */
 function Footpath({ points }: { points: [number, number][] }) {
+  const pal = useScenePalette()
   return (
     <group>
       {points.slice(1).map(([x2, z2], i) => {
@@ -146,7 +142,7 @@ function Footpath({ points }: { points: [number, number][] }) {
       {points.slice(1, -1).map(([x, z], i) => (
         <mesh key={`pj${i}`} position={[x, PATH_Y, z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[PATH_W, PATH_W]} />
-          <meshStandardMaterial color={PATH_COLOR} roughness={1} />
+          <meshStandardMaterial color={pal.n[6]} roughness={1} />
         </mesh>
       ))}
     </group>
@@ -177,26 +173,27 @@ function Leaf({ p, r, color, flat = 1 }: { p: [number, number, number]; r: numbe
 
 /** ДУБ: толстый сужающийся ствол с парой развилок, широкая округлая плотная крона. */
 function Oak() {
+  const pal = useScenePalette()
   const branches: { p: [number, number, number]; rot: [number, number, number]; l: number }[] = [
     { p: [0.32, 1.55, 0.1], rot: [0, 0, -0.7], l: 0.9 },
     { p: [-0.3, 1.75, -0.15], rot: [0, 0, 0.75], l: 0.8 },
   ]
   // широкая округлая крона — перекрывающиеся сферы разного размера/тона
   const clusters: { p: [number, number, number]; r: number; c: string }[] = [
-    { p: [0, 2.55, 0], r: 1.55, c: '#3f6b3a' },
-    { p: [1.05, 2.25, 0.55], r: 0.95, c: '#37622f' },
-    { p: [-1.0, 2.3, -0.5], r: 0.98, c: '#487a40' },
-    { p: [0.45, 3.15, -0.65], r: 0.85, c: '#436f3c' },
-    { p: [-0.55, 3.05, 0.7], r: 0.82, c: '#356030' },
-    { p: [0.15, 2.15, 1.0], r: 0.78, c: '#446f3d' },
+    { p: [0, 2.55, 0], r: 1.55, c: pal.green.m },
+    { p: [1.05, 2.25, 0.55], r: 0.95, c: pal.green.d },
+    { p: [-1.0, 2.3, -0.5], r: 0.98, c: pal.green.l },
+    { p: [0.45, 3.15, -0.65], r: 0.85, c: pal.green.m },
+    { p: [-0.55, 3.05, 0.7], r: 0.82, c: pal.green.d },
+    { p: [0.15, 2.15, 1.0], r: 0.78, c: pal.green.m },
   ]
   return (
     <>
-      <Trunk h={1.7} r={0.32} color="#5a4a36" />
+      <Trunk h={1.7} r={0.32} color={pal.orange.d} />
       {branches.map((b, i) => (
         <mesh key={i} position={b.p} rotation={b.rot} castShadow>
           <cylinderGeometry args={[0.06, 0.13, b.l, 5]} />
-          <meshStandardMaterial color="#5a4a36" roughness={1} />
+          <meshStandardMaterial color={pal.orange.d} roughness={1} />
         </mesh>
       ))}
       {clusters.map((c, i) => <Leaf key={i} p={c.p} r={c.r} color={c.c} />)}
@@ -206,18 +203,19 @@ function Oak() {
 
 /** КЛЁН: тонкий ствол, высокая ярусная округлая крона, тёплый зелёный + осенние акценты. */
 function Maple() {
+  const pal = useScenePalette()
   // слегка приплюснутые (flat<1) слои клёна, поднимаются ярусами
   const clusters: { p: [number, number, number]; r: number; c: string; flat: number }[] = [
-    { p: [0, 2.35, 0], r: 1.25, c: '#5c8a3e', flat: 0.85 },
-    { p: [0.7, 2.6, 0.35], r: 0.9, c: '#67974a', flat: 0.85 },
-    { p: [-0.65, 2.7, -0.35], r: 0.88, c: '#548038', flat: 0.85 },
-    { p: [0.2, 3.25, -0.2], r: 0.95, c: '#5c8a3e', flat: 0.8 },
-    { p: [-0.35, 3.6, 0.25], r: 0.78, c: '#c07a2e', flat: 0.8 },  // осенний акцент
-    { p: [0.5, 3.55, 0.35], r: 0.62, c: '#c98a3a', flat: 0.8 },   // осенний акцент
+    { p: [0, 2.35, 0], r: 1.25, c: pal.green.m, flat: 0.85 },
+    { p: [0.7, 2.6, 0.35], r: 0.9, c: pal.green.l, flat: 0.85 },
+    { p: [-0.65, 2.7, -0.35], r: 0.88, c: pal.green.d, flat: 0.85 },
+    { p: [0.2, 3.25, -0.2], r: 0.95, c: pal.green.m, flat: 0.8 },
+    { p: [-0.35, 3.6, 0.25], r: 0.78, c: pal.orange.m, flat: 0.8 },  // осенний акцент
+    { p: [0.5, 3.55, 0.35], r: 0.62, c: pal.orange.l, flat: 0.8 },   // осенний акцент
   ]
   return (
     <>
-      <Trunk h={2.0} r={0.2} color="#6b5238" />
+      <Trunk h={2.0} r={0.2} color={pal.orange.m} />
       {clusters.map((c, i) => <Leaf key={i} p={c.p} r={c.r} color={c.c} flat={c.flat} />)}
     </>
   )
@@ -235,12 +233,13 @@ function Tree({ x, z, s, kind }: { x: number; z: number; s: number; kind: number
 
 /** Низкий куст/кустарник — клумба из нескольких сфер. */
 function Bush({ x, z, s }: { x: number; z: number; s: number }) {
+  const pal = useScenePalette()
   const rot = hash2(x + 5.1, z - 2.3) * Math.PI * 2
   const clumps: { p: [number, number, number]; r: number; c: string }[] = [
-    { p: [0, 0.42, 0], r: 0.5, c: '#43713b' },
-    { p: [0.4, 0.34, 0.12], r: 0.38, c: '#4d7d44' },
-    { p: [-0.35, 0.36, -0.1], r: 0.4, c: '#3c6534' },
-    { p: [0.1, 0.5, -0.32], r: 0.34, c: '#4a7940' },
+    { p: [0, 0.42, 0], r: 0.5, c: pal.green.m },
+    { p: [0.4, 0.34, 0.12], r: 0.38, c: pal.green.l },
+    { p: [-0.35, 0.36, -0.1], r: 0.4, c: pal.green.d },
+    { p: [0.1, 0.5, -0.32], r: 0.34, c: pal.green.l },
   ]
   return (
     <group position={[x, 0, z]} scale={s} rotation={[0, rot, 0]}>
@@ -251,6 +250,7 @@ function Bush({ x, z, s }: { x: number; z: number; s: number }) {
 
 /** Пучок травы у забора/зданий — несколько тонких вертикальных «лезвий». */
 function GrassTuft({ x, z }: { x: number; z: number }) {
+  const pal = useScenePalette()
   const rot = hash2(x - 1.7, z + 4.4) * Math.PI * 2
   const blades: { p: [number, number, number]; tilt: number; h: number }[] = [
     { p: [0, 0.18, 0], tilt: 0, h: 0.36 },
@@ -263,7 +263,7 @@ function GrassTuft({ x, z }: { x: number; z: number }) {
       {blades.map((b, i) => (
         <mesh key={i} position={b.p} rotation={[0, 0, b.tilt]}>
           <coneGeometry args={[0.05, b.h, 4]} />
-          <meshStandardMaterial color={i % 2 ? '#5c8a3e' : '#4f7d3a'} roughness={1} />
+          <meshStandardMaterial color={i % 2 ? pal.green.l : pal.green.m} roughness={1} />
         </mesh>
       ))}
     </group>
@@ -278,6 +278,7 @@ interface FacilityProps { nodes: SceneNode[] }
  * реалистичные лиственные деревья (дуб/клён), кусты и трава за оградой.
  */
 export function Facility({ nodes }: FacilityProps) {
+  const pal = useScenePalette()
   const { minX, maxX, minZ, maxZ } = useMemo(() => {
     if (!nodes.length) return { minX: -34, maxX: 40, minZ: -32, maxZ: 26 }
     let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity
@@ -360,10 +361,10 @@ export function Facility({ nodes }: FacilityProps) {
     for (let i = 0; i < n; i++) {
       const sz = d / n
       const z = minZ - 4 + sz * (i + 0.5)
-      out.push({ p: [cx, 0.02, z], size: [w, sz], c: i % 2 ? GRASS_LIGHT : GRASS_DARK })
+      out.push({ p: [cx, 0.02, z], size: [w, sz], c: i % 2 ? pal.lawnCell : pal.lawn })
     }
     return { out, cx, cz, w, d }
-  }, [minX, maxX, minZ, maxZ])
+  }, [minX, maxX, minZ, maxZ, pal])
 
   // Деревья за оградой: смешанный ряд дуб/клён + редкие кусты. С ПРОВЕРКОЙ НАЛОЖЕНИЙ:
   //  • северная кромка — жд-узел, деревьев нет;
@@ -431,7 +432,7 @@ export function Facility({ nodes }: FacilityProps) {
       {/* Газон: базовая подложка + полосы покоса (чуть разный тон) */}
       <mesh position={[stripes.cx, 0.008, stripes.cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[stripes.w, stripes.d]} />
-        <meshStandardMaterial color={GRASS_BASE} roughness={1} />
+        <meshStandardMaterial color={pal.lawn} roughness={1} />
       </mesh>
       {stripes.out.map((s, i) => (
         <mesh key={i} position={s.p} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -459,11 +460,11 @@ export function Facility({ nodes }: FacilityProps) {
       <Post x={maxX} z={gate.z1} h={3.6} w={0.5} />
       <mesh position={[maxX, 3.7, gMid]} castShadow>
         <boxGeometry args={[0.3, 0.34, gate.z1 - gate.z0]} />
-        <meshStandardMaterial color="#c87619" metalness={0.4} roughness={0.6} />
+        <meshStandardMaterial color={pal.orange.m} metalness={0.4} roughness={0.6} />
       </mesh>
       <mesh position={[maxX, 3.34, gMid]}>
         <boxGeometry args={[0.16, 0.16, gate.z1 - gate.z0 - 0.4]} />
-        <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial color={pal.n[4]} metalness={0.6} roughness={0.4} />
       </mesh>
 
       {/* Рельсовые (северные) ворота на оси жд-спура: те же усиленные столбы + балка,
@@ -472,11 +473,11 @@ export function Facility({ nodes }: FacilityProps) {
       <Post x={roads.railGate.x1} z={minZ} h={3.6} w={0.5} />
       <mesh position={[(roads.railGate.x0 + roads.railGate.x1) / 2, 3.7, minZ]} castShadow>
         <boxGeometry args={[roads.railGate.x1 - roads.railGate.x0, 0.34, 0.3]} />
-        <meshStandardMaterial color="#c87619" metalness={0.4} roughness={0.6} />
+        <meshStandardMaterial color={pal.orange.m} metalness={0.4} roughness={0.6} />
       </mesh>
       <mesh position={[(roads.railGate.x0 + roads.railGate.x1) / 2, 3.34, minZ]}>
         <boxGeometry args={[roads.railGate.x1 - roads.railGate.x0 - 0.4, 0.16, 0.16]} />
-        <meshStandardMaterial color={RAIL_COLOR} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial color={pal.n[4]} metalness={0.6} roughness={0.4} />
       </mesh>
 
       {/* Вышки по углам */}

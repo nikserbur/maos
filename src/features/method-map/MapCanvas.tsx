@@ -1,10 +1,14 @@
 /**
- * Канвас L0: пан (перетаскивание фона), зум (колесо вокруг курсора), «вписать»,
- * узлы-блоки поверх SVG-рёбер в одной системе координат (transform мира).
- * Клавиатура (UX-V2 §3.10): Enter — панель, → ← — сосед по ребру data, ↓ — развернуть,
+ * Канвас L0 на движке `GraphCanvas` (src/ui/graph-canvas, UX-V2 §6.1): пан по фону, зум колесом
+ * вокруг курсора, «вписать» с полем 48 px (центрирование — как прежде: мир с запасом −40/−60),
+ * узлы-блоки поверх SVG-рёбер в одной системе координат. Внешний вид карты не меняется:
+ * класс `mm-viewport` даёт ту же фоновую сетку, плавающие кнопки масштаба и сетка движка выключены —
+ * масштаб и «Вписать» живут в панели MapScreen.
+ * Клавиатура узлов (UX-V2 §3.10): Enter — панель, → ← — сосед по ребру data, ↓ — развернуть,
  * ↑ — свернуть; остальные клавиши экрана (1…8, F, /, ?) — в MapScreen.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { GraphCanvas, type GraphCanvasHandle, type View } from '../../ui/graph-canvas'
 import { BLOCK_META } from './blocks'
 import { MapEdges } from './MapEdges'
 import { MapNodeView } from './MapNodeView'
@@ -13,15 +17,13 @@ import { getNode, subblocksOf } from './registry'
 import { liveOf } from './deriveState'
 import { BLOCK_IDS, type MethodMapState } from './types'
 
-interface View {
-  x: number
-  y: number
-  k: number
-}
-
 const MIN_K = 0.4
 const MAX_K = 2.2
-const PAD = 48
+/** Поле «вписать» (24 px с каждой стороны — как прежний PAD 48 на ширину). */
+const FIT_PAD = 24
+/** Запас мира вокруг раскладки: рёбра выходят за блоки на 40 px слева и 60 px сверху. */
+const WORLD_X = -40
+const WORLD_Y = -60
 
 interface MapCanvasProps {
   live: MethodMapState
@@ -42,77 +44,23 @@ export function focusNode(root: HTMLElement | null, id: string): void {
 }
 
 export function MapCanvas({ live, selectedId, expanded, fitToken, onSelect, onToggle, onPickEdge, onZoomChange }: MapCanvasProps) {
-  const viewportRef = useRef<HTMLDivElement>(null)
-  const [view, setView] = useState<View>({ x: PAD, y: PAD, k: 1 })
+  const rootRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<GraphCanvasHandle>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
 
   const subCounts = Object.fromEntries(BLOCK_IDS.map((b) => [b, subblocksOf(b).length]))
   const layout = layoutL0(expanded, subCounts)
-
-  const fit = useCallback(() => {
-    const vp = viewportRef.current
-    if (!vp) return
-    const w = layout.width + 80
-    const h = layout.height + 100
-    const k = Math.min(MAX_K, Math.max(MIN_K, Math.min((vp.clientWidth - PAD) / w, (vp.clientHeight - PAD) / h)))
-    setView({ x: (vp.clientWidth - w * k) / 2 + 40 * k, y: (vp.clientHeight - h * k) / 2 + 60 * k, k })
-  }, [layout.width, layout.height])
-
-  // Вписать при монтировании, по запросу экрана и при изменении размера области.
-  useEffect(() => { fit() }, [fitToken, fit])
-  useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp || typeof ResizeObserver === 'undefined') return undefined
-    const ro = new ResizeObserver(() => fit())
-    ro.observe(vp)
-    return () => ro.disconnect()
-  }, [fit])
-  useEffect(() => { onZoomChange?.(view.k) }, [view.k, onZoomChange])
-
-  // Колесо — зум вокруг курсора; passive: false, чтобы страница не прокручивалась.
-  useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return undefined
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      const rect = vp.getBoundingClientRect()
-      const px = e.clientX - rect.left
-      const py = e.clientY - rect.top
-      setView((v) => {
-        const k = Math.min(MAX_K, Math.max(MIN_K, v.k * Math.exp(-e.deltaY * 0.0015)))
-        const wx = (px - v.x) / v.k
-        const wy = (py - v.y) / v.k
-        return { k, x: px - wx * k, y: py - wy * k }
-      })
-    }
-    vp.addEventListener('wheel', onWheel, { passive: false })
-    return () => vp.removeEventListener('wheel', onWheel)
-  }, [])
-
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    const target = e.target as HTMLElement
-    if (target.closest('.mm-node')) return
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y }
-    e.currentTarget.setPointerCapture(e.pointerId)
-    e.currentTarget.classList.add('is-panning')
-  }
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (!d) return
-    setView((v) => ({ ...v, x: d.origX + (e.clientX - d.startX), y: d.origY + (e.clientY - d.startY) }))
-  }
-  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
-    dragRef.current = null
-    e.currentTarget.classList.remove('is-panning')
-  }
+  const bounds = useMemo(
+    () => ({ x: WORLD_X, y: WORLD_Y, w: layout.width + 80, h: layout.height + 100 }),
+    [layout.width, layout.height],
+  )
+  const onView = useCallback((v: View) => onZoomChange?.(v.k), [onZoomChange])
 
   const onNodeKeyDown = (e: KeyboardEvent<HTMLElement>, id: string) => {
     const node = getNode(id)
     if (!node) return
     const block = node.block
-    const root = viewportRef.current
+    const root = rootRef.current
     // Обработанные клавиши не всплывают к блоку-контейнеру (подблок внутри блока) и к окну;
     // остальные (Esc, 1…8, F, /, ?) доходят до обработчика экрана.
     const handled = () => { e.preventDefault(); e.stopPropagation() }
@@ -148,18 +96,22 @@ export function MapCanvas({ live, selectedId, expanded, fitToken, onSelect, onTo
   const focusId = hoveredId ?? (selectedId ? getNode(selectedId)?.block ?? null : null)
 
   return (
-    <div
-      ref={viewportRef}
-      className="mm-viewport"
-      role="application"
-      aria-roledescription="карта методологии"
-      aria-label="Карта методологии: 8 блоков и связи между ними"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      <div className="mm-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
+    <div ref={rootRef} className="mm-canvas">
+      <GraphCanvas
+        ref={canvasRef}
+        className="mm-viewport"
+        ariaLabel="Карта методологии: 8 блоков и связи между ними"
+        ariaRoleDescription="карта методологии"
+        bounds={bounds}
+        fitToken={fitToken}
+        minZoom={MIN_K}
+        maxZoom={MAX_K}
+        pad={FIT_PAD}
+        nodeSelector=".mm-node"
+        controls={false}
+        grid={false}
+        onViewChange={onView}
+      >
         <MapEdges paths={layout.paths} width={layout.width} height={layout.height} focusId={focusId} onPick={onPickEdge} />
         {layout.rects.map((rect) => (
           <MapNodeView
@@ -177,7 +129,7 @@ export function MapCanvas({ live, selectedId, expanded, fitToken, onSelect, onTo
             onKeyDown={onNodeKeyDown}
           />
         ))}
-      </div>
+      </GraphCanvas>
     </div>
   )
 }

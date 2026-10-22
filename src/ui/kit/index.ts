@@ -4,7 +4,7 @@
  */
 export { ScreenHeader, Section, rise } from './ScreenHeader'
 export { Segmented, PillTabs, type SegOption, type PillTab } from './Segmented'
-export { Chip, StatusChip, chipTone, type Tone, type ChipTone } from './Chip'
+export { Chip, ChoiceChip, StatusChip, chipTone, type Tone, type ChipTone } from './Chip'
 export { Skeleton, SkeletonRows, ErrorBanner, InlineError, errorText, EmptyState, KandinskyMark, type MarkVariant } from './States'
 export { Switch, IconButton } from './Controls'
 export { DataTable, type DataColumn } from './DataTable'

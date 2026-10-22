@@ -3,6 +3,7 @@
  * блок формулы, чипы статуса (реализовано / Волна 1–3), выноски, литература.
  */
 import type { ReactNode } from 'react'
+import { Chip, type ChipTone } from '../../ui/kit'
 import { getDiagram, type DiagramId } from '../../diagrams'
 import { figureNumber, sectionGroup, sectionNumber, sectionTitle, type SectionId } from './toc'
 
@@ -16,13 +17,16 @@ const STAGE_LABEL: Record<Stage, string> = {
   w3: 'Волна 3 · план',
 }
 
+/** Стадия → тон кита: реализовано ●, внедряется ▲, план ○ (глиф из glyphs.css рисует сам Chip). */
+const STAGE_TONE: Record<Stage, ChipTone> = { done: 'running', w1: 'setup', w2: 'idle', w3: 'idle' }
+
+/** Чип стадии — тот же `Chip`, что и на остальных экранах; здесь лишь ужат по высоте/кеглю. */
 export function StageChip({ stage, children }: { stage: Stage; children?: ReactNode }) {
   return (
-    <span className={`mth-chip mth-chip--${stage}`}>
-      <span className="mth-chip__glyph" aria-hidden="true" />
+    <Chip tone={STAGE_TONE[stage]} className="mth-chip">
       <span className="mth-chip__stage">{STAGE_LABEL[stage]}</span>
       {children && <span className="mth-chip__what">{children}</span>}
-    </span>
+    </Chip>
   )
 }
 

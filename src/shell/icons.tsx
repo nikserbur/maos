@@ -184,6 +184,7 @@ const ICONS = {
   close: <path d="M6 6l12 12M18 6 6 18" />,
   plus: <path d="M12 5v14M5 12h14" />,
   minus: <path d="M5 12h14" />,
+  more: <path d="M5 12h.01M12 12h.01M19 12h.01" />, // три точки (⋯-меню)
   search: (
     <>
       <circle cx="10.5" cy="10.5" r="6" />

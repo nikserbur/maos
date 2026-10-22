@@ -7,15 +7,14 @@
  */
 import { useMemo } from 'react'
 import { railSpur } from './siteLayout'
+import { useScenePalette } from './scenePalette'
 
-const BALLAST = '#413d37'
-const RAIL = '#9098a0'
-const TIE_COLOR = '#39322b'
 const GAUGE = 1.4          // колея (уменьшена под масштаб сцены)
 const OVER = GAUGE + 0.55  // ширина шпалы
 
 /** Прямой путь вдоль оси X: балласт + 2 рельса + шпалы (шпалы можно ограничить видимой зоной). */
 function Track({ z, x0, x1, tieX0, tieX1 }: { z: number; x0: number; x1: number; tieX0?: number; tieX1?: number }) {
+  const pal = useScenePalette()
   const len = x1 - x0
   const cx = (x0 + x1) / 2
   const t0 = tieX0 ?? x0
@@ -26,18 +25,18 @@ function Track({ z, x0, x1, tieX0, tieX1 }: { z: number; x0: number; x1: number;
     <group>
       <mesh position={[cx, 0.05, z]} receiveShadow>
         <boxGeometry args={[len, 0.1, OVER + 0.5]} />
-        <meshStandardMaterial color={BALLAST} roughness={1} />
+        <meshStandardMaterial color={pal.n[1]} roughness={1} />
       </mesh>
       {tiePos.map((tx, i) => (
         <mesh key={i} position={[tx, 0.11, z]} castShadow>
           <boxGeometry args={[0.2, 0.1, OVER]} />
-          <meshStandardMaterial color={TIE_COLOR} roughness={1} />
+          <meshStandardMaterial color={pal.n[1]} roughness={1} />
         </mesh>
       ))}
       {[-GAUGE / 2, GAUGE / 2].map((dz, i) => (
         <mesh key={i} position={[cx, 0.19, z + dz]} castShadow>
           <boxGeometry args={[len, 0.1, 0.08]} />
-          <meshStandardMaterial color={RAIL} metalness={0.75} roughness={0.35} />
+          <meshStandardMaterial color={pal.n[5]} metalness={0.75} roughness={0.35} />
         </mesh>
       ))}
     </group>
@@ -46,6 +45,7 @@ function Track({ z, x0, x1, tieX0, tieX1 }: { z: number; x0: number; x1: number;
 
 /** Прямой путь вдоль оси Z (спур на территорию): балласт + 2 рельса (x±GAUGE/2) + шпалы поперёк (вдоль X). */
 function TrackZ({ x, z0, z1 }: { x: number; z0: number; z1: number }) {
+  const pal = useScenePalette()
   const len = z1 - z0
   const cz = (z0 + z1) / 2
   const nTies = Math.min(40, Math.max(0, Math.floor((z1 - z0) / 1.7)))
@@ -54,18 +54,18 @@ function TrackZ({ x, z0, z1 }: { x: number; z0: number; z1: number }) {
     <group>
       <mesh position={[x, 0.05, cz]} receiveShadow>
         <boxGeometry args={[OVER + 0.5, 0.1, len]} />
-        <meshStandardMaterial color={BALLAST} roughness={1} />
+        <meshStandardMaterial color={pal.n[1]} roughness={1} />
       </mesh>
       {tiePos.map((tz, i) => (
         <mesh key={i} position={[x, 0.11, tz]} castShadow>
           <boxGeometry args={[OVER, 0.1, 0.2]} />
-          <meshStandardMaterial color={TIE_COLOR} roughness={1} />
+          <meshStandardMaterial color={pal.n[1]} roughness={1} />
         </mesh>
       ))}
       {[-GAUGE / 2, GAUGE / 2].map((dx, i) => (
         <mesh key={i} position={[x + dx, 0.19, cz]} castShadow>
           <boxGeometry args={[0.08, 0.1, len]} />
-          <meshStandardMaterial color={RAIL} metalness={0.75} roughness={0.35} />
+          <meshStandardMaterial color={pal.n[5]} metalness={0.75} roughness={0.35} />
         </mesh>
       ))}
     </group>
@@ -79,6 +79,7 @@ function TrackZ({ x, z0, z1 }: { x: number; z0: number; z1: number }) {
  * рельсы без шпал (жалоба пользователя). Балласт/шпалы — под рельсами (y=0.05/0.11).
  */
 function CurvedTrackBed({ cx, cz, r, a0, a1, seg = 8 }: { cx: number; cz: number; r: number; a0: number; a1: number; seg?: number }) {
+  const pal = useScenePalette()
   const bed = useMemo(() => {
     const ballast: { x: number; z: number; ang: number; len: number }[] = []
     const ties: { x: number; z: number; ry: number }[] = []
@@ -97,13 +98,13 @@ function CurvedTrackBed({ cx, cz, r, a0, a1, seg = 8 }: { cx: number; cz: number
       {bed.ballast.map((b, i) => (
         <mesh key={`bb${i}`} position={[b.x, 0.05, b.z]} rotation={[0, b.ang, 0]} receiveShadow>
           <boxGeometry args={[b.len, 0.1, OVER + 0.5]} />
-          <meshStandardMaterial color={BALLAST} roughness={1} />
+          <meshStandardMaterial color={pal.n[1]} roughness={1} />
         </mesh>
       ))}
       {bed.ties.map((t, i) => (
         <mesh key={`bt${i}`} position={[t.x, 0.11, t.z]} rotation={[0, t.ry, 0]} castShadow>
           <boxGeometry args={[OVER, 0.1, 0.2]} />
-          <meshStandardMaterial color={TIE_COLOR} roughness={1} />
+          <meshStandardMaterial color={pal.n[1]} roughness={1} />
         </mesh>
       ))}
     </group>
@@ -112,13 +113,14 @@ function CurvedTrackBed({ cx, cz, r, a0, a1, seg = 8 }: { cx: number; cz: number
 
 /** Один рельс-сегмент между двумя точками XZ (для расходящихся путей стрелки). */
 function RailSeg({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: number }) {
+  const pal = useScenePalette()
   const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
   const len = Math.hypot(x2 - x1, z2 - z1)
   const ang = Math.atan2(-(z2 - z1), x2 - x1)
   return (
     <mesh position={[cx, 0.19, cz]} rotation={[0, ang, 0]} castShadow>
       <boxGeometry args={[len, 0.1, 0.08]} />
-      <meshStandardMaterial color={RAIL} metalness={0.75} roughness={0.35} />
+      <meshStandardMaterial color={pal.n[5]} metalness={0.75} roughness={0.35} />
     </mesh>
   )
 }
@@ -126,6 +128,7 @@ function RailSeg({ x1, z1, x2, z2 }: { x1: number; z1: number; x2: number; z2: n
 /** Стрелочный перевод (стрелка): расходящаяся пара рельсов (2 сегмента = «кривая»),
  *  крестовина и переводной механизм с рычагом сбоку. */
 function Switch({ x, z, dz, len = 7 }: { x: number; z: number; dz: number; len?: number }) {
+  const pal = useScenePalette()
   const zt = z + dz
   const mid = x + len * 0.5
   const midZ = z + dz * 0.42
@@ -138,13 +141,13 @@ function Switch({ x, z, dz, len = 7 }: { x: number; z: number; dz: number; len?:
       {/* крестовина (frog) */}
       <mesh position={[x + len * 0.6, 0.2, z + dz * 0.5]} rotation={[0, -Math.atan2(dz, len), 0]} castShadow>
         <boxGeometry args={[1.1, 0.12, 0.42]} />
-        <meshStandardMaterial color="#6b7076" metalness={0.6} roughness={0.5} />
+        <meshStandardMaterial color={pal.n[3]} metalness={0.6} roughness={0.5} />
       </mesh>
       {/* переводной механизм: тумба + круглый указатель + рычаг */}
       <group position={[x + 0.5, 0, z - GAUGE / 2 - 0.85]}>
-        <mesh position={[0, 0.32, 0]} castShadow><boxGeometry args={[0.36, 0.64, 0.36]} /><meshStandardMaterial color="#b3541e" metalness={0.3} roughness={0.7} /></mesh>
-        <mesh position={[0, 0.78, 0]} castShadow><cylinderGeometry args={[0.24, 0.24, 0.07, 12]} /><meshStandardMaterial color="#d9d3c0" /></mesh>
-        <mesh position={[0.22, 0.5, 0]} rotation={[0, 0, 0.5]} castShadow><boxGeometry args={[0.05, 0.6, 0.05]} /><meshStandardMaterial color="#2a2a2a" /></mesh>
+        <mesh position={[0, 0.32, 0]} castShadow><boxGeometry args={[0.36, 0.64, 0.36]} /><meshStandardMaterial color={pal.orange.m} metalness={0.3} roughness={0.7} /></mesh>
+        <mesh position={[0, 0.78, 0]} castShadow><cylinderGeometry args={[0.24, 0.24, 0.07, 12]} /><meshStandardMaterial color={pal.n[7]} /></mesh>
+        <mesh position={[0.22, 0.5, 0]} rotation={[0, 0, 0.5]} castShadow><boxGeometry args={[0.05, 0.6, 0.05]} /><meshStandardMaterial color={pal.n[1]} /></mesh>
       </group>
     </group>
   )
@@ -152,27 +155,29 @@ function Switch({ x, z, dz, len = 7 }: { x: number; z: number; dz: number; len?:
 
 /** Колёсная тележка (2 оси) под подвижным составом. */
 function Bogie({ x }: { x: number }) {
+  const pal = useScenePalette()
   return (
     <group position={[x, 0.3, 0]}>
       {[-0.45, 0.45].map((dx, i) =>
         [-GAUGE / 2, GAUGE / 2].map((dz, j) => (
           <mesh key={`${i}-${j}`} position={[dx, 0, dz]} rotation={[Math.PI / 2, 0, 0]} castShadow>
             <cylinderGeometry args={[0.25, 0.25, 0.1, 14]} />
-            <meshStandardMaterial color="#26292e" metalness={0.5} roughness={0.6} />
+            <meshStandardMaterial color={pal.n[1]} metalness={0.5} roughness={0.6} />
           </mesh>
         )),
       )}
-      <mesh position={[0, 0.02, 0]}><boxGeometry args={[1.25, 0.16, GAUGE - 0.1]} /><meshStandardMaterial color="#2a2d32" metalness={0.4} roughness={0.7} /></mesh>
+      <mesh position={[0, 0.02, 0]}><boxGeometry args={[1.25, 0.16, GAUGE - 0.1]} /><meshStandardMaterial color={pal.n[1]} metalness={0.4} roughness={0.7} /></mesh>
     </group>
   )
 }
 
 /** Буфера/сцепка на торце единицы состава. */
 function Buffers({ L }: { L: number }) {
+  const pal = useScenePalette()
   return (
     <>
       {[-L / 2 - 0.05, L / 2 + 0.05].map((bx, i) => (
-        <mesh key={i} position={[bx, 0.5, 0]} castShadow><boxGeometry args={[0.12, 0.24, 0.8]} /><meshStandardMaterial color="#1f1f1f" /></mesh>
+        <mesh key={i} position={[bx, 0.5, 0]} castShadow><boxGeometry args={[0.12, 0.24, 0.8]} /><meshStandardMaterial color={pal.n[0]} /></mesh>
       ))}
     </>
   )
@@ -181,10 +186,11 @@ function Buffers({ L }: { L: number }) {
 type WagonType = 'gondola' | 'tank' | 'box'
 /** Грузовой вагон (уменьшенный масштаб): полувагон / цистерна / крытый. */
 function Wagon({ x, z, type, color }: { x: number; z: number; type: WagonType; color: string }) {
+  const pal = useScenePalette()
   const L = 5.8
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow><boxGeometry args={[L, 0.2, 1.9]} /><meshStandardMaterial color="#33373d" metalness={0.4} roughness={0.7} /></mesh>
+      <mesh position={[0, 0.5, 0]} castShadow receiveShadow><boxGeometry args={[L, 0.2, 1.9]} /><meshStandardMaterial color={pal.n[1]} metalness={0.4} roughness={0.7} /></mesh>
       <Bogie x={-L / 2 + 0.95} />
       <Bogie x={L / 2 - 0.95} />
       <Buffers L={L} />
@@ -194,20 +200,20 @@ function Wagon({ x, z, type, color }: { x: number; z: number; type: WagonType; c
           <mesh position={[0, 0, -0.9]} castShadow><boxGeometry args={[L - 0.3, 1.05, 0.1]} /><meshStandardMaterial color={color} roughness={0.85} metalness={0.3} /></mesh>
           <mesh position={[L / 2 - 0.15, 0, 0]} castShadow><boxGeometry args={[0.1, 1.05, 1.8]} /><meshStandardMaterial color={color} roughness={0.85} metalness={0.3} /></mesh>
           <mesh position={[-L / 2 + 0.15, 0, 0]} castShadow><boxGeometry args={[0.1, 1.05, 1.8]} /><meshStandardMaterial color={color} roughness={0.85} metalness={0.3} /></mesh>
-          <mesh position={[0, -0.15, 0]}><boxGeometry args={[L - 0.6, 0.68, 1.6]} /><meshStandardMaterial color="#4a4038" roughness={1} /></mesh>
+          <mesh position={[0, -0.15, 0]}><boxGeometry args={[L - 0.6, 0.68, 1.6]} /><meshStandardMaterial color={pal.n[1]} roughness={1} /></mesh>
         </group>
       )}
       {type === 'tank' && (
         <group position={[0, 1.3, 0]}>
           <mesh rotation={[0, 0, Math.PI / 2]} castShadow><cylinderGeometry args={[0.82, 0.82, L - 0.4, 18]} /><meshStandardMaterial color={color} metalness={0.6} roughness={0.4} /></mesh>
-          <mesh position={[0, 0.85, 0]} castShadow><boxGeometry args={[0.5, 0.24, 0.5]} /><meshStandardMaterial color="#33373d" /></mesh>
+          <mesh position={[0, 0.85, 0]} castShadow><boxGeometry args={[0.5, 0.24, 0.5]} /><meshStandardMaterial color={pal.n[1]} /></mesh>
         </group>
       )}
       {type === 'box' && (
         <group position={[0, 1.28, 0]}>
           <mesh castShadow receiveShadow><boxGeometry args={[L - 0.3, 1.65, 1.9]} /><meshStandardMaterial color={color} roughness={0.8} metalness={0.2} /></mesh>
-          <mesh position={[0.3, 0, 0.98]}><boxGeometry args={[1.5, 1.25, 0.06]} /><meshStandardMaterial color="#2c2f34" roughness={0.7} /></mesh>
-          <mesh position={[0, 0.92, 0]}><boxGeometry args={[L - 0.2, 0.14, 2.05]} /><meshStandardMaterial color="#4a4e54" roughness={0.7} /></mesh>
+          <mesh position={[0.3, 0, 0.98]}><boxGeometry args={[1.5, 1.25, 0.06]} /><meshStandardMaterial color={pal.n[1]} roughness={0.7} /></mesh>
+          <mesh position={[0, 0.92, 0]}><boxGeometry args={[L - 0.2, 0.14, 2.05]} /><meshStandardMaterial color={pal.n[2]} roughness={0.7} /></mesh>
         </group>
       )}
     </group>
@@ -215,11 +221,13 @@ function Wagon({ x, z, type, color }: { x: number; z: number; type: WagonType; c
 }
 
 /** Магистральный тепловоз: рама на 2 тележках, длинный капот, кабина со стёклами, фары. */
-function Locomotive({ x, z, color = '#8a2b24' }: { x: number; z: number; color?: string }) {
+function Locomotive({ x, z, color: colorProp }: { x: number; z: number; color?: string }) {
+  const pal = useScenePalette()
+  const color = colorProp ?? pal.red.d
   const L = 7.6
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow><boxGeometry args={[L, 0.24, 2.2]} /><meshStandardMaterial color="#2a2d32" metalness={0.4} roughness={0.7} /></mesh>
+      <mesh position={[0, 0.5, 0]} castShadow receiveShadow><boxGeometry args={[L, 0.24, 2.2]} /><meshStandardMaterial color={pal.n[1]} metalness={0.4} roughness={0.7} /></mesh>
       <Bogie x={-L / 2 + 1.2} />
       <Bogie x={L / 2 - 1.2} />
       <Buffers L={L} />
@@ -227,30 +235,31 @@ function Locomotive({ x, z, color = '#8a2b24' }: { x: number; z: number; color?:
       <mesh position={[-0.9, 1.32, 0]} castShadow><boxGeometry args={[L - 3.6, 1.45, 2.0]} /><meshStandardMaterial color={color} metalness={0.35} roughness={0.55} /></mesh>
       {/* кабина */}
       <mesh position={[L / 2 - 1.4, 1.6, 0]} castShadow><boxGeometry args={[2.0, 1.95, 2.1]} /><meshStandardMaterial color={color} metalness={0.35} roughness={0.55} /></mesh>
-      <mesh position={[L / 2 - 1.4, 2.62, 0]} castShadow><boxGeometry args={[2.15, 0.14, 2.2]} /><meshStandardMaterial color="#3a3d42" /></mesh>
+      <mesh position={[L / 2 - 1.4, 2.62, 0]} castShadow><boxGeometry args={[2.15, 0.14, 2.2]} /><meshStandardMaterial color={pal.n[1]} /></mesh>
       {/* стёкла кабины */}
-      <mesh position={[L / 2 - 0.46, 1.9, 0]}><boxGeometry args={[0.06, 0.8, 1.6]} /><meshStandardMaterial color="#8fb8d6" metalness={0.4} roughness={0.2} emissive="#20303a" emissiveIntensity={0.4} /></mesh>
+      <mesh position={[L / 2 - 0.46, 1.9, 0]}><boxGeometry args={[0.06, 0.8, 1.6]} /><meshStandardMaterial color={pal.blue.l} metalness={0.4} roughness={0.2} emissive={pal.n[1]} emissiveIntensity={0.4} /></mesh>
       {[1.06, -1.06].map((dz, i) => (
-        <mesh key={i} position={[L / 2 - 1.4, 1.9, dz]}><boxGeometry args={[1.4, 0.8, 0.06]} /><meshStandardMaterial color="#8fb8d6" metalness={0.4} roughness={0.2} emissive="#20303a" emissiveIntensity={0.35} /></mesh>
+        <mesh key={i} position={[L / 2 - 1.4, 1.9, dz]}><boxGeometry args={[1.4, 0.8, 0.06]} /><meshStandardMaterial color={pal.blue.l} metalness={0.4} roughness={0.2} emissive={pal.n[1]} emissiveIntensity={0.35} /></mesh>
       ))}
       {/* вентиляция на капоте */}
-      <mesh position={[-1.6, 2.12, 0]} castShadow><boxGeometry args={[0.5, 0.28, 0.6]} /><meshStandardMaterial color="#33373d" /></mesh>
+      <mesh position={[-1.6, 2.12, 0]} castShadow><boxGeometry args={[0.5, 0.28, 0.6]} /><meshStandardMaterial color={pal.n[1]} /></mesh>
       {/* фары */}
       {[0.55, -0.55].map((dz, i) => (
-        <mesh key={i} position={[-L / 2 + 0.02, 1.05, dz]}><boxGeometry args={[0.08, 0.22, 0.22]} /><meshStandardMaterial color="#fff6cf" emissive="#fff2b0" emissiveIntensity={0.9} /></mesh>
+        <mesh key={i} position={[-L / 2 + 0.02, 1.05, dz]}><boxGeometry args={[0.08, 0.22, 0.22]} /><meshStandardMaterial color={pal.yellow.l} emissive={pal.yellow.l} emissiveIntensity={0.9} /></mesh>
       ))}
       {/* жёлтая предупредительная полоса на носу */}
-      <mesh position={[-L / 2 + 0.03, 0.78, 0]}><boxGeometry args={[0.04, 0.42, 2.0]} /><meshStandardMaterial color="#e8b53a" /></mesh>
+      <mesh position={[-L / 2 + 0.03, 0.78, 0]}><boxGeometry args={[0.04, 0.42, 2.0]} /><meshStandardMaterial color={pal.yellow.l} /></mesh>
     </group>
   )
 }
 
 /** Тупиковый упор в конце пути. */
 function BufferStop({ x, z }: { x: number; z: number }) {
+  const pal = useScenePalette()
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 0.45, 0]} castShadow><boxGeometry args={[0.5, 0.9, GAUGE + 0.3]} /><meshStandardMaterial color="#8a2b24" metalness={0.3} roughness={0.7} /></mesh>
-      <mesh position={[0, 0.78, 0]}><boxGeometry args={[0.6, 0.2, GAUGE + 0.5]} /><meshStandardMaterial color="#e8b53a" /></mesh>
+      <mesh position={[0, 0.45, 0]} castShadow><boxGeometry args={[0.5, 0.9, GAUGE + 0.3]} /><meshStandardMaterial color={pal.red.d} metalness={0.3} roughness={0.7} /></mesh>
+      <mesh position={[0, 0.78, 0]}><boxGeometry args={[0.6, 0.2, GAUGE + 0.5]} /><meshStandardMaterial color={pal.yellow.l} /></mesh>
     </group>
   )
 }
@@ -258,26 +267,27 @@ function BufferStop({ x, z }: { x: number; z: number }) {
 /** Здание вокзала/поста с платформой и навесом. Всё вынесено на ДАЛЬНЮЮ (−z) сторону
  *  от главного пути, чтобы не пересекаться с составом на сортировочных путях (+z). */
 function Station({ x, z }: { x: number; z: number }) {
+  const pal = useScenePalette()
   const P = -(GAUGE / 2 + 1.7)   // платформа/навес — на −z
   const B = -(GAUGE / 2 + 3.4)   // здание ещё дальше
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, 0.28, P]} receiveShadow castShadow>
         <boxGeometry args={[16, 0.56, 2.6]} />
-        <meshStandardMaterial color="#8b8f92" roughness={0.95} />
+        <meshStandardMaterial color={pal.n[4]} roughness={0.95} />
       </mesh>
       <group position={[-4.5, 0, B]}>
-        <mesh position={[0, 1.7, 0]} castShadow receiveShadow><boxGeometry args={[6, 3.4, 3.0]} /><meshStandardMaterial color="#b7a98c" roughness={0.85} /></mesh>
-        <mesh position={[0, 3.6, 0]} castShadow><boxGeometry args={[6.5, 0.4, 3.5]} /><meshStandardMaterial color="#5a4a3a" roughness={0.9} /></mesh>
+        <mesh position={[0, 1.7, 0]} castShadow receiveShadow><boxGeometry args={[6, 3.4, 3.0]} /><meshStandardMaterial color={pal.yellow.l} roughness={0.85} /></mesh>
+        <mesh position={[0, 3.6, 0]} castShadow><boxGeometry args={[6.5, 0.4, 3.5]} /><meshStandardMaterial color={pal.orange.d} roughness={0.9} /></mesh>
         {[-1.8, -0.6, 0.6, 1.8].map((wx, i) => (
-          <mesh key={i} position={[wx, 1.85, 1.52]}><boxGeometry args={[0.8, 1.1, 0.06]} /><meshStandardMaterial color="#8fb8d6" metalness={0.3} roughness={0.2} emissive="#22323f" emissiveIntensity={0.4} /></mesh>
+          <mesh key={i} position={[wx, 1.85, 1.52]}><boxGeometry args={[0.8, 1.1, 0.06]} /><meshStandardMaterial color={pal.blue.l} metalness={0.3} roughness={0.2} emissive={pal.n[1]} emissiveIntensity={0.4} /></mesh>
         ))}
       </group>
       <group position={[3, 0, P]}>
         {[-5, -1.7, 1.7, 5].map((px, i) => (
-          <mesh key={i} position={[px, 1.5, 0]} castShadow><cylinderGeometry args={[0.1, 0.1, 2.8, 8]} /><meshStandardMaterial color="#4c5550" metalness={0.5} roughness={0.5} /></mesh>
+          <mesh key={i} position={[px, 1.5, 0]} castShadow><cylinderGeometry args={[0.1, 0.1, 2.8, 8]} /><meshStandardMaterial color={pal.n[2]} metalness={0.5} roughness={0.5} /></mesh>
         ))}
-        <mesh position={[0, 3.0, -0.4]} castShadow><boxGeometry args={[12, 0.18, 2.8]} /><meshStandardMaterial color="#6b7076" metalness={0.3} roughness={0.7} /></mesh>
+        <mesh position={[0, 3.0, -0.4]} castShadow><boxGeometry args={[12, 0.18, 2.8]} /><meshStandardMaterial color={pal.n[3]} metalness={0.3} roughness={0.7} /></mesh>
       </group>
     </group>
   )
@@ -285,6 +295,7 @@ function Station({ x, z }: { x: number; z: number }) {
 
 /** Полный жд-узел вдоль дальней кромки площадки; магистраль уходит в даль (в туман). */
 export function RailYard({ minX, maxX, minZ, maxZ }: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+  const pal = useScenePalette()
   const zMain = minZ - 11
   const zSide1 = zMain + 3      // путь с составом (сторона площадки)
   const zSide2 = zMain + 6      // короткий пустой отсыл
@@ -316,9 +327,9 @@ export function RailYard({ minX, maxX, minZ, maxZ }: { minX: number; maxX: numbe
   // Состав на side1: тепловоз (cx−13) + 4 вагона; последний заканчивается ~cx+16.
   const wagons = useMemo(() => {
     const types: WagonType[] = ['gondola', 'tank', 'box', 'gondola']
-    const colors = ['#6b4a2f', '#7a8288', '#7a3b32', '#3e5a6e']
+    const colors = [pal.orange.m, pal.n[4], pal.red.d, pal.blue.m]
     return types.map((t, i) => ({ x: cx - 6 + i * 6.4, z: zSide1, type: t, color: colors[i % colors.length] }))
-  }, [cx, zSide1])
+  }, [cx, zSide1, pal])
 
   return (
     <group>

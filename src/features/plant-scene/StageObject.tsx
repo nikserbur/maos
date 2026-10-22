@@ -9,6 +9,7 @@ import { Icon } from '../../shell/icons'
 import { STATUS_META } from './types'
 import type { SceneNode } from './graph/sceneModel'
 import { useThemeColors } from './themeColors'
+import { useScenePalette } from './scenePalette'
 
 /** ISA-101: штатный режим спокойный, насыщенный цвет — только для отклонений. */
 const CALM_STATUS = new Set(['running', 'idle'])
@@ -46,6 +47,7 @@ export function StageObject({
   onMove,
   onConnectFrom,
 }: StageObjectProps) {
+  const pal = useScenePalette()
   const [hovered, setHovered] = useState(false)
   const groupRef = useRef<THREE.Group>(null)
   const Model = OBJECT_REGISTRY[node.kind]
@@ -99,7 +101,7 @@ export function StageObject({
         {asBuilding && (
           <mesh position={[0, 0.03, 0]} receiveShadow>
             <boxGeometry args={[pad, 0.08, pad]} />
-            <meshStandardMaterial color="#565b62" roughness={0.95} metalness={0.05} />
+            <meshStandardMaterial color={pal.n[2]} roughness={0.95} metalness={0.05} />
           </mesh>
         )}
 

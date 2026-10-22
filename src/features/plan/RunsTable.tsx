@@ -10,6 +10,7 @@ import { dateTime, hours, money, num, pct } from '../../explain/format'
 import { DiffTable, type DiffTableRow } from '../../ui/DiffList'
 import { Chip, DataTable, SkeletonRows, type DataColumn } from '../../ui/kit'
 import './plan-screen.css'
+import './runs.css'
 
 export interface RunRow {
   id: string
@@ -75,9 +76,13 @@ export function RunsTable({ currentId, onOpen, canOpen, limit = 12 }: RunsTableP
   const otdOf = (r: RunRow) => kpiOf(r.kpi, 'otd')
   const openable = (r: RunRow) => Boolean(onOpen) && (canOpen ? canOpen(r.id) : true)
   const cols: DataColumn<RunRow>[] = [
-    { key: 'cmp', title: <span className="dk-vh">Сравнить</span>, sortable: false, hint: 'Отметьте два прогона для сравнения',
-      render: (r) => <input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)}
-                            onClick={(e) => e.stopPropagation()} onChange={() => toggle(r.id)} /> },
+    { key: 'cmp', title: <span className="dk-vh">Сравнить</span>, sortable: false, hint: 'Отметьте два прогона для сравнения', className: 'pl-runs__pick',
+      render: (r) => (
+        // Вся ячейка — метка чекбокса; клик по ней не открывает прогон
+        <label className="pl-runs__pick-label" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} />
+        </label>
+      ) },
     { key: 'when', title: 'Когда', num: true, get: (r) => r.createdAt, className: 'dk-td-name',
       render: (r) => <>{fmtDate(r.createdAt)}{r.id === currentId && <Chip tone="accent">текущий</Chip>}</> },
     { key: 'ops', title: 'Операций', num: true, get: (r) => r.nTasks, render: (r) => num(r.nTasks, 0) },

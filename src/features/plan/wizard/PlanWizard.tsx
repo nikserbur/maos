@@ -81,7 +81,7 @@ export function PlanWizard({ routeStep }: { routeStep: string | null }) {
           </header>
         )}
         {data.error && <p className="pl-note pl-note--danger">{data.error}</p>}
-        <Body data={data} />
+        <div key={w.step} className="wz-step-enter"><Body data={data} /></div>
         <footer className="wz-foot">
           <button type="button" className="btn" onClick={() => go(WIZARD_STEPS[Math.max(0, idx - 1)])} disabled={idx === 0}>← Назад</button>
           <span className="wz-foot__hint">{incomplete.length > 0 ? <>не завершено: {incomplete.join(', ')}</> : 'все шаги готовы'}</span>

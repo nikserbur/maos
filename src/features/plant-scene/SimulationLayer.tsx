@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { SimTaskDto } from '../../lib/api'
 import { useThemeColors, type ThemeColors } from './themeColors'
+import { useScenePalette } from './scenePalette'
 
 /**
  * Цвета потока симуляции = категориальная палитра графиков (--chart-*), та же, что
@@ -52,6 +53,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
   nodes: SimNode[]
   machineShop: Map<string, string>
 }) {
+  const pal = useScenePalette()
   const ringsRef = useRef<Array<THREE.Mesh | null>>([])
   const dotsRef = useRef<Array<THREE.Mesh | null>>([])
   const workersRef = useRef<Array<THREE.Group | null>>([])
@@ -277,7 +279,7 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
       {Array.from({ length: DOT_POOL }, (_, i) => (
         <mesh key={i} ref={(m) => { dotsRef.current[i] = m }} visible={false}>
           <sphereGeometry args={[0.45, 10, 10]} />
-          <meshStandardMaterial color="#ffffff" emissiveIntensity={0.4} />
+          <meshStandardMaterial color={pal.n[8]} emissiveIntensity={0.4} />
         </mesh>
       ))}
       {/* Рабочие-человечки: капсула (тело) + сфера (голова) + каска. */}
@@ -289,11 +291,11 @@ export function SimulationLayer({ sim, nodes, machineShop }: {
           </mesh>
           <mesh position={[0, 1.75, 0]}>
             <sphereGeometry args={[0.26, 10, 10]} />
-            <meshStandardMaterial color="#ffd7a8" />
+            <meshStandardMaterial color={pal.orange.l} />
           </mesh>
           <mesh position={[0, 1.92, 0]}>
             <sphereGeometry args={[0.24, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
-            <meshStandardMaterial color="#f2b21e" />
+            <meshStandardMaterial color={pal.yellow.l} />
           </mesh>
         </group>
       ))}

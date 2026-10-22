@@ -13,6 +13,11 @@
 .wz-head__block { margin-left: auto; font-size: var(--fs-12); text-decoration: none; }
 .wz-foot__skip { margin-right: var(--space-2); font-size: var(--fs-12); }
 
+/* Переход между шагами: fade + сдвиг 4 px, 200 мс; ключ по шагу перезапускает анимацию */
+.wz-step-enter { animation: wz-step-in var(--dur) var(--ease-out) backwards; }
+@keyframes wz-step-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .wz-step-enter { animation: none; } }
+
 .wz-step { display: flex; flex-direction: column; gap: 14px; }
 .wz-step--result { gap: 18px; }
 .wz-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -21,6 +26,7 @@
 .wz-card__t { margin: 0; font-size: var(--fs-14); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .wz-sub { margin: 4px 0 0; color: var(--text-muted); }
 .wz-badges { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.wz-badges--inline { margin-left: var(--space-2); }
 .wz-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .wz-inline { display: inline-flex; gap: 8px; align-items: center; font-size: var(--fs-13); color: var(--text-secondary); }
 .wz-check { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); }

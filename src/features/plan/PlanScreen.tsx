@@ -6,11 +6,10 @@
  * Расчёт, пины и результат живут в planStore (их читает карта методологии), касса — в cashStore.
  */
 import { useEffect } from 'react'
-import { hours, num, pct } from '../../explain/format'
+import { dateTime, hours, num, pct } from '../../explain/format'
 import { Icon } from '../../shell/icons'
 import { useHashRoute } from '../../shell/router'
 import { setDecisionContext } from '../../shell/context'
-import { BlockChips } from '../../ui/BlockChip'
 import { getDiagram } from '../../diagrams'
 import { runCash, useCashStore } from '../finance/cashStore'
 import { PlanResult } from './PlanResult'
@@ -19,14 +18,12 @@ import { PlanWizard } from './wizard/PlanWizard'
 import { runSchedule } from './wizard/runSchedule'
 import { effectiveFields, useWizard } from './wizard/wizardStore'
 import { cachedPlanIds, planActions, usePlanStore } from './planStore'
-import { Chip, InlineError } from '../../ui/kit'
+import { Chip, InlineError, ScreenHeader } from '../../ui/kit'
 import './plan.css'
 import './plan-screen.css'
 
 /** Схема двухуровневой модели в пустом состоянии — та же, что в «i» и «Методике». */
 const EMPTY_DIAGRAM = getDiagram('two-stages')
-
-const fmtBuilt = (ms: number) => new Date(ms).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 
 export function PlanScreen() {
   const { anchor, navigate } = useHashRoute()
@@ -56,27 +53,23 @@ export function PlanScreen() {
 
   return (
     <div className="plan">
-      <header className="plan__head">
-        <div className="plan__head-main">
-          <p className="plan__eyebrow text-caps">Решения · Стадия 1 — как произвести</p>
-          <h1 className="plan__title">
-            {wizardOn ? 'Новый план' : 'План'}
-            {!wizardOn && r && (
-              <span className="plan__meta num">
-                {r.plan_id ? `#${r.plan_id.slice(0, 6)}` : ''} · {r.rule}{r.improver?.adopted ? ' + ГА' : ''}
-                {plan.builtAt && <> · {fmtBuilt(plan.builtAt)}</>}
-                {plan.restored && <Chip tone="idle" title="Поднят из кэша этой машины после перезагрузки">из кэша</Chip>}
-              </span>
-            )}
-          </h1>
-        </div>
-        <div className="plan__head-actions">
-          <BlockChips blocks={['internal', 'decisions', 'criteria']} />
-          {wizardOn
-            ? <button type="button" className="btn" onClick={() => navigate('plan')}>← К прогонам</button>
-            : <button type="button" className="btn" onClick={() => navigate('plan', `new/${w.step === 'result' && !r ? 'program' : w.step}`)}><Icon name="plus" size={14} /> Новый план</button>}
-        </div>
-      </header>
+      <ScreenHeader
+        eyebrow="Решения · Стадия 1 — как произвести"
+        title={<>
+          {wizardOn ? 'Новый план' : 'План'}
+          {!wizardOn && r && (
+            <span className="plan__meta num">
+              {r.plan_id ? `#${r.plan_id.slice(0, 6)}` : ''} · {r.rule}{r.improver?.adopted ? ' + ГА' : ''}
+              {plan.builtAt && <> · {dateTime(plan.builtAt)}</>}
+              {plan.restored && <Chip tone="idle" title="Поднят из кэша этой машины после перезагрузки">из кэша</Chip>}
+            </span>
+          )}
+        </>}
+        blocks={['internal', 'decisions', 'criteria']}
+        actions={wizardOn
+          ? <button type="button" className="btn" onClick={() => navigate('plan')}>← К прогонам</button>
+          : <button type="button" className="btn" onClick={() => navigate('plan', `new/${w.step === 'result' && !r ? 'program' : w.step}`)}><Icon name="plus" size={14} /> Новый план</button>}
+      />
 
       {wizardOn ? (
         <PlanWizard routeStep={routeStep} />

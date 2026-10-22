@@ -12,23 +12,24 @@
  */
 import type { StageStatus } from '../types'
 import { useThemeColors } from '../themeColors'
+import { useScenePalette, themed } from '../scenePalette'
 
 /** Палитра станочных материалов (крашеный станочный металл: зелёный/синий + сталь). */
-const C = {
-  body:    '#3f6f5a',   // станочно-зелёный (корпус, основной)
-  bodyLt:  '#4d8069',   // светлее — литые узлы/бабки
-  blue:    '#34506e',   // станочно-синий (шкафы/варианты корпуса)
-  blueLt:  '#41628a',
-  panel:   '#c3c9d0',   // светлые панели/кожухи
-  steel:   '#9aa2ac',   // сталь (станина, направляющие)
-  steelLt: '#b6bcc4',   // полированные направляющие/штоки
-  cast:    '#6c7178',   // серый чугун (литьё, печь)
-  dark:    '#22262b',   // тёмный металл / резина
-  guard:   '#d7a63a',   // жёлтые ограждения/предупреждение
-  glass:   '#5b7f93',   // остекление кожуха
-  screen:  '#39b6d6',   // экран пульта (emissive)
-  coolant: '#3f7d6e',   // СОЖ
-} as const
+const useC = themed((pal) => ({
+  body:    pal.green.m,   // станочно-зелёный (корпус, основной)
+  bodyLt:  pal.green.l,   // светлее — литые узлы/бабки
+  blue:    pal.blue.d,    // станочно-синий (шкафы/варианты корпуса)
+  blueLt:  pal.blue.m,
+  panel:   pal.n[7],      // светлые панели/кожухи
+  steel:   pal.n[5],      // сталь (станина, направляющие)
+  steelLt: pal.n[6],      // полированные направляющие/штоки
+  cast:    pal.n[3],      // серый чугун (литьё, печь)
+  dark:    pal.n[0],      // тёмный металл / резина
+  guard:   pal.yellow.l,  // жёлтые ограждения/предупреждение
+  glass:   pal.blue.m,    // остекление кожуха
+  screen:  pal.teal.l,    // экран пульта (emissive)
+  coolant: pal.teal.m,    // СОЖ
+} as const))
 
 type MP = { color: string; metalness?: number; roughness?: number }
 /** Материал крашеного металла (по умолчанию — корпус). */
@@ -42,6 +43,8 @@ type Tri = [number, number, number]
 
 /** Пульт управления: наклонная консоль с экраном, кнопками, кнопкой-грибком и стойкой. */
 function ControlPanel({ x = 0, z = 0, ry = 0, on = true }: { x?: number; z?: number; ry?: number; on?: boolean }) {
+  const pal = useScenePalette()
+  const C = useC()
   return (
     <group position={[x, 0, z]} rotation={[0, ry, 0]}>
       <mesh position={[0, 0.35, 0]}><boxGeometry args={[0.16, 0.7, 0.16]} /><meshStandardMaterial {...mat(C.dark, 0.6, 0.5)} /></mesh>
@@ -56,17 +59,18 @@ function ControlPanel({ x = 0, z = 0, ry = 0, on = true }: { x?: number; z?: num
       </mesh>
       {/* ряд кнопок */}
       {[-0.2, -0.05, 0.1, 0.25].map((bx, i) => (
-        <mesh key={i} position={[bx, 0.98, 0.18]}><cylinderGeometry args={[0.03, 0.03, 0.04, 8]} /><meshStandardMaterial color={i === 0 ? '#c0392b' : i === 3 ? '#3fae55' : C.steel} metalness={0.4} roughness={0.5} /></mesh>
+        <mesh key={i} position={[bx, 0.98, 0.18]}><cylinderGeometry args={[0.03, 0.03, 0.04, 8]} /><meshStandardMaterial color={i === 0 ? pal.red.m : i === 3 ? pal.green.m : C.steel} metalness={0.4} roughness={0.5} /></mesh>
       ))}
       {/* аварийный грибок E-STOP (красный на жёлтом) */}
       <mesh position={[0.27, 0.68, 0.18]}><cylinderGeometry args={[0.06, 0.06, 0.03, 12]} /><meshStandardMaterial color={C.guard} metalness={0.2} roughness={0.6} /></mesh>
-      <mesh position={[0.27, 0.7, 0.19]}><cylinderGeometry args={[0.045, 0.05, 0.05, 12]} /><meshStandardMaterial color={'#c0392b'} metalness={0.3} roughness={0.5} /></mesh>
+      <mesh position={[0.27, 0.7, 0.19]}><cylinderGeometry args={[0.045, 0.05, 0.05, 12]} /><meshStandardMaterial color={pal.red.m} metalness={0.3} roughness={0.5} /></mesh>
     </group>
   )
 }
 
 /** Маячок состояния (цветная лампа-столбик). */
 function StatusBeacon({ x = 0, y = 2, z = 0, color }: { x?: number; y?: number; z?: number; color: string }) {
+  const C = useC()
   return (
     <group position={[x, y, z]}>
       <mesh position={[0, -0.18, 0]}><cylinderGeometry args={[0.03, 0.03, 0.2, 8]} /><meshStandardMaterial {...mat(C.dark, 0.5, 0.6)} /></mesh>
@@ -77,6 +81,7 @@ function StatusBeacon({ x = 0, y = 2, z = 0, color }: { x?: number; y?: number; 
 
 /** Маховик (спицованное колесо) — подачи/зажимы. */
 function Handwheel({ x = 0, y = 0, z = 0, r = 0.16 }: { x?: number; y?: number; z?: number; r?: number }) {
+  const C = useC()
   return (
     <group position={[x, y, z]}>
       <mesh castShadow><torusGeometry args={[r, r * 0.2, 8, 18]} /><meshStandardMaterial {...mat(C.dark, 0.5, 0.5)} /></mesh>
@@ -90,6 +95,7 @@ function Handwheel({ x = 0, y = 0, z = 0, r = 0.16 }: { x?: number; y?: number; 
 
 /** Жёлтая предупредительная полоса-накладка. */
 function WarnStripe({ x = 0, y = 0, z = 0, w = 1, h = 0.1, rot = [0, 0, 0] as Tri }: { x?: number; y?: number; z?: number; w?: number; h?: number; rot?: Tri }) {
+  const C = useC()
   return (
     <mesh position={[x, y, z]} rotation={rot}>
       <boxGeometry args={[w, h, 0.04]} /><meshStandardMaterial color={C.guard} metalness={0.2} roughness={0.6} />
@@ -99,6 +105,7 @@ function WarnStripe({ x = 0, y = 0, z = 0, w = 1, h = 0.1, rot = [0, 0, 0] as Tr
 
 /** Вентиляционные жалюзи (несколько тонких планок). */
 function Vents({ x = 0, y = 0, z = 0, w = 0.5, n = 4 }: { x?: number; y?: number; z?: number; w?: number; n?: number }) {
+  const C = useC()
   return (
     <group position={[x, y, z]}>
       {Array.from({ length: n }, (_, i) => (
@@ -110,6 +117,7 @@ function Vents({ x = 0, y = 0, z = 0, w = 0.5, n = 4 }: { x?: number; y?: number
 
 /** Опоры-башмаки под станиной (4 шт.). */
 function Feet({ w, d, r = 0.12 }: { w: number; d: number; r?: number }) {
+  const C = useC()
   const hw = w / 2 - 0.2, hd = d / 2 - 0.2
   return (
     <>
@@ -121,7 +129,9 @@ function Feet({ w, d, r = 0.12 }: { w: number; d: number; r?: number }) {
 }
 
 /** Кабель-канал / гофрошланг (наклонная трубка). */
-function Cable({ from, to, r = 0.05, color = C.dark }: { from: Tri; to: Tri; r?: number; color?: string }) {
+function Cable({ from, to, r = 0.05, color: colorProp }: { from: Tri; to: Tri; r?: number; color?: string }) {
+  const C = useC()
+  const color = colorProp ?? C.dark
   const mx = (from[0] + to[0]) / 2, my = (from[1] + to[1]) / 2, mz = (from[2] + to[2]) / 2
   const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2]
   const len = Math.hypot(dx, dy, dz)
@@ -135,7 +145,9 @@ function Cable({ from, to, r = 0.05, color = C.dark }: { from: Tri; to: Tri; r?:
 }
 
 /** Стальная станина/основание с фаской-цоколем (снизу чуть у́же — читается как отливка). */
-function Base({ w, d, h = 0.5, color = C.dark }: { w: number; d: number; h?: number; color?: string }) {
+function Base({ w, d, h = 0.5, color: colorProp }: { w: number; d: number; h?: number; color?: string }) {
+  const C = useC()
+  const color = colorProp ?? C.dark
   return (
     <group>
       <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
@@ -153,6 +165,7 @@ function Base({ w, d, h = 0.5, color = C.dark }: { w: number; d: number; h?: num
 
 /** Токарный станок: станина, передняя/задняя бабка, патрон, суппорт, кожух, СОЖ, маховики. */
 function Lathe({ beacon }: { beacon: string }) {
+  const C = useC()
   return (
     <group>
       {/* тумбы-ножки + поддон для стружки */}
@@ -193,7 +206,10 @@ function Lathe({ beacon }: { beacon: string }) {
 }
 
 /** Закрытый обрабатывающий центр (фрезерный/ЧПУ/лазер): кабина с окном, вытяжка, СОЖ-бак, пульт. */
-function EnclosedCenter({ beacon, body = C.body, w = 2.4, tall = 2.3, laser = false }: { beacon: string; body?: string; w?: number; tall?: number; laser?: boolean }) {
+function EnclosedCenter({ beacon, body: bodyProp, w = 2.4, tall = 2.3, laser = false }: { beacon: string; body?: string; w?: number; tall?: number; laser?: boolean }) {
+  const pal = useScenePalette()
+  const C = useC()
+  const body = bodyProp ?? C.body
   return (
     <group>
       <Base w={w + 0.2} d={2} />
@@ -214,8 +230,8 @@ function EnclosedCenter({ beacon, body = C.body, w = 2.4, tall = 2.3, laser = fa
       {laser
         ? <>
             {/* резонатор + луч-указатель вниз */}
-            <mesh position={[0, tall + 1.2, 0]} castShadow><boxGeometry args={[0.6, 0.5, 0.6]} /><meshStandardMaterial color={'#b23b3b'} metalness={0.5} roughness={0.4} /></mesh>
-            <mesh position={[0, tall * 0.5 + 0.5, 0]}><cylinderGeometry args={[0.015, 0.015, tall, 6]} /><meshStandardMaterial color={'#ff5a4a'} emissive={'#ff3a2a'} emissiveIntensity={0.7} /></mesh>
+            <mesh position={[0, tall + 1.2, 0]} castShadow><boxGeometry args={[0.6, 0.5, 0.6]} /><meshStandardMaterial color={pal.red.m} metalness={0.5} roughness={0.4} /></mesh>
+            <mesh position={[0, tall * 0.5 + 0.5, 0]}><cylinderGeometry args={[0.015, 0.015, tall, 6]} /><meshStandardMaterial color={pal.red.m} emissive={pal.red.m} emissiveIntensity={0.7} /></mesh>
           </>
         : <mesh position={[0, tall + 1.2, -0.2]} castShadow><cylinderGeometry args={[0.18, 0.18, 0.7, 12]} /><meshStandardMaterial {...mat(C.steel, 0.5, 0.5)} /></mesh>}
       {/* СОЖ-бак сбоку + патрубок */}
@@ -230,6 +246,7 @@ function EnclosedCenter({ beacon, body = C.body, w = 2.4, tall = 2.3, laser = fa
 
 /** Плоскошлифовальный станок: корпус, стол, магнитная плита, бабка с кожухом круга, маховики. */
 function Grinder({ beacon }: { beacon: string }) {
+  const C = useC()
   return (
     <group>
       <Base w={2.2} d={1.6} h={0.9} color={C.body} />
@@ -255,6 +272,7 @@ function Grinder({ beacon }: { beacon: string }) {
 
 /** Гибочный / гидравлический пресс: массивная C-рама, ползун, гидроцилиндр, стол-матрица, педаль. */
 function Press({ beacon }: { beacon: string }) {
+  const C = useC()
   return (
     <group>
       <Base w={2} d={1.6} h={0.7} />
@@ -284,6 +302,8 @@ function Press({ beacon }: { beacon: string }) {
 
 /** Сварочный пост: стол, баллоны газа, аппарат с горелкой, вытяжка, защитная штора. */
 function WeldStation({ beacon }: { beacon: string }) {
+  const pal = useScenePalette()
+  const C = useC()
   return (
     <group>
       <mesh position={[0, 0.85, 0]} castShadow><boxGeometry args={[1.8, 0.14, 1]} /><meshStandardMaterial {...mat(C.dark, 0.6, 0.5)} /></mesh>
@@ -291,8 +311,8 @@ function WeldStation({ beacon }: { beacon: string }) {
         <mesh key={i} position={[x, 0.42, z]}><boxGeometry args={[0.1, 0.85, 0.1]} /><meshStandardMaterial {...mat(C.steel, 0.7, 0.4)} /></mesh>
       ))}
       {/* баллоны газа в стойке + вентили */}
-      <mesh position={[-1.2, 0.8, -0.3]} castShadow><cylinderGeometry args={[0.2, 0.2, 1.6, 16]} /><meshStandardMaterial {...mat('#2f6b4f', 0.5, 0.5)} /></mesh>
-      <mesh position={[-0.85, 0.8, -0.3]} castShadow><cylinderGeometry args={[0.2, 0.2, 1.6, 16]} /><meshStandardMaterial {...mat('#b3703a', 0.5, 0.5)} /></mesh>
+      <mesh position={[-1.2, 0.8, -0.3]} castShadow><cylinderGeometry args={[0.2, 0.2, 1.6, 16]} /><meshStandardMaterial {...mat(pal.green.m, 0.5, 0.5)} /></mesh>
+      <mesh position={[-0.85, 0.8, -0.3]} castShadow><cylinderGeometry args={[0.2, 0.2, 1.6, 16]} /><meshStandardMaterial {...mat(pal.orange.m, 0.5, 0.5)} /></mesh>
       <mesh position={[-1.2, 1.66, -0.3]}><cylinderGeometry args={[0.08, 0.1, 0.16, 12]} /><meshStandardMaterial {...mat(C.steel, 0.7, 0.4)} /></mesh>
       <mesh position={[-0.85, 1.66, -0.3]}><cylinderGeometry args={[0.08, 0.1, 0.16, 12]} /><meshStandardMaterial {...mat(C.steel, 0.7, 0.4)} /></mesh>
       <mesh position={[-1.02, 1.15, -0.3]}><boxGeometry args={[0.6, 0.08, 0.2]} /><meshStandardMaterial {...mat(C.dark, 0.5, 0.6)} /></mesh>
@@ -306,7 +326,7 @@ function WeldStation({ beacon }: { beacon: string }) {
       {/* вытяжной рукав */}
       <mesh position={[0.4, 1.8, -0.3]} rotation={[0.3, 0, 0]} castShadow><cylinderGeometry args={[0.18, 0.22, 1.4, 12]} /><meshStandardMaterial {...mat(C.steel, 0.4, 0.6)} /></mesh>
       {/* защитная штора */}
-      <mesh position={[0, 1.4, -0.62]}><boxGeometry args={[1.9, 1.6, 0.05]} /><meshStandardMaterial color={'#7a3b3b'} roughness={0.9} transparent opacity={0.7} /></mesh>
+      <mesh position={[0, 1.4, -0.62]}><boxGeometry args={[1.9, 1.6, 0.05]} /><meshStandardMaterial color={pal.red.d} roughness={0.9} transparent opacity={0.7} /></mesh>
       <StatusBeacon x={1.2} y={1.15} color={beacon} />
     </group>
   )
@@ -314,6 +334,7 @@ function WeldStation({ beacon }: { beacon: string }) {
 
 /** Окрасочная камера: бокс с воротами-окном, вытяжные короба, фильтры. */
 function PaintBooth({ beacon }: { beacon: string }) {
+  const C = useC()
   return (
     <group>
       <mesh position={[0, 1.4, 0]} castShadow receiveShadow><boxGeometry args={[3, 2.8, 2.4]} /><meshStandardMaterial {...mat(C.panel, 0.2, 0.6)} /></mesh>
@@ -338,9 +359,11 @@ function PaintBooth({ beacon }: { beacon: string }) {
 
 /** Сборочный стенд/верстак: столешница, перфопанель с инструментом, тиски, ящики, лампа. */
 function AssemblyBench({ beacon }: { beacon: string }) {
+  const pal = useScenePalette()
+  const C = useC()
   return (
     <group>
-      <mesh position={[0, 0.9, 0]} castShadow><boxGeometry args={[2.4, 0.14, 1.1]} /><meshStandardMaterial {...mat('#7c6a4d', 0.2, 0.7)} /></mesh>
+      <mesh position={[0, 0.9, 0]} castShadow><boxGeometry args={[2.4, 0.14, 1.1]} /><meshStandardMaterial {...mat(pal.orange.m, 0.2, 0.7)} /></mesh>
       {([[-1.05, -0.45], [1.05, -0.45], [-1.05, 0.45], [1.05, 0.45]] as [number, number][]).map(([x, z], i) => (
         <mesh key={i} position={[x, 0.45, z]}><boxGeometry args={[0.1, 0.9, 0.1]} /><meshStandardMaterial {...mat(C.body)} /></mesh>
       ))}
@@ -351,7 +374,7 @@ function AssemblyBench({ beacon }: { beacon: string }) {
         <mesh key={i} position={[tx, 1.9 - (i % 2) * 0.12, -0.44]}><boxGeometry args={[0.05, 0.3, 0.05]} /><meshStandardMaterial {...mat(C.steel, 0.7, 0.4)} /></mesh>
       ))}
       {/* подвесная лампа-светильник над верстаком */}
-      <mesh position={[-0.3, 2.05, -0.35]} rotation={[0.4, 0, 0]}><boxGeometry args={[0.5, 0.1, 0.18]} /><meshStandardMaterial color={'#fff3d0'} emissive={'#ffe6a0'} emissiveIntensity={0.5} roughness={0.4} /></mesh>
+      <mesh position={[-0.3, 2.05, -0.35]} rotation={[0.4, 0, 0]}><boxGeometry args={[0.5, 0.1, 0.18]} /><meshStandardMaterial color={pal.yellow.l} emissive={pal.yellow.l} emissiveIntensity={0.5} roughness={0.4} /></mesh>
       {/* тиски */}
       <mesh position={[0.7, 1.05, 0.1]} castShadow><boxGeometry args={[0.35, 0.25, 0.3]} /><meshStandardMaterial {...mat(C.steel, 0.7, 0.4)} /></mesh>
       <Handwheel x={0.95} y={1.1} z={0.1} r={0.1} />
@@ -365,6 +388,8 @@ function AssemblyBench({ beacon }: { beacon: string }) {
 
 /** Термическая печь: футерованный короб, дверь с окном, дымоход, пульт-шкаф. */
 function Furnace({ beacon }: { beacon: string }) {
+  const pal = useScenePalette()
+  const C = useC()
   return (
     <group>
       <Base w={2.6} d={2.2} h={0.5} color={C.cast} />
@@ -374,7 +399,7 @@ function Furnace({ beacon }: { beacon: string }) {
       {[0.62, 1.8, 2.98].map((y, i) => (<mesh key={`h${i}`} position={[0, y, 1.01]}><boxGeometry args={[2.4, 0.1, 0.05]} /><meshStandardMaterial {...mat(C.dark, 0.5, 0.6)} /></mesh>))}
       {/* дверь + окно (раскалённое) */}
       <mesh position={[0, 1.5, 1.03]} castShadow><boxGeometry args={[1.4, 1.5, 0.14]} /><meshStandardMaterial {...mat(C.dark, 0.5, 0.6)} /></mesh>
-      <mesh position={[0, 1.7, 1.11]}><planeGeometry args={[0.4, 0.3]} /><meshStandardMaterial color={'#ff7a2a'} emissive={'#ff5a1a'} emissiveIntensity={0.9} /></mesh>
+      <mesh position={[0, 1.7, 1.11]}><planeGeometry args={[0.4, 0.3]} /><meshStandardMaterial color={pal.orange.m} emissive={pal.orange.m} emissiveIntensity={0.9} /></mesh>
       <Handwheel x={0.5} y={1.1} z={1.12} r={0.16} />
       {/* дымоход + оголовок */}
       <mesh position={[0.8, 3.7, -0.6]} castShadow><cylinderGeometry args={[0.22, 0.24, 1.8, 16]} /><meshStandardMaterial {...mat(C.steel, 0.4, 0.6)} /></mesh>
@@ -389,7 +414,9 @@ function Furnace({ beacon }: { beacon: string }) {
 
 /** Гальваническая линия: ряд ванн с растворами, борт-отсосы, мостик. */
 function GalvanicTanks({ beacon }: { beacon: string }) {
-  const tanks = ['#2f7d7a', '#4a6ea5', '#8a8f2f']
+  const pal = useScenePalette()
+  const C = useC()
+  const tanks = [pal.teal.m, pal.blue.m, pal.yellow.m]
   return (
     <group>
       <Base w={3.4} d={1.5} h={0.4} />
@@ -414,6 +441,7 @@ function GalvanicTanks({ beacon }: { beacon: string }) {
 
 /** Испытательный стенд: колонны рамы, гидроцилиндр, образец, датчики, пульт. */
 function TestRig({ beacon }: { beacon: string }) {
+  const C = useC()
   return (
     <group>
       <Base w={1.8} d={1.6} h={0.6} />
@@ -435,6 +463,8 @@ function TestRig({ beacon }: { beacon: string }) {
 
 /** Линия упаковки: рольганг-конвейер, ролики, обмоточная арка, коробки. */
 function PackagingLine({ beacon }: { beacon: string }) {
+  const pal = useScenePalette()
+  const C = useC()
   return (
     <group>
       <mesh position={[0, 0.8, 0]} castShadow><boxGeometry args={[3.2, 0.18, 0.9]} /><meshStandardMaterial {...mat(C.dark, 0.4, 0.6)} /></mesh>
@@ -451,9 +481,9 @@ function PackagingLine({ beacon }: { beacon: string }) {
       <mesh position={[0.4, 1.6, -0.62]} castShadow><boxGeometry args={[0.12, 1.6, 0.12]} /><meshStandardMaterial {...mat(C.guard, 0.4, 0.5)} /></mesh>
       <mesh position={[0.4, 2.35, 0]} castShadow><boxGeometry args={[0.12, 0.12, 1.3]} /><meshStandardMaterial {...mat(C.guard, 0.4, 0.5)} /></mesh>
       {/* коробки на ленте + скотч-полоса */}
-      <mesh position={[-0.7, 1.1, 0]} castShadow><boxGeometry args={[0.55, 0.5, 0.55]} /><meshStandardMaterial {...mat('#b89566', 0.1, 0.8)} /></mesh>
-      <mesh position={[-0.7, 1.36, 0]}><boxGeometry args={[0.56, 0.04, 0.14]} /><meshStandardMaterial {...mat('#c9b89a', 0.05, 0.7)} /></mesh>
-      <mesh position={[1.1, 1.1, 0]} castShadow><boxGeometry args={[0.5, 0.45, 0.5]} /><meshStandardMaterial {...mat('#a9855c', 0.1, 0.8)} /></mesh>
+      <mesh position={[-0.7, 1.1, 0]} castShadow><boxGeometry args={[0.55, 0.5, 0.55]} /><meshStandardMaterial {...mat(pal.orange.l, 0.1, 0.8)} /></mesh>
+      <mesh position={[-0.7, 1.36, 0]}><boxGeometry args={[0.56, 0.04, 0.14]} /><meshStandardMaterial {...mat(pal.orange.l, 0.05, 0.7)} /></mesh>
+      <mesh position={[1.1, 1.1, 0]} castShadow><boxGeometry args={[0.5, 0.45, 0.5]} /><meshStandardMaterial {...mat(pal.orange.m, 0.1, 0.8)} /></mesh>
       <StatusBeacon x={1.5} y={1.15} color={beacon} />
     </group>
   )
@@ -461,13 +491,15 @@ function PackagingLine({ beacon }: { beacon: string }) {
 
 /** Складской стеллаж: секции с паллетами и коробами. */
 function StorageRack({ beacon }: { beacon: string }) {
-  const boxCols = ['#8a7550', '#3f6690', '#6a7a52']
+  const pal = useScenePalette()
+  const C = useC()
+  const boxCols = [pal.orange.m, pal.blue.m, pal.green.m]
   return (
     <group>
       {[-1.3, 1.3].map((gx, gi) => (
         <group key={gi} position={[gx, 0, 0]}>
           {([[-0.7, -0.5], [0.7, -0.5], [-0.7, 0.5], [0.7, 0.5]] as [number, number][]).map(([sx, sz], j) => (
-            <mesh key={j} position={[sx, 1.5, sz]}><boxGeometry args={[0.1, 3, 0.1]} /><meshStandardMaterial {...mat('#c96b2b', 0.4, 0.5)} /></mesh>
+            <mesh key={j} position={[sx, 1.5, sz]}><boxGeometry args={[0.1, 3, 0.1]} /><meshStandardMaterial {...mat(pal.orange.m, 0.4, 0.5)} /></mesh>
           ))}
           {/* башмаки под стойками */}
           {([[-0.7, -0.5], [0.7, -0.5], [-0.7, 0.5], [0.7, 0.5]] as [number, number][]).map(([sx, sz], j) => (
@@ -476,8 +508,8 @@ function StorageRack({ beacon }: { beacon: string }) {
           {/* поперечины */}
           {[0.75, 1.85, 2.9].map((y, k) => (
             <group key={k}>
-              <mesh position={[0, y, -0.5]}><boxGeometry args={[1.5, 0.08, 0.08]} /><meshStandardMaterial {...mat('#c96b2b', 0.4, 0.5)} /></mesh>
-              <mesh position={[0, y, 0.5]}><boxGeometry args={[1.5, 0.08, 0.08]} /><meshStandardMaterial {...mat('#c96b2b', 0.4, 0.5)} /></mesh>
+              <mesh position={[0, y, -0.5]}><boxGeometry args={[1.5, 0.08, 0.08]} /><meshStandardMaterial {...mat(pal.orange.m, 0.4, 0.5)} /></mesh>
+              <mesh position={[0, y, 0.5]}><boxGeometry args={[1.5, 0.08, 0.08]} /><meshStandardMaterial {...mat(pal.orange.m, 0.4, 0.5)} /></mesh>
             </group>
           ))}
           {/* грузы на полках */}
@@ -518,11 +550,13 @@ export function inferMachineArch(name: string): MachineArch {
 
 /** Единый вход: рисует станок по архетипу; статус подсвечивает маячок. */
 export function MachineModel({ arch, status }: { arch: MachineArch; status: StageStatus }) {
+  const pal = useScenePalette()
+  const C = useC()
   const beacon = useThemeColors().status[status]   // токен --status-* активной темы
   switch (arch) {
     case 'lathe':     return <Lathe beacon={beacon} />
     case 'mill':      return <EnclosedCenter beacon={beacon} body={C.body} />
-    case 'laser':     return <EnclosedCenter beacon={beacon} body={'#3a4652'} w={2.6} tall={2.1} laser />
+    case 'laser':     return <EnclosedCenter beacon={beacon} body={pal.n[2]} w={2.6} tall={2.1} laser />
     case 'grinder':   return <Grinder beacon={beacon} />
     case 'press':     return <Press beacon={beacon} />
     case 'weld':      return <WeldStation beacon={beacon} />

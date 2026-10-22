@@ -35,7 +35,7 @@ export function CreateDialog({ registryId, edit, onClose }: CreateDialogProps) {
       case 'product':        return <ProductForm        edit={edit} onSuccess={onClose} />
       case 'operation':      return <OperationForm      edit={edit} onSuccess={onClose} />
       case 'worker':         return <WorkerForm         edit={edit} onSuccess={onClose} />
-      default: return <p style={{ color: 'var(--text-muted)' }}>Форма не найдена.</p>
+      default: return <p className="nsi__form-missing">Форма не найдена.</p>
     }
   })()
 

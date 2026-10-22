@@ -1,6 +1,6 @@
 import type { ObjectKind } from './types'
 import {
-  M,
+  useM,
   Railing,
   GroundPipeRack,
   PipeBridge,
@@ -20,6 +20,7 @@ import {
   StorageTank,
   TankFarm,
 } from './plantKit'
+import { useScenePalette } from './scenePalette'
 
 interface BuildingProps {
   kind: ObjectKind
@@ -41,6 +42,7 @@ interface BuildingProps {
 
 /** Светло-бетонная подошва кластера (плита с лёгкой кромкой). */
 function Pad({ w, d }: { w: number; d: number }) {
+  const M = useM()
   return (
     <group>
       <mesh position={[0, 0.06, 0]} receiveShadow>
@@ -58,6 +60,7 @@ function Pad({ w, d }: { w: number; d: number }) {
  * подошвы — единая читаемая точка статуса кластера (цвет = accent).
  */
 function StatusBeacon({ x, z, w = 2.2, y = 1.4, accent }: { x: number; z: number; w?: number; y?: number; accent: string }) {
+  const M = useM()
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, y / 2, 0]} castShadow>
@@ -85,6 +88,8 @@ function Stockpile({ x, z, r, color, roughness = 0.95 }: { x: number; z: number;
 
 /* ── Двор сырья: силосы + конвейерная галерея + насыпь + козловой портал ────── */
 function FeedstockYard({ accent }: { accent: string }) {
+  const pal = useScenePalette()
+  const M = useM()
   return (
     <group>
       <Pad w={13} d={9.5} />
@@ -92,8 +97,8 @@ function FeedstockYard({ accent }: { accent: string }) {
       {/* конвейер подачи от штабеля к силосам */}
       <ConveyorGallery len={7.5} rise={5.2} position={[-6, 0.14, 2.6]} />
       {/* штабели сырья на открытой площадке */}
-      <Stockpile x={3.6} z={2.4} r={1.5} color="#6a7076" />
-      <Stockpile x={5.6} z={0.2} r={1.1} color="#6b5448" />
+      <Stockpile x={3.6} z={2.4} r={1.5} color={pal.n[3]} />
+      <Stockpile x={5.6} z={0.2} r={1.1} color={pal.orange.m} />
       {/* козловой портал (кран) над штабелями */}
       <group position={[4.4, 0.14, 1.2]}>
         {[-3, 3].map((z, i) => (
@@ -225,6 +230,7 @@ function SubstationCluster({ accent }: { accent: string }) {
 
 /* ── Склад: чистый ангар + погрузочная рампа/навес + пара резервуаров + эстакада ─ */
 function WarehouseCluster({ accent }: { accent: string }) {
+  const M = useM()
   return (
     <group>
       <Pad w={13.5} d={9.5} />
@@ -270,6 +276,7 @@ function SaleCluster({ accent }: { accent: string }) {
 
 /* ── Корпус/АСУ: операторная + входная площадь + колонны позади ──────────────── */
 function MarketingCluster({ accent }: { accent: string }) {
+  const M = useM()
   return (
     <group>
       <Pad w={13} d={9} />

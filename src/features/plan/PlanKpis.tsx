@@ -8,9 +8,13 @@ import type { CashLpResult, ScheduleResult } from '../../lib/api'
 import { hours, money, num, pct } from '../../explain/format'
 import { KpiTable } from './KpiTable'
 import { Chip } from '../../ui/kit'
+import { Meter, type MeterTone } from '../../ui/charts'
 import { FmtValue, TailStrip, Tile, Value } from './kpiParts'
 import { kpiOf, type Tone } from './types'
 import './kpi.css'
+
+/** Тон метра OTD по качеству показателя (статус — вместе с чипом-глифом рядом). */
+const METER_TONE: Record<Tone, MeterTone> = { good: 'good', warn: 'warn', bad: 'danger', idle: 'neutral' }
 
 const OTD_GOOD = 0.99
 const OTD_WARN = 0.9
@@ -58,10 +62,7 @@ export function PlanKpis({ result, cash, cashRunning, onGoCash }: PlanKpisProps)
         <Tile metric="plan.otd" label="Заказы в срок · OTD" span="s4" values={{ otd: k.otd, n, n_late: k.n_late }}
               status={<Chip tone={otdTone(k.otd)}>{k.otd >= OTD_GOOD ? 'все в срок' : 'есть опоздания'}</Chip>}>
           <Value text={num(k.otd * 100, k.otd >= OTD_GOOD ? 0 : 1)} unit="%" />
-          <div className="pl-meter" aria-hidden="true">
-            <span className={`pl-meter__fill${otdTone(k.otd) === 'good' ? '' : ` pl-meter__fill--${otdTone(k.otd)}`}`}
-                  style={{ transform: `scaleX(${Math.max(0, Math.min(1, k.otd))})` }} />
-          </div>
+          <Meter value={k.otd} tone={METER_TONE[otdTone(k.otd)]} className="pl-tile__meter" />
           <div className="pl-tile__sub">
             {k.n_late > 0
               ? <>с опозданием <span className="num">{num(k.n_late, 0)}</span> из {num(n, 0)} заказов</>

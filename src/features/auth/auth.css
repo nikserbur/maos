@@ -45,13 +45,6 @@
   gap: var(--space-4);
   min-width: 0;
 }
-.login__mark {
-  width: auto;
-  height: clamp(36px, 5vw, 48px);
-  margin-bottom: 0;
-  filter: drop-shadow(0 14px 32px color-mix(in oklch, var(--ink) 45%, transparent));
-  animation: maos-login-rise var(--dur-slow) var(--ease-out) both;
-}
 .login__eyebrow {
   color: var(--text-secondary);
 }
@@ -225,11 +218,6 @@
     gap: var(--space-8);
     padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 28px);
   }
-  .login__mark {
-    height: 36px;
-    width: auto;
-    margin-bottom: 0;
-  }
   .login__display {
     font-size: var(--fs-32);
   }
@@ -243,7 +231,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login__mark,
   .login__card,
   .login__error {
     animation: none;

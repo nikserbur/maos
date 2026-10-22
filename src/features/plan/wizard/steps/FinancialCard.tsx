@@ -52,7 +52,7 @@ export function FinancialCard({ open }: { open: boolean }) {
       <div className="wz-card__head">
         <p className="wz-card__t">
           Финансовые ограничения · слой F
-          <span className="wz-badges" style={{ marginLeft: 8 }}>
+          <span className="wz-badges wz-badges--inline">
             {passport.finStatus === 'ready' ? <Chip tone="good">fin_params загружены</Chip> : passport.finStatus === 'error' ? <Chip tone="bad">fin_params недоступны</Chip> : <Chip>загрузка…</Chip>}
             <ProvenanceBadge status="К" long title="Данных предприятия нет (Р8): все внутренние параметры денег — калибровка или норматив" />
           </span>
@@ -96,7 +96,7 @@ export function FinancialCard({ open }: { open: boolean }) {
           </div>
           <div className="wz-row">
             <button type="button" className="btn btn--primary" onClick={save} disabled={!dirty || saving === 'busy'}>{saving === 'busy' ? 'Сохраняем…' : 'Сохранить в проект'}</button>
-            {saving === 'saved' && !dirty && <Chip tone="good">Сохранено ✓</Chip>}
+            {saving === 'saved' && !dirty && <Chip tone="good">Сохранено</Chip>}
             {saving === 'error' && <Chip tone="bad">не сохранено — бэкенд отверг значения</Chip>}
             <span className="pl-note">Запись в fin_params — явное действие; черновик до сохранения — только здесь.</span>
           </div>

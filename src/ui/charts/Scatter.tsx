@@ -1,17 +1,20 @@
 /**
  * Диаграмма рассеяния (база — Парето «Портфеля»): точки ≥ 8 px с кольцом поверхности,
  * невидимая зона попадания 24 px, приглушённые доминируемые точки, прямые подписи выбранных
- * точек с лидер-линией и отступом от правого края (`text-anchor=end`), подсказка по точке.
+ * точек с лидер-линией и отступом от правого края (`text-anchor=end`), подсказка по точке
+ * (с дополнительными строками `tip`), форма марки (точка · квадрат · треугольник) как второй
+ * признак выделения, линия и 10 % заливка под фронтом Парето.
  */
 import { useState, type ReactNode } from 'react'
 import { ChartFrame, type ChartTable } from './ChartFrame'
 import { Grid, XAxis, YAxis } from './Axis'
-import { ChartTooltip } from './Tooltip'
+import { ChartTooltip, type TipRow } from './Tooltip'
 import { useMeasuredWidth } from './hooks'
 import type { LegendItem } from './palette'
 import { axisNum, extent, linear, niceTicks, yDomain, yTicks } from './scale'
 
-export type Emphasis = 'primary' | 'muted' | 'selected'
+export type Emphasis = 'primary' | 'muted' | 'selected' | 'alt'
+export type PointShape = 'dot' | 'square' | 'triangle'
 
 export interface ScatterPoint {
   key: string
@@ -19,8 +22,13 @@ export interface ScatterPoint {
   y: number
   label?: string
   emphasis?: Emphasis
+  shape?: PointShape
   /** Соединить с предыдущей точкой фронта (линия Парето). */
   onFront?: boolean
+  /** Строки подсказки (по умолчанию — X и Y). */
+  tip?: ReadonlyArray<TipRow>
+  /** Заголовок подсказки (по умолчанию — label/key). */
+  tipTitle?: ReactNode
 }
 
 interface ScatterProps {
@@ -36,12 +44,19 @@ interface ScatterProps {
   actions?: ReactNode
   ariaLabel?: string
   legend?: ReadonlyArray<LegendItem>
+  /** Заливка под линией фронта (10 %). */
+  frontArea?: boolean
   className?: string
 }
 
 const PT = 14, PB = 30, PR = 16, PL = 52, HIT = 12
 
-export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel, height = 260, title, subtitle, badges, actions, ariaLabel, legend, className }: ScatterProps) {
+function shapePath(shape: PointShape, cx: number, cy: number, r: number): string {
+  if (shape === 'square') return `M${cx - r},${cy - r}H${cx + r}V${cy + r}H${cx - r}Z`
+  return `M${cx},${cy - r * 1.2}L${cx + r * 1.1},${cy + r * 0.8}H${cx - r * 1.1}Z`
+}
+
+export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel, height = 260, title, subtitle, badges, actions, ariaLabel, legend, frontArea = false, className }: ScatterProps) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
   const [hover, setHover] = useState<string | null>(null)
   const n = points.length
@@ -56,6 +71,7 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
   const xT = niceTicks(xl, xh, 5)
   const yT = yTicks(yl, yh, 4)
   const front = points.filter((p) => p.onFront).sort((a, b) => a.x - b.x)
+  const frontLine = front.map((p, i) => `${i ? 'L' : 'M'}${xAt(p.x).toFixed(1)},${yAt(p.y).toFixed(1)}`).join('')
   const table: ChartTable = { columns: ['', xLabel ?? 'X', yLabel ?? 'Y'], rows: points.map((p) => [p.label ?? p.key, fmtX(p.x), fmtY(p.y)]) }
   const hp = points.find((p) => p.key === hover) ?? null
 
@@ -68,19 +84,23 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
           <YAxis ticks={yT} yAt={yAt} x={PL - 8} fmt={fmtY} unit={yLabel} top={PT} />
           <XAxis labels={xT.map(fmtX)} xAt={(i) => xAt(xT[i])} y={PT + plotH} x0={PL} x1={width - PR} />
           {xLabel && <text className="ch-tick ch-tick--unit" x={width - PR} y={height - 4} textAnchor="end">{xLabel}</text>}
-          {front.length > 1 && (
-            <path className="ch-front" d={front.map((p, i) => `${i ? 'L' : 'M'}${xAt(p.x).toFixed(1)},${yAt(p.y).toFixed(1)}`).join('')} />
+          {frontArea && front.length > 1 && (
+            <path className="ch-area ch-front__area" d={`${frontLine}L${xAt(front[front.length - 1].x).toFixed(1)},${PT + plotH}L${xAt(front[0].x).toFixed(1)},${PT + plotH}Z`} />
           )}
+          {front.length > 1 && <path className="ch-front" d={frontLine} />}
           {points.map((p) => {
             const cx = xAt(p.x)
             const cy = yAt(p.y)
             const em = p.emphasis ?? 'primary'
-            const r = em === 'selected' ? 6 : em === 'muted' ? 3 : 4.5
+            const r = em === 'selected' || em === 'alt' ? 6 : em === 'muted' ? 3 : 4.5
+            const shape = p.shape ?? 'dot'
             return (
               <g key={p.key} className={`ch-dot ch-dot--${em}${hover === p.key ? ' is-hot' : ''}`}
                 tabIndex={0} onPointerEnter={() => setHover(p.key)} onFocus={() => setHover(p.key)} onBlur={() => setHover(null)}>
                 <circle className="ch-dot__hit" cx={cx} cy={cy} r={HIT} />
-                <circle className="ch-marker" cx={cx} cy={cy} r={r} />
+                {shape === 'dot'
+                  ? <circle className="ch-marker" cx={cx} cy={cy} r={r} />
+                  : <path className="ch-marker" d={shapePath(shape, cx, cy, r)} />}
               </g>
             )
           })}
@@ -97,8 +117,8 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
             )
           })}
           {hp && (
-            <ChartTooltip x={xAt(hp.x)} y={PT} width={width} height={plotH} title={hp.label ?? hp.key}
-              rows={[{ key: 'x', label: xLabel ?? 'X', value: fmtX(hp.x) }, { key: 'y', label: yLabel ?? 'Y', value: fmtY(hp.y) }]} />
+            <ChartTooltip x={xAt(hp.x)} y={PT} width={width} height={plotH} title={hp.tipTitle ?? hp.label ?? hp.key}
+              rows={hp.tip ?? [{ key: 'x', label: xLabel ?? 'X', value: fmtX(hp.x) }, { key: 'y', label: yLabel ?? 'Y', value: fmtY(hp.y) }]} />
           )}
         </svg>
       </div>

@@ -144,7 +144,7 @@ export function ProductForm({ onSuccess, edit }: Props) {
           <label className="form__label">Остаток на складе</label>
           <input className="form__input" type="number" min="0" step="0.001" value={stock} onChange={(e) => setStock(e.target.value)} />
         </div>
-        <div className="form__field" style={{ justifyContent: 'flex-end', paddingBottom: 4 }}>
+        <div className="form__field form__field--end">
           <label className="form__check">
             <input type="checkbox" checked={purchased} onChange={(e) => setPurchased(e.target.checked)} />
             Покупное
@@ -174,7 +174,7 @@ export function ProductForm({ onSuccess, edit }: Props) {
         Товарная позиция — продаётся на рынке и участвует в оптимизации портфеля
       </label>
       {sellable && (
-        <span className="form__hint" style={{ marginTop: 2 }}>
+        <span className="form__hint form__hint--tight">
           Спрос задаётся <b>годовым</b> объёмом — планирование само пересчитывает его на
           горизонт (горизонт 6 мес → половина годового), а разброс спроса добавляют
           сценарии (Монте-Карло). Рынок в целом поглотит не более <b>ёмкость − конкуренты</b>;
@@ -209,7 +209,7 @@ export function ProductForm({ onSuccess, edit }: Props) {
         </div>
       </div>
       {sellable && compTooBig && (
-        <span className="form__hint" style={{ color: 'var(--intent-danger)' }}>
+        <span className="form__hint form__hint--danger">
           Конкуренты ({nComp}) продают больше ёмкости рынка ({nMkt}) — так не бывает, поправьте значения.
         </span>
       )}

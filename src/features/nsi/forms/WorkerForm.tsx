@@ -146,7 +146,7 @@ export function WorkerForm({ onSuccess, edit }: Props) {
         <input type="checkbox" checked={universal} onChange={(e) => setUniversal(e.target.checked)} />
         Универсал — допущен ко всем типам оборудования
       </label>
-      <span className="form__hint" style={{ marginTop: 2 }}>
+      <span className="form__hint form__hint--tight">
         Допуск = к каким <b>типам станков</b> рабочий может встать. Планировщик ставит
         операцию только если есть свободный станок <b>и</b> допущенный оператор — поэтому
         мало операторов с допуском = станки простаивают, даже если их несколько.
@@ -154,25 +154,25 @@ export function WorkerForm({ onSuccess, edit }: Props) {
 
       {!universal && (
         wcTypes.length === 0 ? (
-          <span className="form__hint" style={{ color: 'var(--intent-warning)' }}>
+          <span className="form__hint form__hint--warn">
             Типов оборудования ещё нет — создайте их в реестре «Типы оборудования».
           </span>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+          <div className="form__groups">
             {groups.map(([group, types]) => {
               const ids = types.map((t) => t.id)
               const allOn = ids.every((id) => allowed.has(id))
               return (
-                <div key={group} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-                  <label className="form__check" style={{ fontWeight: 600, marginBottom: 4 }}>
+                <div key={group} className="form__group">
+                  <label className="form__check form__check--group">
                     <input type="checkbox" checked={allOn}
                            ref={(el) => { if (el) el.indeterminate = !allOn && ids.some((id) => allowed.has(id)) }}
                            onChange={(e) => toggleGroup(ids, e.target.checked)} />
-                    {group} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· группа допусков</span>
+                    {group} <span className="form__group-note">· группа допусков</span>
                   </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '2px 12px', paddingLeft: 18 }}>
+                  <div className="form__group-grid">
                     {types.map((t) => (
-                      <label key={t.id} className="form__check" style={{ margin: 0 }}>
+                      <label key={t.id} className="form__check form__check--flat">
                         <input type="checkbox" checked={allowed.has(t.id)} onChange={() => toggle(t.id)} />
                         {t.name}
                       </label>

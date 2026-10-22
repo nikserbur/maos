@@ -42,3 +42,23 @@ export function Chip({ tone, children, title, size = 'md', className }: ChipProp
 export function StatusChip({ tone, children, title }: { tone: Tone; children: ReactNode; title?: string }) {
   return <Chip tone={tone} title={title}>{children}</Chip>
 }
+
+interface ChoiceChipProps {
+  /** Состояние переключателя → `aria-pressed`. */
+  pressed: boolean
+  onToggle: () => void
+  children: ReactNode
+  title?: string
+  disabled?: boolean
+  className?: string
+}
+
+/** Чип-переключатель (выбор из набора): кнопка высотой ≥ 24 px, фокус — `--halo`. Не путать с `Chip` (только показ). */
+export function ChoiceChip({ pressed, onToggle, children, title, disabled, className }: ChoiceChipProps) {
+  const cls = ['dk-choice', pressed ? 'is-on' : '', className ?? ''].filter(Boolean).join(' ')
+  return (
+    <button type="button" className={cls} aria-pressed={pressed} title={title} disabled={disabled} onClick={onToggle}>
+      {children}
+    </button>
+  )
+}

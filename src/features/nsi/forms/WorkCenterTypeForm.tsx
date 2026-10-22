@@ -149,9 +149,9 @@ export function WorkCenterTypeForm({ onSuccess, edit }: Props) {
       <div className="form__field">
         <label className="form__label">Доступные операции для этого типа</label>
         {opTemplates.length > 0 ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
+          <div className="form__checks">
             {opTemplates.map((op) => (
-              <label key={op.id} className="form__check" style={{ margin: 0 }}>
+              <label key={op.id} className="form__check form__check--flat">
                 <input
                   type="checkbox"
                   checked={opIds.includes(op.id)}

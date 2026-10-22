@@ -100,8 +100,10 @@ export function Legend({ items, className }: { items: ReadonlyArray<LegendItem>;
   )
 }
 
-/** Образец цвета: линия (с пунктиром для проекции), прямоугольник, точка или полоса. */
+/** Образец цвета: линия (с пунктиром для проекции), прямоугольник, точка или полоса; глиф/класс — по запросу. */
 export function Swatch({ item }: { item: LegendItem }) {
+  if (item.glyph) return <span className={`ch-swatch ch-swatch--glyph ${item.glyph}`} aria-hidden="true" />
+  if (item.swatchClass) return <i className={`ch-swatch ch-swatch--custom ${item.swatchClass}`} aria-hidden="true" />
   const shape = item.shape ?? 'line'
   const cls = `ch-swatch ch-swatch--${shape}${item.dashed ? ' ch-swatch--dashed' : ''}`
   return (

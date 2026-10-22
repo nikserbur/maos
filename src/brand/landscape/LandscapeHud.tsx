@@ -55,8 +55,8 @@ function sameParams(a: GaLiveParams, b: GaLiveParams) {
 
 /** Кривая сходимости на примитивах chart-системы: площадь 10 %, линии 2/1,2 px, порог — пунктир цели. */
 function Convergence({ history }: { history: HudState['history'] }) {
-  const W = 220
-  const H = 56
+  const W = 200
+  const H = 44
   if (history.length < 2) return <svg className="ga-hud__chart" viewBox={`0 0 ${W} ${H}`} aria-hidden="true" />
   const n = Math.max(history.length - 1, 1)
   const x = (i: number) => (i / n) * W
@@ -127,11 +127,13 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
       <div className="ga-hud__scroll">
         <div className="ga-hud__head">
           <span className="text-caps ga-hud__title">Генетический алгоритм</span>
-          <span className="ga-hud__gen num">поколение {hud.gen}</span>
+          <span className="ga-hud__gen num">поколение {hud.gen} · {PHASES[hud.phase] ?? 'максимум'}</span>
         </div>
         <ol className="ga-hud__phases" aria-label="Фаза поколения">
           {PHASES.map((p, i) => (
-            <li key={p} className={i === hud.phase ? 'is-on' : i < hud.phase ? 'is-past' : ''}>{p}</li>
+            <li key={p} className={i === hud.phase ? 'is-on' : i < hud.phase ? 'is-past' : ''}>
+              <span className="ga-hud__sr">{p}</span>
+            </li>
           ))}
         </ol>
         <div className="ga-hud__stats">
@@ -141,7 +143,7 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
         </div>
         <Convergence history={hud.history} />
         <p className={`ga-hud__status${hud.converged ? ' is-done' : ''}`}>
-          {hud.converged ? '▲ Глобальный максимум найден — новый ландшафт' : 'Популяция исследует ландшафт…'}
+          {hud.converged ? '▲ Максимум найден' : 'Поиск максимума…'}
         </p>
 
         <button
@@ -193,8 +195,7 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
         )}
 
         <p className="ga-hud__caption">
-          Иллюстрация: ГА ищет глобальный максимум многоэкстремальной функции.
-          В MAOS похожий поиск улучшает расписание; портфель — робастная оптимизация CVaR.
+          Иллюстрация: ГА ищет максимум многоэкстремальной функции; в MAOS так же улучшается расписание.
         </p>
       </div>
     </div>

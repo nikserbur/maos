@@ -3,7 +3,8 @@ import type { OptMetrics, OptPortfolio } from '../../lib/api'
 import { money, num, pct, signed } from '../../explain/format'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
 import { StatusChip, rise } from '../../ui/kit'
-import { ProfitDistribution, ProfitLegend } from './ProfitDistribution'
+import { Meter } from '../../ui/charts'
+import { ProfitDistribution } from './ProfitDistribution'
 import { objectiveLabel, type OptResultExt } from './optTypes'
 
 /* ── Состав портфеля: изделия × объём × вклад ───────────────────────────── */
@@ -36,7 +37,7 @@ function PortfolioComposition({
             <span className="pf-item__name" title={nameOf(it.product_id)}>{nameOf(it.product_id)}</span>
             <span className="pf-item__qty num">{num(it.qty, 0)}</span>
             <span className="pf-item__risk" title={`Вклад в риск: ${pct(it.risk_contribution)}`}>
-              <span className="pf-item__risk-bar" style={{ width: `${(Math.abs(it.risk_contribution) / maxRisk) * 100}%` }} />
+              <Meter value={Math.abs(it.risk_contribution) / maxRisk} tone="warn" className="pf-item__risk-bar" label={`вклад в риск ${pct(it.risk_contribution)}`} />
               <span className="pf-item__risk-pct">{money(it.contribution)}</span>
             </span>
           </li>
@@ -97,7 +98,6 @@ export function RobustHero({ result, nameOf, footer }: HeroProps) {
   const m = result.robust.metrics
   const v = metricValues(m, result.samples, result.alpha)
   const d = result.robust.diversification
-  const hasExp = result.histogram.some((b) => (b.count_expected ?? 0) > 0)
   return (
     <section className="dk-card dk-card--hero opt-hero dk-span-8 dk-rise" style={rise(1)} aria-labelledby="opt-hero-title">
       <div className="opt-hero__top">
@@ -122,7 +122,6 @@ export function RobustHero({ result, nameOf, footer }: HeroProps) {
 
       <div className="opt-hero__chart">
         <ProfitDistribution histogram={result.histogram} metrics={m} alpha={result.alpha} samples={result.samples} />
-        <ProfitLegend hasExpected={hasExp} />
       </div>
 
       <div className="opt-hero__tiles">

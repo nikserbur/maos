@@ -44,6 +44,12 @@ interface GraphCanvasProps {
   controls?: boolean
   grid?: boolean
   ariaLabel: string
+  /** Описание роли для экранного диктора («карта методологии»). */
+  ariaRoleDescription?: string
+  /** Поле вокруг содержимого при «вписать», px экрана. */
+  pad?: number
+  /** Селектор элементов-узлов, по которым не начинается пан (по умолчанию `[data-gc-node]`). */
+  nodeSelector?: string
   className?: string
 }
 
@@ -52,11 +58,11 @@ const PAN_STEP = 48
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas({
   bounds, fitToken = 0, autoFit = true, minZoom, maxZoom, svg, children, onBackgroundPointerDown, onViewChange, onKeyDown,
-  controls = true, grid = true, ariaLabel, className,
+  controls = true, grid = true, ariaLabel, ariaRoleDescription, pad, nodeSelector = '[data-gc-node]', className,
 }, ref) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
-  const api = useGraphView(viewportRef, { minZoom, maxZoom })
+  const api = useGraphView(viewportRef, { minZoom, maxZoom, pad })
   const { view, fit, zoomBy, reset, toWorld, panBy, setView } = api
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
   const boundsRef = useRef(bounds)
@@ -115,7 +121,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     const target = e.target as HTMLElement
-    if (target.closest('[data-gc-node], .gc__controls')) return
+    if (target.closest(`${nodeSelector}, .gc__controls`)) return
     onBackgroundPointerDown?.(e)
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y }
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -153,6 +159,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       className={`gc${grid ? ' gc--grid' : ''}${className ? ` ${className}` : ''}`}
       role="application"
       aria-label={ariaLabel}
+      aria-roledescription={ariaRoleDescription}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

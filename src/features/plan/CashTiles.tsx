@@ -8,14 +8,12 @@
  */
 import type { CashLpResult } from '../../lib/api'
 import { money, num, pct } from '../../explain/format'
+import { LineChart, axisMoney } from '../../ui/charts'
 import { StatusChip, type Tone as ChipTone } from '../../ui/kit'
 import { InfoTip } from '../../ui/InfoTip'
 import { FmtValue, SubLabel, Tile, Value } from './kpiParts'
 import './kpi.css'
 import './plan-screen.css'
-
-/** Координата SVG с точностью 0,1 px (без toFixed — числа только через format.ts). */
-const px = (v: number) => Math.round(v * 10) / 10
 
 interface CashTilesProps {
   cash: CashLpResult | null
@@ -37,32 +35,43 @@ const breachTone = (p: number): ChipTone => (p < THR.breachWarn ? 'running' : p 
 const dscrTone = (v: number, cov: number): ChipTone => (v >= cov ? 'running' : v >= 1 ? 'setup' : 'down')
 const debtTone = (share: number): ChipTone => (share < THR.debtWarn ? 'running' : share < THR.debtBad ? 'setup' : 'down')
 
-/** Мини-кривая PoL(L): ось L_min → цена ликвидности; неразрешимые точки — штрих. */
+/**
+ * Мини-кривая PoL(L_min) — `LineChart` chart-системы: ось L_min → цена ликвидности, полоса ДИ,
+ * вертикальная отметка текущего L_min, первая неразрешимая точка — отметка «неразрешимо».
+ */
 function PolCurve({ points, current }: { points: NonNullable<CashLpResult['pol_curve']>; current: number }) {
-  const ok = points.filter((p) => p.status === 'optimal' && typeof p.pol === 'number')
+  const sorted = points.slice().sort((a, b) => a.l_min - b.l_min)
+  const ok = sorted.filter((p) => p.status === 'optimal' && typeof p.pol === 'number')
   if (ok.length < 2) return <p className="pl-note">Кривая цены ликвидности не построена (pol_curve выключен или одна точка).</p>
-  const W = 260, H = 84, PL = 8, PR = 8, PT = 10, PB = 18
-  const xs = points.map((p) => p.l_min)
-  const lo = Math.min(...xs), hi = Math.max(...xs)
-  const ys = ok.map((p) => p.pol as number)
-  const ylo = Math.min(0, ...ys), yhi = Math.max(...ys) || 1
-  const X = (l: number) => PL + ((l - lo) / Math.max(1e-9, hi - lo)) * (W - PL - PR)
-  const Y = (v: number) => PT + (1 - (v - ylo) / Math.max(1e-9, yhi - ylo)) * (H - PT - PB)
-  const line = ok.map((p) => `${px(X(p.l_min))},${px(Y(p.pol as number))}`).join(' ')
-  const ci = ok.filter((p) => p.pol_ci).map((p) => ({ x: X(p.l_min), lo: Y(p.pol_ci![0]), hi: Y(p.pol_ci![1]) }))
-  const band = ci.length > 1 ? `${ci.map((c) => `${px(c.x)},${px(c.hi)}`).join(' ')} ${[...ci].reverse().map((c) => `${px(c.x)},${px(c.lo)}`).join(' ')}` : ''
-  const infeasible = points.filter((p) => p.status !== 'optimal')
+  const labels = sorted.map((p) => money(p.l_min))
+  const values = sorted.map((p) => (p.status === 'optimal' && typeof p.pol === 'number' ? p.pol : Number.NaN))
+  const hasCi = ok.some((p) => p.pol_ci)
+  const band = hasCi
+    ? { lo: sorted.map((p) => (p.pol_ci ? p.pol_ci[0] : Number.NaN)), hi: sorted.map((p) => (p.pol_ci ? p.pol_ci[1] : Number.NaN)), label: 'ДИ 95 %' }
+    : undefined
+  const curIdx = sorted.reduce((a, p, i) => (Math.abs(p.l_min - current) < Math.abs(sorted[a].l_min - current) ? i : a), 0)
+  const infIdx = sorted.findIndex((p) => p.status !== 'optimal')
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="pl-pol" role="img"
-         aria-label={`Цена ликвидности по L_min: от ${money(ok[0].pol as number)} при ${money(ok[0].l_min)} до ${money(ok[ok.length - 1].pol as number)} при ${money(ok[ok.length - 1].l_min)}`}>
-      {band && <polygon className="pl-pol__ci" points={band} />}
-      <polyline className="pl-pol__line" points={line} />
-      {ok.map((p) => <circle key={p.l_min} className="pl-pol__dot" cx={X(p.l_min)} cy={Y(p.pol as number)} r={2.5} />)}
-      {infeasible.length > 0 && <rect className="pl-pol__inf" x={X(Math.min(...infeasible.map((p) => p.l_min)))} y={PT} width={Math.max(4, W - PR - X(Math.min(...infeasible.map((p) => p.l_min))))} height={H - PT - PB} />}
-      <line className="pl-pol__cur" x1={X(current)} x2={X(current)} y1={PT} y2={H - PB} />
-      <text className="pl-pol__tick" x={PL} y={H - 5}>L_min {money(lo)}</text>
-      <text className="pl-pol__tick" x={W - PR} y={H - 5} textAnchor="end">{money(hi)}{infeasible.length ? ' · неразрешимо' : ''}</text>
-    </svg>
+    <LineChart labels={labels} height={132} compact xHeader="L_min" fmtY={axisMoney} unit="₽"
+      series={[{ key: 'pol', name: 'цена ликвидности', values, fmt: money, band }]}
+      annotations={[
+        { key: 'cur', index: curIdx, kind: 'line', label: `L_min ${money(current)}` },
+        ...(infIdx >= 0 ? [{ key: 'inf', index: infIdx, kind: 'line' as const, label: 'неразрешимо' }] : []),
+      ]}
+      ariaLabel={`Цена ликвидности по L_min: от ${money(ok[0].pol as number)} при ${money(ok[0].l_min)} до ${money(ok[ok.length - 1].pol as number)} при ${money(ok[ok.length - 1].l_min)}`} />
+  )
+}
+
+/** Транши: медианный долг по неделям — линия с полосой до p95, первый транш — точка с подписью. */
+function TrancheChart({ tr, firstDraw }: { tr: NonNullable<CashLpResult['tranches']>; firstDraw: number }) {
+  const weeks = tr.debt.p50.length
+  const labels = Array.from({ length: weeks }, (_, t) => `нед. ${t + 1}`)
+  return (
+    <LineChart labels={labels} height={140} compact xHeader="неделя" fmtY={axisMoney} unit="₽"
+      series={[{ key: 'p50', name: 'долг · медиана', values: tr.debt.p50, fmt: money, band: { lo: tr.debt.p50, hi: tr.debt.p95, label: 'до p95' } }]}
+      annotations={firstDraw >= 0 ? [{ key: 'first', index: firstDraw, seriesKey: 'p50', label: `транш ${money(tr.drawdown.p50[firstDraw])}` }] : []}
+      tipRows={(t) => [{ key: 'p95', label: 'долг p95', value: money(tr.debt.p95[t]) }, { key: 'dd', label: 'транш p50', value: money(tr.drawdown.p50[t]) }]}
+      ariaLabel={`Медианный долг по ${weeks} неделям: ${tr.debt.p50.map((v) => money(v)).join(', ')}`} />
   )
 }
 
@@ -146,22 +155,7 @@ export function CashTiles({ cash, running, error, onRun, scheduleRefId, primary 
             status={<StatusChip tone="info">{cash.financing_stage === 'recourse' ? 'рекурс d_i,t' : 'график заранее d_t'}</StatusChip>}>
         {tr && weeks > 0 ? (
           <>
-            <div className="pl-tranche" role="img" aria-label={`Медианный долг по неделям: ${tr.debt.p50.map((v) => money(v)).join(', ')}`}>
-              {tr.debt.p50.map((v, t) => {
-                const mx = Math.max(1e-9, ...tr.debt.p95)
-                const isFirst = t === firstDraw
-                return (
-                  <span key={t} className={`pl-tranche__col${isFirst ? ' is-first' : ''}`} title={`неделя ${t + 1}: долг p50 ${money(v)} · p95 ${money(tr.debt.p95[t])} · транш p50 ${money(tr.drawdown.p50[t])}`}>
-                    {isFirst && <span className="pl-tranche__val num">{money(tr.drawdown.p50[t])}</span>}
-                    <i className="pl-tranche__p95" style={{ height: `${(tr.debt.p95[t] / mx) * 100}%` }} />
-                    <i className="pl-tranche__p50" style={{ height: `${(v / mx) * 100}%` }} />
-                  </span>
-                )
-              })}
-            </div>
-            <div className="pl-tranche__axis num" aria-hidden="true">
-              <span>нед. 1</span>{weeks > 2 && <span>{Math.ceil(weeks / 2)}</span>}<span>{weeks}</span>
-            </div>
+            <TrancheChart tr={tr} firstDraw={firstDraw} />
             <div className="pl-tile__sub">
               {firstDraw >= 0 ? <>первый транш — неделя <span className="num">{firstDraw + 1}</span>, медиана <span className="num">{money(tr.drawdown.p50[firstDraw])}</span></> : 'транши в медианном сценарии не нужны'}
               {' '}· {weeks} нед · {cash.n_scenarios} сценариев · HiGHS {num(cash.solve_ms, 0)} мс

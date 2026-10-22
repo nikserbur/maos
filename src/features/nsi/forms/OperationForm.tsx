@@ -114,9 +114,9 @@ export function OperationForm({ onSuccess, edit }: Props) {
         <div className="form__field">
           <label className="form__label">Допустимые типы оборудования (связь по ID)</label>
           {wcTypes.length > 0 ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
+            <div className="form__checks">
               {wcTypes.map((t) => (
-                <label key={t.id} className="form__check" style={{ margin: 0 }}>
+                <label key={t.id} className="form__check form__check--flat">
                   <input
                     type="checkbox"
                     checked={wcTypeIds.includes(t.id)}
@@ -127,7 +127,7 @@ export function OperationForm({ onSuccess, edit }: Props) {
               ))}
             </div>
           ) : (
-            <span className="form__hint" style={{ color: 'var(--intent-warning)' }}>
+            <span className="form__hint form__hint--warn">
               Типов оборудования ещё нет — операцию не к чему привязать. Сначала откройте
               реестр <b>«Типы оборудования»</b> (вкладка слева) и создайте тип
               (например «Токарный станок ЧПУ»), затем вернитесь к операции.
@@ -174,19 +174,19 @@ export function OperationForm({ onSuccess, edit }: Props) {
         ) : (
           <>
             {inputRows.map((r, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
-                <select className="form__select" style={{ flex: 1 }} value={r.product_id}
+              <div key={i} className="form__inputs-row">
+                <select className="form__select form__select--grow" value={r.product_id}
                         onChange={(e) => setInput(i, { product_id: e.target.value })}>
                   <option value="">— изделие —</option>
                   {products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
                 </select>
-                <input className="form__input" type="number" min="0" step="0.001" style={{ width: 90 }}
+                <input className="form__input form__input--qty" type="number" min="0" step="0.001"
                        value={r.qty} onChange={(e) => setInput(i, { qty: e.target.value })} placeholder="кол-во" />
                 <button type="button" className="btn btn--danger btn--icon" title="Убрать вход" aria-label="Убрать вход"
                         onClick={() => delInput(i)}><Icon name="close" size={14} /></button>
               </div>
             ))}
-            <button type="button" className="btn" style={{ marginTop: 2 }} onClick={addInput}>+ Добавить вход</button>
+            <button type="button" className="btn form__add" onClick={addInput}>+ Добавить вход</button>
           </>
         )}
         <span className="form__hint">Изделия и их количество, потребляемые операцией (для расчёта себестоимости).</span>

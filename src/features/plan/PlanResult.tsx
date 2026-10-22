@@ -15,7 +15,7 @@ import { Gantt } from './Gantt'
 import { LoadBars } from './LoadBars'
 import { LoadTimeline } from './LoadTimeline'
 import { PlanKpis } from './PlanKpis'
-import { QueueChart } from './QueueChart'
+import { QueueChart, QueueFilter } from './QueueChart'
 import { ResultToc, type TocItem } from './ResultToc'
 import { RulesTable, WorkersTable } from './ResultTables'
 import { WhatDrove } from './WhatDrove'
@@ -62,6 +62,7 @@ const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ b
 
 export function PlanResult({ result, pins, onPin, onClearPins, onRerun, running, cash, startDate = null, extra }: PlanResultProps) {
   const [loadView, setLoadView] = useState<'types' | 'machines' | 'time'>('types')
+  const [queueWc, setQueueWc] = useState('')
   const hasPins = pins.size > 0
   const ganttTools = (
     <>
@@ -93,9 +94,10 @@ export function PlanResult({ result, pins, onPin, onClearPins, onRerun, running,
           </div>
         </Section>
 
-        <Section id="res-queues" title="Очереди операций" meta="сколько операций ждёт свободного станка во времени; пик — узкое место">
+        <Section id="res-queues" title="Очереди операций" meta="сколько операций ждёт свободного станка во времени; пик — узкое место"
+          tools={<QueueFilter byWc={result.queue_by_wc} value={queueWc} onChange={setQueueWc} />}>
           {result.queue_timeline && result.queue_timeline.length > 1
-            ? <div className="pl-card"><QueueChart data={result.queue_timeline} byWc={result.queue_by_wc} /></div>
+            ? <div className="pl-card"><QueueChart data={result.queue_timeline} byWc={result.queue_by_wc} wc={queueWc} /></div>
             : <p className="pl-note">Очереди не возвращены бэкендом для этого плана.</p>}
         </Section>
 

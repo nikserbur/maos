@@ -1,8 +1,11 @@
 /* Экран «Администрирование» — журнал действий (DataTable по дням), пользователи, роли. Только токены. */
 .adm { height: 100%; overflow-y: auto; padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
-.adm__grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-@media (max-width: 920px) { .adm__grid { grid-template-columns: minmax(0, 1fr); } }
-.adm__panel--wide { grid-row: span 2; }
+.adm__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+/* Две колонки только на широком экране: журнал слева, «Пользователи» и «Роли» стопкой справа. */
+@media (min-width: 1180px) {
+  .adm__grid { grid-template-columns: minmax(0, 1fr) 340px; }
+  .adm__panel--wide { grid-row: span 2; }
+}
 .adm__panel-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
 .adm__panel-title { margin: 0 auto 0 0; color: var(--text-muted); }
 .adm__panel-title .num { margin-left: var(--space-1); color: var(--text-secondary); }
@@ -16,4 +19,5 @@
 .adm__role-name { font-size: var(--fs-13); font-weight: 600; margin-bottom: var(--space-1); }
 .adm__perms { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .adm__perm { font-size: var(--fs-11); padding: 1px 6px; border-radius: var(--radius-sm); background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-secondary); }
+.adm__perm--more { color: var(--text-muted); }
 .adm__empty { color: var(--text-muted); font-size: var(--fs-12); padding: var(--space-2); }

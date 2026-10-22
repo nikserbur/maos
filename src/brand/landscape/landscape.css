@@ -1,4 +1,4 @@
-/* Заставка «ГА на 3D-ландшафте». Без backdrop-filter поверх WebGL. */
+/* Заставка «ГА на 3D-ландшафте». HUD — тонкая полупрозрачная панель, не конкурирует с карточкой входа. */
 .ga-landscape {
   position: absolute;
   inset: 0;
@@ -21,15 +21,16 @@
   position: absolute;
   left: var(--brand-rail, clamp(20px, 4vw, 56px));
   bottom: clamp(16px, 3vh, 40px);
-  width: min(300px, calc(100vw - 40px));
+  width: min(240px, calc(100vw - 40px));
   /* не выше низа героя (~360 px от верха): настройки прокручиваются внутри */
   max-height: clamp(220px, calc(100dvh - 410px), 560px);
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-  background: color-mix(in oklch, var(--bg-elevated) 92%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, white 6%, transparent), var(--shadow-2);
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   font-size: var(--fs-12);
   color: var(--text-secondary);
   z-index: 2;
@@ -39,38 +40,36 @@
 .ga-hud__scroll {
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-4);
+  padding: var(--space-3);
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.ga-hud__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--space-3); }
+.ga-hud__head { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--space-2); }
 .ga-hud__title { color: var(--ochre); }
 .ga-hud__gen { color: var(--text); }
 .ga-hud__phases {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
+  gap: 3px;
   margin: 0 0 var(--space-3);
   padding: 0;
   list-style: none;
 }
+/* фаза — тонкий сегмент 3 px; имя текущей фазы — в строке «поколение N · фаза» */
 .ga-hud__phases li {
-  padding: 4px 0;
-  text-align: center;
-  font-size: 10.5px;
-  border-radius: var(--radius-sm);
+  height: 3px;
+  border-radius: 2px;
   background: var(--bg-input);
-  color: var(--text-muted);
-  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  transition: background var(--dur) var(--ease-out);
 }
-.ga-hud__phases li.is-past { color: var(--text-secondary); }
-.ga-hud__phases li.is-on { background: color-mix(in oklch, var(--ochre) 28%, var(--bg-input)); color: var(--text); }
-.ga-hud__phases li:nth-child(4).is-on { background: color-mix(in oklch, var(--cinnabar) 32%, var(--bg-input)); }
+.ga-hud__phases li.is-past { background: color-mix(in oklch, var(--ochre) 35%, var(--bg-input)); }
+.ga-hud__phases li.is-on { background: var(--ochre); }
+.ga-hud__phases li:nth-child(4).is-on { background: var(--cinnabar); }
 .ga-hud__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
 .ga-hud__stats div { display: flex; flex-direction: column; gap: 2px; }
-.ga-hud__stats span { font-size: 10px; color: var(--text-muted); }
-.ga-hud__stats b { font-size: var(--fs-16); font-weight: 400; color: var(--text); }
-.ga-hud__chart { display: block; width: 100%; height: 56px; margin-top: var(--space-3); overflow: visible; }
+.ga-hud__stats span { font-size: var(--fs-9); color: var(--text-muted); }
+.ga-hud__stats b { font-size: var(--fs-14); font-weight: 400; color: var(--text); }
+.ga-hud__chart { display: block; width: 100%; height: 44px; margin-top: var(--space-2); overflow: visible; }
 .ga-hud__best { stroke: var(--chart-2); }
 .ga-hud__mean { fill: none; stroke: var(--chart-3); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
 .ga-hud__dot { --ch-surface: var(--bg-panel); }
@@ -78,7 +77,7 @@
 .ga-hud__target { stroke: var(--chart-4); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
 .ga-hud__status { margin: var(--space-2) 0 0; color: var(--text-secondary); }
 .ga-hud__status.is-done { color: var(--ochre); }
-.ga-hud__caption { margin: var(--space-3) 0 0; font-size: 10.5px; line-height: 1.5; color: var(--text-muted); }
+.ga-hud__caption { margin: var(--space-2) 0 0; font-size: var(--fs-11); line-height: 1.45; color: var(--text-muted); }
 
 /* настройки — как opt2-field / dk-card */
 .ga-hud__toggle {
@@ -100,7 +99,7 @@
   cursor: pointer;
 }
 .ga-hud__toggle:hover { color: var(--text); }
-.ga-hud__toggle-chevron { color: var(--ochre); font-size: 10px; }
+.ga-hud__toggle-chevron { color: var(--ochre); font-size: var(--fs-9); }
 
 .ga-hud__settings {
   margin: var(--space-3) 0 0;

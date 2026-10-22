@@ -1,18 +1,18 @@
 .shub { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .shub__tabs {
-  display: flex; gap: 4px; padding: 8px 16px 0;
-  border-bottom: 1px solid var(--border, #2a2f37); flex-shrink: 0;
+  display: flex; gap: 4px; padding: var(--space-2) var(--space-4) 0;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 .shub__tab {
   background: transparent; border: 1px solid transparent; border-bottom: none;
-  color: var(--text-muted, #8a929c); font-size: var(--fs-13); padding: 8px 14px;
-  border-radius: 8px 8px 0 0; cursor: pointer;
+  color: var(--text-muted); font-size: var(--fs-13); padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius) var(--radius) 0 0; cursor: pointer;
 }
-.shub__tab:hover { color: var(--text, #e6e9ee); }
+.shub__tab:hover { color: var(--text); }
 .shub__tab--active {
-  color: var(--text, #e6e9ee);
-  background: var(--surface, #161a20);
-  border-color: var(--border, #2a2f37);
+  color: var(--text);
+  background: var(--bg-card);
+  border-color: var(--border);
 }
 .shub__body { flex: 1; min-height: 0; overflow: hidden; }
 .shub__body > * { height: 100%; }

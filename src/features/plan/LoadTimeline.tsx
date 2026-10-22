@@ -1,75 +1,47 @@
+/**
+ * Профиль загрузки оборудования ВО ВРЕМЕНИ: тепловая карта «станок × интервал» на `Heatmap`
+ * chart-системы — последовательная шкала одного тона (магнитуда не статусным цветом, X1 §8),
+ * подписи станков без обрезки, таблица-двойник. Загрузка в интервале = доля времени интервала,
+ * занятая операциями на этом станке (из Ганта).
+ */
 import { memo, useMemo } from 'react'
 import type { ScheduleResult } from '../../lib/api'
+import { hours } from '../../explain/format'
+import { Heatmap, type HeatRow } from '../../ui/charts'
 
 const BINS = 24
 
-/** Цвет ячейки по загрузке: тёмный (простой) → зелёный → янтарь → красный. */
-function cellColor(u: number): string {
-  if (u < 0.02) return '#171b21'
-  const c = Math.min(1, u)
-  const hue = 140 - c * 132            // 140° зелёный → 8° красный
-  const light = 26 + c * 18
-  return `hsl(${hue} 58% ${light}%)`
-}
-
-/**
- * Профиль загрузки оборудования ВО ВРЕМЕНИ: тепловая карта «станок × время».
- * Загрузка в бине = доля времени бина, занятая операциями на этом станке (из Gantt).
- */
 export const LoadTimeline = memo(function LoadTimeline(
   { gantt, makespan }: { gantt: ScheduleResult['gantt']; makespan: number },
 ) {
   const span = Math.max(1, makespan)
   const binH = span / BINS
 
-  // Матрица «станок × бин» O(|gantt|·24) — считаем только при смене расписания,
+  // Матрица «станок × интервал» O(|gantt|·24) — считаем только при смене расписания,
   // а не на каждый ререндер родителя (для больших планов это сотни тысяч итераций).
-  const { rows, util } = useMemo(() => {
-    const rows: { id: string; name: string }[] = []
+  const rows = useMemo<HeatRow[]>(() => {
+    const names: { id: string; name: string }[] = []
     const index = new Map<string, number>()
     for (const j of gantt) {
       const id = j.machine_id || 'supply'
-      if (!index.has(id)) { index.set(id, rows.length); rows.push({ id, name: j.machine_name || j.wc_name || 'Снабжение' }) }
+      if (!index.has(id)) { index.set(id, names.length); names.push({ id, name: j.machine_name || j.wc_name || 'Снабжение' }) }
     }
-    const util = rows.map(() => new Array(BINS).fill(0))
+    const util = names.map(() => new Array<number>(BINS).fill(0))
     for (const j of gantt) {
       const r = index.get(j.machine_id || 'supply')!
       for (let b = 0; b < BINS; b++) {
         const a = b * binH, c = (b + 1) * binH
-        const ov = Math.max(0, Math.min(j.end, c) - Math.max(j.start, a))
-        util[r][b] += ov
+        util[r][b] += Math.max(0, Math.min(j.end, c) - Math.max(j.start, a))
       }
     }
-    return { rows, util }
+    return names.map((m, r) => ({ key: m.id, label: m.name, values: util[r].map((busy) => busy / binH) }))
   }, [gantt, binH])
 
-  if (!rows.length) return <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>Нет данных расписания.</p>
+  const columns = useMemo(() => Array.from({ length: BINS }, (_, b) => `${hours(b * binH, 0)}–${hours((b + 1) * binH, 0)}`), [binH])
+  const axis = [hours(0, 0), hours(span / 2, 0), hours(span, 0)]
 
   return (
-    <div style={{ fontSize: 11 }}>
-      {rows.map((m, r) => (
-        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-          <span style={{ width: 150, flex: '0 0 150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }} title={m.name}>{m.name}</span>
-          <div style={{ display: 'flex', flex: 1, gap: 1 }}>
-            {util[r].map((busy, b) => {
-              const u = busy / binH
-              return <span key={b} title={`ч ${Math.round(b * binH)}–${Math.round((b + 1) * binH)}: ${Math.round(u * 100)}%`}
-                           style={{ flex: 1, height: 14, background: cellColor(u), borderRadius: 1 }} />
-            })}
-          </div>
-        </div>
-      ))}
-      <div style={{ display: 'flex', gap: 6, marginTop: 6, color: 'var(--text-muted)' }}>
-        <span style={{ width: 150, flex: '0 0 150px' }}>станок · время →</span>
-        <div style={{ display: 'flex', flex: 1, justifyContent: 'space-between' }}>
-          <span>0ч</span><span>{Math.round(span / 2)}ч</span><span>{Math.round(span)}ч</span>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 10, marginTop: 6, alignItems: 'center', color: 'var(--text-muted)' }}>
-        <span>простой</span>
-        {[0.1, 0.4, 0.7, 0.95].map((u) => <span key={u} style={{ width: 16, height: 10, background: cellColor(u), borderRadius: 1 }} />)}
-        <span>загрузка 100%</span>
-      </div>
-    </div>
+    <Heatmap rows={rows} columns={columns} axis={axis} compact
+      ariaLabel={`Загрузка ${rows.length} станков по ${BINS} интервалам горизонта ${hours(span, 0)}`} />
   )
 })

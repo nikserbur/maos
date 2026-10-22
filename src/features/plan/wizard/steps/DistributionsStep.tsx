@@ -83,7 +83,7 @@ export function DistributionsStep({ data }: { data: WizardData }) {
           <b>Оценка недоступна без план-факта:</b> `POST /api/simulation/calibrate` отвечает 409, пока таблица `plan_fact_ops` (synthetic = 0) пуста —
           нормы не калибруются по синтетической симуляции (решение Р7/R20). Предпросмотр по последней симуляции показывается, но в НСИ не пишется.
         </p>
-        {calib === 'error' && <p className="pl-note" style={{ color: 'var(--intent-danger)' }}>Предпросмотр недоступен.</p>}
+        {calib === 'error' && <p className="pl-note pl-note--danger">Предпросмотр недоступен.</p>}
         {calib && calib !== 'loading' && calib !== 'error' && (
           calib.rows.length === 0 ? <p className="pl-note">Нет данных симуляции для предпросмотра.</p> : (
             <table className="plan__rules">

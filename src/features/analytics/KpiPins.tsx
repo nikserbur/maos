@@ -6,6 +6,7 @@
 import type { KpiBundle } from '../../lib/api'
 import { Icon } from '../../shell/icons'
 import { Sparkline } from '../../ui/charts'
+import { ChoiceChip } from '../../ui/kit'
 import { num } from '../../explain/format'
 import { KPI_CATALOG, KPI_CATEGORIES, kpiDef, readKpi, type KpiContext } from './kpiCatalog'
 import { DIR_ARROW, DIR_TITLE, STATUS_GLYPH, STATUS_LABEL, kpiParts, kpiStatus } from './kpiFormat'
@@ -76,10 +77,10 @@ export function PinEditor({ pinned, onToggle }: { pinned: ReadonlyArray<string>;
               {items.map((k) => {
                 const on = pinned.includes(k.code)
                 return (
-                  <button key={k.code} type="button" className={`an-chip${on ? ' is-on' : ''}`} aria-pressed={on} onClick={() => onToggle(k.code)}>
+                  <ChoiceChip key={k.code} pressed={on} onToggle={() => onToggle(k.code)}>
                     <Icon name={on ? 'check' : 'plus'} size={12} />
                     {k.name}
-                  </button>
+                  </ChoiceChip>
                 )
               })}
             </div>

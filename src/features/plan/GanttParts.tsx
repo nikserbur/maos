@@ -1,35 +1,32 @@
 /**
- * Легенда и подсказка диаграммы Ганта. Легенда — ЕДИНСТВЕННАЯ (A1 §3): те же слоты
- * палитры, что и у полос (buildPalette), плюс обозначения наладки, ТО/ремонта, просрочки, правок.
+ * Легенда и подсказка диаграммы Ганта на примитивах chart-системы (X1 §8: «Gantt — свой
+ * рендерер, но цвет/ось/легенда/подсказка через систему»). Легенда — ЕДИНСТВЕННАЯ (A1 §3):
+ * те же слоты палитры, что и у полос (buildPalette), плюс наладка, ТО/ремонт, просрочка, правки;
+ * подсказка — карточка `.ch-tip` (та же, что у всех графиков), позиционируется фиксированно.
  */
 import { hours, num } from '../../explain/format'
-import type { Palette } from './ganttModel'
+import { Legend, type LegendItem } from '../../ui/charts'
+import { colorVar, type Palette } from './ganttModel'
 import { barSegments } from './ganttModel'
 import type { PlanBar } from './types'
 import { Chip } from '../../ui/kit'
 
 export const slotClass = (slot: number | null): string => (slot === null ? 'pl-cx' : `pl-c${slot}`)
 
+export function ganttLegend(palette: Palette, hasPins: boolean): LegendItem[] {
+  const items: LegendItem[] = palette.swatches.filter((s) => s.slot !== null).map((s) => ({
+    key: s.productId, label: `${s.name} ×${num(s.qty, 0)}`, color: colorVar(s.slot), shape: 'rect',
+  }))
+  if (palette.hasOther) items.push({ key: 'other', label: 'прочее и снабжение', color: 'var(--chart-other)', swatchClass: 'pl-sw pl-cx' })
+  items.push({ key: 'setup', label: 'переналадка', color: 'var(--status-setup)', swatchClass: 'pl-sw pl-sw--setup' })
+  items.push({ key: 'down', label: 'ТО и ремонт', color: 'var(--status-down)', swatchClass: 'pl-sw pl-sw--down' })
+  items.push({ key: 'late', label: 'просрочка ■', color: 'var(--status-down)', swatchClass: 'pl-sw pl-sw--late' })
+  if (hasPins) items.push({ key: 'pin', label: 'ручная правка', color: 'var(--accent-text)', swatchClass: 'pl-sw pl-sw--pin' })
+  return items
+}
+
 export function GanttLegend({ palette, hasPins }: { palette: Palette; hasPins: boolean }) {
-  return (
-    <div className="pl-legend" aria-label="Легенда диаграммы Ганта">
-      {palette.swatches.filter((s) => s.slot !== null).map((s) => (
-        <span key={s.productId} className="pl-legend__item" title={s.name}>
-          <i className={`pl-sw ${slotClass(s.slot)}`} aria-hidden="true" />
-          <span>{s.name} <span className="num">×{num(s.qty, 0)}</span></span>
-        </span>
-      ))}
-      {palette.hasOther && (
-        <span className="pl-legend__item" title="Изделия сверх 7 цветов палитры и снабжение">
-          <i className="pl-sw pl-cx" aria-hidden="true" /><span>прочее и снабжение</span>
-        </span>
-      )}
-      <span className="pl-legend__item"><i className="pl-sw pl-sw--setup" aria-hidden="true" /><span>переналадка</span></span>
-      <span className="pl-legend__item"><i className="pl-sw pl-sw--down" aria-hidden="true" /><span>ТО и ремонт</span></span>
-      <span className="pl-legend__item"><i className="pl-sw pl-sw--late" aria-hidden="true" /><span>просрочка ■</span></span>
-      {hasPins && <span className="pl-legend__item"><i className="pl-sw pl-sw--pin" aria-hidden="true" /><span>ручная правка</span></span>}
-    </div>
-  )
+  return <Legend items={ganttLegend(palette, hasPins)} className="pl-legend" />
 }
 
 const TIP_W = 290
@@ -42,23 +39,31 @@ export function GanttTip({ bar, x, y, palette }: { bar: PlanBar; x: number; y: n
   const top = Math.min(y + TIP_GAP, vh - 200)
   const seg = barSegments(bar)
   const span = bar.end - bar.start
+  const rows: Array<[string, string, string?]> = [
+    ['Ресурс', `${bar.wc_name} · ${bar.machine_name}`],
+    ['Интервал', `${num(bar.start, 1)}–${num(bar.end, 1)} ч`],
+    ['Длительность', hours(span)],
+    ...(bar.proc_hours !== undefined ? [['Обработка', hours(bar.proc_hours)] as [string, string]] : []),
+    ...(seg.setupFrac > 0 ? [['Переналадка', hours(bar.setup_hours ?? 0), 'glyph-setup'] as [string, string, string]] : []),
+    ...(seg.downFrac > 0 ? [['ТО / ремонт', hours(bar.downtime_hours ?? 0), 'glyph-down'] as [string, string, string]] : []),
+    ['Срок заказа', hours(bar.due)],
+  ]
+  // Позиция — динамическая геометрия курсора (как у перекрестия графиков), не стиль оформления.
   return (
     <div className="pl-gtip" style={{ left, top }} role="tooltip">
-      <div className="pl-gtip__title">
-        <i className={`pl-sw ${slotClass(palette.slotOf(bar.product_id))}`} aria-hidden="true" />
-        {bar.product_name}
+      <div className="ch-tip">
+        <div className="ch-tip__x">
+          <i className={`pl-sw ${slotClass(palette.slotOf(bar.product_id))}`} aria-hidden="true" /> {bar.product_name}
+        </div>
+        <div className="ch-tip__row"><span className="ch-tip__n ch-tip__n--strong">{bar.op_name}</span></div>
+        {rows.map(([k, v, glyph]) => (
+          <div key={k} className="ch-tip__row">
+            <span className={`ch-tip__n${glyph ? ` ${glyph}` : ''}`}>{k}</span>
+            <span className="ch-tip__v num">{v}</span>
+          </div>
+        ))}
+        {bar.late && <Chip tone="bad">просрочка относительно срока</Chip>}
       </div>
-      <div className="pl-gtip__op">{bar.op_name}</div>
-      <dl className="pl-gtip__grid">
-        <dt>Ресурс</dt><dd>{bar.wc_name} · {bar.machine_name}</dd>
-        <dt>Интервал</dt><dd>{num(bar.start, 1)}–{num(bar.end, 1)} ч</dd>
-        <dt>Длительность</dt><dd>{hours(span)}</dd>
-        {bar.proc_hours !== undefined && <><dt>Обработка</dt><dd>{hours(bar.proc_hours)}</dd></>}
-        {seg.setupFrac > 0 && <><dt className="glyph-setup">Переналадка</dt><dd>{hours(bar.setup_hours ?? 0)}</dd></>}
-        {seg.downFrac > 0 && <><dt className="glyph-down">ТО / ремонт</dt><dd>{hours(bar.downtime_hours ?? 0)}</dd></>}
-        <dt>Срок заказа</dt><dd>{hours(bar.due)}</dd>
-      </dl>
-      {bar.late && <Chip tone="bad">просрочка относительно срока</Chip>}
     </div>
   )
 }

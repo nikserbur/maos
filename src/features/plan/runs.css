@@ -1,0 +1,21 @@
+/*
+ * История прогонов: столбец «Сравнить». Чекбокс 16 px, а вся ячейка — одна метка (label):
+ * зона нажатия ≥ 24 px по высоте и на всю ширину столбца (WCAG 2.5.8, X1 §10 3.3).
+ * Остальные правила `.pl-runs*` — в plan-screen.css.
+ */
+.pl-runs__table td.pl-runs__pick { padding: 0; width: 1%; }
+.pl-runs__pick-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  cursor: pointer;
+}
+.pl-runs__pick-label input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

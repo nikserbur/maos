@@ -28,4 +28,8 @@ export interface LegendItem {
   shape?: SwatchShape
   /** Пунктир — только для «проекции/порога», никогда для сетки. */
   dashed?: boolean
+  /** Глиф состояния (класс из glyphs.css: glyph-running/setup/idle/down) вместо образца цвета. */
+  glyph?: string
+  /** Собственный образец (штриховка, обводка) — класс элемента вместо SVG-образца. */
+  swatchClass?: string
 }

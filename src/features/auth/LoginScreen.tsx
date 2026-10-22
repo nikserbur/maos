@@ -67,7 +67,6 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
       <div className="login">
         <section className="login__hero" aria-labelledby="login-display">
-          <Lockup height={48} className="login__mark" />
           <p className="login__eyebrow text-caps">haciendo pescaditos de oro</p>
           <h1 className="login__display" id="login-display">Мониторинг и оптимизация</h1>
           <p className="login__lede">
@@ -122,7 +121,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             </div>
 
             <div className="form__field">
-              <label className="form__label" htmlFor="login-pass">Пароль / ключ шифрования</label>
+              <label className="form__label" htmlFor="login-pass">Пароль</label>
               <input
                 id="login-pass"
                 className="form__input"
@@ -153,7 +152,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            PESCADITO v0.68.1 · дипломная работа · {new Date().getFullYear()}
+            PESCADITO v0.68.2 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>

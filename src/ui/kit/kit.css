@@ -176,6 +176,32 @@
 .dk-chip .num { color: var(--text); }
 .dk-chip--sm { height: 18px; padding: 0 6px; font-size: var(--fs-11); }
 
+/* Чип-переключатель (ChoiceChip): интерактивный, поэтому ≥ 24 px по высоте (WCAG 2.5.8) */
+.dk-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.dk-choice:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.dk-choice:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-choice:disabled { opacity: 0.5; cursor: not-allowed; }
+.dk-choice.is-on {
+  color: var(--text);
+  font-weight: 600;
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+}
+
 /* ── Скелетоны ──────────────────────────────────────────────────────────── */
 .dk-skel {
   position: relative;

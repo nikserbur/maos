@@ -1,6 +1,7 @@
 /*
  * KPI экрана «План» (X1 §5.1): ярус A — три плитки (герой E[Cmax] + хвост риска, OTD, CFaR),
- * ярус C — свёрнутая таблица; плюс карточка ГА (сходимость) внутри «Что определило».
+ * ярус C — свёрнутая таблица; плюс карточка ГА (сходимость на LineChart) внутри «Что определило».
+ * Полоса хвоста, метр OTD и разложение фонда — примитивы src/ui/charts.
  */
 .pl-bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-3); }
 .pl-kpi { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -39,47 +40,16 @@
 .pl-tile__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-4); }
 .pl-tile__div { height: 1px; background: color-mix(in oklch, var(--border) 60%, transparent); }
 
-/* Хвост риска: det ○ — E ● — CVaR ▲ — худший ■, хвост CVaR…худший заштрихован. */
-.pl-tail { position: relative; height: 46px; margin: var(--space-2) 0 0; }
-.pl-tail__track { position: absolute; left: 0; right: 0; top: 12px; height: 2px; border-radius: 2px; background: var(--chart-grid); }
-.pl-tail__zone {
-  position: absolute; top: 6px; height: 14px; border-radius: var(--radius-sm);
-  background: repeating-linear-gradient(135deg, color-mix(in oklch, var(--cinnabar) 55%, transparent) 0 2px, transparent 2px 5px);
-  border: 1px solid color-mix(in oklch, var(--cinnabar) 40%, transparent);
-}
-.pl-tail__m { position: absolute; top: 6px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; line-height: 1; }
-.pl-tail__m::before { width: 10px; height: 10px; margin: 0; }
-.pl-tail__m.glyph-setup::before { border-left-width: 6px; border-right-width: 6px; border-bottom-width: 10px; }
-.pl-tail__m.is-mean { color: var(--text); font-weight: 600; }
-.pl-tail__dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent); }
+/* Хвост риска — RangeStrip chart-системы; подпись E — точка акцента */
 .pl-tail__key { color: var(--text); }
 .pl-tail__key::before { content: ''; display: inline-block; width: 0.62em; height: 0.62em; margin-right: 0.45em; border-radius: 50%; background: var(--accent); }
-.pl-tail__m--end { transform: translateX(-100%); align-items: flex-end; }
-.pl-tail__m--start { transform: none; align-items: flex-start; }
 
-/* Метр OTD */
-.pl-meter { height: 6px; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--text-muted) 16%, transparent); overflow: hidden; }
-.pl-meter__fill { display: block; height: 100%; border-radius: inherit; background: var(--status-running); transform-origin: left center; transition: transform var(--dur-slow) var(--ease-out); }
-.pl-meter__fill--warn { background: var(--status-setup); }
-.pl-meter__fill--bad { background: var(--status-down); }
+/* Метр OTD — Meter chart-системы */
+.pl-tile__meter { margin-top: var(--space-1); }
 
-/* Разложение фонда станков: обработка ● / наладка ▲ / ТО+ремонт ■ / простой ○ */
-.pl-fund { display: flex; height: 10px; border-radius: var(--radius-pill); overflow: hidden; background: color-mix(in oklch, var(--status-idle) 12%, transparent); }
-.pl-fund > span { display: block; height: 100%; min-width: 0; }
-.pl-fund > span + span { box-shadow: inset 1px 0 0 var(--bg-card); }
-.pl-fund__busy { background: var(--status-running); }
-.pl-fund__setup { background: var(--status-setup); }
-.pl-fund__down { background: repeating-linear-gradient(135deg, var(--status-down) 0 2px, color-mix(in oklch, var(--status-down) 45%, transparent) 2px 4px); }
-.pl-fund__idle { background: transparent; }
+/* Разложение фонда станков — StackBar chart-системы; общая легенда-строка с глифами */
 .pl-fund-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); color: var(--text-muted); font-size: var(--fs-12); }
 .pl-fund-legend .num { color: var(--text-secondary); }
-
-/* Спарклайн очереди в плитке ожидания */
-.pl-spark { display: block; width: 100%; height: 34px; margin-top: var(--space-1); overflow: visible; }
-.pl-spark__line { fill: none; stroke: var(--chart-2); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.pl-spark__area { fill: url(#pl-spark-fill); }
-.pl-spark__s0 { stop-color: var(--chart-2); stop-opacity: 0.28; }
-.pl-spark__s1 { stop-color: var(--chart-2); stop-opacity: 0; }
 
 /* ── ГА поверх правила: выигрыш вне выборки + сходимость ────────────────── */
 .pl-ga {
@@ -105,13 +75,7 @@
   border-radius: var(--radius); background: var(--bg-input);
   color: var(--text); font-size: var(--fs-13); overflow-wrap: anywhere;
 }
-.pl-ga__chart { margin: 0; display: flex; flex-direction: column; gap: var(--space-1); }
-.pl-ga__chart svg { display: block; width: 100%; height: 72px; overflow: visible; }
-.pl-ga__best { fill: none; stroke: var(--verdigris); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.pl-ga__base { stroke: var(--chart-2); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
-.pl-ga__legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); color: var(--text-muted); font-size: var(--fs-11); }
-.pl-ga__key { display: inline-block; width: 12px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--verdigris); }
-.pl-ga__key--base { border-top: 1px dashed var(--chart-2); }
+.pl-ga__chart { min-width: 0; }
 
 @media (max-width: 1280px) {
   .pl-bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -125,4 +89,3 @@
   .pl-tile, .pl-tile--s4, .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: 1 / -1; }
   .pl-ga { grid-template-columns: minmax(0, 1fr); }
 }
-@media (prefers-reduced-motion: reduce) { .pl-meter__fill { transition: none; } }

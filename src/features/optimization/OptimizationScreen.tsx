@@ -9,32 +9,31 @@ import { api, type OptPortfolio, type OptimizeParams, type PriceScenario, type P
 import { dateTime, money, num, pct } from '../../explain/format'
 import { InfoTip } from '../../ui/InfoTip'
 import { getDecisionContext, setDecisionContext } from '../../shell/context'
-import { ParetoFrontier, ParetoLegend } from './ParetoFrontier'
+import { ParetoFrontier } from './ParetoFrontier'
 import { ExpectedCard, PriceOfRobustness, RobustHero } from './PortfolioCards'
 import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, StatusChip, Switch, rise } from '../../ui/kit'
+import { BarList } from '../../ui/charts'
+import { ParamField } from '../../ui/ParamField'
+import type { Provenance } from '../method-map/types'
 import { criterionOverrides, failOptRun, finishOptRun, inheritCriterion, patchOptForm, startOptRun, useOptStore } from './optStore'
-import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import { OBJECTIVES, isSoft, type Objective, type OptResultExt, type OptRunParams } from './optTypes'
 import './optimization.css'
 import './opt-screen.css'
 
+/** Порог «горячей» загрузки — только пометка строки, не цвет бара (X1 §4 п. 5, §5 п. 9). */
+const HOT_LOAD = 0.8
+
+/** Загрузка оборудования портфелем — `BarList`: названия в две строки без обрезки, бар одного цвета. */
 function ResourceLoad({ pf, nameOf }: { pf: OptPortfolio; nameOf: (id: string) => string }) {
   const rows = [...pf.resource_load].sort((a, b) => b.utilization - a.utilization).slice(0, 14)
   if (rows.length === 0) return <p className="opt-note">Нет загрузки.</p>
   return (
-    <div className="opt2-load">
-      {rows.map((l) => {
-        const u = Math.min(1, l.utilization)
-        const cls = u >= 0.98 ? ' opt2-load__fill--full' : u >= 0.8 ? ' opt2-load__fill--hot' : ''
-        return (
-          <div className="opt2-load__row" key={l.wc_type_id}>
-            <span className="opt2-load__name" title={nameOf(l.wc_type_id)}>{nameOf(l.wc_type_id)}</span>
-            <span className="opt2-load__track"><span className={`opt2-load__fill${cls}`} style={{ width: `${u * 100}%` }} /></span>
-            <span className="opt2-load__pct">{pct(l.utilization, 0)}</span>
-          </div>
-        )
-      })}
-    </div>
+    <BarList compact fmt={(v) => pct(v, 0)} max={1} valueHeader="Загрузка"
+      ariaLabel={`Загрузка ${rows.length} типов оборудования портфелем: от ${pct(rows[0].utilization, 0)} до ${pct(rows[rows.length - 1].utilization, 0)}`}
+      rows={rows.map((l) => ({
+        key: l.wc_type_id, label: nameOf(l.wc_type_id), value: Math.min(1, l.utilization), marked: l.utilization >= HOT_LOAD,
+        secondary: l.utilization >= HOT_LOAD ? <span className="glyph-setup">близко к пределу</span> : undefined,
+      }))} />
   )
 }
 
@@ -146,13 +145,13 @@ export function OptimizationScreen() {
     objective: (['cvar', 'worstcase', 'meanvariance', 'minregret'].includes(sc.objective ?? '') ? sc.objective : 'cvar') as Objective,
     alpha: String(Number(sc.alpha) || 0.1), maxShare: String(Number(sc.max_share) || 0.35),
   })
-  const InheritBadge = ({ changed, field }: { changed: boolean; field: 'objective' | 'alpha' | 'maxShare' }) => inherited ? (
-    <span className="opt2-inherit">
-      <ProvenanceBadge provenance={changed ? 'manual' : 'default'} title={changed ? 'переопределено для этого прогона' : `из сценария «${inherited.scenarioName}»`} />
-      <span className="opt2-inherit__t">{changed ? 'для прогона' : 'из сценария'}</span>
-      {changed && <button type="button" className="pf-link" onClick={() => patchOptForm({ [field]: inherited[field] } as Partial<typeof form>)}>вернуть</button>}
-    </span>
-  ) : null
+  /** Паспорт поля критерия (UX-V2 §8 п. 3): из сценария ○ или переопределено для прогона ■ с «вернуть». */
+  const passport = (changed: boolean, field: 'objective' | 'alpha' | 'maxShare') => inherited ? {
+    provenance: (changed ? 'manual' : 'default') as Provenance,
+    owner: changed ? 'этот прогон' : `из сценария «${inherited.scenarioName}»`,
+    changed,
+    onRevert: changed ? () => patchOptForm({ [field]: inherited[field] } as Partial<typeof form>) : undefined,
+  } : {}
 
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
@@ -216,13 +215,15 @@ export function OptimizationScreen() {
         blocks={['decisions', 'criteria']}
         subtitle={<>Цены продукции — случайные величины сценария. Методом статистических испытаний строится распределение
           прибыли каждого портфеля и выбирается <b>робастное</b> решение — лучшее в неблагоприятных сценариях, а не в среднем.</>}
+        actions={result && !soft && result.run_id
+          ? <button type="button" className="btn" onClick={() => document.getElementById('opt2-save')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} title="Главная связка Стадия 2 → Стадия 1: сохранить программу и открыть «План»">Передать в «План» ↓</button>
+          : undefined}
       />
 
       <section className="dk-card opt2-params dk-rise" style={rise(0)} aria-label="Параметры оптимизации">
-        <div className="opt2-params__row">
-          <label className="opt2-field">
-            <span className="opt2-field__label">Сценарий внешних условий</span>
-            <select value={form.scenarioId} onChange={(e) => {
+        <div className="opt2-params__grid">
+          <ParamField label="Сценарий внешних условий" value={null} size="md">
+            <select className="dk-select" value={form.scenarioId} aria-label="Сценарий внешних условий" onChange={(e) => {
               const sc = scenarios.find((s) => s.id === e.target.value)
               patchOptForm({ scenarioId: e.target.value, ...(sc?.months ? { horizonMonths: String(sc.months) } : {}) })
               if (sc) inheritFrom(sc)
@@ -231,29 +232,20 @@ export function OptimizationScreen() {
               {scenarios.length === 0 && <option value="">— базовые цены НСИ —</option>}
               {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </label>
-          <div className="opt2-field">
-            <span className="opt2-field__label">Критерий <InheritBadge changed={ovr.objective} field="objective" /></span>
+          </ParamField>
+          <ParamField label="Критерий" value={null} size="md" {...passport(ovr.objective, 'objective')}>
             <Segmented label="Критерий робастности" value={form.objective}
               onChange={(id: Objective) => patchOptForm({ objective: id })}
               options={OBJECTIVES.map((o) => ({ id: o.id, label: o.label, title: o.hint }))} />
-          </div>
-          <label className="opt2-field">
-            <span className="opt2-field__label"><span className="no-caps">α</span> хвоста<InfoTip id="opt.cvar" /> <InheritBadge changed={ovr.alpha} field="alpha" /></span>
-            <input type="number" min="0.01" max="0.5" step="0.05" value={form.alpha} onChange={(e) => patchOptForm({ alpha: e.target.value })} />
-          </label>
-          <label className="opt2-field">
-            <span className="opt2-field__label">Прогонов</span>
-            <input type="number" min="200" step="500" value={form.samples} onChange={(e) => patchOptForm({ samples: e.target.value })} />
-          </label>
-          <label className="opt2-field">
-            <span className="opt2-field__label">Макс. доля изделия <InheritBadge changed={ovr.maxShare} field="maxShare" /></span>
-            <input type="number" min="0.1" max="1" step="0.05" value={form.maxShare} onChange={(e) => patchOptForm({ maxShare: e.target.value })} />
-          </label>
-          <label className="opt2-field">
-            <span className="opt2-field__label">Горизонт, мес</span>
-            <input type="number" min="1" max="36" value={form.horizonMonths} onChange={(e) => patchOptForm({ horizonMonths: e.target.value })} />
-          </label>
+          </ParamField>
+          <ParamField label="α хвоста" value={Number(form.alpha)} unit="доля" size="md" info="opt.cvar" min={0.01} max={0.5} step={0.05}
+            onChange={(v) => patchOptForm({ alpha: String(v) })} {...passport(ovr.alpha, 'alpha')} />
+          <ParamField label="Прогонов" value={Number(form.samples)} unit="сценариев" size="md" min={200} step={500}
+            onChange={(v) => patchOptForm({ samples: String(v) })} provenance="manual" owner="этот прогон" />
+          <ParamField label="Макс. доля изделия" value={Number(form.maxShare)} unit="доля" size="md" min={0.1} max={1} step={0.05}
+            onChange={(v) => patchOptForm({ maxShare: String(v) })} {...passport(ovr.maxShare, 'maxShare')} />
+          <ParamField label="Горизонт" value={Number(form.horizonMonths)} unit="мес" size="md" min={1} max={36} step={1}
+            onChange={(v) => patchOptForm({ horizonMonths: String(v) })} provenance="default" owner="из сценария" />
         </div>
         <div className="opt2-params__row">
           <Switch checked={form.exact} onChange={(v) => patchOptForm({ exact: v })}
@@ -279,7 +271,7 @@ export function OptimizationScreen() {
 
       {!result && !running && !error && (
         <EmptyState title="Портфель ещё не рассчитан" diagram="cvar-tail"
-          action={<button type="button" className="btn btn--primary" onClick={run}>Найти робастное решение</button>}>
+          action={<button type="button" className="btn" onClick={run}>Найти робастное решение ↑</button>}>
           Выберите сценарий цен и критерий. Система построит распределение прибыли для ~120 портфелей и выберет тот,
           у которого лучше всего среднее в худших α сценариев (CVaR).
         </EmptyState>
@@ -292,7 +284,7 @@ export function OptimizationScreen() {
       {result && !soft && (
         <div className="opt2-grid">
           <RobustHero result={result} nameOf={nameOf} footer={result.run_id && (
-            <div className="opt2-save">
+            <div className="opt2-save" id="opt2-save">
               <input value={planName} placeholder="Название производственной программы…" onChange={(e) => setPlanName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && savePlan()} />
               <button type="button" className="btn btn--primary" onClick={savePlan}>Передать в «План»</button>
@@ -314,7 +306,6 @@ export function OptimizationScreen() {
                 <span className="opt2-meta">{result.candidates.filter((c) => c.is_pareto).length} недоминируемых из {result.candidates.length}</span>
               </div>
               <ParetoFrontier candidates={result.candidates} />
-              <ParetoLegend />
             </section>
           )}
           <section className="dk-card opt2-span-6 dk-rise" style={rise(7)}>

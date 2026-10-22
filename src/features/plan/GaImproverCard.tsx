@@ -6,9 +6,7 @@ import type { SchedImprover } from '../../lib/api'
 import { hours, num } from '../../explain/format'
 import { InfoTip } from '../../ui/InfoTip'
 import { Chip } from '../../ui/kit'
-
-/** Координата SVG с точностью 0,1 px (без toFixed — числа только через format.ts). */
-const px = (v: number) => Math.round(v * 10) / 10
+import { LineChart } from '../../ui/charts'
 
 const CRITERIA: ReadonlyArray<[keyof NonNullable<SchedImprover['weights']>, string]> = [
   ['due', 'срок'], ['rem', 'остаток'], ['duration', 'длительность'], ['inputs', 'входы'], ['setup', 'наладка'],
@@ -28,29 +26,19 @@ function formulaTerms(w: NonNullable<SchedImprover['weights']>) {
     .sort((a, b) => Math.abs(b.w) - Math.abs(a.w))
 }
 
-function Convergence({ history, baseline }: { history: NonNullable<SchedImprover['history']>; baseline: number }) {
+/** Кривая сходимости — `LineChart`: лучшее F по поколениям и базовая линия правила пунктиром (порог). */
+function Convergence({ history, baseline, rule }: { history: NonNullable<SchedImprover['history']>; baseline: number; rule: string }) {
   if (history.length < 2) return null
-  const W = 240
-  const H = 72
-  const values = [baseline, ...history.map((h) => h.best)]
-  const lo = Math.min(...values)
-  const hi = Math.max(...values)
-  const span = hi - lo || 1
-  const x = (g: number) => (g / Math.max(1, history.length - 1)) * W
-  const y = (v: number) => 4 + (1 - (v - lo) / span) * (H - 8)
-  const best = history.map((h, i) => `${px(x(i))},${px(y(h.best))}`).join(' ')
+  const labels = history.map((_h, i) => `${i + 1}`)
   return (
-    <figure className="pl-ga__chart">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
-           aria-label={`Сходимость ГА: F от ${num(history[0].best, 0)} до ${num(history[history.length - 1].best, 0)}`}>
-        <line className="pl-ga__base" x1={0} x2={W} y1={y(baseline)} y2={y(baseline)} />
-        <polyline className="pl-ga__best" points={best} />
-      </svg>
-      <figcaption className="pl-ga__legend">
-        <span><i className="pl-ga__key pl-ga__key--best" />лучшее F по поколениям</span>
-        <span><i className="pl-ga__key pl-ga__key--base" />правило</span>
-      </figcaption>
-    </figure>
+    <div className="pl-ga__chart">
+      <LineChart labels={labels} height={128} compact xHeader="поколение" fmtY={(v) => num(v, 0)} unit="F"
+        series={[
+          { key: 'best', name: 'лучшее F по поколениям', values: history.map((h) => h.best), color: 'var(--chart-3)', fmt: (v) => num(v, 1) },
+          { key: 'base', name: `правило ${rule}`, values: history.map(() => baseline), color: 'var(--chart-2)', dashed: true, fmt: (v) => num(v, 1) },
+        ]}
+        ariaLabel={`Сходимость ГА: F от ${num(history[0].best, 0)} до ${num(history[history.length - 1].best, 0)} за ${history.length} поколений; правило ${rule} — ${num(baseline, 0)}`} />
+    </div>
   )
 }
 
@@ -100,7 +88,7 @@ export function GaImproverCard({ imp, rule }: { imp: SchedImprover; rule: string
           {imp.stopped && <Chip tone="idle">остановка: {STOP_LABEL[imp.stopped]}</Chip>}
         </div>
       </div>
-      {imp.history && <Convergence history={imp.history} baseline={imp.score_before} />}
+      {imp.history && <Convergence history={imp.history} baseline={imp.score_before} rule={rule} />}
     </section>
   )
 }

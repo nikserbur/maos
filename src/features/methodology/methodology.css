@@ -119,22 +119,9 @@
 .mth-steps li::marker { color: var(--ochre); font-weight: 600; }
 
 /* ── Чипы статуса ───────────────────────────────────────────────────────── */
-.mth-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 10px 3px 8px;
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-11);
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-}
-.mth-chip__glyph { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
-.mth-chip__stage { font-weight: 600; }
-.mth-chip__what { color: var(--text-muted); }
-.mth-chip--done .mth-chip__glyph { background: var(--status-running); }
-.mth-chip--w1 .mth-chip__glyph { background: var(--ochre); clip-path: polygon(50% 0, 100% 100%, 0 100%); border-radius: 0; }
-.mth-chip--w2 .mth-chip__glyph { background: transparent; border: 1.5px solid var(--ultramarine); }
-.mth-chip--w3 .mth-chip__glyph { background: var(--ultramarine); border-radius: 1px; }
+.dk-chip.mth-chip { height: 24px; font-size: var(--fs-11); }
+.mth-chip__stage { font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.mth-chip__what { font-weight: 400; color: var(--text-muted); }
 
 /* ── Рисунок ────────────────────────────────────────────────────────────── */
 .mth-fig {

@@ -95,3 +95,26 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ── Модификаторы форм НСИ (на базе .form__* из global.css; вместо inline-стилей) ── */
+.form__field--end { justify-content: flex-end; padding-bottom: var(--space-1); }
+.form__hint--tight { margin-top: var(--space-1); }
+.form__hint--warn { color: var(--status-setup); }
+.form__hint--danger { color: var(--status-down); }
+.form__check--flat { margin: 0; }
+.form__check--group { font-weight: 600; margin-bottom: var(--space-1); }
+.form__checks { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.form__inputs-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+.form__select--grow { flex: 1; }
+.form__input--qty { width: 90px; }
+.form__add { margin-top: var(--space-1); }
+.form__groups { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+.form__group { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2) var(--space-3); }
+.form__group-note { color: var(--text-muted); font-weight: 400; }
+.form__group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 2px var(--space-3);
+  padding-left: var(--space-5);
+}
+.nsi__form-missing { color: var(--text-muted); }

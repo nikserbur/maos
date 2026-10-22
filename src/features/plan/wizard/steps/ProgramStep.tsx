@@ -6,7 +6,8 @@
  */
 import { useState } from 'react'
 import { api, type DemandOrder } from '../../../../lib/api'
-import { money, num } from '../../../../explain/format'
+import { dateTime, money, num } from '../../../../explain/format'
+import { Icon } from '../../../../shell/icons'
 import { DateHoursInput } from '../../../../ui/DateHoursInput'
 import { PromptDialog } from '../../../../ui/PromptDialog'
 import { Segmented } from '../../../../ui/kit'
@@ -16,7 +17,6 @@ import type { WizardData } from '../useWizardData'
 import { useRunSummaries } from '../useRunSummaries'
 import { useWizard, wizardActions, type ProgramSource, type WizardOrder } from '../wizardStore'
 
-const fmtDate = (s: string) => new Date(s.replace(' ', 'T')).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 const OBJ: Record<string, string> = { cvar: 'CVaR', worstcase: 'maximin', meanvariance: 'E − λσ', minregret: 'Сэвидж' }
 const RUNS_SHOWN = 12
 
@@ -83,7 +83,7 @@ export function ProgramStep({ data }: { data: WizardData }) {
                 return (
                   <li key={r.id}>
                     <button type="button" role="option" aria-selected={w.runId === r.id} className={`wz-run${w.runId === r.id ? ' is-on' : ''}`} onClick={() => wizardActions.setRunId(r.id)}>
-                      <span className="wz-run__date num">{fmtDate(r.created_at)}</span>
+                      <span className="wz-run__date num">{dateTime(r.created_at)}</span>
                       <span className="wz-run__sc">«{scName(r.scenario_id)}»</span>
                       <span className="wz-run__kpi num">
                         {sm === undefined ? '…' : sm === null ? '—' : <>E <b>{money(sm.expected)}</b> · CVaR <b>{money(sm.cvar)}</b> · <b>{num(sm.items, 0)}</b> изд.</>}
@@ -140,7 +140,7 @@ export function ProgramStep({ data }: { data: WizardData }) {
                   <td>{editable
                     ? <input className="plan__cell" type="number" min="1" max="9" defaultValue={o.priority} onBlur={(e) => Number(e.target.value) !== o.priority && updateOrder(o, { priority: Number(e.target.value) || 5 })} />
                     : o.priority}</td>
-                  {editable && <td><button className="btn btn--danger btn--sm" onClick={() => delOrder(o)} aria-label="Удалить заказ">✕</button></td>}
+                  {editable && <td><button className="btn btn--danger btn--sm btn--icon" onClick={() => delOrder(o)} aria-label="Удалить заказ" title="Удалить заказ"><Icon name="close" size={12} /></button></td>}
                 </tr>
               ))}
               {data.program.length === 0 && <tr><td colSpan={5} className="wz-orders__empty">

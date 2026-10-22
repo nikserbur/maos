@@ -3,18 +3,13 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { SceneEdge, SceneNode } from './graph/sceneModel'
 import { parkingSpot } from './siteLayout'
+import { useScenePalette, themed } from './scenePalette'
 
 // Отступ забора/периметра от крайних цехов (совпадает с MARGIN в Facility) — по нему
 // вычисляем габариты площадки, чтобы въездная дорога дошла ровно до +X-ворот.
 const MARGIN = 16
 
-const ASPHALT = '#34383d'
-const SHOULDER = '#54595f'
-const LANE = '#c9b65a'
-const KERB = '#b9bec4'
-const ZEBRA = '#e7e9ec'
 // Тротуар: светлый бетон, приподнятый бордюр вдоль обеих сторон проезжей части.
-const WALK = '#b8bcc0'
 const WALK_W = 0.5          // ширина полосы тротуара
 const WALK_H = 0.2          // высота бордюра (приподнят над асфальтом)
 const ROAD_W = 2.4
@@ -343,6 +338,7 @@ function sampleAt(pts: Pt[], acc: number[], s: number): { p: Pt; yaw: number; ta
 
 /** Прерывистая осевая разметка вдоль отрезка (равные штрихи + разрывы). */
 function DashedCenter({ cx, cz, along, horiz }: { cx: number; cz: number; along: number; horiz: boolean }) {
+  const pal = useScenePalette()
   const dash = 0.7, gap = 0.55, step = dash + gap
   const inner = Math.max(0, along - 1.4)
   const count = Math.max(0, Math.floor((inner + gap) / step))
@@ -354,7 +350,7 @@ function DashedCenter({ cx, cz, along, horiz }: { cx: number; cz: number; along:
     <group>
       {dashes.map((o, i) => (
         <mesh key={i} position={[cx + (horiz ? o : 0), Y_LANE, cz + (horiz ? 0 : o)]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={size} /><meshBasicMaterial color={LANE} />
+          <planeGeometry args={size} /><meshBasicMaterial color={pal.yellow.l} />
         </mesh>
       ))}
     </group>
@@ -367,11 +363,12 @@ function DashedCenter({ cx, cz, along, horiz }: { cx: number; cz: number; along:
  * len — длина полосы по оси участка (уже с вычетом углов), off — смещение от осевой.
  */
 function WalkStrip({ cx, cz, len, off, horiz }: { cx: number; cz: number; len: number; off: number; horiz: boolean }) {
+  const pal = useScenePalette()
   if (len < 0.4) return null
   const size: [number, number, number] = horiz ? [len, WALK_H, WALK_W] : [WALK_W, WALK_H, len]
   return (
     <mesh position={[cx + (horiz ? 0 : off), Y_WALK, cz + (horiz ? off : 0)]} castShadow receiveShadow>
-      <boxGeometry args={size} /><meshStandardMaterial color={WALK} roughness={0.92} />
+      <boxGeometry args={size} /><meshStandardMaterial color={pal.n[6]} roughness={0.92} />
     </mesh>
   )
 }
@@ -392,6 +389,7 @@ type EndKind = 'corner' | 'round' | 'plain'
  * cutLo/cutHi (вырез угла = CORNER_R) сохранены как публичные пропсы.
  */
 function RoadStrip({ cx, cz, w, d, cutLo = 0, cutHi = 0, loKind = 'plain', hiKind = 'plain', gaps = [] }: { cx: number; cz: number; w: number; d: number; cutLo?: number; cutHi?: number; loKind?: EndKind; hiKind?: EndKind; gaps?: [number, number][] }) {
+  const pal = useScenePalette()
   const horiz = w >= d
   const full = Math.max(w, d)
   const wTrim = ROAD_W / 2 + 0.4
@@ -422,10 +420,10 @@ function RoadStrip({ cx, cz, w, d, cutLo = 0, cutHi = 0, loKind = 'plain', hiKin
   return (
     <group>
       <mesh position={[acx, Y_SHOULDER, acz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={shoulder} /><meshStandardMaterial color={SHOULDER} roughness={1} />
+        <planeGeometry args={shoulder} /><meshStandardMaterial color={pal.n[2]} roughness={1} />
       </mesh>
       <mesh position={[acx, Y_ROAD, acz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={road} /><meshStandardMaterial color={ASPHALT} roughness={1} />
+        <planeGeometry args={road} /><meshStandardMaterial color={pal.n[1]} roughness={1} />
       </mesh>
       {walkSpans.map(([s0, s1], i) => {
         const len = s1 - s0, mid = (s0 + s1) / 2
@@ -463,7 +461,9 @@ function subtractGaps(lo: number, hi: number, gaps: [number, number][]): [number
  * по дуге, каждое повёрнуто по касательной — читается как непрерывный бордюр,
  * стыкующийся с прямыми участками. Локальный θ → world-XZ (cos θ, −sin θ).
  */
-function WalkArc({ r, a0, color = WALK }: { r: number; a0: number; color?: string }) {
+function WalkArc({ r, a0, color: colorProp }: { r: number; a0: number; color?: string }) {
+  const pal = useScenePalette()
+  const color = colorProp ?? pal.n[6]
   const links = 7
   const step = Math.PI / 2 / links
   const segLen = r * step + 0.06                        // лёгкий нахлёст звеньев
@@ -494,6 +494,7 @@ function WalkArc({ r, a0, color = WALK }: { r: number; a0: number; color?: strin
  * непрерывен на повороте, машины идут ровно по дуге.
  */
 function CornerPatch({ cx, cz, a0 }: Corner) {
+  const pal = useScenePalette()
   const HW = ROAD_W / 2
   const rIn = CORNER_R - HW, rOut = CORNER_R + HW
   const seg = 14
@@ -503,17 +504,17 @@ function CornerPatch({ cx, cz, a0 }: Corner) {
       {/* Обочина-филе (шире асфальта). */}
       <mesh position={[0, Y_SHOULDER, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <ringGeometry args={[Math.max(0, rIn - 0.45), rOut + 0.45, seg, 1, a0, Math.PI / 2]} />
-        <meshStandardMaterial color={SHOULDER} roughness={1} />
+        <meshStandardMaterial color={pal.n[2]} roughness={1} />
       </mesh>
       {/* Асфальт-филе. */}
       <mesh position={[0, Y_ROAD, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <ringGeometry args={[Math.max(0, rIn), rOut, seg, 1, a0, Math.PI / 2]} />
-        <meshStandardMaterial color={ASPHALT} roughness={1} />
+        <meshStandardMaterial color={pal.n[1]} roughness={1} />
       </mesh>
       {/* Осевая: тонкое кольцо-дуга (жёлтая), чуть короче квадранта. */}
       <mesh position={[0, Y_LANE, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[CORNER_R - 0.065, CORNER_R + 0.065, seg, 1, a0 + 0.14, Math.PI / 2 - 0.28]} />
-        <meshBasicMaterial color={LANE} />
+        <meshBasicMaterial color={pal.yellow.l} />
       </mesh>
       {/* Приподнятый тротуар: внешняя и (если помещается) внутренняя дуги. */}
       <WalkArc r={CORNER_R + wr} a0={a0} />
@@ -524,6 +525,7 @@ function CornerPatch({ cx, cz, a0 }: Corner) {
 
 /** Пешеходный переход «зебра» поперёк дороги у развязки. */
 function Crossing({ x, z, horiz }: { x: number; z: number; horiz: boolean }) {
+  const pal = useScenePalette()
   const stripes = 5, sw = 0.22, sgap = 0.2, step = sw + sgap
   const start = -((stripes - 1) * step) / 2
   const size: [number, number] = horiz ? [sw, ROAD_W - 0.2] : [ROAD_W - 0.2, sw]
@@ -533,7 +535,7 @@ function Crossing({ x, z, horiz }: { x: number; z: number; horiz: boolean }) {
     <group>
       {bars.map((o, i) => (
         <mesh key={i} position={[x + (horiz ? o : 0), Y_ZEBRA, z + (horiz ? 0 : o)]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={size} /><meshBasicMaterial color={ZEBRA} />
+          <planeGeometry args={size} /><meshBasicMaterial color={pal.n[8]} />
         </mesh>
       ))}
     </group>
@@ -548,6 +550,7 @@ function Crossing({ x, z, horiz }: { x: number; z: number; horiz: boolean }) {
  * каждого рукава (там дорога входит в кольцо). Если рукавов нет — сплошное кольцо.
  */
 function RoundWalkRing({ arms }: { arms: [number, number][] }) {
+  const pal = useScenePalette()
   const TAU = Math.PI * 2
   // Угловой полураствор проёма на радиусе бордюра: должен превышать поперечный вынос
   // тротуара входящей дороги (walkOff + полширины борта), иначе диагональные звенья
@@ -571,7 +574,7 @@ function RoundWalkRing({ arms }: { arms: [number, number][] }) {
       {spans.map((s, i) => (
         <mesh key={i} position={[0, Y_WALK, 0]} rotation={[-Math.PI / 2, 0, 0]} castShadow receiveShadow>
           <ringGeometry args={[ROUND_WALK_RIN, ROUND_WALK_ROUT, 40, 1, s.start, s.len]} />
-          <meshStandardMaterial color={WALK} roughness={0.92} />
+          <meshStandardMaterial color={pal.n[6]} roughness={0.92} />
         </mesh>
       ))}
     </group>
@@ -585,44 +588,45 @@ function RoundWalkRing({ arms }: { arms: [number, number][] }) {
  * На улице островок газонный с плантером/деревцем; в цехе — бетонный.
  */
 function Roundabout({ x, z, indoor, arms = [] }: { x: number; z: number; indoor?: boolean; arms?: [number, number][] }) {
+  const pal = useScenePalette()
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, Y_ROAD, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <ringGeometry args={[1.3, ROUND_OUTER_R, 36]} /><meshStandardMaterial color={ASPHALT} roughness={1} />
+        <ringGeometry args={[1.3, ROUND_OUTER_R, 36]} /><meshStandardMaterial color={pal.n[1]} roughness={1} />
       </mesh>
       {/* Внешний пешеходный бордюр-кольцо с проёмами под дорожные рукава. */}
       <RoundWalkRing arms={arms} />
       {/* Внешняя и внутренняя кольцевая разметка. */}
       <mesh position={[0, Y_LANE, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[2.5, 2.6, 36]} /><meshBasicMaterial color={indoor ? '#c7cdd2' : LANE} />
+        <ringGeometry args={[2.5, 2.6, 36]} /><meshBasicMaterial color={indoor ? pal.n[7] : pal.yellow.l} />
       </mesh>
       <mesh position={[0, Y_LANE, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.3, 1.4, 36]} /><meshBasicMaterial color={indoor ? '#c7cdd2' : LANE} />
+        <ringGeometry args={[1.3, 1.4, 36]} /><meshBasicMaterial color={indoor ? pal.n[7] : pal.yellow.l} />
       </mesh>
       {/* Бордюр-кольцо островка. */}
       <mesh position={[0, Y_KERB, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.18, 1.3, 32]} /><meshStandardMaterial color={KERB} roughness={0.9} />
+        <ringGeometry args={[1.18, 1.3, 32]} /><meshStandardMaterial color={pal.n[6]} roughness={0.9} />
       </mesh>
       {/* Островок: приподнятый газон (улица) или плоский бетон (цех). */}
       {indoor ? (
         <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[1.18, 28]} /><meshStandardMaterial color="#6a7076" roughness={1} />
+          <circleGeometry args={[1.18, 28]} /><meshStandardMaterial color={pal.n[3]} roughness={1} />
         </mesh>
       ) : (
         <mesh position={[0, 0.14, 0]} receiveShadow castShadow>
-          <cylinderGeometry args={[1.14, 1.18, 0.28, 30]} /><meshStandardMaterial color="#456b3f" roughness={1} />
+          <cylinderGeometry args={[1.14, 1.18, 0.28, 30]} /><meshStandardMaterial color={pal.green.m} roughness={1} />
         </mesh>
       )}
       {!indoor && (
         <group>
           {/* Мягкий газонный купол — островок читается объёмным, а не плоским пятном. */}
           <mesh position={[0, 0.28, 0]} scale={[1, 0.42, 1]} castShadow receiveShadow>
-            <sphereGeometry args={[1.0, 22, 12]} /><meshStandardMaterial color="#4f7444" roughness={1} />
+            <sphereGeometry args={[1.0, 22, 12]} /><meshStandardMaterial color={pal.green.m} roughness={1} />
           </mesh>
           {/* Кольцо декоративного кустарника/цветов по краю купола. */}
           {Array.from({ length: 10 }, (_, k) => {
             const a = (k / 10) * Math.PI * 2
-            const c = k % 3 === 0 ? '#c98a3a' : k % 3 === 1 ? '#5c8a3e' : '#b34b6a'
+            const c = k % 3 === 0 ? pal.orange.m : k % 3 === 1 ? pal.green.m : pal.red.m
             return (
               <mesh key={`s${k}`} position={[Math.cos(a) * 0.82, 0.4, Math.sin(a) * 0.82]} castShadow>
                 <sphereGeometry args={[0.2, 8, 6]} /><meshStandardMaterial color={c} roughness={1} />
@@ -631,11 +635,11 @@ function Roundabout({ x, z, indoor, arms = [] }: { x: number; z: number; indoor?
           })}
           {/* Аккуратное деревце по центру: ствол + округлая многосферная крона (не конус). */}
           <mesh position={[0, 0.78, 0]} castShadow>
-            <cylinderGeometry args={[0.08, 0.11, 0.8, 8]} /><meshStandardMaterial color="#6b4a2b" roughness={0.95} />
+            <cylinderGeometry args={[0.08, 0.11, 0.8, 8]} /><meshStandardMaterial color={pal.orange.m} roughness={0.95} />
           </mesh>
           {([[0, 1.28, 0, 0.5], [0.34, 1.12, 0.16, 0.36], [-0.32, 1.16, -0.14, 0.34], [0.12, 1.5, -0.18, 0.3]] as const).map(([px, py, pz, r], k) => (
             <mesh key={`c${k}`} position={[px, py, pz]} castShadow>
-              <sphereGeometry args={[r, 8, 6]} /><meshStandardMaterial color={k === 3 ? '#c07a2e' : '#3f6b3a'} roughness={1} />
+              <sphereGeometry args={[r, 8, 6]} /><meshStandardMaterial color={k === 3 ? pal.orange.m : pal.green.m} roughness={1} />
             </mesh>
           ))}
         </group>
@@ -645,8 +649,8 @@ function Roundabout({ x, z, indoor, arms = [] }: { x: number; z: number; indoor?
 }
 
 /** Цветовые варианты грузовика (детерминированно по индексу). */
-const CAB_COLORS = ['#e9edf0', '#c33636', '#2f6fb0'] as const
-const TRAILER_COLORS = ['#eef1f3', '#c2c7cc'] as const
+const useCabColors = themed((pal) => ([pal.n[8], pal.red.m, pal.blue.m] as const))
+const useTrailerColors = themed((pal) => ([pal.n[8], pal.n[6]] as const))
 
 /** Готовый маршрут для одной машины: полилиния + метрика + зоны переходов. */
 interface VehicleRoute {
@@ -774,15 +778,16 @@ function VehicleFleet({ routes, indoor }: { routes: VehicleRoute[]; indoor?: boo
 
 /** Вилочный погрузчик (для движения внутри цеха). */
 function ForkliftModel() {
+  const pal = useScenePalette()
   return (
     <group position={[0, 0.05, 0]}>
-      <mesh position={[0, 0.5, 0]} castShadow><boxGeometry args={[1.4, 0.7, 0.9]} /><meshStandardMaterial color="#d8b24a" metalness={0.2} roughness={0.6} /></mesh>
-      <mesh position={[0.35, 1.15, 0]}><boxGeometry args={[0.55, 0.6, 0.8]} /><meshStandardMaterial color="#33363a" /></mesh>
-      <mesh position={[0.85, 0.7, 0]}><boxGeometry args={[0.12, 1.4, 0.7]} /><meshStandardMaterial color="#2a2d31" /></mesh>
-      <mesh position={[1.1, 0.2, 0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color="#1e2024" /></mesh>
-      <mesh position={[1.1, 0.2, -0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color="#1e2024" /></mesh>
+      <mesh position={[0, 0.5, 0]} castShadow><boxGeometry args={[1.4, 0.7, 0.9]} /><meshStandardMaterial color={pal.yellow.l} metalness={0.2} roughness={0.6} /></mesh>
+      <mesh position={[0.35, 1.15, 0]}><boxGeometry args={[0.55, 0.6, 0.8]} /><meshStandardMaterial color={pal.n[1]} /></mesh>
+      <mesh position={[0.85, 0.7, 0]}><boxGeometry args={[0.12, 1.4, 0.7]} /><meshStandardMaterial color={pal.n[1]} /></mesh>
+      <mesh position={[1.1, 0.2, 0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color={pal.n[0]} /></mesh>
+      <mesh position={[1.1, 0.2, -0.18]}><boxGeometry args={[0.6, 0.08, 0.1]} /><meshStandardMaterial color={pal.n[0]} /></mesh>
       {[[0.45, 0.45], [0.45, -0.45], [-0.45, 0.45], [-0.45, -0.45]].map(([wx, wz], i) => (
-        <mesh key={i} position={[wx, 0.22, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.22, 0.22, 0.16, 10]} /><meshStandardMaterial color="#15171a" /></mesh>
+        <mesh key={i} position={[wx, 0.22, wz]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.22, 0.22, 0.16, 10]} /><meshStandardMaterial color={pal.n[0]} /></mesh>
       ))}
     </group>
   )
@@ -790,43 +795,47 @@ function ForkliftModel() {
 
 /** Колесо грузовика (тёмная шина + светлый диск). */
 function TruckWheel({ position }: { position: [number, number, number] }) {
+  const pal = useScenePalette()
   return (
     <group position={position} rotation={[Math.PI / 2, 0, 0]}>
-      <mesh castShadow><cylinderGeometry args={[0.19, 0.19, 0.13, 12]} /><meshStandardMaterial color="#15171a" roughness={0.85} /></mesh>
-      <mesh position={[0, 0.07, 0]}><cylinderGeometry args={[0.09, 0.09, 0.02, 10]} /><meshStandardMaterial color="#9aa0a6" metalness={0.5} roughness={0.5} /></mesh>
+      <mesh castShadow><cylinderGeometry args={[0.19, 0.19, 0.13, 12]} /><meshStandardMaterial color={pal.n[0]} roughness={0.85} /></mesh>
+      <mesh position={[0, 0.07, 0]}><cylinderGeometry args={[0.09, 0.09, 0.02, 10]} /><meshStandardMaterial color={pal.n[5]} metalness={0.5} roughness={0.5} /></mesh>
     </group>
   )
 }
 
 /** Седельная фура: кабина (стекло/фары/решётка/колёса) + короб-полуприцеп (двери/фонари). */
 function Lorry({ variant }: { variant: number }) {
+  const pal = useScenePalette()
+  const CAB_COLORS = useCabColors()
+  const TRAILER_COLORS = useTrailerColors()
   const cab = CAB_COLORS[variant % CAB_COLORS.length]
   const trailer = TRAILER_COLORS[Math.floor(variant / CAB_COLORS.length) % TRAILER_COLORS.length]
   // Кабина спереди (по +X = направление движения), прицеп сзади.
   return (
     <group position={[0, 0.02, 0]}>
       {/* Рама. */}
-      <mesh position={[-0.1, 0.2, 0]}><boxGeometry args={[2.3, 0.12, 0.62]} /><meshStandardMaterial color="#23262b" /></mesh>
+      <mesh position={[-0.1, 0.2, 0]}><boxGeometry args={[2.3, 0.12, 0.62]} /><meshStandardMaterial color={pal.n[0]} /></mesh>
 
       {/* --- Кабина --- */}
       <mesh position={[0.82, 0.5, 0]} castShadow><boxGeometry args={[0.6, 0.56, 0.66]} /><meshStandardMaterial color={cab} metalness={0.3} roughness={0.5} /></mesh>
       {/* Лобовое стекло. */}
-      <mesh position={[1.08, 0.58, 0]}><boxGeometry args={[0.1, 0.32, 0.56]} /><meshStandardMaterial color="#1c2a3a" metalness={0.5} roughness={0.25} /></mesh>
+      <mesh position={[1.08, 0.58, 0]}><boxGeometry args={[0.1, 0.32, 0.56]} /><meshStandardMaterial color={pal.n[1]} metalness={0.5} roughness={0.25} /></mesh>
       {/* Решётка. */}
-      <mesh position={[1.13, 0.3, 0]}><boxGeometry args={[0.05, 0.24, 0.5]} /><meshStandardMaterial color="#3a3d42" metalness={0.4} roughness={0.6} /></mesh>
+      <mesh position={[1.13, 0.3, 0]}><boxGeometry args={[0.05, 0.24, 0.5]} /><meshStandardMaterial color={pal.n[1]} metalness={0.4} roughness={0.6} /></mesh>
       {/* Бампер. */}
-      <mesh position={[1.14, 0.16, 0]}><boxGeometry args={[0.07, 0.1, 0.6]} /><meshStandardMaterial color="#2a2d31" metalness={0.4} roughness={0.5} /></mesh>
+      <mesh position={[1.14, 0.16, 0]}><boxGeometry args={[0.07, 0.1, 0.6]} /><meshStandardMaterial color={pal.n[1]} metalness={0.4} roughness={0.5} /></mesh>
       {/* Фары. */}
-      <mesh position={[1.15, 0.28, 0.22]}><boxGeometry args={[0.04, 0.1, 0.12]} /><meshStandardMaterial color="#ffe9a8" emissive="#ffd36b" emissiveIntensity={0.9} /></mesh>
-      <mesh position={[1.15, 0.28, -0.22]}><boxGeometry args={[0.04, 0.1, 0.12]} /><meshStandardMaterial color="#ffe9a8" emissive="#ffd36b" emissiveIntensity={0.9} /></mesh>
+      <mesh position={[1.15, 0.28, 0.22]}><boxGeometry args={[0.04, 0.1, 0.12]} /><meshStandardMaterial color={pal.yellow.l} emissive={pal.yellow.l} emissiveIntensity={0.9} /></mesh>
+      <mesh position={[1.15, 0.28, -0.22]}><boxGeometry args={[0.04, 0.1, 0.12]} /><meshStandardMaterial color={pal.yellow.l} emissive={pal.yellow.l} emissiveIntensity={0.9} /></mesh>
 
       {/* --- Короб-полуприцеп --- */}
       <mesh position={[-0.52, 0.62, 0]} castShadow><boxGeometry args={[1.36, 0.78, 0.66]} /><meshStandardMaterial color={trailer} roughness={0.7} metalness={0.1} /></mesh>
       {/* Задние двери (панель). */}
-      <mesh position={[-1.21, 0.62, 0]}><boxGeometry args={[0.04, 0.72, 0.6]} /><meshStandardMaterial color="#b7bcc1" roughness={0.7} /></mesh>
+      <mesh position={[-1.21, 0.62, 0]}><boxGeometry args={[0.04, 0.72, 0.6]} /><meshStandardMaterial color={pal.n[6]} roughness={0.7} /></mesh>
       {/* Задние фонари. */}
-      <mesh position={[-1.23, 0.34, 0.24]}><boxGeometry args={[0.03, 0.1, 0.08]} /><meshStandardMaterial color="#c22" emissive="#c22" emissiveIntensity={0.7} /></mesh>
-      <mesh position={[-1.23, 0.34, -0.24]}><boxGeometry args={[0.03, 0.1, 0.08]} /><meshStandardMaterial color="#c22" emissive="#c22" emissiveIntensity={0.7} /></mesh>
+      <mesh position={[-1.23, 0.34, 0.24]}><boxGeometry args={[0.03, 0.1, 0.08]} /><meshStandardMaterial color={pal.red.d} emissive={pal.red.d} emissiveIntensity={0.7} /></mesh>
+      <mesh position={[-1.23, 0.34, -0.24]}><boxGeometry args={[0.03, 0.1, 0.08]} /><meshStandardMaterial color={pal.red.d} emissive={pal.red.d} emissiveIntensity={0.7} /></mesh>
 
       {/* --- Колёса: передняя ось кабины + две задние оси прицепа --- */}
       <TruckWheel position={[0.8, 0.16, 0.34]} />

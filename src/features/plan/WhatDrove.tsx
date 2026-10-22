@@ -8,8 +8,12 @@
 import { useState } from 'react'
 import type { ScheduleResult } from '../../lib/api'
 import { hours, num, pct } from '../../explain/format'
+import { Meter, type MeterTone } from '../../ui/charts'
 import { GaImproverCard } from './GaImproverCard'
 import './plan-screen.css'
+
+/** Сила драйвера — метр: предупреждение / выигрыш / нейтрально. */
+const DRIVER_TONE: Record<Driver['tone'], MeterTone> = { warn: 'warn', good: 'good', neutral: 'neutral' }
 
 export interface Driver {
   id: string
@@ -69,7 +73,7 @@ export function WhatDrove({ result, pins }: { result: ScheduleResult; pins: numb
         {drivers.map((d) => (
           <li key={d.id} className={`pl-drove__row is-${d.tone}`}>
             <a className="pl-drove__title" href={`#/map/${d.mapNode}`} title="Узел на карте методологии">{d.title} ↗</a>
-            <span className="pl-drove__bar" aria-hidden="true"><span style={{ transform: `scaleX(${Math.max(0.04, d.weight)})` }} /></span>
+            <Meter value={Math.max(0.04, d.weight)} tone={DRIVER_TONE[d.tone]} className="pl-drove__bar" />
             <span className="pl-drove__detail">
               {d.detail}
               {d.id === 'ga' && hasGa && (

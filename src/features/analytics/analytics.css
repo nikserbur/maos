@@ -120,29 +120,6 @@
 .an-pin-cat { display: flex; gap: var(--space-3); align-items: baseline; flex-wrap: wrap; }
 .an-pin-cat__t { min-width: 96px; color: var(--text-muted); }
 .an-pin-cat__chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.an-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 var(--space-3);
-  font: inherit;
-  font-size: var(--fs-12);
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
-}
-.an-chip:hover { color: var(--text); border-color: var(--accent); }
-.an-chip:focus-visible { outline: none; box-shadow: var(--halo); }
-.an-chip.is-on {
-  color: var(--text);
-  font-weight: 600;
-  background: color-mix(in oklch, var(--accent) 20%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-}
 
 /* ── Графики: заголовок = метрики, редактор метрик под плотом ──────────────── */
 .an-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: var(--space-4); }
@@ -252,5 +229,5 @@
   .an-charts { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .an-pin, .an-chip { transition: none; }
+  .an-pin { transition: none; }
 }

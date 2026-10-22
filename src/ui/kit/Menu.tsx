@@ -85,7 +85,7 @@ export function Menu({ items, label, children, align = 'end', size = 'md' }: Men
       <button ref={buttonRef} type="button" className={btnCls} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? listId : undefined}
               aria-label={children ? undefined : label} title={children ? undefined : label}
               onClick={() => setOpen((v) => !v)} onKeyDown={onButtonKeyDown}>
-        <DotsIcon />
+        <Icon name="more" size={14} />
         {children}
       </button>
       {open && (
@@ -103,10 +103,3 @@ export function Menu({ items, label, children, align = 'end', size = 'md' }: Men
   )
 }
 
-function DotsIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-      <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
-    </svg>
-  )
-}
