@@ -26,7 +26,7 @@ export default function AppShell() {
   }, [active.id, screenId])
 
   useEffect(() => {
-    document.title = `${active.label} · MAOS`
+    document.title = `${active.label} · AUREUS`
   }, [active.label])
 
   return (

@@ -115,32 +115,37 @@ export function MarkTart({ size = 24, title, className }: MarkProps) {
   )
 }
 
-/** Глифы словесного знака M Λ ● S (кегль 28 ед., штрих 5, скос на стыках). */
+/** Глифы словесного знака A U R E U S (кегль 28 ед., штрих 5, скос на стыках):
+ *  A — Λ без перекладины, бочка R — ультрамариновый диск (как прежний ● в MΛ●S). */
 function WordmarkGlyphs() {
   return (
     <>
-      <polyline className="wm__t" points="82.5,46 82.5,20.5 92,36 101.5,20.5 101.5,46" />
-      <polyline className="wm__t" points="113,46 124.5,20.5 136,46" />
-      <circle className="wm__o" cx="160" cy="32" r="14" />
-      <path className="wm__t" d="M195.23 23.38 A5.75 5.75 0 1 0 190.25 32 A5.75 5.75 0 1 1 185.27 40.63" />
+      <polyline className="wm__t" points="80,46 91.5,20.5 103,46" />
+      <path className="wm__t" d="M110 20.5 V36 A9 9 0 0 0 128 36 V20.5" />
+      <line className="wm__t" x1="137.5" y1="20.5" x2="137.5" y2="46" />
+      <circle className="wm__o" cx="145" cy="27" r="7" />
+      <line className="wm__t" x1="144" y1="33" x2="154" y2="46" />
+      <path className="wm__t" d="M177 20.5 H160 V46 H177 M160 33.25 H173" />
+      <path className="wm__t" d="M184 20.5 V36 A9 9 0 0 0 202 36 V20.5" />
+      <path className="wm__t" d="M220.23 23.38 A5.75 5.75 0 1 0 215.25 32 A5.75 5.75 0 1 1 210.27 40.63" />
     </>
   )
 }
 
 interface WordmarkProps {
-  /** Высота прописной в px (ширина ≈ 4.25 × height). */
+  /** Высота прописной в px (ширина ≈ 5.1 × height). */
   height?: number
   title?: string
   className?: string
 }
 
-/** Словесный знак «MΛ●S» без шрифта — из примитивов Кандинского. */
+/** Словесный знак «ΛU●EUS» без шрифта — из примитивов Кандинского. */
 export function Wordmark({ height = 14, title, className }: WordmarkProps) {
   return (
     <svg
-      viewBox="80 18 119 28"
+      viewBox="80 18 143 28"
       height={height}
-      width={(height * 119) / 28}
+      width={(height * 143) / 28}
       className={cx('mk wm', className)}
       {...a11y(title)}
     >
@@ -149,13 +154,13 @@ export function Wordmark({ height = 14, title, className }: WordmarkProps) {
   )
 }
 
-/** Локап: знак 1 «Триада» + словесный знак (A6-logo-lockup.svg, 208 × 64). */
-export function Lockup({ height = 28, title = 'MAOS', className }: WordmarkProps) {
+/** Локап: знак 1 «Триада» + словесный знак AUREUS (по мотивам A6-logo-lockup.svg, 232 × 64). */
+export function Lockup({ height = 28, title = 'AUREUS', className }: WordmarkProps) {
   return (
     <svg
-      viewBox="0 0 208 64"
+      viewBox="0 0 232 64"
       height={height}
-      width={(height * 208) / 64}
+      width={(height * 232) / 64}
       className={cx('mk mk1 lockup', className)}
       {...a11y(title)}
     >
