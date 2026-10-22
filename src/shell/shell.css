@@ -10,8 +10,18 @@
 }
 .shell__content {
   position: relative;
+  display: grid;
+  /* полоса методологии (auto) + экран (остаток); grid даёт экрану определённую высоту для 100 % */
+  grid-template-rows: auto minmax(0, 1fr);
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+/* Область экрана под полосой методологии: экраны считают её своим 100 %-контейнером. */
+.shell__screen {
+  position: relative;
+  grid-row: 2;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -198,8 +208,32 @@
 .rail__sep {
   flex: none;
   height: 1px;
-  margin: 5px 14px;
+  margin: 5px 14px 2px;
   background: var(--border);
+}
+/* Подпись группы рельсы (UX-V2 §2.3): 9 px caps, приглушённо. */
+.rail__group {
+  flex: none;
+  padding: 2px 0 1px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--text-disabled);
+}
+/* Зарезервированный пункт («Агенты», волна 3): приглушён, точка-маркер «в плане». */
+.rail__item--soon { color: var(--text-disabled); }
+.rail__item--soon:hover { color: var(--text-muted); }
+.rail__badge--soon {
+  width: 8px;
+  min-width: 8px;
+  height: 8px;
+  top: -2px;
+  right: -3px;
+  padding: 0;
+  background: transparent;
+  border: 1.5px dotted var(--text-muted);
 }
 
 /* ── Status bar ──────────────────────────────────────────────────────────── */

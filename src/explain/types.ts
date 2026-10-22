@@ -46,4 +46,6 @@ export interface MetricExplain {
   caveats?: readonly string[]
   diagram?: DiagramId
   learnMore?: MethodologyAnchor
+  /** Узел «Карты методологии» (`#/map/<id>`); если не задан — ищется по `metricId` в реестре карты. */
+  mapNode?: string
 }

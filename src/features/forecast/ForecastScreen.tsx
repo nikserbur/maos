@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, type ForecastResult, type ForecastProduct, type PriceScenario, type PriceDistribution, type DistType } from '../../lib/api'
+import { BlockChips } from '../../ui/BlockChip'
 import './forecast.css'
 
 const W = 340, CH = 150, PADL = 6, PADR = 6, PADT = 12, PADB = 22
@@ -102,7 +103,10 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distr
     <div className="forecast">
       {!embedded && <header className="forecast__head">
         <div>
-          <h1 className="forecast__title">Внешние условия и прогноз цен</h1>
+          <h1 className="forecast__title">
+            Мониторинг: внешние условия и прогноз цен
+            <span className="forecast__blocks"><BlockChips blocks={['monitoring', 'external']} /></span>
+          </h1>
           <p className="forecast__desc">
             Методика (System Dynamics + EMD-разложение): история → <b>тренд</b> (остаток EMD,
             данные-адаптивный) + <b>гармоники</b> (доминирующие колебания) + <b>нерегулярный остаток</b>; к остатку

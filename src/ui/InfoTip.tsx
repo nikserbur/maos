@@ -27,6 +27,7 @@ import { getDiagram } from '../diagrams'
 import { methodologyHref } from '../explain/anchors'
 import { bindFormulaParts, fmtValue, type FormatInput } from '../explain/format'
 import { getMetric } from '../explain/metrics'
+import { nodeForMetric } from '../features/method-map/registry'
 import type { MetricExplain } from '../explain/types'
 import './infotip.css'
 
@@ -202,7 +203,7 @@ function InfoTipControl({ entry, values, placement, label }: ControlProps) {
             onPointerDown={stop}
             onMouseDown={stop}
           >
-            <InfoTipContent entry={entry} values={values} titleId={titleId} onClose={() => close(true)} onNavigate={() => close(false)} />
+            <InfoTipContent entry={entry} values={values} titleId={titleId} onClose={() => close(true)} onNavigate={() => close(false)} mapNode={nodeForMetric(entry.id)?.id} />
           </div>,
           document.body,
         )}
@@ -210,27 +211,37 @@ function InfoTipControl({ entry, values, placement, label }: ControlProps) {
   )
 }
 
-interface ContentProps {
+export interface InfoTipContentProps {
   entry: MetricExplain
   values?: InfoTipValues
   titleId: string
-  onClose: () => void
-  onNavigate: () => void
+  /** Без onClose — встроенный режим (панель узла карты): без кнопки «Закрыть». */
+  onClose?: () => void
+  onNavigate?: () => void
+  /** Узел «Карты методологии» для ссылки «Узел на карте →» (UX-V2 §2.6). */
+  mapNode?: string
 }
 
-function InfoTipContent({ entry, values, titleId, onClose, onNavigate }: ContentProps) {
+/**
+ * Содержимое «i»: формула с подстановкой, обозначения, метод, оговорки, схема, ссылки.
+ * Переиспользуется панелью узла карты как встроенный блок (та же вёрстка).
+ */
+export function InfoTipContent({ entry, values, titleId, onClose, onNavigate, mapNode }: InfoTipContentProps) {
   const parts = bindFormulaParts(entry.formula, values, entry.variables)
   const diagram = getDiagram(entry.diagram)
+  const mapNodeId = mapNode ?? entry.mapNode
 
   return (
     <div className="infotip-pop__panel">
       <header className="infotip-pop__head">
         <h3 id={titleId} className="infotip-pop__title">{entry.title}</h3>
-        <button type="button" className="infotip-pop__close" aria-label="Закрыть" onClick={onClose}>
-          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
-            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-          </svg>
-        </button>
+        {onClose && (
+          <button type="button" className="infotip-pop__close" aria-label="Закрыть" onClick={onClose}>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
+              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            </svg>
+          </button>
+        )}
       </header>
       <p className="infotip-pop__short">{entry.short}</p>
 
@@ -294,6 +305,11 @@ function InfoTipContent({ entry, values, titleId, onClose, onNavigate }: Content
       {entry.learnMore && (
         <a className="infotip-pop__more" href={methodologyHref(entry.learnMore)} onClick={onNavigate}>
           Подробнее в «Методике» →
+        </a>
+      )}
+      {mapNodeId && (
+        <a className="infotip-pop__more" href={`#/map/${encodeURIComponent(mapNodeId)}`} onClick={onNavigate}>
+          Узел на карте →
         </a>
       )}
     </div>

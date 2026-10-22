@@ -1,0 +1,30 @@
+/* Экран «Агенты» — зарезервированный пункт блока [6]: шапка, пустое состояние, план экрана. */
+.agents {
+  height: 100%;
+  overflow: auto;
+  padding: var(--space-5) var(--space-6) var(--space-8);
+}
+.agents__plan {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.agents__card {
+  border-left: 3px solid var(--block-6);
+  border-style: solid solid solid dashed;
+}
+.agents__where {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+}
+.agents__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+.agents__what {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+}

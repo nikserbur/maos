@@ -5,6 +5,7 @@ import { StatusBar } from './StatusBar'
 import { ErrorBoundary } from './ErrorBoundary'
 import { SCREENS } from './screens'
 import { DEFAULT_SCREEN_ID, replaceRoute, useHashRoute } from './router'
+import { PipelineStrip } from '../ui/PipelineStrip'
 import './shell.css'
 
 const DEFAULT_SCREEN = SCREENS.find((screen) => screen.id === DEFAULT_SCREEN_ID) ?? SCREENS[0]
@@ -35,12 +36,20 @@ export default function AppShell() {
       <div className="shell__body">
         <NavRail activeId={active.id} onSelect={navigate} />
         <main className="shell__content" id="maos-main">
-          {/* key=id → предохранитель сбрасывается при переключении экрана. */}
-          <ErrorBoundary key={active.id} label={active.label}>
-            <Suspense fallback={<div className="shell__loading" role="status">Загрузка модуля…</div>}>
-              <ActiveScreen />
-            </Suspense>
-          </ErrorBoundary>
+          {/* Полоса методологии (UX-V2 §2.4) — на экранах решений; сама не падает: ошибки ловит предохранитель. */}
+          {active.pipeline && (
+            <ErrorBoundary key={`strip-${active.id}`} label="Полоса методологии">
+              <PipelineStrip activeBlocks={active.blocks} />
+            </ErrorBoundary>
+          )}
+          <div className="shell__screen">
+            {/* key=id → предохранитель сбрасывается при переключении экрана. */}
+            <ErrorBoundary key={active.id} label={active.label}>
+              <Suspense fallback={<div className="shell__loading" role="status">Загрузка модуля…</div>}>
+                <ActiveScreen />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
         </main>
       </div>
       <StatusBar screen={active.label} />

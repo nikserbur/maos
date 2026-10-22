@@ -1,0 +1,7 @@
+/* Диалоги ввода и подтверждения поверх .modal (global.css). */
+.dlg__text { font-size: var(--fs-13); color: var(--text-secondary); }
+.dlg__text b { color: var(--text); }
+.dlg__form { display: flex; flex-direction: column; gap: var(--space-3); }
+.dlg__field { display: flex; flex-direction: column; gap: 6px; }
+.dlg__field > span { font-size: var(--fs-12); color: var(--text-muted); }
+.dlg__hint { margin: 0; font-size: var(--fs-12); color: var(--text-muted); }

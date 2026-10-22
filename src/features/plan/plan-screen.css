@@ -19,6 +19,7 @@
 .plan__head::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
   background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--ultramarine) 60%, transparent), color-mix(in oklch, var(--ochre) 60%, transparent), transparent); }
 .plan__title { font-family: var(--font-display); font-weight: 500; font-size: var(--fs-24); line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+.plan__blocks { display: inline-flex; margin-left: var(--space-3); vertical-align: middle; }
 .plan__subtitle { color: var(--text-muted); font-size: var(--fs-13); line-height: 1.55; margin: var(--space-2) 0 0; max-width: 78ch; }
 .plan__subtitle strong { color: var(--text-secondary); font-weight: 600; }
 

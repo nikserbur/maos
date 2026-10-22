@@ -129,6 +129,34 @@
   --aurora-3: oklch(0.36 0.08 75); /* #553600 ochre */
   --theme-color: #0d0f16; /* = --bg-app, literal for <meta name="theme-color"> */
 
+  /* ── Method map (UX-V2 §6.3): block colours — badges and outlines only ──── */
+  --block-1: var(--text-secondary); /* [1] внешние условия — bone-точки */
+  --block-2: var(--ultramarine); /* [2] распределения — ● с зерном */
+  --block-3: var(--cinnabar); /* [3] внутренние условия — ■ ресурс */
+  --block-4: var(--ochre); /* [4] решения — ▲ цель */
+  --block-5: color-mix(in oklch, var(--cinnabar) 55%, var(--ochre)); /* [5] критерии */
+  --block-6: var(--chart-6); /* [6] агенты — фиолет */
+  --block-7: var(--verdigris); /* [7] мониторинг */
+  --block-8: var(--chart-5); /* [8] LLM — sky */
+  /* Node states → existing status tokens + glyphs (no new arbitrary colours) */
+  --state-unconfigured: var(--border-control);
+  --state-default: var(--status-idle);
+  --state-manual: var(--text-secondary);
+  --state-estimated: var(--verdigris);
+  --state-calibrated: var(--verdigris);
+  --state-normative: var(--text-secondary);
+  --state-stale: var(--status-setup);
+  --state-error: var(--status-down);
+  --state-planned: var(--text-disabled);
+  /* Edge strokes (SVG custom properties) */
+  --edge-data: 2px;
+  --edge-param: 1px;
+  --edge-feedback: 1.5px;
+  --edge-control: 1.5px;
+  --edge-explain: 1px;
+  --dur-flow: 7s;
+  --ease-flow: cubic-bezier(0.4, 0, 0.2, 1);
+
   /* ── Controls & shell layout ──────────────────────────────────────────── */
   --control-compact: 24px;
   --control: 30px;
@@ -137,6 +165,7 @@
   --topbar-h: 48px;
   --statusbar-h: 28px;
   --inspector-w: 320px;
+  --pipeline-h: 36px;
 }
 
 /*

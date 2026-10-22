@@ -34,6 +34,7 @@
   color: var(--text);
   text-wrap: balance;
 }
+.dk-head__blocks { display: inline-flex; margin-left: var(--space-3); vertical-align: middle; }
 .dk-head__sub {
   margin-top: var(--space-2);
   font-size: var(--fs-13);

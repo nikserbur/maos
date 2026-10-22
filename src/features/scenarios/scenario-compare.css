@@ -68,6 +68,10 @@
   border-right: 1px solid var(--border, #2a2f37); background: var(--surface, #161a20);
 }
 .scn__side-top { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 8px; }
+.scn__side-blocks { padding: 0 14px 8px; }
+.scn__save { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.scn__save--saved { color: var(--verdigris); }
+.scn__save--error { color: var(--intent-danger); }
 .scn__side-title { font-size: 15px; font-weight: 600; }
 .scn__new { padding: 3px 10px; font-size: 16px; line-height: 1; }
 .scn__cmpbtn {

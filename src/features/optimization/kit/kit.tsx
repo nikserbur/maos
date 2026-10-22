@@ -14,6 +14,8 @@ import {
 import { Backdrop } from '../../../brand/Backdrop'
 import { getDiagram, type DiagramId } from '../../../diagrams'
 import { Icon } from '../../../shell/icons'
+import { BlockChips } from '../../../ui/BlockChip'
+import type { BlockId } from '../../method-map/types'
 import './kit.css'
 
 /** Ступенчатое появление секции: style={rise(2)} (задержка 2 × 40 мс). */
@@ -27,14 +29,19 @@ interface ScreenHeaderProps {
   title: string
   subtitle?: ReactNode
   actions?: ReactNode
+  /** Блоки карты методологии, которые реализует экран — чипы «[n] Название ↗» (UX-V2 §2.6). */
+  blocks?: readonly BlockId[]
 }
 
-export function ScreenHeader({ eyebrow, title, subtitle, actions }: ScreenHeaderProps) {
+export function ScreenHeader({ eyebrow, title, subtitle, actions, blocks }: ScreenHeaderProps) {
   return (
     <header className="dk-head dk-rise">
       <div className="dk-head__text">
         {eyebrow && <p className="dk-head__eyebrow text-caps">{eyebrow}</p>}
-        <h1 className="dk-head__title">{title}</h1>
+        <h1 className="dk-head__title">
+          {title}
+          {blocks && blocks.length > 0 && <span className="dk-head__blocks"><BlockChips blocks={blocks} /></span>}
+        </h1>
         {subtitle && <p className="dk-head__sub">{subtitle}</p>}
       </div>
       {actions && <div className="dk-head__actions">{actions}</div>}

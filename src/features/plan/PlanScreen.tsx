@@ -12,6 +12,10 @@ import { GaImproverCard } from './GaImproverCard'
 import { Segmented } from './ui'
 import { colorVar } from './ganttModel'
 import { Icon } from '../../shell/icons'
+import { setDecisionContext } from '../../shell/context'
+import { BlockChips } from '../../ui/BlockChip'
+import { PromptDialog } from '../../ui/PromptDialog'
+import { planActions } from './planStore'
 import './plan.css'
 import './plan-screen.css'
 
@@ -397,11 +401,12 @@ export function PlanScreen() {
   })
   // Персист текущей эвристики (переживает перезагрузку/смену экрана).
   useEffect(() => { try { localStorage.setItem(HEUR_CUR, JSON.stringify(crits)) } catch { /* noop */ } }, [crits])
-  const saveHeuristic = () => {
-    const name = window.prompt('Название эвристики:')
-    if (!name || !name.trim()) return
-    const next = { ...savedHeur, [name.trim()]: crits }
+  // Имя пресета — в модальном окне (не window.prompt, UX-V2 U9).
+  const [heurNameOpen, setHeurNameOpen] = useState(false)
+  const saveHeuristic = (name: string) => {
+    const next = { ...savedHeur, [name]: crits }
     setSavedHeur(next)
+    setHeurNameOpen(false)
     try { localStorage.setItem(HEUR_LS, JSON.stringify(next)) } catch { /* noop */ }
   }
   const deleteHeuristic = (name: string) => {
@@ -466,12 +471,21 @@ export function PlanScreen() {
   const updateOrder = async (id: string, patch: Record<string, string>) => {
     await api.demandOrders.update(id, patch).catch(() => {}); await loadOrders()
   }
-  const createPlan = async () => {
-    const name = window.prompt('Название нового производственного плана:', 'План ' + (plans.length + 1))
-    if (!name) return
-    const p = await api.plans.create({ name }).catch(() => null)
+  // Создание плана — модальное окно с названием и описанием (не window.prompt).
+  const [planNameOpen, setPlanNameOpen] = useState(false)
+  const createPlan = async (name: string, description: string) => {
+    const p = await api.plans.create({ name, description: description || undefined }).catch(() => null)
+    setPlanNameOpen(false)
     await loadPlans(); if (p) setActivePlan(p.id)
   }
+
+  // Зеркало в planStore и контекст решения — для карты методологии и полосы (UX-V2 §2.5).
+  useEffect(() => { planActions.setParam('rule', rule) }, [rule])
+  useEffect(() => { planActions.setParam('samples', samples) }, [samples])
+  useEffect(() => { planActions.setParam('wRisk', wRisk) }, [wRisk])
+  useEffect(() => { planActions.setParam('runId', runId) }, [runId])
+  useEffect(() => { planActions.setParam('useCalendar', useCalendar) }, [useCalendar])
+  useEffect(() => { planActions.setActivePlan(activePlan); setDecisionContext({ planId: activePlan }) }, [activePlan])
 
   const run = async () => {
     // Пустая программа раньше строила «молчаливый» план из одних MRP-закупок —
@@ -485,6 +499,7 @@ export function PlanScreen() {
       return
     }
     setRunning(true); setError(null)
+    const token = planActions.beginRun()
     try {
       const r = await api.schedule.run({
         rule: rule === 'custom' ? 'auto' : rule,
@@ -500,9 +515,14 @@ export function PlanScreen() {
           machine_id: result.gantt.find((g) => g.job_idx === job_idx)?.machine_id || undefined,
         })) : undefined,
       })
-      if (r.error_soft) setError(r.warnings?.join(' ') || 'Нет данных для плана')
-      else setResult(r)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка планирования') }
+      if (r.error_soft) {
+        const msg = r.warnings?.join(' ') || 'Нет данных для плана'
+        setError(msg); planActions.failRun(token, msg)
+      } else { setResult(r); planActions.finishRun(token, r) }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка планирования'
+      setError(msg); planActions.failRun(token, msg)
+    }
     finally { setRunning(false) }
   }
 
@@ -529,7 +549,10 @@ export function PlanScreen() {
     <div className="plan">
       <div className="plan__head">
         <div>
-          <h1 className="plan__title">Производственный план (Стадия 1 — как произвести)</h1>
+          <h1 className="plan__title">
+            Производственный план (Стадия 1 — как произвести)
+            <span className="plan__blocks"><BlockChips blocks={['internal', 'decisions', 'criteria']} /></span>
+          </h1>
           <p className="plan__subtitle">
             Программа разворачивается в граф операций по техкартам и цепочке; симуляция ставит
             операции на станки нужного типа и рабочих. Оптимизируется <strong>порядок</strong>
@@ -593,9 +616,30 @@ export function PlanScreen() {
       {heurOpen && (
         <HeuristicModal
           crits={crits} setCrits={setCrits}
-          saved={savedHeur} onSave={saveHeuristic} onDelete={deleteHeuristic}
+          saved={savedHeur} onSave={() => setHeurNameOpen(true)} onDelete={deleteHeuristic}
           onLoad={(c) => setCrits(c)}
           onClose={() => setHeurOpen(false)}
+        />
+      )}
+      {heurNameOpen && (
+        <PromptDialog
+          title="Сохранить эвристику"
+          label="Название пресета"
+          placeholder="Например: длинные вперёд + входы"
+          submitLabel="Сохранить"
+          hint="Пресеты пока хранятся локально в браузере (в проект — G2)."
+          onSubmit={(name) => saveHeuristic(name)}
+          onCancel={() => setHeurNameOpen(false)}
+        />
+      )}
+      {planNameOpen && (
+        <PromptDialog
+          title="Новый производственный план"
+          label="Название"
+          defaultValue={'План ' + (plans.length + 1)}
+          withDescription
+          onSubmit={createPlan}
+          onCancel={() => setPlanNameOpen(false)}
         />
       )}
 
@@ -608,7 +652,7 @@ export function PlanScreen() {
               <select className="plan__select" style={{ height: 26, minWidth: 160 }} value={activePlan} onChange={(e) => setActivePlan(e.target.value)}>
                 {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
-              <button className="btn" style={{ height: 26, padding: '0 8px' }} onClick={createPlan}>+ План</button>
+              <button className="btn" style={{ height: 26, padding: '0 8px' }} onClick={() => setPlanNameOpen(true)}>+ План</button>
             </span>
           </p>
           <table className="plan__rules" style={{ marginBottom: 8 }}>

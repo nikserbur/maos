@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, type OptPortfolio, type OptimizeParams, type PriceScenario, type Product, type WorkCenterType } from '../../lib/api'
 import { money, num, pct } from '../../explain/format'
 import { InfoTip } from '../../ui/InfoTip'
+import { getDecisionContext, setDecisionContext } from '../../shell/context'
 import { ParetoFrontier, ParetoLegend } from './ParetoFrontier'
 import { ExpectedCard, PriceOfRobustness, RobustHero } from './PortfolioCards'
 import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, StatusChip, Switch, rise } from './kit/kit'
@@ -125,7 +126,10 @@ export function OptimizationScreen() {
     Promise.all([api.scenarios.list(), api.products.list(), api.workCenterTypes.list()])
       .then(([sc, pr, wc]) => {
         setScenarios(sc); setProducts(pr); setWcTypes(wc)
-        if (sc.length && !form.scenarioId) patchOptForm({ scenarioId: sc[0].id, horizonMonths: String(sc[0].months || 12) })
+        // Сценарий — из контекста решения (карта/«Сценарии»), иначе первый в списке.
+        const ctx = getDecisionContext().scenarioId
+        const start = (ctx && sc.find((x) => x.id === ctx)) || sc[0]
+        if (start && !form.scenarioId) patchOptForm({ scenarioId: start.id, horizonMonths: String(start.months || 12) })
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : 'нет связи с сервером'))
   }
@@ -164,7 +168,9 @@ export function OptimizationScreen() {
       ...(form.exact ? { compare_exact: true, solver: 'exact' as const } : {}),
     }
     try {
-      finishOptRun(await api.optimize.run(params as OptimizeParams) as OptResultExt)
+      const res = await api.optimize.run(params as OptimizeParams) as OptResultExt
+      finishOptRun(res)
+      setDecisionContext({ scenarioId: form.scenarioId, portfolioRunId: res.run_id })
     } catch (e) {
       failOptRun({ message: e instanceof Error ? e.message : 'Ошибка оптимизации', kind: 'api' })
     }
@@ -189,6 +195,7 @@ export function OptimizationScreen() {
       <ScreenHeader
         eyebrow="Стадия 2 · что выпускать"
         title="Робастный портфель"
+        blocks={['decisions', 'criteria']}
         subtitle={<>Цены продукции — случайные величины сценария. Методом статистических испытаний строится распределение
           прибыли каждого портфеля и выбирается <b>робастное</b> решение — лучшее в неблагоприятных сценариях, а не в среднем.</>}
       />
@@ -200,6 +207,7 @@ export function OptimizationScreen() {
             <select value={form.scenarioId} onChange={(e) => {
               const sc = scenarios.find((s) => s.id === e.target.value)
               patchOptForm({ scenarioId: e.target.value, ...(sc?.months ? { horizonMonths: String(sc.months) } : {}) })
+              setDecisionContext({ scenarioId: e.target.value })
             }}>
               {scenarios.length === 0 && <option value="">— базовые цены НСИ —</option>}
               {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

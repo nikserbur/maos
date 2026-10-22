@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { SCREENS, STAGE_HINT, type NavGroup } from './screens'
+import { NAV_GROUP_LABEL, SCREENS, STAGE_HINT, type NavGroup } from './screens'
 import { Icon } from './icons'
 
 interface NavRailProps {
@@ -7,7 +7,7 @@ interface NavRailProps {
   onSelect: (id: string) => void
 }
 
-/** Левая рельса: иконка + короткая подпись, группы по потоку данных, бейджи стадий. */
+/** Левая рельса: иконка + короткая подпись, группы по карте методологии (UX-V2 §2.3) с подписями, бейджи стадий, «скоро». */
 export function NavRail({ activeId, onSelect }: NavRailProps) {
   let group: NavGroup | undefined
   return (
@@ -17,13 +17,17 @@ export function NavRail({ activeId, onSelect }: NavRailProps) {
         const nextGroup = screen.group ?? group
         const separated = index > 0 && nextGroup !== group
         group = nextGroup
-        const hint = screen.stage ? `${screen.label} · ${STAGE_HINT[screen.stage]}` : screen.label
+        const hint = screen.stage
+          ? `${screen.label} · ${STAGE_HINT[screen.stage]}`
+          : screen.soon ? `${screen.label} · в разработке (${screen.soon})` : screen.label
+        const showCaption = index === 0 || separated
         return (
           <Fragment key={screen.id}>
             {separated && <span className="rail__sep" role="separator" />}
+            {showCaption && nextGroup && <span className="rail__group" aria-hidden="true">{NAV_GROUP_LABEL[nextGroup]}</span>}
             <a
               href={`#/${screen.id}`}
-              className={active ? 'rail__item rail__item--active' : 'rail__item'}
+              className={`rail__item${active ? ' rail__item--active' : ''}${screen.soon ? ' rail__item--soon' : ''}`}
               title={hint}
               aria-label={hint}
               aria-current={active ? 'page' : undefined}
@@ -40,6 +44,7 @@ export function NavRail({ activeId, onSelect }: NavRailProps) {
                     {screen.stage}
                   </span>
                 )}
+                {screen.soon && <span className="rail__badge rail__badge--soon" aria-hidden="true" />}
               </span>
               <span className="rail__label" aria-hidden="true">{screen.short ?? screen.label}</span>
             </a>

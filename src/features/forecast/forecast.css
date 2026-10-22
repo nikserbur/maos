@@ -5,6 +5,7 @@
 }
 .forecast__head { margin-bottom: 16px; }
 .forecast__title { font-size: 20px; margin: 0 0 4px; }
+.forecast__blocks { display: inline-flex; margin-left: 12px; vertical-align: middle; }
 .forecast__desc { color: var(--text-muted, #8a929c); font-size: 13px; max-width: 760px; margin: 0; }
 
 .forecast__controls {

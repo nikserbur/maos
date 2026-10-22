@@ -1,7 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type PriceScenario, type OptResult, type Product, type ScenarioPayload, type PriceDistribution } from '../../lib/api'
+import { setDecisionContext } from '../../shell/context'
+import { BlockChips } from '../../ui/BlockChip'
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import { PromptDialog } from '../../ui/PromptDialog'
+import { invalidateScenario } from '../method-map/useMethodMapState'
 import { ForecastScreen } from '../forecast/ForecastScreen'
 import './scenario-compare.css'
+
+/** Ползунки сохраняются с задержкой: один PUT на серию движений, а не на каждый тик (UX-V2 §5.1). */
+const SAVE_DEBOUNCE_MS = 400
+type SaveStatus = 'pending' | 'saved' | 'error'
 
 const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
@@ -40,11 +49,22 @@ export function ScenarioCompareScreen() {
   const [error, setError]         = useState<string | null>(null)
   const [openId, setOpenId]       = useState('')   // выбранный сценарий (детальный вид)
   const [compareMode, setCompareMode] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [removeId, setRemoveId]   = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState<Record<string, SaveStatus>>({})
+  const saveTimers = useRef(new Map<string, number>())
+  const pending = useRef(new Map<string, PriceScenario>())
+
+  // Открытый сценарий — это и контекст решения (карта, полоса методологии, «Оптимизация»).
+  const openScenario = (id: string) => {
+    setOpenId(id)
+    setDecisionContext({ scenarioId: id })
+  }
 
   // Авто-выбор первого сценария для детального вида.
   useEffect(() => {
-    if (!openId && scenarios.length) setOpenId(scenarios[0].id)
-  }, [scenarios, openId])
+    if (!openId && scenarios.length) openScenario(scenarios[0].id)
+  }, [scenarios, openId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Грузим полные сценарии (с оверрайдами), а также планы и изделия для редактора.
   const load = async () => {
@@ -78,11 +98,29 @@ export function ScenarioCompareScreen() {
     ...extra,
   })
 
-  const patch = async (sc: PriceScenario, p: Partial<PriceScenario>) => {
-    const next = { ...sc, ...p }
-    setScenarios((list) => list.map((x) => x.id === sc.id ? next : x))
-    await api.scenarios.update(sc.id, payloadOf(next, {})).catch(() => {})
+  // Отложенное сохранение: локальное состояние обновляется сразу, PUT — через 400 мс после последнего изменения.
+  const flushSave = (id: string) => {
+    const next = pending.current.get(id)
+    saveTimers.current.delete(id)
+    if (!next) return
+    pending.current.delete(id)
+    api.scenarios.update(id, payloadOf(next, {}))
+      .then(() => { setSaveStatus((st) => ({ ...st, [id]: 'saved' })); invalidateScenario(id) })
+      .catch(() => setSaveStatus((st) => ({ ...st, [id]: 'error' })))
   }
+  const patch = (sc: PriceScenario, p: Partial<PriceScenario>) => {
+    const next = { ...(pending.current.get(sc.id) ?? sc), ...p }
+    setScenarios((list) => list.map((x) => x.id === sc.id ? next : x))
+    pending.current.set(sc.id, next)
+    setSaveStatus((st) => ({ ...st, [sc.id]: 'pending' }))
+    const prev = saveTimers.current.get(sc.id)
+    if (prev) window.clearTimeout(prev)
+    saveTimers.current.set(sc.id, window.setTimeout(() => flushSave(sc.id), SAVE_DEBOUNCE_MS))
+  }
+  // Уход с экрана не теряет несохранённые движения ползунков.
+  useEffect(() => () => {
+    for (const id of [...saveTimers.current.keys()]) { window.clearTimeout(saveTimers.current.get(id)); flushSave(id) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setOverride = async (sc: PriceScenario, productId: string, price: string) => {
     if (!productId) return
@@ -112,16 +150,18 @@ export function ScenarioCompareScreen() {
   }
 
   const clone = async (id: string) => { await api.scenarios.clone(id).catch(() => {}); load() }
+  // Удаление — только после подтверждения (ConfirmDialog), не по одному клику.
   const remove = async (id: string) => {
     await api.scenarios.delete(id).catch(() => {})
-    setSel((s) => s.filter((x) => x !== id)); load()
+    setRemoveId(null)
+    setSel((s) => s.filter((x) => x !== id)); if (openId === id) setOpenId(''); load()
   }
-  const createScenario = async () => {
-    const name = window.prompt('Название нового сценария:', 'Новый сценарий')
-    if (!name) return
-    const sc = await api.scenarios.create({ name }).catch(() => null)
+  // Создание — модальное окно с названием и описанием (не window.prompt).
+  const createScenario = async (name: string, description: string) => {
+    const sc = await api.scenarios.create({ name, description: description || undefined }).catch(() => null)
+    setCreateOpen(false)
     await load()
-    if (sc && sc.id) setOpenId(sc.id)   // сразу раскрываем для задания внешних условий
+    if (sc && sc.id) openScenario(sc.id)   // сразу раскрываем для задания внешних условий
   }
 
   const compare = async () => {
@@ -145,8 +185,9 @@ export function ScenarioCompareScreen() {
       <aside className="scn__side">
         <div className="scn__side-top">
           <span className="scn__side-title">Сценарии</span>
-          <button className="btn btn--primary scn__new" title="Создать сценарий" onClick={createScenario}>＋</button>
+          <button className="btn btn--primary scn__new" title="Создать сценарий" onClick={() => setCreateOpen(true)}>＋</button>
         </div>
+        <div className="scn__side-blocks"><BlockChips blocks={['external', 'distributions']} /></div>
         <button className={`scn__cmpbtn${compareMode ? ' scn__cmpbtn--on' : ''}`}
                 onClick={() => { setCompareMode((m) => !m); setSel([]) }}>
           ⇄ Сравнить сценарии
@@ -156,7 +197,7 @@ export function ScenarioCompareScreen() {
             const active = compareMode ? sel.includes(sc.id) : sc.id === openId
             return (
               <button key={sc.id} className={`scn__item${active ? ' scn__item--active' : ''}`}
-                      onClick={() => (compareMode ? toggle(sc.id) : setOpenId(sc.id))}>
+                      onClick={() => (compareMode ? toggle(sc.id) : openScenario(sc.id))}>
                 {compareMode && <span className={`scn__check${sel.includes(sc.id) ? ' scn__check--on' : ''}`}>{sel.includes(sc.id) ? '✓' : ''}</span>}
                 <span className="scn__item-main">
                   <span className="scn__item-name">{sc.name}</span>
@@ -183,13 +224,37 @@ export function ScenarioCompareScreen() {
             {ready && <CompareTable cols={cols} />}
           </div>
         ) : selected ? (
-          <ScenarioDetail key={selected.id} sc={selected} products={products}
+          <ScenarioDetail key={selected.id} sc={selected} products={products} saveStatus={saveStatus[selected.id]}
             onPatch={patch} onSetOverride={setOverride} onClearOverrides={clearOverrides} onSetDist={setDist}
-            onClone={() => clone(selected.id)} onRemove={() => { remove(selected.id); setOpenId('') }} />
+            onClone={() => clone(selected.id)} onRemove={() => setRemoveId(selected.id)} />
         ) : (
           <div className="scn__placeholder">Выберите сценарий слева или создайте новый («＋»).</div>
         )}
       </main>
+
+      {createOpen && (
+        <PromptDialog
+          title="Новый сценарий внешних условий"
+          label="Название"
+          defaultValue="Новый сценарий"
+          withDescription
+          hint="Серверные шаблоны («Базовый», «Ценовой кризис», «Высокая ставка») появятся в G2; пока — пустой сценарий с настройками по умолчанию."
+          onSubmit={createScenario}
+          onCancel={() => setCreateOpen(false)}
+        />
+      )}
+      {removeId && (
+        <ConfirmDialog
+          title="Удалить сценарий?"
+          confirmLabel="Удалить"
+          danger
+          onConfirm={() => remove(removeId)}
+          onCancel={() => setRemoveId(null)}
+        >
+          Сценарий <b>«{scenarios.find((s) => s.id === removeId)?.name ?? removeId}»</b> и его распределения цен будут удалены.
+          Портфели, посчитанные под него, останутся в истории прогонов.
+        </ConfirmDialog>
+      )}
     </div>
   )
 }
@@ -212,8 +277,11 @@ function Slider({ label, hint, value, min, max, step, unit = '', onChange }: {
 }
 
 /** Детальный вид сценария: красивые контролы внешних условий + графики цен. */
-function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides, onSetDist, onClone, onRemove }: {
+const SAVE_LABEL: Record<SaveStatus, string> = { pending: 'сохраняем…', saved: 'Сохранено ✓', error: 'не сохранено — нет связи' }
+
+function ScenarioDetail({ sc, products, saveStatus, onPatch, onSetOverride, onClearOverrides, onSetDist, onClone, onRemove }: {
   sc: PriceScenario; products: Product[]
+  saveStatus?: SaveStatus
   onPatch: (sc: PriceScenario, p: Partial<PriceScenario>) => void
   onSetOverride: (sc: PriceScenario, pid: string, price: string) => void
   onClearOverrides: (sc: PriceScenario) => void
@@ -225,6 +293,7 @@ function ScenarioDetail({ sc, products, onPatch, onSetOverride, onClearOverrides
     <div className="scn__detail">
       <div className="scn__detail-head">
         <input className="scn__name-input" value={sc.name} onChange={(e) => onPatch(sc, { name: e.target.value })} />
+        {saveStatus && <span className={`scn__save scn__save--${saveStatus}`} role="status">{SAVE_LABEL[saveStatus]}</span>}
         <div className="scn__detail-actions">
           <button className="btn btn--primary" title="Пересчитать прогноз по текущим условиям"
                   onClick={() => setRefreshKey((k) => k + 1)}>↻ Обновить графики</button>
