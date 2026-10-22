@@ -153,7 +153,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            PESCADITO v0.67.0 · дипломная работа · {new Date().getFullYear()}
+            PESCADITO v0.67.1 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>
