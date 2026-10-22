@@ -1,153 +1,94 @@
 /**
- * KPI построенного плана — bento-сетка: герой-плитка «Длина расписания» (E[Cmax] + хвост
- * CVaR), сроки, разложение фонда станков, поток, затраты. Каждый показатель — с «i»
- * (src/explain/metrics.plan.ts), значения — из живых полей ответа /api/schedule.
+ * KPI построенного плана в трёх ярусах (X1 §5.1): ярус A — три плитки-героя «Длина расписания
+ * E[Cmax] + хвост», «OTD», «CFaR кассы»; ярус C — остальные показатели одной свёрнутой таблицей
+ * «показатель · значение · контекст» (KpiTable). Каждый показатель — с «i» (metrics.plan.ts),
+ * значения — из живых полей ответа /api/schedule; ничего не удалено — свёрнуто.
  */
-import type { ScheduleResult } from '../../lib/api'
+import type { CashLpResult, ScheduleResult } from '../../lib/api'
 import { hours, money, num, pct } from '../../explain/format'
+import { KpiTable } from './KpiTable'
 import { Chip } from './ui'
-import { FmtValue, FundBar, SubLabel, Sparkline, TailStrip, Tile, Value, type FundParts } from './kpiParts'
-import { kpiOf, loadsOf, machineBusyHours, machineFundHours, type Tone } from './types'
+import { FmtValue, TailStrip, Tile, Value } from './kpiParts'
+import { kpiOf, type Tone } from './types'
 import './kpi.css'
 
 const OTD_GOOD = 0.99
 const OTD_WARN = 0.9
-const WAIT_WARN = 0.5
-const LATE_EPS_H = 0.05
+const BREACH_WARN = 0.05
+const BREACH_BAD = 0.15
 
 const otdTone = (otd: number): Tone => (otd >= OTD_GOOD ? 'good' : otd >= OTD_WARN ? 'warn' : 'bad')
+const breachTone = (p: number): Tone => (p < BREACH_WARN ? 'good' : p < BREACH_BAD ? 'warn' : 'bad')
 
-/** Разложение Σ фонда станков (детерминированное расписание); null — старый ответ без фонда. */
-function fundParts(r: ScheduleResult): FundParts | null {
-  const rows = loadsOf(r.machine_load)
-  if (!rows.some((l) => typeof l.fund_hours === 'number')) return null
-  const sum = (f: (l: (typeof rows)[number]) => number | undefined) => rows.reduce((a, l) => a + (f(l) ?? 0), 0)
-  return { busy: sum((l) => l.busy_hours), setup: sum((l) => l.setup_hours), down: sum((l) => l.downtime_hours), idle: sum((l) => l.idle_hours) }
+export interface PlanKpisProps {
+  result: ScheduleResult
+  /** Касса под этот план (слой F); null — ещё не считалась. */
+  cash: CashLpResult | null
+  cashRunning: boolean
+  /** Переход к секции кассы (там — единственная primary-кнопка расчёта). */
+  onGoCash: () => void
 }
 
-export function PlanKpis({ result }: { result: ScheduleResult }) {
+export function PlanKpis({ result, cash, cashRunning, onGoCash }: PlanKpisProps) {
   const k = kpiOf(result)
   const n = result.n_orders
-  const fund = machineFundHours(result)
-  const busy = machineBusyHours(result)
-  const parts = fundParts(result)
-  const qty = result.program.reduce((a, o) => a + (o.qty || 0), 0)
-  const repair = k.breakdown_hours_mean ?? 0
-  const maint = k.maintenance_hours ?? 0
   const horizon = result.portfolio_horizon_hours ?? 0
   const tailPct = k.makespan_mean > 0 ? k.makespan_cvar / k.makespan_mean - 1 : 0
-  const late = k.tardiness > LATE_EPS_H
-  const wait = k.wait_share ?? 0
+  const w = cash?.waterfall?.lp_recourse ?? cash?.waterfall?.rule
+  const cfar = w?.cfar ?? cash?.cfar
+  const pBreach = w?.p_breach ?? cash?.p_negative_cash
 
   const cvarChip = horizon > 0
     ? (k.makespan_cvar > horizon
-      ? <Chip tone="bad">не вписывается в горизонт Стадии 2 · {hours(horizon, 0)}</Chip>
-      : <Chip tone="good">в горизонте Стадии 2 · {hours(horizon, 0)}</Chip>)
-    : <Chip tone="accent">хвост +{pct(tailPct)} к E</Chip>
+      ? <Chip tone="bad" title={`Горизонт Стадии 2: ${hours(horizon, 0)}`}>не вписывается в горизонт</Chip>
+      : <Chip tone="good" title={`Горизонт Стадии 2: ${hours(horizon, 0)}`}>в горизонте Стадии 2</Chip>)
+    : <Chip tone="accent">хвост +{pct(tailPct, 0)} к E</Chip>
 
   return (
-    <div className="pl-bento">
-      <Tile metric="plan.makespan" label="Длина расписания · E[Cmax]" span="s5" hero
-            values={{ mean: k.makespan_mean, det: k.makespan, n: result.samples }}
-            status={<Chip>{num(result.samples, 0)} прогонов</Chip>}>
-        <FmtValue text={hours(k.makespan_mean)} />
-        <div className="pl-tile__sub">
-          детерминированное (диаграмма Ганта) <span className="num">{hours(k.makespan)}</span>
-          {' '}≈ <span className="num">{num(k.makespan_mean / 24, 1)}</span> сут
-        </div>
-        <TailStrip det={k.makespan} mean={k.makespan_mean} cvar={k.makespan_cvar} worst={k.makespan_worst} />
-        <div className="pl-tile__div" />
-        <div className="pl-tile__k">
-          <SubLabel metric="plan.makespan_cvar" label={`CVaR · α = ${pct(result.alpha, 0)}`}
-                    values={{ cvar: k.makespan_cvar, worst: k.makespan_worst, alpha: result.alpha, n: result.samples }} />
-          {cvarChip}
-        </div>
-        <FmtValue text={hours(k.makespan_cvar)} size="md" />
-        <div className="pl-tile__sub">худший прогон <span className="num">{hours(k.makespan_worst)}</span></div>
-      </Tile>
+    <div className="pl-kpi">
+      <div className="pl-bento pl-bento--tier-a">
+        <Tile metric="plan.makespan" label="Длина расписания · E[Cmax]" span="s5" hero
+              values={{ mean: k.makespan_mean, det: k.makespan, n: result.samples }}
+              status={<Chip title={`${num(result.samples, 0)} прогонов Монте-Карло — хвост длительностей`}>Монте-Карло</Chip>}>
+          <FmtValue text={hours(k.makespan_mean)} />
+          <TailStrip det={k.makespan} mean={k.makespan_mean} cvar={k.makespan_cvar} worst={k.makespan_worst} />
+          <div className="pl-tile__foot">{cvarChip}</div>
+        </Tile>
 
-      <Tile metric="plan.otd" label="Заказы в срок · OTD" values={{ otd: k.otd, n, n_late: k.n_late }}
-            status={<Chip tone={otdTone(k.otd)}>{k.otd >= OTD_GOOD ? 'все в срок' : `${k.n_late} с опозданием`}</Chip>}>
-        <Value text={num(k.otd * 100, k.otd >= OTD_GOOD ? 0 : 1)} unit="%" />
-        <div className="pl-meter" aria-hidden="true">
-          <span className={`pl-meter__fill${otdTone(k.otd) === 'good' ? '' : ` pl-meter__fill--${otdTone(k.otd)}`}`}
-                style={{ transform: `scaleX(${Math.max(0, Math.min(1, k.otd))})` }} />
-        </div>
-        <div className="pl-tile__sub">в срок <span className="num">{n - k.n_late}</span> из <span className="num">{n}</span> заказов</div>
-      </Tile>
-
-      <Tile metric="plan.tardiness" label="Суммарная просрочка" span="s4"
-            values={{ tard: k.tardiness, tard_cvar: k.tardiness_cvar, n_late: k.n_late }}
-            status={<Chip tone={late ? 'bad' : 'good'}>{late ? 'есть просрочка' : 'без просрочки'}</Chip>}>
-        <FmtValue text={hours(k.tardiness)} />
-        <div className="pl-tile__sub">
-          CVaR по прогонам <span className="num">{hours(k.tardiness_cvar)}</span> · просрочено заказов <span className="num">{k.n_late}</span>
-        </div>
-      </Tile>
-
-      <Tile metric="plan.utilization" label="Загрузка оборудования" span="s7"
-            values={{ util: k.utilization, busy, fund, n_machines: result.n_machines }}
-            status={<Chip>{result.n_machines} станков</Chip>}>
-        <div className="pl-tile__pair">
-          <div><FmtValue text={pct(k.utilization)} /></div>
-          <div>
-            <SubLabel metric="plan.setup_share" label="Доля переналадок"
-                      values={{ share: k.setup_share, setup: k.setup_hours, fund, n_setups: k.n_setups }} />
-            <FmtValue text={pct(k.setup_share)} size="md" />
-            <div className="pl-tile__sub"><span className="num">{k.n_setups ?? 0}</span> переналадок · <span className="num">{hours(k.setup_hours ?? 0)}</span></div>
+        <Tile metric="plan.otd" label="Заказы в срок · OTD" span="s4" values={{ otd: k.otd, n, n_late: k.n_late }}
+              status={<Chip tone={otdTone(k.otd)}>{k.otd >= OTD_GOOD ? 'все в срок' : 'есть опоздания'}</Chip>}>
+          <Value text={num(k.otd * 100, k.otd >= OTD_GOOD ? 0 : 1)} unit="%" />
+          <div className="pl-meter" aria-hidden="true">
+            <span className={`pl-meter__fill${otdTone(k.otd) === 'good' ? '' : ` pl-meter__fill--${otdTone(k.otd)}`}`}
+                  style={{ transform: `scaleX(${Math.max(0, Math.min(1, k.otd))})` }} />
           </div>
-          <div>
-            <SubLabel metric="plan.availability" label="Готовность К̂г"
-                      values={{ avail: k.availability, maint, repair, fund }} />
-            <FmtValue text={pct(k.availability)} size="md" />
-            <div className="pl-tile__sub">ТО и ремонты — не занятость</div>
+          <div className="pl-tile__sub">
+            {k.n_late > 0
+              ? <>с опозданием <span className="num">{num(k.n_late, 0)}</span> из {num(n, 0)} заказов</>
+              : <>все <span className="num">{num(n, 0)}</span> заказов в срок</>}
           </div>
-        </div>
-        {parts && <FundBar {...parts} />}
-      </Tile>
+        </Tile>
 
-      <Tile metric="plan.throughput" label="Темп выпуска"
-            values={{ th: k.throughput_per_day, qty, cmax: k.makespan }}>
-        <Value text={num(k.throughput_per_day ?? 0)} unit="ед./сут" />
-        <div className="pl-tile__sub">
-          <span className="num">{num(k.orders_per_day)}</span> заказ/сут · выпуск <span className="num">{num(qty, 0)}</span> ед.
-        </div>
-      </Tile>
+        {cash && w ? (
+          <Tile metric="cash.cfar" label={`Минимум кассы · CFaR β = ${pct(cash.beta, 0)}`} span="s3"
+                values={{ cfar, beta: cash.beta, n: cash.n_scenarios, ci_lo: w.cfar_ci?.[0], ci_hi: w.cfar_ci?.[1] }}
+                status={<Chip tone={(cfar ?? 0) >= 0 ? 'good' : 'bad'}>{(cfar ?? 0) >= 0 ? 'касса ≥ 0' : 'разрыв в хвосте'}</Chip>}>
+            <FmtValue text={money(cfar)} />
+            <div className="pl-tile__sub">
+              P(разрыва) <span className={`num ${breachTone(pBreach ?? 0) === 'good' ? '' : `glyph-${breachTone(pBreach ?? 0) === 'warn' ? 'setup' : 'down'}`}`}>{pct(pBreach, 1)}</span>
+              {' '}· <button type="button" className="pf-link" onClick={onGoCash}>касса ↓</button>
+            </div>
+          </Tile>
+        ) : (
+          <div className="pl-tile pl-tile--s3 pl-tile--empty" role="group" aria-label="Касса под этот план">
+            <div className="pl-tile__k"><span className="pl-tile__label text-caps">Минимум кассы · CFaR</span></div>
+            <p className="pl-tile__sub">{cashRunning ? 'Считаем кассу (HiGHS)…' : 'Касса под этот план ещё не считалась: CVaR-LP с профилем отгрузок из расписания.'}</p>
+            <div className="pl-tile__foot"><button type="button" className="btn btn--sm" onClick={onGoCash} disabled={cashRunning}>к расчёту кассы ↓</button></div>
+          </div>
+        )}
+      </div>
 
-      <Tile metric="plan.wip" label="Задел (НЗП)"
-            values={{ wip: k.wip_avg, n, cmax: k.makespan, flow: k.flow_time_mean_h }}>
-        <Value text={num(k.wip_avg ?? 0, 1)} unit="заказов" />
-        <div className="pl-tile__sub">в среднем одновременно в работе (L = λ·W)</div>
-      </Tile>
-
-      <Tile metric="plan.flow_time" label="Время потока заказа" values={{ flow: k.flow_time_mean_h, n }}>
-        <FmtValue text={hours(k.flow_time_mean_h ?? 0)} />
-        <div className="pl-tile__sub">от первой до последней операции, среднее</div>
-      </Tile>
-
-      <Tile metric="plan.wait_share" label="Доля ожидания" values={{ share: k.wait_share }}
-            status={wait > WAIT_WARN ? <Chip tone="warn">очереди доминируют</Chip> : undefined}>
-        <FmtValue text={pct(wait)} />
-        {result.queue_timeline && <Sparkline points={result.queue_timeline} label="Очередь операций во времени" />}
-      </Tile>
-
-      <Tile metric="plan.cost" label="Себестоимость работ" span="s4" values={{ cost: k.cost, n_jobs: result.n_jobs }}>
-        <FmtValue text={money(k.cost)} />
-        <div className="pl-tile__sub"><span className="num">{num(result.n_jobs, 0)}</span> операций · без материалов</div>
-      </Tile>
-
-      <Tile metric="plan.labor_cost" label="Затраты на труд" span="s4" values={{ labor: k.labor_cost }}>
-        <FmtValue text={money(k.labor_cost ?? 0)} />
-        <div className="pl-tile__sub">по назначениям <span className="num">{result.n_workers}</span> рабочих</div>
-      </Tile>
-
-      <Tile metric="plan.maintenance" label="Плановое ТО и ремонты" span="s4"
-            values={{ maint, repair, n: result.samples }}>
-        <FmtValue text={hours(maint + repair)} />
-        <div className="pl-tile__sub">
-          ТО <span className="num">{hours(maint)}</span> · ремонты (ср. по прогонам) <span className="num">{hours(repair)}</span>
-        </div>
-      </Tile>
+      <KpiTable result={result} />
     </div>
   )
 }

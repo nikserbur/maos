@@ -1,8 +1,9 @@
 /**
  * Полоса методологии (UX-V2 §2.4): 8 ячеек-блоков с состоянием для текущего контекста
  * (активный сценарий + последний прогон), 36 px, липнет под верхней панелью. Клик —
- * переход на узел карты; блоки текущего экрана подсвечены. На узких экранах — только
- * номера и глифы. Состояние — из `useMethodMapState()` (deriveState, без бэкенда).
+ * переход на узел карты; блоки текущего экрана подсвечены. Текстовый бейдж состояния — только у
+ * блоков текущего экрана (двумя строками: имя / бейдж, X1 §6.9), у остальных — имя + глиф; полный
+ * текст — в title. На узких экранах — только номера и глифы. Состояние — из `useMethodMapState()`.
  */
 import type { CSSProperties } from 'react'
 import { BLOCKS } from '../features/method-map/blocks'
@@ -36,9 +37,11 @@ export function PipelineStrip({ activeBlocks = [] }: PipelineStripProps) {
                 title={`[${b.n}] ${b.title} — ${STATE_META[l.state].label}${l.badge ? `: ${l.badge}` : ''}${l.reason ? ` · ${l.reason}` : ''}`}
               >
                 <span className="pstrip__n mono">{b.n}</span>
-                <span className="pstrip__name">{b.short}</span>
+                <span className="pstrip__text">
+                  <span className="pstrip__name">{b.short}</span>
+                  {current && <span className="pstrip__badge">{text}</span>}
+                </span>
                 <StateGlyph state={l.state} />
-                <span className="pstrip__badge">{text}</span>
               </a>
             </li>
           )

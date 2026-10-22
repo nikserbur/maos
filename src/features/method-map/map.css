@@ -246,7 +246,7 @@
 .mm-glyph--estimated, .mm-glyph--calibrated { border-radius: 50%; background: var(--state-estimated); }
 .mm-glyph--calibrated { box-shadow: 0 0 0 1.5px var(--bg-card), 0 0 0 3px var(--status-setup); }
 .mm-glyph--manual { background: var(--state-manual); }
-.mm-glyph--normative { background: transparent; border: 2px solid var(--state-normative); }
+.mm-glyph--normative { background: transparent; border: 2px solid var(--state-normative); transform: rotate(45deg) scale(0.82); }
 .mm-glyph--error { background: var(--state-error); }
 .mm-glyph--default { border-radius: 50%; border: 2px solid var(--state-default); }
 .mm-glyph--unconfigured { border-radius: 50%; border: 1.5px dashed var(--state-unconfigured); }
@@ -271,7 +271,7 @@
   border-radius: var(--radius-pill);
 }
 .mm-chip--estimated, .mm-chip--calibrated { color: var(--verdigris); border-color: color-mix(in oklch, var(--verdigris) 40%, transparent); }
-.mm-chip--stale { color: var(--ochre); border-color: color-mix(in oklch, var(--status-setup) 45%, transparent); }
+.mm-chip--stale { color: var(--state-stale); border-color: color-mix(in oklch, var(--status-setup) 45%, transparent); }
 .mm-chip--error { color: var(--status-down); border-color: color-mix(in oklch, var(--status-down) 45%, transparent); }
 .mm-chip--planned, .mm-chip--unconfigured, .mm-chip--stage { color: var(--text-muted); border-style: dashed; }
 
@@ -345,7 +345,7 @@
 .mm-pass { display: flex; flex-direction: column; gap: var(--space-2); }
 .mm-pass__value-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .mm-pass__value { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; }
-.mm-pass__value.is-warn { color: var(--ochre); }
+.mm-pass__value.is-warn { color: var(--status-setup); }
 .mm-pass__unit { font-size: var(--fs-14); color: var(--text-muted); }
 .mm-pass__meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: var(--fs-12); }
 .mm-pass__meta div { display: contents; }
@@ -360,7 +360,7 @@
 .mm-ptable th.num, .mm-ptable td.num { text-align: right; }
 .mm-ptable td { padding: 5px 6px; border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent); vertical-align: middle; }
 .mm-ptable tr.is-warn td { background: color-mix(in oklch, var(--status-setup) 8%, transparent); }
-.mm-ptable__warn { color: var(--ochre); }
+.mm-ptable__warn { color: var(--status-setup); }
 
 /* ── Легенда ────────────────────────────────────────────────────────────── */
 .mm-legend {
@@ -418,5 +418,5 @@
 
 /* G2: серверные статусы паспорта в панели карты (UI / синтетика / в плане) */
 .mm-prov--ui { color: var(--text-muted); }
-.mm-prov--synthetic { color: var(--ochre); }
+.mm-prov--synthetic { color: var(--status-setup); }
 .mm-prov--planned { color: var(--text-disabled); }

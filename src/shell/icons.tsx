@@ -160,6 +160,7 @@ const ICONS = {
   check: <path d="M4.5 12.5l5 5L19.5 7" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  minus: <path d="M5 12h14" />,
   search: (
     <>
       <circle cx="10.5" cy="10.5" r="6" />

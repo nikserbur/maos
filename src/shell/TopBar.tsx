@@ -2,16 +2,17 @@ import { Lockup } from '../brand/Logo'
 import { Backdrop } from '../brand/Backdrop'
 import { Icon } from './icons'
 import { DEFAULT_SCREEN_ID } from './router'
-import { STAGE_HINT } from './screens'
 import { setTheme, useTheme } from './theme'
 
 interface TopBarProps {
   title: string
-  stage?: 1 | 2
 }
 
-/** Глобальная верхняя панель: локап PESCADITO, активный экран, переключатель темы. */
-export function TopBar({ title, stage }: TopBarProps) {
+/**
+ * Глобальная верхняя панель: локап PESCADITO, активный экран, переключатель темы.
+ * Стадия ①/② показывается только бейджем на рельсе (X1 §6.9: дубликат в панели снят).
+ */
+export function TopBar({ title }: TopBarProps) {
   const theme = useTheme()
   const nextLabel = theme === 'light' ? 'Тёмная тема' : 'Светлая тема'
 
@@ -23,11 +24,6 @@ export function TopBar({ title, stage }: TopBarProps) {
       </a>
       <span className="topbar__divider" aria-hidden="true" />
       <span className="topbar__screen">{title}</span>
-      {stage && (
-        <span className={`topbar__stage topbar__stage--s${stage}`} title={STAGE_HINT[stage]}>
-          Стадия {stage}
-        </span>
-      )}
       <span className="topbar__spacer" />
       <button
         type="button"

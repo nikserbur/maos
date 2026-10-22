@@ -79,17 +79,6 @@
   font-weight: 500;
   color: var(--text);
 }
-.topbar__stage {
-  flex: none;
-  padding: 2px 8px;
-  font-size: var(--fs-11);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  border: 1px solid currentColor;
-  border-radius: var(--radius-pill);
-}
-.topbar__stage--s2 { color: var(--ochre); }
-.topbar__stage--s1 { color: var(--accent-text); }
 .topbar__spacer {
   flex: 1 1 auto;
 }

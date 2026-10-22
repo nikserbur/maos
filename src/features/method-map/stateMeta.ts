@@ -1,6 +1,6 @@
 /**
  * Словарь состояний узлов (UX-V2 §3.4): глиф, подпись, тон токена и приоритет
- * агрегации «состояние блока = худшее из детей». Цвет никогда не единственный
+ * агрегации «состояние блока = худшее из детей». Норматив — ◆, вручную — ■. Цвет никогда не единственный
  * сигнал — у каждого состояния свой глиф (● ▲ ■ ○ ◌).
  */
 import type { NodeState, Provenance, Stage } from './types'
@@ -23,7 +23,7 @@ export const STATE_META: Readonly<Record<NodeState, StateMeta>> = {
   stale:        { glyph: '▲', label: 'устарело', glyphClass: 'mm-glyph--stale', hint: 'Вход изменился после последнего расчёта — пересчитайте.', priority: 2 },
   default:      { glyph: '○', label: 'по умолчанию', glyphClass: 'mm-glyph--default', hint: 'Значения по умолчанию кода/НСИ — примите или оцените по данным.', priority: 3 },
   manual:       { glyph: '■', label: 'задано вручную', glyphClass: 'mm-glyph--manual', hint: 'Задано пользователем.', priority: 4 },
-  normative:    { glyph: '■', label: 'норматив', glyphClass: 'mm-glyph--normative', hint: 'ГОСТ, норматив или экспертная калибровка — не оценка по данным.', priority: 5 },
+  normative:    { glyph: '◆', label: 'норматив', glyphClass: 'mm-glyph--normative', hint: 'ГОСТ, норматив или экспертная калибровка — не оценка по данным.', priority: 5 },
   estimated:    { glyph: '●', label: 'оценено', glyphClass: 'mm-glyph--estimated', hint: 'Оценено по данным: есть источник, объём и период.', priority: 5 },
   calibrated:   { glyph: '●', label: 'калибровано', glyphClass: 'mm-glyph--calibrated', hint: 'Подобрано по план-факту — см. отчёт калибровки.', priority: 5 },
   planned:      { glyph: '◌', label: 'в плане', glyphClass: 'mm-glyph--planned', hint: 'Ещё не реализовано — см. волну в «Методике».', priority: 9 },

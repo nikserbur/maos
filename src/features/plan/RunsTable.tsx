@@ -1,7 +1,8 @@
 /**
  * История прогонов Стадии 1 (UX-V2 §4.5 `RunsTable`): бэкенд хранит планы (`GET /api/simulation/plans`)
  * и их KPI (`GET /api/analytics/kpi_series`) — таблица собирается из них: дата, заказы, E[Cmax],
- * CVaR, OTD, узкое место. Выбор двух строк → сравнение бок о бок (`DiffTable`); клик — открыть KPI.
+ * CVaR, OTD, узкое место. Выбор двух строк → сравнение бок о бок (`DiffTable`); клик по строке —
+ * открыть прогон (полный результат есть для прогонов из кэша этой машины — X1 §5 п. 2).
  */
 import { useEffect, useMemo, useState } from 'react'
 import { api, type KpiBundle, type SimPlanSummary } from '../../lib/api'
@@ -42,11 +43,15 @@ const COMPARE_ROWS: ReadonlyArray<DiffTableRow<RunRow>> = [
 interface RunsTableProps {
   /** Выделить строку текущего результата. */
   currentId?: string | null
+  /** Открыть прогон; строки, для которых `canOpen` ложно, показывают подсказку. */
   onOpen?: (row: RunRow) => void
+  canOpen?: (id: string) => boolean
   limit?: number
 }
 
-export function RunsTable({ currentId, onOpen, limit = 12 }: RunsTableProps) {
+const NO_FULL_RESULT = 'Полный результат (Гант, касса) есть только для прогонов, построенных на этой машине; KPI — в строке и в сравнении.'
+
+export function RunsTable({ currentId, onOpen, canOpen, limit = 12 }: RunsTableProps) {
   const [rows, setRows] = useState<RunRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sel, setSel] = useState<string[]>([])
@@ -69,27 +74,32 @@ export function RunsTable({ currentId, onOpen, limit = 12 }: RunsTableProps) {
   if (rows.length === 0) return <p className="pl-note">Прогонов ещё нет — постройте первый план через «Новый план».</p>
   return (
     <div className="pl-runs">
-      <table className="plan__rules pl-runs__table">
+      <table className="pl-table pl-table--tight pl-runs__table">
         <thead>
           <tr>
-            <th aria-label="Сравнить" title="Отметьте два прогона для сравнения" />
-            <th>Когда</th><th>Операций</th><th>E[Cmax]</th><th>CVaR</th><th>OTD</th><th>Загрузка</th><th>Узкое место</th><th />
+            <th scope="col" aria-label="Сравнить" title="Отметьте два прогона для сравнения" />
+            <th scope="col">Когда</th><th scope="col" className="num">Операций</th><th scope="col" className="num">E[Cmax]</th><th scope="col" className="num">CVaR</th>
+            <th scope="col" className="num">OTD</th><th scope="col" className="num">Загрузка</th><th scope="col">Узкое место</th><th scope="col" />
           </tr>
         </thead>
         <tbody>
           {visible.map((r) => {
             const otd = kpiOf(r.kpi, 'otd')
+            const openable = Boolean(onOpen) && (canOpen ? canOpen(r.id) : true)
+            const current = r.id === currentId
             return (
-              <tr key={r.id} className={r.id === currentId ? 'chosen' : ''}>
-                <td><input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} /></td>
-                <td className="num">{fmtDate(r.createdAt)}{r.id === currentId && <Chip tone="accent">текущий</Chip>}</td>
+              <tr key={r.id} className={`${current ? 'is-chosen' : ''}${openable ? ' is-openable' : ''}`}
+                  title={openable ? 'Открыть прогон' : onOpen ? NO_FULL_RESULT : undefined}
+                  onClick={openable ? () => onOpen?.(r) : undefined}>
+                <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} /></td>
+                <td className="num pl-td-name">{fmtDate(r.createdAt)}{current && <Chip tone="accent">текущий</Chip>}</td>
                 <td className="num">{num(r.nTasks, 0)}</td>
                 <td className="num">{hours(kpiOf(r.kpi, 'makespan_mean') || r.makespan, 0)}</td>
                 <td className="num">{hours(kpiOf(r.kpi, 'makespan_cvar'), 0)}</td>
                 <td className="num">{Number.isFinite(otd) ? <Chip tone={otd >= 0.99 ? 'good' : otd >= 0.9 ? 'warn' : 'bad'}>{pct(otd, 0)}</Chip> : '—'}</td>
                 <td className="num">{pct(kpiOf(r.kpi, 'utilization'), 0)}</td>
                 <td>{r.kpi?.bottleneck?.wc_name ?? '—'}</td>
-                <td>{onOpen && r.kpi && <button type="button" className="btn btn--sm" onClick={() => onOpen(r)}>KPI</button>}</td>
+                <td className="pl-runs__open">{openable && !current && <span className="pf-link">открыть →</span>}</td>
               </tr>
             )
           })}
@@ -97,7 +107,7 @@ export function RunsTable({ currentId, onOpen, limit = 12 }: RunsTableProps) {
       </table>
       {rows.length > limit && (
         <button type="button" className="pf-link" onClick={() => setShowAll((v) => !v)}>
-          {showAll ? 'свернуть' : `показать все ${rows.length}`}
+          {showAll ? 'свернуть' : `показать все ${num(rows.length, 0)}`}
         </button>
       )}
       {columns.length === 2 && (

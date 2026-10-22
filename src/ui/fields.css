@@ -15,11 +15,11 @@
 .pf-badge__glyph { font-size: 9px; line-height: 1; }
 .pf-badge--good { color: var(--verdigris); border-color: color-mix(in oklch, var(--verdigris) 55%, var(--border)); }
 .pf-badge--neutral { color: var(--text-secondary); }
-.pf-badge--warn { color: var(--ochre); border-color: color-mix(in oklch, var(--ochre) 55%, var(--border)); }
+.pf-badge--warn { color: var(--status-setup); border-color: color-mix(in oklch, var(--status-setup) 55%, var(--border)); }
 .pf-badge--bad { color: var(--cinnabar); border-color: color-mix(in oklch, var(--cinnabar) 55%, var(--border)); }
 .pf-badge--muted { color: var(--text-muted); border-style: dashed; }
 .pf-badge--manual { color: var(--text); border-color: var(--border-control); }
-[data-theme='light'] .pf-badge--warn { color: var(--ochre); }
+[data-theme='light'] .pf-badge--warn { color: var(--status-setup); }
 
 /* ── Поле с паспортом ────────────────────────────────────────────────────── */
 .pf-field {
@@ -30,7 +30,7 @@
 }
 .pf-field:focus-within { border-color: var(--focus); box-shadow: var(--halo); }
 .pf-field.is-changed { border-left-color: var(--accent); }
-.pf-field.is-warn { border-left-color: var(--ochre); }
+.pf-field.is-warn { border-left-color: var(--status-setup); }
 .pf-field.is-deprecated { border-left-style: dashed; opacity: 0.86; }
 .pf-field.is-deprecated .pf-field__value, .pf-field.is-deprecated .pf-field__input { color: var(--text-muted); text-decoration: line-through solid color-mix(in oklch, var(--text-muted) 60%, transparent); }
 .pf-field__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -53,7 +53,7 @@
 }
 .pf-field__revert { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
 .pf-field__revert:hover { color: var(--accent-hover); }
-.pf-field__warn { font-size: var(--fs-12); color: var(--ochre); }
+.pf-field__warn { font-size: var(--fs-12); color: var(--status-setup); }
 .pf-field__meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-muted); }
 .pf-field__owner::before { content: '↳ '; opacity: 0.7; }
 .pf-field__effect { color: var(--text-secondary); }
@@ -70,7 +70,7 @@
 .pf-pass__value-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .pf-pass__value { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; word-break: break-word; }
 .pf-pass--compact .pf-pass__value { font-size: var(--fs-20); }
-.pf-pass__value.is-warn { color: var(--ochre); }
+.pf-pass__value.is-warn { color: var(--status-setup); }
 .pf-pass__unit { font-size: var(--fs-13); color: var(--text-muted); }
 .pf-pass__meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: var(--fs-12); }
 .pf-pass__meta div { display: contents; }
@@ -100,7 +100,7 @@
 .pf-step__block { font-size: 10px; color: var(--text-muted); }
 .pf-step__glyph { font-size: 10px; text-align: center; }
 .pf-step__glyph--done { color: var(--verdigris); }
-.pf-step__glyph--warn { color: var(--ochre); }
+.pf-step__glyph--warn { color: var(--status-setup); }
 .pf-step__glyph--default { color: var(--status-idle); }
 .pf-step__glyph--empty { color: var(--text-disabled); }
 .pf-step__glyph--running { color: var(--accent-text); }
@@ -111,11 +111,11 @@
 .pf-diff__count b { margin-left: 2px; }
 .pf-diff__count--changed { color: var(--accent-text); }
 .pf-diff__count--inherited { color: var(--verdigris); }
-.pf-diff__count--unset { color: var(--ochre); }
+.pf-diff__count--unset { color: var(--status-setup); }
 .pf-diff__group { border-left: 2px solid var(--border-strong); padding-left: 12px; }
 .pf-diff__group--changed { border-left-color: var(--accent); }
 .pf-diff__group--inherited { border-left-color: var(--verdigris); }
-.pf-diff__group--unset { border-left-color: var(--ochre); }
+.pf-diff__group--unset { border-left-color: var(--status-setup); }
 .pf-diff__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .pf-diff__row { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) auto; gap: 10px; align-items: baseline; font-size: var(--fs-13); }
 .pf-diff__label { color: var(--text-secondary); }
@@ -164,7 +164,7 @@
 .pf-regimes { display: flex; flex-direction: column; gap: 6px; }
 .pf-regimes__head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
 .pf-regimes__title { color: var(--text-muted); }
-.pf-regimes.is-stress .pf-regimes__title { color: var(--ochre); }
+.pf-regimes.is-stress .pf-regimes__title { color: var(--status-setup); }
 .pf-regimes__legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-secondary); }
 .pf-regimes__key { display: inline-flex; align-items: center; gap: 5px; }
 .pf-regimes__key i { width: 10px; height: 10px; border-radius: 2px; }
@@ -177,33 +177,10 @@
 .pf-regimes__axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
 
 /* ── Веер ────────────────────────────────────────────────────────────────── */
-.pf-fan { margin: 0; display: flex; flex-direction: column; gap: 6px; }
-.pf-fan__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.pf-fan__title { font-weight: 600; font-size: var(--fs-13); }
-.pf-fan__badges { display: inline-flex; gap: 6px; flex-wrap: wrap; }
-.pf-fan__body { position: relative; }
-.pf-fan__svg { display: block; }
-.pf-fan__grid { stroke: var(--chart-grid); stroke-width: 1; }
-.pf-fan__tick { font: 500 9px var(--font-mono); fill: var(--text-muted); }
-.pf-fan__future { fill: var(--accent); opacity: 0.05; }
-.pf-fan__bt { fill: var(--ochre); opacity: 0.08; }
-.pf-fan__now { stroke: var(--text-muted); stroke-width: 0.8; stroke-dasharray: 2 2; }
-.pf-fan__hist { fill: none; stroke: var(--text); stroke-width: 1.5; }
-.pf-fan__fact { fill: var(--ochre); }
-.pf-fan__band { fill: var(--accent); opacity: 0.16; }
-.pf-fan__band--inner { opacity: 0.2; }
-.pf-fan__band--b { fill: var(--ochre); opacity: 0.14; }
-.pf-fan__q { fill: none; stroke: var(--accent); stroke-width: 0.8; opacity: 0.55; stroke-dasharray: 3 2; }
-.pf-fan__p50 { fill: none; stroke: var(--accent); stroke-width: 2; }
-.pf-fan__p50--b { stroke: var(--ochre); }
-.pf-fan__trend { fill: none; stroke: var(--ochre); stroke-width: 1.2; stroke-dasharray: 4 3; }
-.pf-fan__quality {
-  position: absolute; right: 8px; top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px;
-  background: color-mix(in oklch, var(--bg-card) 86%, transparent); border: 1px solid var(--border); border-radius: var(--radius-pill);
-  font-size: var(--fs-11); color: var(--text-secondary);
-}
-.pf-fan__quality.is-ok { border-color: color-mix(in oklch, var(--verdigris) 50%, var(--border)); }
-.pf-fan__quality.is-warn { border-color: color-mix(in oklch, var(--ochre) 60%, var(--border)); color: var(--ochre); }
+/* Веер — на chart-системе (src/ui/charts/Fan); здесь только строка качества под заголовком. */
+.pf-fan { min-width: 0; }
+.pf-quality { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-11); color: var(--text-secondary); }
+.pf-quality.is-warn { color: var(--text); }
 
 /* ── Плотность ───────────────────────────────────────────────────────────── */
 .pf-density { display: block; }
@@ -215,3 +192,8 @@
   .pf-progress__phase.is-active .pf-progress__dot { animation: none; }
   .pf-progress__bar span { transition: none; }
 }
+
+/* ── Легенда состояний (одна для карты, сценариев и плана) ───────────────── */
+.pf-legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-12); color: var(--text-muted); }
+.pf-legend--compact { gap: 2px 10px; font-size: var(--fs-11); }
+.pf-legend__item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }

@@ -1,8 +1,12 @@
 /*
- * Bento-сетка KPI экрана «План» и баннер узкого места. Иерархия — масштабом:
- * герой-плитка 5×2 (длина расписания + хвост риска), остальные 3–7 колонок из 12.
+ * KPI экрана «План» (X1 §5.1): ярус A — три плитки (герой E[Cmax] + хвост риска, OTD, CFaR),
+ * ярус C — свёрнутая таблица; плюс карточка ГА (сходимость) внутри «Что определило».
  */
 .pl-bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-3); }
+.pl-kpi { display: flex; flex-direction: column; gap: var(--space-3); }
+/* Ярус A: три плитки в один ряд — герой 5/12, OTD 4/12, CFaR 3/12; герой не растягивается на две строки */
+.pl-bento--tier-a .pl-tile--hero { grid-row: auto; }
+.pl-tile--empty { justify-content: space-between; border-style: dashed; }
 
 .pl-tile {
   position: relative; grid-column: span 3; min-width: 0;
@@ -77,32 +81,6 @@
 .pl-spark__s0 { stop-color: var(--chart-2); stop-opacity: 0.28; }
 .pl-spark__s1 { stop-color: var(--chart-2); stop-opacity: 0; }
 
-/* ── Баннер узкого места ─────────────────────────────────────────────────── */
-.pl-bn {
-  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-4); align-items: center;
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in oklch, var(--status-setup) 38%, var(--pl-line));
-  background:
-    radial-gradient(90% 140% at 0% 50%, color-mix(in oklch, var(--ochre-fill) 13%, transparent), transparent 62%),
-    var(--pl-card-bg);
-  box-shadow: var(--pl-hl), var(--shadow-1);
-}
-.pl-bn__mark {
-  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius);
-  background: color-mix(in oklch, var(--status-setup) 16%, transparent);
-  border: 1px solid color-mix(in oklch, var(--status-setup) 40%, transparent);
-  font-size: 20px;
-}
-.pl-bn__mark::before { margin: 0; }
-.pl-bn__eyebrow { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ochre); }
-.pl-bn__name { margin-top: 2px; font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; line-height: var(--lh-display); color: var(--text); overflow-wrap: anywhere; }
-.pl-bn__text { margin-top: var(--space-1); color: var(--text-secondary); font-size: var(--fs-13); max-width: 92ch; }
-.pl-bn__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
-.pl-bn__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
-.pl-bn__util { font-size: var(--fs-32); font-weight: 300; line-height: 1; color: var(--text); }
-.pl-bn__why { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-12); font-weight: 500; }
-
 /* ── ГА поверх правила: выигрыш вне выборки + сходимость ────────────────── */
 .pl-ga {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 260px); gap: var(--space-5); align-items: center;
@@ -130,22 +108,21 @@
 .pl-ga__chart { margin: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .pl-ga__chart svg { display: block; width: 100%; height: 72px; overflow: visible; }
 .pl-ga__best { fill: none; stroke: var(--verdigris); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.pl-ga__base { stroke: var(--ochre); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.pl-ga__base { stroke: var(--chart-2); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .pl-ga__legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); color: var(--text-muted); font-size: var(--fs-11); }
 .pl-ga__key { display: inline-block; width: 12px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--verdigris); }
-.pl-ga__key--base { border-top: 1px dashed var(--ochre); }
+.pl-ga__key--base { border-top: 1px dashed var(--chart-2); }
 
 @media (max-width: 1280px) {
   .pl-bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .pl-tile, .pl-tile--s4 { grid-column: span 3; }
   .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: span 6; }
   .pl-tile--hero { grid-row: auto; }
+  .pl-bento--tier-a .pl-tile--s4, .pl-bento--tier-a .pl-tile--s3 { grid-column: span 3; }
 }
 @media (max-width: 640px) {
   .pl-bento { grid-template-columns: minmax(0, 1fr); }
   .pl-tile, .pl-tile--s4, .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: 1 / -1; }
-  .pl-bn { grid-template-columns: minmax(0, 1fr); }
-  .pl-bn__side { align-items: flex-start; }
   .pl-ga { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .pl-meter__fill { transition: none; } }

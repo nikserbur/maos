@@ -1,6 +1,7 @@
 /**
  * Чистая логика диаграммы Ганта: ЕДИНАЯ раскраска (изделие → --chart-n по индексу
- * в программе), шаг и подписи оси времени, группировка полос, доли наладки/ТО.
+ * в программе, ≤ 7 цветов + «прочее»), шаг и подписи оси времени (часы или даты от начала
+ * горизонта), группировка полос по типу РЦ или по цеху, доли наладки/ТО.
  */
 import type { ScheduleResult } from '../../lib/api'
 import { num } from '../../explain/format'
@@ -71,6 +72,21 @@ export function fmtTick(h: number, step: number): string {
   return `${num(h, 0)} ч`
 }
 
+const MS_PER_HOUR = 3_600_000
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/**
+ * Подпись деления датой от начала горизонта (X1 §5 п. 7): шаг ≥ суток — «дд.мм»,
+ * часовой шаг — «чч:00», а на границе суток — «дд.мм». Без даты старта — часы/сутки.
+ */
+export function fmtTickDate(h: number, step: number, start: Date | null): string {
+  if (!start) return fmtTick(h, step)
+  const d = new Date(start.getTime() + h * MS_PER_HOUR)
+  const day = `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}`
+  if (step >= DAY || h % DAY === 0) return day
+  return `${pad2(d.getUTCHours())}:00`
+}
+
 /** Деления 0…span с шагом step (включая 0). */
 export function makeTicks(span: number, step: number): number[] {
   const out: number[] = []
@@ -108,6 +124,36 @@ export function groupBars(bars: readonly PlanBar[]): GanttGroup[] {
     const machines = [...grp.machines.values()]
     return { wc, name: grp.name, machines, nOps: machines.reduce((a, m) => a + m.bars.length, 0) }
   })
+}
+
+/**
+ * Группировка по цеху (X1 §5.1 «по цехам»): цех = `group_name` типа РЦ из НСИ; станки
+ * внутри цеха подписываются «тип · станок». Типы без цеха — группа «Без цеха».
+ */
+export function groupBarsByShop(bars: readonly PlanBar[], shopOf: (wcTypeId: string) => string | undefined): GanttGroup[] {
+  const NO_SHOP = 'Без цеха'
+  const byShop = new Map<string, Map<string, GanttMachine>>()
+  for (const g of bars) {
+    const shop = shopOf(g.wc_type_id) || NO_SHOP
+    let machines = byShop.get(shop)
+    if (!machines) {
+      machines = new Map()
+      byShop.set(shop, machines)
+    }
+    const mid = g.machine_id || '—'
+    let mc = machines.get(mid)
+    if (!mc) {
+      mc = { id: mid, name: `${g.wc_name || g.wc_type_id} · ${g.machine_name || mid}`, bars: [] }
+      machines.set(mid, mc)
+    }
+    mc.bars.push(g)
+  }
+  return [...byShop.entries()]
+    .sort(([a], [b]) => (a === NO_SHOP ? 1 : b === NO_SHOP ? -1 : a.localeCompare(b, 'ru')))
+    .map(([shop, machines]) => {
+      const list = [...machines.values()]
+      return { wc: shop, name: shop, machines: list, nOps: list.reduce((a, m) => a + m.bars.length, 0) }
+    })
 }
 
 /* ── Разложение полосы: наладка (в начале) и ТО/ремонт (в конце) ─────────── */

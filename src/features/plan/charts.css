@@ -53,7 +53,7 @@
 .pl-gantt__tick { position: absolute; top: 0; height: 26px; display: flex; align-items: center; padding-left: 5px; font: 500 10px/1 var(--font-mono); color: var(--text-muted); white-space: nowrap; border-left: 1px solid var(--chart-axis); }
 .pl-gantt__tick.is-major { color: var(--text-secondary); }
 .pl-gantt__grid { position: absolute; top: 26px; bottom: 0; z-index: 0; pointer-events: none; }
-.pl-gantt__gl { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--chart-grid); }
+.pl-gantt__gl { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--chart-grid); }
 .pl-gantt__gl.is-major { border-left-style: solid; border-left-color: color-mix(in oklch, var(--chart-axis) 45%, transparent); }
 
 .pl-grow { position: relative; z-index: 1; display: flex; align-items: center; height: 26px; }

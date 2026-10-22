@@ -37,7 +37,8 @@ export function emptyProgramMessage(w: WizardState, program: readonly WizardOrde
   return 'В программе нет заказов. Добавьте их на шаге «Программа»: изделие, количество, срок.'
 }
 
-export async function runSchedule(w: WizardState, program: readonly WizardOrder[]): Promise<ScheduleResult | null> {
+/** `startDate` — начало горизонта (ISO-дата) для оси дат Ганта; без него остаётся прежнее. */
+export async function runSchedule(w: WizardState, program: readonly WizardOrder[], startDate?: string): Promise<ScheduleResult | null> {
   const ps = getPlanState()
   const params = buildScheduleParams(w, program, ps.pins, ps.result)
   const token = planActions.beginRun()
@@ -52,7 +53,7 @@ export async function runSchedule(w: WizardState, program: readonly WizardOrder[
       planActions.failRun(token, r.warnings?.join(' ') || 'Нет данных для плана')
       return null
     }
-    planActions.finishRun(token, r)
+    planActions.finishRun(token, r, { startDate })
     if (r.plan_id) setDecisionContext({ scheduleRunId: r.plan_id })
     return r
   } catch (e) {

@@ -1,12 +1,13 @@
 /**
  * Шаг 5 «Цель и риск» [5] + [4]/[6] (UX-V2 §4.2, §4.4 п. 2): пресеты «Срок / Деньги / Баланс», «Экспертно»
  * раскрывает w_time / w_risk / w_cost, α (из сценария, переопределение — с бейджем), N прогонов,
- * формулу F живьём («i» plan.objective_weights). Метод поиска порядка: Авто (7 правил + ГА), правило,
+ * формулу F живьём через bindFormulaParts из реестра «i» plan.objective_weights (X1 §5 п. 16). Метод поиска порядка: Авто (7 правил + ГА), правило,
  * RL (блок [6] — в плане, пока нет ONNX), конструктор эвристики (пресеты — в проекте через prefs).
  * Критерий кассы: CVaR прибыли / CFaR / оба + «касса ≥ L_min».
  */
 import { useEffect, useState } from 'react'
-import { pct } from '../../../../explain/format'
+import { bindFormulaParts, pct } from '../../../../explain/format'
+import { getMetric } from '../../../../explain/metrics'
 import { InfoTip } from '../../../../ui/InfoTip'
 import { ParamField } from '../../../../ui/ParamField'
 import { PromptDialog } from '../../../../ui/PromptDialog'
@@ -17,6 +18,11 @@ import { RULES, type Crit } from '../../types'
 import { Chip, Segmented } from '../../ui'
 import type { WizardData } from '../useWizardData'
 import { effectiveFields, isChanged, useWizard, wizardActions, type CashCriterion, type RiskPreset } from '../wizardStore'
+
+/** Формула цели — из реестра «i», та же, что в поповере: первая строка — подстановка пресета, вторая — F. */
+const OBJECTIVE = getMetric('plan.objective_weights')
+
+const PRESET_LABEL: Record<RiskPreset, string> = { time: 'Срок', money: 'Деньги', balance: 'Баланс', expert: 'Экспертно' }
 
 const PRESET_HINT: Record<RiskPreset, string> = {
   time: 'w_time 1 · w_risk 0,5 — минимальная длина расписания с умеренным штрафом хвоста',
@@ -47,18 +53,25 @@ export function ObjectiveStep({ data }: { data: WizardData }) {
     const { [name]: _x, ...rest } = presets
     setPresets(rest); setPresetsSrc(await savePresets(rest))
   }
-  const num3 = (v: number) => String(Math.round(v * 1000) / 1000)
+  const formulaValues = { preset: PRESET_LABEL[w.preset], w_t: f.wTime, w_r: f.wRisk, w_c: f.wCost, alpha: f.alpha }
+  const formulaLines = OBJECTIVE ? OBJECTIVE.formula.split('\n').map((line) => bindFormulaParts(line, formulaValues, OBJECTIVE.variables)) : []
 
   return (
     <div className="wz-step">
       <div className="wz-card wz-card--accent">
-        <p className="wz-card__t">Склонность к риску <InfoTip id="plan.objective_weights" values={{ preset: w.preset, w_t: f.wTime, w_r: f.wRisk, w_c: f.wCost, alpha: f.alpha }} /></p>
+        <div className="wz-card__t">Склонность к риску <InfoTip id="plan.objective_weights" values={formulaValues} /></div>
         <Segmented label="Пресет склонности к риску" size="lg" value={w.preset} onChange={(id: RiskPreset) => wizardActions.applyPreset(id)}
           options={[{ id: 'time', label: 'Срок' }, { id: 'money', label: 'Деньги' }, { id: 'balance', label: 'Баланс' }, { id: 'expert', label: 'Экспертно' }]} />
         <p className="pl-note">{PRESET_HINT[w.preset]}</p>
-        <p className="wz-formula mono">
-          F = <b>{num3(f.wTime)}</b>·E[Cmax] + <b>{num3(f.wRisk)}</b>·(CVaR<sub>{pct(f.alpha, 0)}</sub> − E[Cmax]) + <b>{num3(f.wCost)}</b>·T<sub>нал</sub> + 0,5·E[T] + 0,001·T<sub>дет</sub>
-        </p>
+        <div className="wz-formula mono" aria-label="Целевая функция F с подставленными весами">
+          {formulaLines.map((parts, li) => (
+            <div key={li} className="wz-formula__line">
+              {parts.map((p, i) => p.kind === 'text'
+                ? <span key={i}>{p.text}</span>
+                : <b key={i} className={`num${p.known ? '' : ' is-empty'}`}>{p.text}</b>)}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="wz-fields">
@@ -84,7 +97,7 @@ export function ObjectiveStep({ data }: { data: WizardData }) {
       </div>
 
       <section className="wz-card" aria-label="Метод поиска порядка">
-        <p className="wz-card__t">Метод поиска порядка операций · блок [4]</p>
+        <div className="wz-card__t">Метод поиска порядка операций · блок [4]</div>
         <div className="wz-methods" role="radiogroup" aria-label="Метод">
           {[
             { id: 'auto', title: 'Авто', sub: '7 правил + ГА с проверкой вне выборки', on: f.rule === 'auto' },
@@ -109,14 +122,14 @@ export function ObjectiveStep({ data }: { data: WizardData }) {
         {f.rule === 'custom' && (
           <div className="wz-row">
             <HeurSummary crits={[...w.crits]} />
-            <button className="btn btn--primary" style={{ height: 28 }} onClick={() => setHeurOpen(true)}>Настроить эвристику</button>
+            <button type="button" className="btn btn--sm" onClick={() => setHeurOpen(true)}>Настроить эвристику</button>
             <Chip tone={presetsSrc === 'project' ? 'good' : 'warn'}>{presetsSrc === 'project' ? 'пресеты в проекте' : 'пресеты локально'}</Chip>
           </div>
         )}
       </section>
 
       <section className="wz-card" aria-label="Критерий кассы">
-        <p className="wz-card__t">Критерий кассы · слой F</p>
+        <div className="wz-card__t">Критерий кассы · слой F</div>
         <Segmented label="Критерий кассы" value={f.cashCriterion} onChange={(id: CashCriterion) => wizardActions.setOverride('cashCriterion', id)}
           options={[{ id: 'profit', label: 'CVaR прибыли' }, { id: 'cash', label: 'CVaR кассы (CFaR)' }, { id: 'both', label: 'оба' }]} />
         <p className="pl-note">Ограничение «касса ≥ L_min в каждую неделю худших β сценариев» входит в CVaR-LP всегда (L_min — шаг «Ограничения»); «цена ликвидности» показывается после расчёта кассы.</p>

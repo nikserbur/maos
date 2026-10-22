@@ -64,72 +64,16 @@ interface ControlProps {
 
 function InfoTipControl({ entry, values, placement, label }: ControlProps) {
   const [open, setOpen] = useState(false)
+  // Триггер — обычный ref без setState: при размонтировании сотен плиток KPI floating-ui
+  // не получает колбэков с null (это и роняло экран «Maximum update depth exceeded»).
   const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const panelRef = useRef<HTMLDivElement | null>(null)
-  const focusedRef = useRef(false)
   const popId = useId()
   const titleId = `${popId}-title`
 
-  const { refs, floatingStyles, placement: actualPlacement, isPositioned } = useFloating({
-    open,
-    placement,
-    strategy: 'fixed',
-    middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
-    whileElementsMounted: autoUpdate,
-  })
-  const { setReference, setFloating } = refs
-
-  const setTrigger = useCallback(
-    (el: HTMLButtonElement | null) => {
-      triggerRef.current = el
-      setReference(el)
-    },
-    [setReference],
-  )
-  const setPanel = useCallback(
-    (el: HTMLDivElement | null) => {
-      panelRef.current = el
-      setFloating(el)
-    },
-    [setFloating],
-  )
-
   const close = useCallback((returnFocus: boolean) => {
     setOpen(false)
-    focusedRef.current = false
     if (returnFocus) triggerRef.current?.focus()
   }, [])
-
-  // Фокус внутрь диалога — один раз за открытие, когда поповер уже спозиционирован (виден).
-  useEffect(() => {
-    if (open && isPositioned && !focusedRef.current) {
-      focusedRef.current = true
-      panelRef.current?.focus({ preventScroll: true })
-    }
-  }, [open, isPositioned])
-
-  // Esc и клик снаружи. Esc перехватывается в фазе захвата, чтобы не закрыть заодно модальное окно.
-  useEffect(() => {
-    if (!open) return undefined
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target instanceof Node ? e.target : null
-      if (!target) return
-      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return
-      close(false)
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation()
-      close(true)
-    }
-    document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [open, close])
 
   const onTriggerClick = (e: ReactMouseEvent<HTMLButtonElement>) => {
     // «i» часто стоит внутри кликабельной карточки KPI — не отдаём ей клик.
@@ -142,6 +86,95 @@ function InfoTipControl({ entry, values, placement, label }: ControlProps) {
   const onTriggerKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
   }
+
+  const accessibleName = label ?? `Как считается: ${entry.title}`
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="infotip"
+        aria-label={accessibleName}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? popId : undefined}
+        onClick={onTriggerClick}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <span aria-hidden="true">i</span>
+      </button>
+      {open && (
+        <InfoTipPopover anchor={triggerRef.current} placement={placement} popId={popId} titleId={titleId} onClose={close}>
+          <InfoTipContent entry={entry} values={values} titleId={titleId} onClose={() => close(true)} onNavigate={() => close(false)} mapNode={nodeForMetric(entry.id)?.id} />
+        </InfoTipPopover>
+      )}
+    </>
+  )
+}
+
+interface PopoverProps {
+  anchor: HTMLElement | null
+  placement: Placement
+  popId: string
+  titleId: string
+  onClose: (returnFocus: boolean) => void
+  children: ReactNode
+}
+
+/**
+ * Поповер живёт только пока открыт: useFloating монтируется вместе с ним и получает якорь
+ * через `elements.reference`, а не через ref-колбэк триггера.
+ */
+function InfoTipPopover({ anchor, placement, popId, titleId, onClose, children }: PopoverProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const focusedRef = useRef(false)
+  const { refs, floatingStyles, placement: actualPlacement, isPositioned } = useFloating({
+    open: true,
+    placement,
+    strategy: 'fixed',
+    middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+    elements: { reference: anchor },
+  })
+  const { setFloating } = refs
+  const setPanel = useCallback(
+    (el: HTMLDivElement | null) => {
+      panelRef.current = el
+      setFloating(el)
+    },
+    [setFloating],
+  )
+
+  // Фокус внутрь диалога — один раз, когда поповер уже спозиционирован (виден).
+  useEffect(() => {
+    if (isPositioned && !focusedRef.current) {
+      focusedRef.current = true
+      panelRef.current?.focus({ preventScroll: true })
+    }
+  }, [isPositioned])
+
+  // Esc и клик снаружи. Esc перехватывается в фазе захвата, чтобы не закрыть заодно модальное окно.
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target instanceof Node ? e.target : null
+      if (!target) return
+      if (anchor?.contains(target) || panelRef.current?.contains(target)) return
+      onClose(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      onClose(true)
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [anchor, onClose])
 
   // Фокус-ловушка: Tab/Shift+Tab циклически по ссылке и кнопке поповера.
   const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -169,45 +202,25 @@ function InfoTipControl({ entry, values, placement, label }: ControlProps) {
   // Портал не разрывает всплытие в дереве React — гасим его, чтобы не сработали обработчики карточки.
   const stop = (e: SyntheticEvent) => e.stopPropagation()
 
-  const accessibleName = label ?? `Как считается: ${entry.title}`
-
-  return (
-    <>
-      <button
-        ref={setTrigger}
-        type="button"
-        className="infotip"
-        aria-label={accessibleName}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? popId : undefined}
-        onClick={onTriggerClick}
-        onKeyDown={onTriggerKeyDown}
-      >
-        <span aria-hidden="true">i</span>
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={setPanel}
-            id={popId}
-            role="dialog"
-            aria-modal="false"
-            aria-labelledby={titleId}
-            tabIndex={-1}
-            className="infotip-pop"
-            data-placement={actualPlacement}
-            style={{ ...floatingStyles, visibility: isPositioned ? 'visible' : 'hidden' }}
-            onKeyDown={onPanelKeyDown}
-            onClick={stop}
-            onPointerDown={stop}
-            onMouseDown={stop}
-          >
-            <InfoTipContent entry={entry} values={values} titleId={titleId} onClose={() => close(true)} onNavigate={() => close(false)} mapNode={nodeForMetric(entry.id)?.id} />
-          </div>,
-          document.body,
-        )}
-    </>
+  return createPortal(
+    <div
+      ref={setPanel}
+      id={popId}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      className="infotip-pop"
+      data-placement={actualPlacement}
+      style={{ ...floatingStyles, visibility: isPositioned ? 'visible' : 'hidden' }}
+      onKeyDown={onPanelKeyDown}
+      onClick={stop}
+      onPointerDown={stop}
+      onMouseDown={stop}
+    >
+      {children}
+    </div>,
+    document.body,
   )
 }
 

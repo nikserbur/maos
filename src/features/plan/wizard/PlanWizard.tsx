@@ -1,8 +1,9 @@
 /**
  * Направляемый поток создания плана (UX-V2 §4.1): маршрут `#/plan/new/<step>`, слева вертикальный
- * степпер (7 шагов, глифы как на карте), справа содержимое шага, внизу «Назад · Далее · Запустить».
- * Все шаги доступны после первого; «Запустить» подсвечивает незавершённые. Один источник данных —
- * useWizardData; состояние — wizardStore (переживает смену экрана).
+ * степпер (7 шагов, глифы как на карте), справа содержимое шага, внизу «Назад · Далее · к запуску».
+ * Заголовок шага — одна строка (X1 §5 п. 3, 13); на шаге «Результат» его нет — оглавление результата
+ * и есть заголовок. «Запустить» — primary только на шаге «Запуск» (внутри LaunchStep).
+ * Один источник данных — useWizardData; состояние — wizardStore (переживает смену экрана).
  */
 import { useEffect } from 'react'
 import { useHashRoute } from '../../../shell/router'
@@ -57,7 +58,6 @@ export function PlanWizard({ routeStep }: { routeStep: string | null }) {
   }
   const steps: StepDef<WizardStep>[] = WIZARD_STEPS.map((id, i) => ({
     id, n: i + 1, title: STEP_META[id].title, hint: STEP_META[id].hint,
-    block: STEP_META[id].block ? `[${BLOCK_META[STEP_META[id].block!].n}]` : undefined,
     blockColor: STEP_META[id].block ? BLOCK_META[STEP_META[id].block!].colorVar : undefined,
     state: stepState(w, id, readiness),
     disabled: id === 'result' && !readiness.hasResult,
@@ -66,27 +66,33 @@ export function PlanWizard({ routeStep }: { routeStep: string | null }) {
   const incomplete = steps.filter((s) => s.state === 'empty' || s.state === 'warn').map((s) => s.title)
   const Body = { program: ProgramStep, conditions: ConditionsStep, distributions: DistributionsStep, constraints: ConstraintsStep, objective: ObjectiveStep, launch: LaunchStep, result: ResultStep }[w.step]
   const meta = STEP_META[w.step]
+  const isLast = w.step === 'launch' || w.step === 'result'
 
   return (
     <div className="wz">
       <Stepper steps={steps} current={w.step} onSelect={go} />
       <div className="wz-main">
-        <header className="wz-head">
-          <p className="wz-head__eyebrow text-caps">Шаг {idx + 1} из {WIZARD_STEPS.length}{meta.block && <> · блок [{BLOCK_META[meta.block].n}] <a className="pf-link" href={`#/map/${meta.block}`}>{BLOCK_META[meta.block].title} ↗</a></>}</p>
-          <h2 className="wz-head__title">{meta.title}</h2>
-          <p className="wz-head__hint">{meta.hint}</p>
-        </header>
-        {data.error && <p className="pl-note" style={{ color: 'var(--intent-danger)' }}>{data.error}</p>}
+        {w.step !== 'result' && (
+          <header className="wz-head">
+            <span className="wz-head__eyebrow text-caps">Шаг {idx + 1} из {WIZARD_STEPS.length}</span>
+            <h2 className="wz-head__title">{meta.title}</h2>
+            <span className="wz-head__hint">{meta.hint}</span>
+            {meta.block && <a className="pf-link wz-head__block" href={`#/map/${meta.block}`}>[{BLOCK_META[meta.block].n}] {BLOCK_META[meta.block].title} ↗</a>}
+          </header>
+        )}
+        {data.error && <p className="pl-note pl-note--danger">{data.error}</p>}
         <Body data={data} />
         <footer className="wz-foot">
           <button type="button" className="btn" onClick={() => go(WIZARD_STEPS[Math.max(0, idx - 1)])} disabled={idx === 0}>← Назад</button>
           <span className="wz-foot__hint">{incomplete.length > 0 ? <>не завершено: {incomplete.join(', ')}</> : 'все шаги готовы'}</span>
-          {w.step === 'launch' || w.step === 'result'
+          {isLast
             ? <button type="button" className="btn" onClick={() => go('program')}>К программе</button>
-            : <button type="button" className="btn btn--primary" onClick={() => go(WIZARD_STEPS[idx + 1])}>Далее →</button>}
-          {w.step !== 'launch' && w.step !== 'result' && (
-            <button type="button" className={`btn${incomplete.length ? '' : ' btn--primary'}`} onClick={() => go('launch')} title={incomplete.length ? `Не завершено: ${incomplete.join(', ')}` : undefined}>Запустить…</button>
-          )}
+            : (
+              <>
+                <button type="button" className="pf-link wz-foot__skip" onClick={() => go('launch')} title={incomplete.length ? `Не завершено: ${incomplete.join(', ')}` : 'Сразу к сводке и запуску'}>к запуску →</button>
+                <button type="button" className="btn" onClick={() => go(WIZARD_STEPS[idx + 1])}>Далее →</button>
+              </>
+            )}
         </footer>
       </div>
     </div>

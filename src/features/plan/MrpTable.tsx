@@ -2,6 +2,7 @@
  * MRP — потребность в материалах под программу (вынесено из PlanScreen): закупные позиции,
  * дефицит / дозаказ, срок размещения заказа.
  */
+import { num } from '../../explain/format'
 import type { MrpResult } from '../../lib/api'
 import './plan.css'
 
@@ -20,10 +21,10 @@ export function MrpTable({ mrp }: { mrp: MrpResult }) {
               {mrp.materials.filter((m) => m.purchased).sort((a, b) => b.net_req - a.net_req).map((m) => (
                 <tr key={m.product_id} className={m.shortage ? 'chosen' : ''}>
                   <td>{m.name}</td>
-                  <td>{Math.round(m.gross_req).toLocaleString('ru')}</td>
-                  <td>{Math.round(m.on_hand).toLocaleString('ru')}</td>
-                  <td>{Math.round(m.net_req).toLocaleString('ru')}</td>
-                  <td>{m.planned_qty ? Math.round(m.planned_qty).toLocaleString('ru') : '—'}</td>
+                  <td>{num(m.gross_req, 0)}</td>
+                  <td>{num(m.on_hand, 0)}</td>
+                  <td>{num(m.net_req, 0)}</td>
+                  <td>{m.planned_qty ? num(m.planned_qty, 0) : '—'}</td>
                   <td>{Math.round(m.lead_time_hours)} ч</td>
                   <td style={{ color: m.late ? 'var(--intent-danger)' : 'var(--text-muted)' }}>
                     {m.place_by_hours != null

@@ -4,15 +4,18 @@
  * ликвидности» PoL(L_min) и карточка траншей кредитной линии (решение блока [4]). Данные —
  * POST /api/optimize/cash с `schedule_ref_id` текущего плана (профиль отгрузок из расписания).
  * Без результата — честное состояние с кнопкой запуска, не скрытая плитка.
+ * Бейджи — один `StatusChip` (цвет + глиф) вместо четырёх стилей (X1 §5 п. 11); DSCR — «×».
  */
 import type { CashLpResult } from '../../lib/api'
 import { money, num, pct } from '../../explain/format'
+import { StatusChip, type Tone as ChipTone } from '../optimization/kit/kit'
 import { InfoTip } from '../../ui/InfoTip'
-import { Chip } from './ui'
 import { FmtValue, SubLabel, Tile, Value } from './kpiParts'
-import type { Tone } from './types'
 import './kpi.css'
 import './plan-screen.css'
+
+/** Координата SVG с точностью 0,1 px (без toFixed — числа только через format.ts). */
+const px = (v: number) => Math.round(v * 10) / 10
 
 interface CashTilesProps {
   cash: CashLpResult | null
@@ -21,11 +24,18 @@ interface CashTilesProps {
   onRun: () => void
   /** Откуда профиль отгрузок: план (schedule_ref_id) или равномерный [К]. */
   scheduleRefId?: string | null
+  /** Кнопка расчёта — единственная primary экрана; false — если primary уже занята («Пересчитать с правками»). */
+  primary?: boolean
 }
 
 const THR = { breachWarn: 0.05, breachBad: 0.15, debtWarn: 0.7, debtBad: 0.9 }
-const breachTone = (p: number): Tone => (p < THR.breachWarn ? 'good' : p < THR.breachBad ? 'warn' : 'bad')
-const dscrTone = (v: number, cov: number): Tone => (v >= cov ? 'good' : v >= 1 ? 'warn' : 'bad')
+/** Порог ковенанта DSCR (норматив кредитного договора, r-паспорт в fin_params). */
+const COVENANT = 1.2
+/** Выше этого DSCR показываем «≫ ковенант» — число не читается как сумма. */
+const DSCR_SHOW_MAX = 99
+const breachTone = (p: number): ChipTone => (p < THR.breachWarn ? 'running' : p < THR.breachBad ? 'setup' : 'down')
+const dscrTone = (v: number, cov: number): ChipTone => (v >= cov ? 'running' : v >= 1 ? 'setup' : 'down')
+const debtTone = (share: number): ChipTone => (share < THR.debtWarn ? 'running' : share < THR.debtBad ? 'setup' : 'down')
 
 /** Мини-кривая PoL(L): ось L_min → цена ликвидности; неразрешимые точки — штрих. */
 function PolCurve({ points, current }: { points: NonNullable<CashLpResult['pol_curve']>; current: number }) {
@@ -38,9 +48,9 @@ function PolCurve({ points, current }: { points: NonNullable<CashLpResult['pol_c
   const ylo = Math.min(0, ...ys), yhi = Math.max(...ys) || 1
   const X = (l: number) => PL + ((l - lo) / Math.max(1e-9, hi - lo)) * (W - PL - PR)
   const Y = (v: number) => PT + (1 - (v - ylo) / Math.max(1e-9, yhi - ylo)) * (H - PT - PB)
-  const line = ok.map((p) => `${X(p.l_min).toFixed(1)},${Y(p.pol as number).toFixed(1)}`).join(' ')
+  const line = ok.map((p) => `${px(X(p.l_min))},${px(Y(p.pol as number))}`).join(' ')
   const ci = ok.filter((p) => p.pol_ci).map((p) => ({ x: X(p.l_min), lo: Y(p.pol_ci![0]), hi: Y(p.pol_ci![1]) }))
-  const band = ci.length > 1 ? `${ci.map((c) => `${c.x.toFixed(1)},${c.hi.toFixed(1)}`).join(' ')} ${[...ci].reverse().map((c) => `${c.x.toFixed(1)},${c.lo.toFixed(1)}`).join(' ')}` : ''
+  const band = ci.length > 1 ? `${ci.map((c) => `${px(c.x)},${px(c.hi)}`).join(' ')} ${[...ci].reverse().map((c) => `${px(c.x)},${px(c.lo)}`).join(' ')}` : ''
   const infeasible = points.filter((p) => p.status !== 'optimal')
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="pl-pol" role="img"
@@ -56,7 +66,7 @@ function PolCurve({ points, current }: { points: NonNullable<CashLpResult['pol_c
   )
 }
 
-export function CashTiles({ cash, running, error, onRun, scheduleRefId }: CashTilesProps) {
+export function CashTiles({ cash, running, error, onRun, scheduleRefId, primary = true }: CashTilesProps) {
   if (!cash) {
     return (
       <div className="pl-cash-empty">
@@ -67,14 +77,15 @@ export function CashTiles({ cash, running, error, onRun, scheduleRefId }: CashTi
             {scheduleRefId ? ' из этого расписания' : ' равномерный [К] (нет опорного плана)'}; ответ — CFaR, P(разрыва), DSCR, транши и цена ликвидности.
             Считается ~2–15 с (HiGHS).
           </p>
-          {error && <p className="pl-note" style={{ color: 'var(--intent-danger)' }}>{error}</p>}
+          {error && <p className="pl-note pl-note--danger">{error}</p>}
         </div>
-        <button type="button" className="btn btn--primary" onClick={onRun} disabled={running}>{running ? 'Считаем кассу…' : 'Рассчитать кассу'}</button>
+        <button type="button" className={`btn${primary ? ' btn--primary' : ''}`} onClick={onRun} disabled={running}>{running ? 'Считаем кассу…' : 'Рассчитать кассу'}</button>
       </div>
     )
   }
   const w = cash.waterfall?.lp_recourse ?? cash.waterfall?.rule
-  const covenant = 1.2
+  const covenant = COVENANT
+  const dscr = w?.dscr_min_p05 ?? 0
   const pol = cash.price_of_liquidity
   const tr = cash.tranches
   const weeks = tr?.drawdown?.p50?.length ?? 0
@@ -83,7 +94,7 @@ export function CashTiles({ cash, running, error, onRun, scheduleRefId }: CashTi
     <div className="pl-bento pl-bento--cash">
       <Tile metric="cash.cfar" label={`Минимальный остаток кассы · CVaR β = ${pct(cash.beta, 0)}`} span="s5" hero
             values={{ cfar: w?.cfar, beta: cash.beta, n: cash.n_scenarios, ci_lo: w?.cfar_ci?.[0], ci_hi: w?.cfar_ci?.[1] }}
-            status={<Chip tone={(w?.cfar ?? 0) >= 0 ? 'good' : 'bad'}>{(w?.cfar ?? 0) >= 0 ? 'касса не уходит ниже нуля' : 'в хвосте касса отрицательна'}</Chip>}>
+            status={<StatusChip tone={(w?.cfar ?? 0) >= 0 ? 'running' : 'down'}>{(w?.cfar ?? 0) >= 0 ? 'касса не уходит ниже нуля' : 'в хвосте касса отрицательна'}</StatusChip>}>
         <FmtValue text={money(w?.cfar ?? cash.cfar)} />
         <div className="pl-tile__sub">
           медиана минимума <span className="num">{money(w?.cash_min_p50)}</span>
@@ -93,7 +104,7 @@ export function CashTiles({ cash, running, error, onRun, scheduleRefId }: CashTi
         <div className="pl-tile__k">
           <SubLabel metric="cash.p_breach" label="Вероятность кассового разрыва"
                     values={{ p: w?.p_breach, ci_lo: w?.p_breach_ci?.[0], ci_hi: w?.p_breach_ci?.[1], warn: THR.breachWarn, bad: THR.breachBad }} />
-          {w && <Chip tone={breachTone(w.p_breach)}>{w.p_breach < THR.breachWarn ? 'в норме' : w.p_breach < THR.breachBad ? 'внимание' : 'критично'}</Chip>}
+          {w && <StatusChip tone={breachTone(w.p_breach)}>{w.p_breach < THR.breachWarn ? 'в норме' : w.p_breach < THR.breachBad ? 'внимание' : 'критично'}</StatusChip>}
         </div>
         <FmtValue text={pct(w?.p_breach ?? cash.p_negative_cash, 1)} size="md" />
         <div className="pl-tile__sub">
@@ -103,21 +114,23 @@ export function CashTiles({ cash, running, error, onRun, scheduleRefId }: CashTi
       </Tile>
 
       <Tile metric="cash.dscr_min_p05" label="DSCR · 5 % квантиль" values={{ dscr: w?.dscr_min_p05, covenant, p_cov: w?.p_covenant }}
-            status={w && <Chip tone={dscrTone(w.dscr_min_p05, covenant)}>{w.dscr_min_p05 >= covenant ? 'ковенант соблюдён' : 'ниже ковенанта'}</Chip>}>
-        <Value text={num(Math.min(9999, w?.dscr_min_p05 ?? 0), 1)} />
-        <div className="pl-tile__sub">ковенант <span className="num">{num(covenant, 1)}</span> · P(нарушение) <span className="num">{pct(w?.p_covenant ?? 0, 1)}</span></div>
+            status={w && <StatusChip tone={dscrTone(dscr, covenant)}>{dscr >= covenant ? 'ковенант соблюдён' : 'ниже ковенанта'}</StatusChip>}>
+        {dscr > DSCR_SHOW_MAX
+          ? <Value text="≫" unit={`${num(covenant, 1)}× (ковенант)`} />
+          : <Value text={num(dscr, 1)} unit="×" />}
+        <div className="pl-tile__sub">ковенант <span className="num">{num(covenant, 1)}×</span> · P(нарушение) <span className="num">{pct(w?.p_covenant ?? 0, 1)}</span></div>
       </Tile>
 
       <Tile metric="cash.debt_peak" label="Пик кредитной линии" span="s4"
             values={{ peak: w?.debt_peak, share: w?.debt_peak_share, limit: cash.duals?.credit_limit }}
-            status={w && <Chip tone={w.debt_peak_share < THR.debtWarn ? 'good' : w.debt_peak_share < THR.debtBad ? 'warn' : 'bad'}>{pct(w.debt_peak_share, 0)} лимита</Chip>}>
+            status={w && <StatusChip tone={debtTone(w.debt_peak_share)}>{pct(w.debt_peak_share, 0)} лимита</StatusChip>}>
         <FmtValue text={money(w?.debt_peak)} />
         <div className="pl-tile__sub">проценты за горизонт <span className="num">{money(w?.int_cost)}</span> · ставка <span className="num">{pct(cash.weekly_rate * 52, 1)}</span></div>
       </Tile>
 
       <Tile metric="cash.pol" label="Цена ликвидности · PoL(L_min)" span="s7"
             values={{ pol: pol?.value, ci_lo: pol?.ci?.[0], ci_hi: pol?.ci?.[1], pol_obj: pol?.objective_delta, dual: pol?.local_dual }}
-            status={<Chip tone={cash.duals?.liquidity_binding ? 'warn' : 'good'}>{cash.duals?.liquidity_binding ? 'ограничение активно' : 'ограничение не связывает'}</Chip>}>
+            status={<StatusChip tone={cash.duals?.liquidity_binding ? 'setup' : 'running'}>{cash.duals?.liquidity_binding ? 'ограничение активно' : 'ограничение не связывает'}</StatusChip>}>
         <div className="pl-tile__pair">
           <div>
             <FmtValue text={money(pol?.value ?? 0)} />
@@ -130,19 +143,24 @@ export function CashTiles({ cash, running, error, onRun, scheduleRefId }: CashTi
       </Tile>
 
       <Tile metric="cash.int_cost" label="Транши кредитной линии" span="s5" values={{ int: w?.int_cost, rate: cash.weekly_rate * 52 }}
-            status={<Chip>{cash.financing_stage === 'recourse' ? 'рекурс d_i,t' : 'график заранее d_t'}</Chip>}>
+            status={<StatusChip tone="info">{cash.financing_stage === 'recourse' ? 'рекурс d_i,t' : 'график заранее d_t'}</StatusChip>}>
         {tr && weeks > 0 ? (
           <>
             <div className="pl-tranche" role="img" aria-label={`Медианный долг по неделям: ${tr.debt.p50.map((v) => money(v)).join(', ')}`}>
               {tr.debt.p50.map((v, t) => {
                 const mx = Math.max(1e-9, ...tr.debt.p95)
+                const isFirst = t === firstDraw
                 return (
-                  <span key={t} className="pl-tranche__col" title={`неделя ${t + 1}: долг p50 ${money(v)} · p95 ${money(tr.debt.p95[t])} · транш p50 ${money(tr.drawdown.p50[t])}`}>
+                  <span key={t} className={`pl-tranche__col${isFirst ? ' is-first' : ''}`} title={`неделя ${t + 1}: долг p50 ${money(v)} · p95 ${money(tr.debt.p95[t])} · транш p50 ${money(tr.drawdown.p50[t])}`}>
+                    {isFirst && <span className="pl-tranche__val num">{money(tr.drawdown.p50[t])}</span>}
                     <i className="pl-tranche__p95" style={{ height: `${(tr.debt.p95[t] / mx) * 100}%` }} />
                     <i className="pl-tranche__p50" style={{ height: `${(v / mx) * 100}%` }} />
                   </span>
                 )
               })}
+            </div>
+            <div className="pl-tranche__axis num" aria-hidden="true">
+              <span>нед. 1</span>{weeks > 2 && <span>{Math.ceil(weeks / 2)}</span>}<span>{weeks}</span>
             </div>
             <div className="pl-tile__sub">
               {firstDraw >= 0 ? <>первый транш — неделя <span className="num">{firstDraw + 1}</span>, медиана <span className="num">{money(tr.drawdown.p50[firstDraw])}</span></> : 'транши в медианном сценарии не нужны'}

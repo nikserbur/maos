@@ -2,12 +2,23 @@ import { describe, expect, it } from 'vitest'
 import { badgeForProvenance, badgeForStatus, ownerLabel } from './passportBadge'
 
 describe('passport badge mapping', () => {
-  it('maps every server status to its short label and never calls [К]/[НОРМ] «оценено»', () => {
-    expect(badgeForStatus('Н').short).toBe('Н')
-    expect(badgeForStatus('О')).toMatchObject({ short: 'О', tone: 'good', label: 'оценено по данным' })
-    expect(badgeForStatus('К')).toMatchObject({ short: 'К', tone: 'neutral' })
-    expect(badgeForStatus('НОРМ')).toMatchObject({ short: 'НОРМ', tone: 'neutral' })
+  it('maps every server status to a human label, keeps the passport letter in `code` and never calls [К]/[НОРМ] «оценено»', () => {
+    expect(badgeForStatus('Н')).toMatchObject({ code: 'Н', short: 'наблюдение', glyph: '●' })
+    expect(badgeForStatus('О')).toMatchObject({ code: 'О', short: 'оценено', tone: 'good', label: 'оценено по данным' })
+    expect(badgeForStatus('К')).toMatchObject({ code: 'К', short: 'калибровка', tone: 'neutral' })
+    expect(badgeForStatus('НОРМ')).toMatchObject({ code: 'НОРМ', short: 'норматив', tone: 'neutral', glyph: '◆' })
     for (const st of ['К', 'НОРМ', 'UI', 'техн.', 'синтетика'] as const) expect(badgeForStatus(st).label).not.toContain('оцен')
+    // Буквы паспорта никогда не попадают в короткую подпись бейджа.
+    for (const st of ['Н', 'О', 'К', 'НОРМ'] as const) expect(badgeForStatus(st).short).not.toBe(st)
+  })
+
+  it('uses the map glyph dictionary: ● estimated · ■ manual · ◆ normative · ○ default · ▲ stale', () => {
+    expect(badgeForProvenance('estimated').glyph).toBe('●')
+    expect(badgeForProvenance('manual').glyph).toBe('■')
+    expect(badgeForProvenance('normative').glyph).toBe('◆')
+    expect(badgeForProvenance('default').glyph).toBe('○')
+    expect(badgeForProvenance('synthetic').glyph).toBe('▲')
+    expect(badgeForStatus('UI', { deprecated: true }).glyph).toBe('▲')
   })
 
   it('turns UI into «не в расчёте» only when the field is deprecated', () => {

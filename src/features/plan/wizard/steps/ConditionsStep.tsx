@@ -1,19 +1,27 @@
 /**
- * Шаг 2 «Внешние условия» [1] (UX-V2 §4.2): сценарий наследуется из портфеля (chip) или выбирается;
- * read-only сводка обученного генератора (режимы, CRPS / персистентность, покрытие 80 %, бейдж
- * синтетики для истории цен), текущий режим/стресс сценария (меню §2.6б правится на экране «Сценарии»),
- * поля с паспортом для величин, влияющих на план и кассу; устаревшие ползунки — свёрнуто.
+ * Шаг 2 «Внешние условия» [1] (UX-V2 §4.2, X1 §5 п. 15): сценарий наследуется из портфеля или
+ * выбирается; дальше — только сводка «наследуется из сценария …» + DiffList унаследованных полей
+ * (генератор, режим, ключевая ставка, инфляция, волатильность, корреляция) с владельцами и
+ * бейджами происхождения; редактирование — ссылкой в «Сценарии». Устаревшие ползунки — свёрнуто.
  */
 import { useState } from 'react'
 import { num, pct } from '../../../../explain/format'
+import { DiffList, type DiffRow } from '../../../../ui/DiffList'
 import { ParamField } from '../../../../ui/ParamField'
 import { ProvenanceBadge } from '../../../../ui/ProvenanceBadge'
+import { StateLegend } from '../../../../ui/StateLegend'
 import { macroModeLabel } from '../../../method-map/derivePassports'
 import { useRefs } from '../../../method-map/useMethodMapState'
 import { usePassport } from '../../../passport/passportStore'
 import { Chip } from '../../ui'
 import type { WizardData } from '../useWizardData'
 import { useWizard, wizardActions } from '../wizardStore'
+
+const DEFAULT_VOLATILITY = 0.05
+const DEFAULT_CORR = 0.5
+const DEFAULT_MONTHS = 6
+/** Выше этого значения инфляция в месяц, скорее всего, введена как годовая. */
+const INFLATION_SUSPECT = 0.02
 
 export function ConditionsStep({ data }: { data: WizardData }) {
   const w = useWizard()
@@ -26,7 +34,7 @@ export function ConditionsStep({ data }: { data: WizardData }) {
   const inherited = w.source === 'portfolio' && Boolean(data.run)
   const owner = sc ? `из сценария «${sc.name}»` : undefined
   const infl = sc ? Number(sc.inflation) || 0 : 0
-  const months = sc ? Number(sc.months) || 6 : 6
+  const months = sc ? Number(sc.months) || DEFAULT_MONTHS : DEFAULT_MONTHS
   const cum = Math.pow(1 + infl, months) - 1
   const synthetic = passport.byCode['r1.59']?.status === 'синтетика'
   const cov = macro?.holdout?.variables
@@ -34,71 +42,61 @@ export function ConditionsStep({ data }: { data: WizardData }) {
   const stress = modeLabel !== 'base'
   const keyRate = macro ? macro.last_obs.key_pp : passport.fin ? passport.fin.key_rate * 100 : null
   const spread = passport.fin ? passport.fin.spread * 100 : null
+  const regimesText = data.regimes?.regimes.map((r) => `${r.label} ${pct(r.share_of_history, 0)}`).join(' · ')
+
+  const rows: DiffRow[] = [
+    { key: 'generator', label: 'Генератор внешних условий', origin: macro ? 'inherited' : 'unset', step: 'conditions',
+      owner: macro ? `${macro.data.source} · ${macro.data.first} … ${macro.data.last} · n = ${macro.data.n}` : 'GET /api/macro/summary недоступен — условия из полей сценария',
+      value: macro ? <>{num(macro.regimes, 0)} режима · блок {num(macro.block_months, 0)} мес · CRPS <b>{num(macro.selection.choice.joint_standardized_CRPS_13months, 3)}</b> (персистентность {num(macro.selection.choice.naive_persistence_joint_CRPS, 3)})</> : '—' },
+    { key: 'mode', label: 'Режим сценария', origin: sc ? 'inherited' : 'unset', owner, step: 'conditions',
+      value: <>{stress ? modeLabel : 'базовый — прогноз'} {stress ? <Chip tone="warn">стресс, не прогноз</Chip> : <Chip tone="good">прогноз (§2.6б)</Chip>}{regimesText && <span className="pl-note"> · {regimesText}</span>}</> },
+    { key: 'coverage', label: 'Покрытие 80 % (holdout)', origin: cov ? 'inherited' : 'unset', owner: macro ? 'проверка генератора на отложенном периоде' : undefined,
+      value: cov ? <>π {num(cov.cpi_yoy_pp.coverage80, 2)} · ставка {num(cov.key_pp.coverage80, 2)} · курс {num(cov.usd_rub.coverage80, 2)} {macro?.holdout?.flags.undercoverage80.length ? <Chip tone="warn">недопокрытие: {macro.holdout.flags.undercoverage80.join(', ')}</Chip> : <Chip tone="good">в пределах порога</Chip>}</> : '—' },
+    { key: 'key_rate', label: 'Ключевая ставка', origin: keyRate !== null ? 'inherited' : 'unset',
+      owner: macro ? `ЦБ РФ, последнее наблюдение ${macro.last_obs.month}` : 'fin_params проекта',
+      value: keyRate !== null ? <>{num(keyRate, 2)} %/год{spread !== null && <> → ставка линии {num(keyRate + spread, 2)} % (спред {num(spread, 2)} %)</>}</> : '—' },
+    { key: 'inflation', label: 'Инфляция (прогноз цен)', origin: sc ? 'inherited' : 'unset', owner,
+      value: sc ? <>{num(infl * 100, 2)} %/мес · за {num(months, 0)} мес {cum >= 0 ? '+' : ''}{pct(cum, 0)}{infl > INFLATION_SUSPECT && <Chip tone="warn">это месячная, не годовая</Chip>}</> : '—' },
+    { key: 'volatility', label: 'Волатильность цен', origin: sc ? 'inherited' : 'unset', owner,
+      value: sc ? `${num((Number(sc.volatility) || DEFAULT_VOLATILITY) * 100, 1)} %/мес` : '—' },
+    { key: 'market_corr', label: 'Корреляция рынка ρ', origin: sc ? 'inherited' : 'unset', owner,
+      value: sc ? num(Number(sc.market_corr) || DEFAULT_CORR, 2) : '—' },
+  ]
 
   return (
     <div className="wz-step">
       <div className="wz-card wz-card--accent">
         <div className="wz-card__head">
           <p className="wz-card__t">
-            {inherited ? <>Наследуется из портфеля → сценарий <b>«{sc?.name ?? '…'}»</b></> : <>Сценарий внешних условий</>}
+            {inherited ? <>Наследуется из портфеля → сценарий <b>«{sc?.name ?? '…'}»</b></> : sc ? <>Сценарий <b>«{sc.name}»</b></> : <>Сценарий внешних условий</>}
+            <span className="wz-badges">
+              <ProvenanceBadge status={passport.byCode['macro.generator']?.status ?? (macro ? 'О' : undefined)} />
+              {synthetic && <ProvenanceBadge status="синтетика" title="История цен изделий (ts_data) синтетическая — демонстрация; ряды ЦБ РФ — настоящие" />}
+            </span>
           </p>
-          {inherited && !switching
-            ? <button type="button" className="btn btn--sm" onClick={() => setSwitching(true)}>Сменить сценарий…</button>
-            : (
-              <select className="plan__select" value={data.effectiveScenarioId} onChange={(e) => { wizardActions.setScenarioId(e.target.value); setSwitching(false) }}>
-                {data.scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            )}
-        </div>
-        {switching && <p className="pl-note" style={{ color: 'var(--ochre)' }}>▲ Портфель считался под сценарий «{data.run?.scenario_name}»: при смене сценария программа останется, но условия Стадии 2 и Стадии 1 разойдутся — пересчитайте портфель.</p>}
-        {sc && (
-          <p className="pl-note">
-            Сценарий в Стадии 1 влияет на: сроки поставок (MRP), ставку кредитной линии и цены сценариев кассы (слой F); на порядок операций — через хвосты длительностей, не через цены.
-            {' '}Критерий и α прогона — тоже из сценария: <b>{sc.objective || 'cvar'}</b>, α = <b className="num">{pct(Number(sc.alpha) || 0.1, 0)}</b> (шаг «Цель и риск»).
-          </p>
-        )}
-      </div>
-
-      <section className="wz-card" aria-label="Обученный макро-генератор">
-        <div className="wz-card__head">
-          <p className="wz-card__t">Обученный генератор внешних условий · VAR → SVD → HMM → блоки</p>
-          <span className="wz-badges">
-            <ProvenanceBadge status={passport.byCode['macro.generator']?.status ?? (macro ? 'О' : undefined)} long />
-            {synthetic && <ProvenanceBadge status="синтетика" title="История цен изделий (ts_data) синтетическая — демонстрация; ряды ЦБ РФ — настоящие" long />}
+          <span className="wz-row">
+            {inherited && !switching
+              ? <button type="button" className="btn btn--sm" onClick={() => setSwitching(true)}>Сменить сценарий…</button>
+              : (
+                <select className="plan__select" value={data.effectiveScenarioId} onChange={(e) => { wizardActions.setScenarioId(e.target.value); setSwitching(false) }}>
+                  {data.scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+            <a className="pf-link" href="#/scenarios/conditions">изменить в «Сценарии» →</a>
           </span>
         </div>
-        {macro ? (
-          <div className="wz-gen">
-            <div className="wz-gen__cell"><span className="text-caps">данные</span><b>{macro.data.source}</b><span className="num">{macro.data.first} … {macro.data.last} · n = {macro.data.n}</span></div>
-            <div className="wz-gen__cell"><span className="text-caps">режимы</span><b className="num">{macro.regimes} · блок {macro.block_months} мес</b><span>{data.regimes?.regimes.map((r) => `${r.label} ${pct(r.share_of_history, 0)}`).join(' · ')}</span></div>
-            <div className="wz-gen__cell"><span className="text-caps">CRPS (выбор)</span><b className="num">{num(macro.selection.choice.joint_standardized_CRPS_13months, 3)}</b><span className="num">персистентность {num(macro.selection.choice.naive_persistence_joint_CRPS, 3)}</span></div>
-            <div className="wz-gen__cell">
-              <span className="text-caps">покрытие 80 %</span>
-              <b className="num">{cov ? `π ${num(cov.cpi_yoy_pp.coverage80, 2)} · ставка ${num(cov.key_pp.coverage80, 2)} · курс ${num(cov.usd_rub.coverage80, 2)}` : '—'}</b>
-              {macro.holdout?.flags.undercoverage80.length ? <Chip tone="warn">недопокрытие: {macro.holdout.flags.undercoverage80.join(', ')}</Chip> : <Chip tone="good">в пределах порога</Chip>}
-            </div>
-            <div className="wz-gen__cell">
-              <span className="text-caps">режим сценария</span>
-              <b>{stress ? modeLabel : 'базовый — прогноз'}</b>
-              {stress ? <Chip tone="warn">стресс, не прогноз</Chip> : <Chip tone="good">прогноз (§2.6б)</Chip>}
-              <a className="pf-link" href={`#/scenarios/conditions`}>меню режимов и стрессов → «Сценарии»</a>
-            </div>
-          </div>
-        ) : <p className="pl-note">Сводка генератора недоступна (GET /api/macro/summary): условия берутся из полей сценария; ставка — из fin_params.</p>}
-      </section>
-
-      <div className="wz-fields">
-        <ParamField label="Ключевая ставка" value={keyRate} unit="%/год" status={macro ? 'Н' : 'НОРМ'} owner={macro ? `ЦБ РФ, последнее наблюдение ${macro.last_obs.month}` : 'fin_params проекта'}
-          readOnly effect={spread !== null && keyRate !== null ? <>ставка линии = ключевая + спред {num(spread, 2)} % = <b className="num">{num(keyRate + spread, 2)} %</b> [слот F]</> : undefined}
-          note="Влияет на: ставку кредитной линии и проценты в водопаде кассы; по сценариям — путь генератора, не константа." />
-        <ParamField label="Инфляция (прогноз цен)" value={infl * 100} unit="%/мес" provenance={infl > 0 ? 'manual' : 'default'} owner={owner} readOnly
-          range={[0, 2]} effect={<>за {months} мес: <b className="num">{cum >= 0 ? '+' : ''}{pct(cum, 0)}</b>{infl > 0.02 ? ' — это месячная, не годовая величина' : ''}</>}
-          note="Влияет на: цены сценариев кассы (pass-through [К]); на расписание не влияет." />
-        <ParamField label="Волатильность цен" value={(sc ? Number(sc.volatility) || 0.05 : 0.05) * 100} unit="%/мес" provenance="default" owner={owner} readOnly
-          note="Влияет на: разброс прибыли и кассы; на порядок операций не влияет." />
-        <ParamField label="Корреляция рынка ρ" value={sc ? Number(sc.market_corr) || 0.5 : 0.5} provenance="default" status={passport.byCode['r1.30']?.status} owner={owner} readOnly
-          note="Влияет на: диверсификацию портфеля; с генератором фактор заменён первой SVD-компонентой (γ_s = β_s)." />
+        {switching && <p className="pl-note pl-note--warn"><span className="glyph-setup" aria-hidden="true" />Портфель считался под сценарий «{data.run?.scenario_name}»: при смене сценария программа останется, но условия Стадии 2 и Стадии 1 разойдутся — пересчитайте портфель.</p>}
+        <p className="pl-note">
+          На расписание сценарий влияет через сроки поставок (MRP) и хвосты длительностей; на кассу — через ставку линии и цены сценариев (слой F).
+          {sc && <> Критерий и α прогона — тоже из сценария: <b>{sc.objective || 'cvar'}</b>, α = <b className="num">{pct(Number(sc.alpha) || 0.1, 0)}</b> (шаг «Цель и риск»).</>}
+        </p>
+        <StateLegend compact states={['estimated', 'manual', 'normative', 'default', 'stale']} />
       </div>
+
+      <section className="wz-card" aria-label="Унаследованные условия">
+        <p className="wz-card__t">Что наследуется в прогон</p>
+        <DiffList rows={rows} />
+      </section>
 
       <details className="wz-legacy" open={legacyOpen} onToggle={(e) => setLegacyOpen((e.target as HTMLDetailsElement).open)}>
         <summary>Устаревшие параметры (не используются в расчёте с волны M)</summary>

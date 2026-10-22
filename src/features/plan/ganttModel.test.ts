@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  COLOR_SLOTS, barSegments, buildPalette, colorVar, fmtTick, groupBars, makeTicks, niceStep,
+  COLOR_SLOTS, barSegments, buildPalette, colorVar, fmtTick, fmtTickDate, groupBars, groupBarsByShop, makeTicks, niceStep,
 } from './ganttModel'
 import type { PlanBar } from './types'
 
@@ -52,6 +52,16 @@ describe('time axis', () => {
     expect(fmtTick(1080, 720)).toBe('1,5 мес')
   })
 
+  it('labels ticks with dates from the horizon start and falls back to hours without it', () => {
+    const start = new Date(Date.UTC(2026, 10, 1))
+    expect(fmtTickDate(0, 24, start)).toBe('01.11')
+    expect(fmtTickDate(48, 24, start)).toBe('03.11')
+    expect(fmtTickDate(8, 4, start)).toBe('08:00')
+    expect(fmtTickDate(24, 4, start)).toBe('02.11')
+    expect(fmtTickDate(1440, 720, start)).toBe('31.12')
+    expect(fmtTickDate(48, 12, null)).toBe('2 сут')
+  })
+
   it('builds ticks including both ends', () => {
     expect(makeTicks(10, 5)).toEqual([0, 5, 10])
     expect(makeTicks(10, 0)).toEqual([])
@@ -65,6 +75,28 @@ describe('groupBars', () => {
       bar({ job_idx: 3, wc_type_id: 'wc2', wc_name: 'Фрезерные', machine_id: 'm3' }),
     ])
     expect(groups.map((g) => [g.wc, g.machines.length, g.nOps])).toEqual([['wc1', 2, 2], ['wc2', 1, 1]])
+  })
+})
+
+describe('groupBarsByShop', () => {
+  it('groups by shop from the work-centre type, labels machines with their type and puts unknown shops last', () => {
+    const shopOf = (wc: string) => ({ wc1: 'Цех №2', wc2: 'Цех №1' } as Record<string, string>)[wc]
+    const groups = groupBarsByShop([
+      bar({ job_idx: 1 }), bar({ job_idx: 2, machine_id: 'm2', machine_name: 'Т-2' }),
+      bar({ job_idx: 3, wc_type_id: 'wc2', wc_name: 'Фрезерные', machine_id: 'm3', machine_name: 'Ф-1' }),
+      bar({ job_idx: 4, wc_type_id: 'wc9', wc_name: 'Прочие', machine_id: 'm9' }),
+    ], shopOf)
+    expect(groups.map((g) => [g.name, g.machines.length, g.nOps])).toEqual([['Цех №1', 1, 1], ['Цех №2', 2, 2], ['Без цеха', 1, 1]])
+    expect(groups[0].machines[0].name).toBe('Фрезерные · Ф-1')
+  })
+
+  it('never hands out more colour slots than the palette has', () => {
+    const program = Array.from({ length: 12 }, (_, i) => ({ product_id: `p${i}`, product_name: `P${i}`, qty: 1, due_hours: 1 }))
+    const pal = buildPalette(program, [])
+    const slots = pal.swatches.map((s) => s.slot).filter((s): s is number => s !== null)
+    expect(new Set(slots).size).toBe(COLOR_SLOTS)
+    expect(Math.max(...slots)).toBe(COLOR_SLOTS - 1)
+    expect(pal.swatches.filter((s) => s.slot === null)).toHaveLength(12 - COLOR_SLOTS)
   })
 })
 

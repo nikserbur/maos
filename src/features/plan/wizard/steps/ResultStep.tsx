@@ -11,6 +11,7 @@ import { PlanResult } from '../../PlanResult'
 import { RunsTable } from '../../RunsTable'
 import { planActions, usePlanStore } from '../../planStore'
 import { InlineError } from '../../ui'
+import { toIsoDate } from '../dates'
 import { runSchedule } from '../runSchedule'
 import type { WizardData } from '../useWizardData'
 import { effectiveFields, useWizard } from '../wizardStore'
@@ -22,7 +23,7 @@ export function ResultStep({ data }: { data: WizardData }) {
   const f = effectiveFields(w)
   const r = plan.result
 
-  const rerun = async () => { await runSchedule(w, data.program) }
+  const rerun = async () => { await runSchedule(w, data.program, toIsoDate(data.start.date)) }
   const cashRun = () => {
     if (!data.effectiveScenarioId) return
     void runCash({
@@ -46,6 +47,7 @@ export function ResultStep({ data }: { data: WizardData }) {
       {plan.error && !plan.running && <InlineError title="Пересчёт не удался" message={plan.error} onRetry={rerun} />}
       <PlanResult
         result={r} pins={plan.pins} onPin={planActions.addPin} onClearPins={planActions.clearPins} onRerun={rerun} running={plan.running}
+        startDate={plan.startDate ?? toIsoDate(data.start.date)}
         cash={{ result: cash.result, running: cash.running, error: cash.error, onRun: cashRun }}
       />
       <section className="wz-card" aria-label="Сравнить с…">

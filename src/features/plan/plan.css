@@ -143,7 +143,7 @@
   border: 1px solid color-mix(in oklch, var(--text-muted) 18%, transparent);
 }
 .pl-chip--good { color: var(--status-running); background: color-mix(in oklch, var(--status-running) 12%, transparent); border-color: color-mix(in oklch, var(--status-running) 28%, transparent); }
-.pl-chip--warn { color: var(--ochre); background: color-mix(in oklch, var(--status-setup) 13%, transparent); border-color: color-mix(in oklch, var(--status-setup) 32%, transparent); }
+.pl-chip--warn { color: var(--status-setup); background: color-mix(in oklch, var(--status-setup) 13%, transparent); border-color: color-mix(in oklch, var(--status-setup) 32%, transparent); }
 .pl-chip--bad { color: var(--status-down); background: color-mix(in oklch, var(--status-down) 12%, transparent); border-color: color-mix(in oklch, var(--status-down) 30%, transparent); }
 .pl-chip--accent { color: var(--accent-text); background: color-mix(in oklch, var(--accent) 14%, transparent); border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
 .pl-chip .num { color: var(--text); }

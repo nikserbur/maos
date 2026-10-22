@@ -5,6 +5,7 @@
  */
 import { useMemo } from 'react'
 import { money, pct } from '../../../../explain/format'
+import { toIsoDate } from '../dates'
 import { DiffList } from '../../../../ui/DiffList'
 import { RunProgress, SCHEDULE_PHASES, estimateScheduleSeconds } from '../../../../ui/RunProgress'
 import { navigateTo } from '../../../../shell/router'
@@ -41,7 +42,7 @@ export function LaunchStep({ data }: { data: WizardData }) {
 
   const goStep = (step: string) => navigateTo('plan', `new/${step}`)
   const launch = async () => {
-    const r = await runSchedule(w, data.program)
+    const r = await runSchedule(w, data.program, toIsoDate(data.start.date))
     if (r) goStep('result')
   }
 

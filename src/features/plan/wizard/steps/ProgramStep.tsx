@@ -1,6 +1,6 @@
 /**
- * Шаг 1 «Программа» (UX-V2 §4.2): три источника как сегменты — «Портфель Стадии 2» (прогоны с датой,
- * сценарием, критерием), «Реестр заказов» (production_plan → заказы), «Вручную». Таблица заказов:
+ * Шаг 1 «Программа» (UX-V2 §4.2): три источника как сегменты — «Портфель Стадии 2» (прогоны: дата ·
+ * сценарий · E[Π] / CVaR / изделий — X1 §5 п. 14), «Реестр заказов» (production_plan → заказы), «Вручную». Таблица заказов:
  * изделие, кол-во, срок как дата (+ часы в подписи), приоритет с пояснением. Итог: N изделий, Σ штук,
  * горизонт в датах. План создаётся в модале (PromptDialog), не через prompt.
  */
@@ -13,10 +13,12 @@ import { Segmented } from '../../ui'
 import { Chip } from '../../ui'
 import { toIsoDate, dueDateFromHours, programHorizon } from '../dates'
 import type { WizardData } from '../useWizardData'
+import { useRunSummaries } from '../useRunSummaries'
 import { useWizard, wizardActions, type ProgramSource, type WizardOrder } from '../wizardStore'
 
 const fmtDate = (s: string) => new Date(s.replace(' ', 'T')).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 const OBJ: Record<string, string> = { cvar: 'CVaR', worstcase: 'maximin', meanvariance: 'E − λσ', minregret: 'Сэвидж' }
+const RUNS_SHOWN = 12
 
 export function ProgramStep({ data }: { data: WizardData }) {
   const w = useWizard()
@@ -28,6 +30,8 @@ export function ProgramStep({ data }: { data: WizardData }) {
   const horizon = programHorizon(data.program, data.start.date)
   const qty = data.program.reduce((a, o) => a + o.qty, 0)
   const scName = (id: string) => data.scenarios.find((s) => s.id === id)?.name ?? id.slice(0, 8)
+  const shownRuns = data.runs.slice(0, RUNS_SHOWN)
+  const summaries = useRunSummaries(w.source === 'portfolio' ? shownRuns.map((r) => r.id) : [])
 
   const addOrder = async () => {
     if (!newProd) return
@@ -74,15 +78,22 @@ export function ProgramStep({ data }: { data: WizardData }) {
             <p className="pl-note">Портфелей ещё нет — рассчитайте его на экране «Оптимизация» или выберите реестр заказов.</p>
           ) : (
             <ul className="wz-runs" role="listbox" aria-label="Портфели Стадии 2">
-              {data.runs.slice(0, 12).map((r) => (
-                <li key={r.id}>
-                  <button type="button" role="option" aria-selected={w.runId === r.id} className={`wz-run${w.runId === r.id ? ' is-on' : ''}`} onClick={() => wizardActions.setRunId(r.id)}>
-                    <span className="wz-run__date num">{fmtDate(r.created_at)}</span>
-                    <span className="wz-run__sc">сценарий «{scName(r.scenario_id)}»</span>
-                    <span className="wz-run__meta mono">{OBJ[r.objective] ?? r.objective} · α {num(Number(r.alpha) * 100, 0)} % · N {r.samples}</span>
-                  </button>
-                </li>
-              ))}
+              {shownRuns.map((r) => {
+                const sm = summaries.get(r.id)
+                return (
+                  <li key={r.id}>
+                    <button type="button" role="option" aria-selected={w.runId === r.id} className={`wz-run${w.runId === r.id ? ' is-on' : ''}`} onClick={() => wizardActions.setRunId(r.id)}>
+                      <span className="wz-run__date num">{fmtDate(r.created_at)}</span>
+                      <span className="wz-run__sc">«{scName(r.scenario_id)}»</span>
+                      <span className="wz-run__kpi num">
+                        {sm === undefined ? '…' : sm === null ? '—' : <>E <b>{money(sm.expected)}</b> · CVaR <b>{money(sm.cvar)}</b> · <b>{num(sm.items, 0)}</b> изд.</>}
+                      </span>
+                      <span className="wz-run__meta mono">{OBJ[r.objective] ?? r.objective} · α {num(Number(r.alpha) * 100, 0)} % · N {r.samples}</span>
+                      {w.runId === r.id && <Chip tone="good">выбран</Chip>}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
           {data.runLoading && <p className="pl-note">Загружаем портфель…</p>}
@@ -129,10 +140,10 @@ export function ProgramStep({ data }: { data: WizardData }) {
                   <td>{editable
                     ? <input className="plan__cell" type="number" min="1" max="9" defaultValue={o.priority} onBlur={(e) => Number(e.target.value) !== o.priority && updateOrder(o, { priority: Number(e.target.value) || 5 })} />
                     : o.priority}</td>
-                  {editable && <td><button className="btn btn--danger" style={{ height: 22, padding: '0 8px' }} onClick={() => delOrder(o)} aria-label="Удалить заказ">✕</button></td>}
+                  {editable && <td><button className="btn btn--danger btn--sm" onClick={() => delOrder(o)} aria-label="Удалить заказ">✕</button></td>}
                 </tr>
               ))}
-              {data.program.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+              {data.program.length === 0 && <tr><td colSpan={5} className="wz-orders__empty">
                 {w.source === 'orders' && data.plans.length === 0 ? 'Планов ещё нет — нажмите «+ План», затем добавьте заказы.' : 'Заказов нет — добавьте ниже: изделие, количество и срок.'}
               </td></tr>}
             </tbody>

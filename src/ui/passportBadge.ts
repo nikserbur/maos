@@ -1,8 +1,11 @@
 /**
  * Бейдж происхождения (UX-V2 §5.2, METHODOLOGY-V2 §3.2): один словарь для серверного статуса
  * паспорта (Н/О/К/НОРМ/UI/техн./синтетика) и происхождения карты (`Provenance`).
+ * Глифы — те же, что у состояний узлов карты (stateMeta): ● оценено · ■ вручную · ◆ норматив ·
+ * ○ по умолчанию · ▲ устарело/синтетика · ◌ в плане. Буквенный код паспорта (`code`) показывается
+ * только в таблице паспорта; в интерфейсе бейдж — глиф + короткое человеческое слово (`short`).
  * Правило: [К] и [НОРМ] никогда не подписываются «оценено»; «UI» с пометкой deprecated —
- * «не используется»; синтетика — отдельный тон, чтобы демо-данные не читались как факт.
+ * «не в расчёте»; синтетика — предупреждающий тон, чтобы демо-данные не читались как факт.
  * Чистые функции — проверяются тестом.
  */
 import type { Provenance, Stage } from '../features/method-map/types'
@@ -17,27 +20,29 @@ export type BadgeTone = 'good' | 'neutral' | 'warn' | 'muted' | 'bad'
 
 export interface BadgeSpec {
   key: BadgeKey
-  /** Короткая метка в caps: «О», «К», «НОРМ», «UI»… */
+  /** Короткая человеческая подпись бейджа: «оценено», «вручную», «норматив»… */
   short: string
+  /** Буквенный код паспорта: «О», «К», «НОРМ», «UI»… — только внутри паспорта. */
+  code: string
   /** Полная подпись для подсказки и панели. */
   label: string
   tone: BadgeTone
-  /** Глиф состояния (как на карте): ● ■ ○ ▲ ◌. */
+  /** Глиф состояния (как на карте): ● ■ ◆ ○ ▲ ◌. */
   glyph: string
 }
 
 const SPECS: Readonly<Record<BadgeKey, BadgeSpec>> = {
-  observed:   { key: 'observed',   short: 'Н',    label: 'наблюдение',           tone: 'good',    glyph: '●' },
-  estimated:  { key: 'estimated',  short: 'О',    label: 'оценено по данным',    tone: 'good',    glyph: '●' },
-  calibrated: { key: 'calibrated', short: 'К',    label: 'калибровка',           tone: 'neutral', glyph: '■' },
-  normative:  { key: 'normative',  short: 'НОРМ', label: 'норматив',             tone: 'neutral', glyph: '■' },
-  ui:         { key: 'ui',         short: 'UI',   label: 'подобрано для UI',     tone: 'muted',   glyph: '○' },
-  deprecated: { key: 'deprecated', short: 'UI · не в расчёте', label: 'принимается API, в расчёте не используется', tone: 'warn', glyph: '▲' },
-  synthetic:  { key: 'synthetic',  short: 'СИНТ', label: 'синтетические данные', tone: 'warn',    glyph: '▲' },
-  technical:  { key: 'technical',  short: 'ТЕХН', label: 'константа кода',       tone: 'muted',   glyph: '○' },
-  manual:     { key: 'manual',     short: 'ВРУЧНУЮ', label: 'задано вручную',    tone: 'neutral', glyph: '■' },
-  default:    { key: 'default',    short: 'ПО УМОЛЧ.', label: 'по умолчанию кода/НСИ', tone: 'muted', glyph: '○' },
-  planned:    { key: 'planned',    short: 'В ПЛАНЕ', label: 'ещё не реализовано', tone: 'muted',  glyph: '◌' },
+  observed:   { key: 'observed',   short: 'наблюдение', code: 'Н',    label: 'наблюдение',           tone: 'good',    glyph: '●' },
+  estimated:  { key: 'estimated',  short: 'оценено',    code: 'О',    label: 'оценено по данным',    tone: 'good',    glyph: '●' },
+  calibrated: { key: 'calibrated', short: 'калибровка', code: 'К',    label: 'калибровка',           tone: 'neutral', glyph: '●' },
+  normative:  { key: 'normative',  short: 'норматив',   code: 'НОРМ', label: 'норматив',             tone: 'neutral', glyph: '◆' },
+  ui:         { key: 'ui',         short: 'для UI',     code: 'UI',   label: 'подобрано для UI',     tone: 'muted',   glyph: '○' },
+  deprecated: { key: 'deprecated', short: 'не в расчёте', code: 'UI', label: 'принимается API, в расчёте не используется', tone: 'warn', glyph: '▲' },
+  synthetic:  { key: 'synthetic',  short: 'синтетика',  code: 'СИНТ', label: 'синтетические данные', tone: 'warn',    glyph: '▲' },
+  technical:  { key: 'technical',  short: 'код',        code: 'ТЕХН', label: 'константа кода',       tone: 'muted',   glyph: '○' },
+  manual:     { key: 'manual',     short: 'вручную',    code: 'В',    label: 'задано вручную',       tone: 'neutral', glyph: '■' },
+  default:    { key: 'default',    short: 'по умолч.',  code: '—',    label: 'по умолчанию кода/НСИ', tone: 'muted', glyph: '○' },
+  planned:    { key: 'planned',    short: 'в плане',    code: '…',    label: 'ещё не реализовано',   tone: 'muted',   glyph: '◌' },
 }
 
 export function badgeSpec(key: BadgeKey): BadgeSpec {

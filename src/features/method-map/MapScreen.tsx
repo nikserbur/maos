@@ -18,6 +18,7 @@ import { L0_EDGES } from './edges'
 import { getNode, searchNodes } from './registry'
 import { STATE_META } from './stateMeta'
 import { StateGlyph } from './StateGlyph'
+import { StateLegend } from '../../ui/StateLegend'
 import { BLOCK_IDS, type MapEdgeKind, type NodeState } from './types'
 import { useMethodMapState } from './useMethodMapState'
 import '../optimization/kit/kit.css'
@@ -195,11 +196,7 @@ export function MapScreen() {
       </div>
 
       <footer className="mm-legend" aria-label="Легенда">
-        <span className="mm-legend__group">
-          {STATE_LEGEND.map((s) => (
-            <span key={s} className="mm-legend__item"><StateGlyph state={s} />{STATE_META[s].label}</span>
-          ))}
-        </span>
+        <StateLegend states={STATE_LEGEND} />
         <span className="mm-legend__group">
           {EDGE_LEGEND.map((e) => (
             <span key={e.kind} className="mm-legend__item"><i className={`mm-legend__edge mm-legend__edge--${e.kind}`} aria-hidden="true" />{e.label}</span>

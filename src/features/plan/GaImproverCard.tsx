@@ -7,6 +7,9 @@ import { hours, num } from '../../explain/format'
 import { InfoTip } from '../../ui/InfoTip'
 import { Chip } from './ui'
 
+/** Координата SVG с точностью 0,1 px (без toFixed — числа только через format.ts). */
+const px = (v: number) => Math.round(v * 10) / 10
+
 const CRITERIA: ReadonlyArray<[keyof NonNullable<SchedImprover['weights']>, string]> = [
   ['due', 'срок'], ['rem', 'остаток'], ['duration', 'длительность'], ['inputs', 'входы'], ['setup', 'наладка'],
 ]
@@ -35,7 +38,7 @@ function Convergence({ history, baseline }: { history: NonNullable<SchedImprover
   const span = hi - lo || 1
   const x = (g: number) => (g / Math.max(1, history.length - 1)) * W
   const y = (v: number) => 4 + (1 - (v - lo) / span) * (H - 8)
-  const best = history.map((h, i) => `${x(i).toFixed(1)},${y(h.best).toFixed(1)}`).join(' ')
+  const best = history.map((h, i) => `${px(x(i))},${px(y(h.best))}`).join(' ')
   return (
     <figure className="pl-ga__chart">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"

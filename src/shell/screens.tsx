@@ -44,6 +44,8 @@ export interface ScreenDef {
   blocks?: readonly BlockId[]
   /** Показывать полосу методологии (PipelineStrip) под верхней панелью. */
   pipeline?: boolean
+  /** Вложенные маршруты экрана (`#/<id>/<anchor>`), которые экран разбирает сам. */
+  anchors?: readonly string[]
   /** Экран зарезервирован: пункт рельсы есть, содержимое — «скоро» (волна). */
   soon?: string
   Component: ComponentType
@@ -58,12 +60,12 @@ export interface ScreenDef {
  */
 export const SCREENS: ScreenDef[] = [
   { id: 'scheme', label: 'Схема предприятия', short: 'Схема', icon: 'scheme', group: 'model', blocks: ['internal'], Component: PlantScene },
-  { id: 'nsi', label: 'Справочники', short: 'НСИ', icon: 'nsi', group: 'model', blocks: ['internal', 'distributions'], Component: NsiScreen },
+  { id: 'nsi', label: 'Справочники', short: 'НСИ', icon: 'nsi', group: 'model', blocks: ['internal', 'distributions'], anchors: ['<реестр>', 'routing/<id|new>'], Component: NsiScreen },
   { id: 'scenarios', label: 'Сценарии', short: 'Сценарии', icon: 'scenarios', group: 'conditions', blocks: ['external', 'distributions', 'criteria'], pipeline: true, Component: ScenariosHub },
   { id: 'optimization', label: 'Оптимизация', short: 'Портфель', icon: 'optimization', group: 'decide', stage: 2, blocks: ['decisions', 'criteria'], pipeline: true, Component: OptimizationScreen },
   { id: 'plan', label: 'План', short: 'План', icon: 'plan', group: 'decide', stage: 1, blocks: ['internal', 'decisions', 'criteria'], pipeline: true, Component: PlanScreen },
   { id: 'agents', label: 'Агенты', short: 'Агенты', icon: 'sparkle', group: 'decide', blocks: ['agents'], soon: 'волна 3', Component: AgentsStub },
-  { id: 'monitoring', label: 'Мониторинг', short: 'Мониторинг', icon: 'monitoring', group: 'observe', blocks: ['monitoring', 'external'], pipeline: true, Component: MonitoringScreen },
+  { id: 'monitoring', label: 'Мониторинг', short: 'Монитор', icon: 'monitoring', group: 'observe', blocks: ['monitoring', 'external'], pipeline: true, Component: MonitoringScreen },
   { id: 'analytics', label: 'Аналитика', short: 'Аналитика', icon: 'analytics', group: 'observe', blocks: ['monitoring'], Component: AnalyticsScreen },
   { id: 'map', label: 'Карта методологии', short: 'Карта', icon: 'graph', group: 'explain', Component: MapScreen },
   { id: 'methodology', label: 'Методика', short: 'Методика', icon: 'book', group: 'explain', blocks: ['llm'], Component: MethodologyScreen },

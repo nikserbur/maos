@@ -82,9 +82,10 @@ export function TailStrip({ det, mean, cvar, worst }: TailProps) {
           <span className="pl-tail__dot" />
         </span>
       </div>
+      {/* Подписи: E — герой выше, детерминированное — по наведению; числом только CVaR и худший (X1: ≤ 14 чисел). */}
       <div className="pl-fund-legend">
-        <span className="glyph-idle">дет. <span className="num">{num(det, 1)}</span></span>
-        <span className="pl-tail__key">E <b className="num">{num(mean, 1)}</b></span>
+        <span className="glyph-idle" title={`детерминированное (Гант): ${num(det, 1)} ч`}>дет.</span>
+        <span className="pl-tail__key">E[Cmax]</span>
         <span className="glyph-setup">CVaR <span className="num">{num(cvar, 1)}</span></span>
         <span className="glyph-down">худший <span className="num">{num(worst, 1)}</span>{NBSP}ч</span>
       </div>

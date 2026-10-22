@@ -32,7 +32,7 @@ export default function AppShell() {
 
   return (
     <div className="shell">
-      <TopBar title={active.label} stage={active.stage} />
+      <TopBar title={active.label} />
       <div className="shell__body">
         <NavRail activeId={active.id} onSelect={navigate} />
         <main className="shell__content" id="maos-main">

@@ -10,7 +10,7 @@ import { num, pct } from '../../explain/format'
 import { useHashRoute } from '../../shell/router'
 import { InfoTip } from '../../ui/InfoTip'
 import { ParamField } from '../../ui/ParamField'
-import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
+import { StateLegend } from '../../ui/StateLegend'
 import { OBJECTIVES } from '../optimization/optTypes'
 import { usePassport } from '../passport/passportStore'
 import { Segmented } from '../plan/ui'
@@ -96,7 +96,7 @@ export function ScenarioTabs({ sc, products, saveStatus, regimes, macro, onPatch
         ]} />
       <div className="sc2-tabwrap">
         <p className="sc2-muted sc2-tabhint">
-          {tab === 'conditions' && <>Поля сгруппированы по тому, на что влияют; каждое — с паспортом происхождения <ProvenanceBadge status="О" /> <ProvenanceBadge status="К" /> <ProvenanceBadge status="НОРМ" /> <ProvenanceBadge status="UI" deprecated />. Ползунки сохраняются через 400 мс.</>}
+          {tab === 'conditions' && <>Поля сгруппированы по тому, на что влияют; каждое — с паспортом происхождения: <StateLegend compact states={['estimated', 'manual', 'normative', 'default', 'stale']} />. Ползунки сохраняются через 400 мс.</>}
           {tab === 'distributions' && <>Семейство, центр, σ, хвосты и β по изделию; корреляции — из β. <InfoTip id="forecast.aic" /></>}
           {tab === 'forecast' && <>Сначала качество (skill, покрытие, прокси CRPS), затем веера с бэктестом; веер ставки — из обученного генератора.</>}
         </p>
