@@ -76,7 +76,7 @@ export function StatusBar({ screen }: StatusBarProps) {
 
   return (
     <footer className="statusbar">
-      <span className="statusbar__version num">AUREUS v0.63.2</span>
+      <span className="statusbar__version num">AUREUS v0.63.3</span>
       <span className="statusbar__sep" aria-hidden="true" />
       <span className={`statusbar__conn statusbar__conn--${connection} ${conn.glyph}`} role="status">
         {conn.label}
