@@ -152,7 +152,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            AUREUS v0.63.4 · дипломная работа · {new Date().getFullYear()}
+            AUREUS v0.64.0 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>

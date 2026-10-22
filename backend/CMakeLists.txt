@@ -49,10 +49,14 @@ find_package(SQLite3 REQUIRED)
 # Ядро (БД + Стадия 1/2) — общая статическая библиотека сервера и тестов, чтобы
 # тесты проверяли ровно тот же объектный код, что работает в сервере.
 add_library(maos_core STATIC
+  src/CashLp.cpp
+  src/CashOptimize.cpp
+  src/CashWaterfall.cpp
   src/Database.cpp
   src/ExactCvar.cpp
   src/GaImprover.cpp
   src/Optimizer.cpp
+  src/Passport.cpp
   src/Scheduler.cpp
 )
 target_include_directories(maos_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -94,8 +98,11 @@ if(MAOS_BUILD_TESTS)
 
   enable_testing()
   add_executable(maos_tests
+    tests/test_cashlp.cpp
+    tests/test_cashwaterfall.cpp
     tests/test_finance.cpp
     tests/test_ga.cpp
+    tests/test_optimizer.cpp
     tests/test_planmath.cpp
     tests/test_scheduler.cpp
   )

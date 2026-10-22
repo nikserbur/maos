@@ -21,6 +21,7 @@
  *
  * Чистый модуль: без БД и JSON — проверяется юнит-тестами (tests/test_exact.cpp).
  */
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -109,5 +110,6 @@ struct Result {
 Result solve(const Problem& pb);
 
 const char* solver_version();      // "1.15.1"
+std::mutex& highs_mutex();         // общий мьютекс решателя (ExactCvar + CashLp)
 
 }  // namespace maos::exact

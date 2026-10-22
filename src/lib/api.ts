@@ -185,10 +185,85 @@ export interface OptResult {
   histogram: OptHistBin[]; candidates: OptCandidate[]
   warnings: string[]; run_id?: string
   error_soft?: boolean
+  /** R5: применён ли stage1_feedback и его хэш (пишется в optimization_runs). */
+  feedback?: { applied: boolean; hash: string; rows: number }
+  tail_uplift?: boolean
+  /** Волна F: CVaR-LP с кассой (cash:true / POST /optimize/cash). */
+  cash_lp?: CashLpResult
 }
 export interface OptimizeParams {
   scenario_id?: string; objective?: string; samples?: number
   alpha?: number; lambda?: number; seed?: number; horizon_hours?: number; max_share?: number
+  /** R5: применить поправку мощности из stage1_feedback (по умолчанию — нет, ответ не зависит от истории расписаний). */
+  apply_feedback?: boolean
+  /** R4: хвостовая поправка мощности Стадии 2 (по умолчанию включена). */
+  tail_uplift?: boolean
+  /** Волна F: CVaR-LP с кассой (METHODOLOGY-V2 §5.2) → поле cash_lp в ответе. */
+  cash?: boolean; beta?: number; l_min?: number; financing_stage?: 'recourse' | 'first'
+  horizon_weeks?: number; cash_samples?: number; schedule_ref_id?: string; pol_curve?: boolean
+}
+
+/* ── Волна F: денежный слой (fin_params, паспорт, CVaR-LP с кассой) ──────── */
+export type PassportStatus = 'Н' | 'О' | 'К' | 'НОРМ' | 'UI' | 'техн.' | 'синтетика'
+export interface PassportParam {
+  code: string; block: string; name: string; value: string; unit: string
+  status: PassportStatus; source: string; file_ref: string; note: string; updated_at: string
+}
+export interface PassportList { params: PassportParam[]; count: number; by_status: Record<string, number>; note: string }
+/** Финансовые параметры водопада кассы; ед. денег = ед. цен НСИ (₽), ставки годовые, периоды — недели. */
+export interface FinParams {
+  entity: string; period_type: string; effective_from: string; updated_at: string
+  c0: number; c_min: number; credit_limit: number; d0: number
+  key_rate: number; spread: number; overdraft_spread: number; overdraft_limit: number
+  tau_v: number; tau_p: number; tau_soc: number; property_tax_weekly: number
+  payroll_fixed_weekly: number; repair_budget_weekly: number; other_fixed_weekly: number
+  dso_kernel: number[]; pd: number; lgd: number; prepay_share: number; dpo_weeks: number; lead_weeks: number
+  vat_period_weeks: number; vat_instalments: number; vat_instalment_lag_weeks: number; tax_period_weeks: number
+  payroll_weeks: number[]; dscr_covenant: number; rate_owner: number; rate_bank: number
+  beta: number; l_min: number; horizon_weeks: number; cash_samples: number; auto_repay: number
+}
+export interface PeriodQuantiles { p05: number[]; p50: number[]; p95: number[] }
+/** KPI денежного слоя (METHODOLOGY-V2 §6.0) по водопаду §4.3 на решении LP. */
+export interface CashWaterfallKpi {
+  financing: 'lp_recourse' | 'rule'
+  cash_min_p50: number; cfar: number; cfar_ci: [number, number]
+  p_breach: number; p_breach_ci: [number, number]; t_breach_p10: number
+  dscr_min_p05: number; p_covenant: number
+  debt_peak: number; debt_peak_share: number; int_cost: number; wc_avg: number; tax_paid: number
+  profit_mean: number; profit_cvar: number
+  npv_owner_mean: number; npv_bank_mean: number; p_npv_owner_neg: number
+  identities_max_residual: number
+  cash: PeriodQuantiles
+}
+export interface CashLpSummary {
+  status: string; reason?: string; objective: number; lp_objective: number
+  expected: number; cvar: number; worst: number; cfar: number; p_negative_cash: number
+  eta: number; zeta: number; solve_ms: number; n_vars: number; n_rows: number; n_nonzeros: number
+}
+export interface PolPoint extends Partial<CashLpSummary> {
+  l_min: number; status: string; pol?: number; pol_ci?: [number, number]; pol_objective?: number; local_dual?: number
+}
+export interface CashLpResult extends CashLpSummary {
+  solver: string; solver_version: string; n_scenarios: number; horizon_weeks: number; runoff_weeks: number
+  beta: number; l_min: number; financing_stage: 'recourse' | 'first'
+  shipment_profile: { source: 'plan' | 'uniform'; plan_id: string; products_from_plan: number }
+  fixed_weekly: number; weekly_rate: number; tail_k: number; tail_k_beta: number
+  portfolio: Array<{ product_id: string; qty: number; qty_rounded: number }>
+  duals: {
+    capacity: Array<{ wc_type: string; shadow_price: number; utilization: number; load_hours: number; capacity_hours: number; binding: boolean }>
+    liquidity: number; liquidity_binding: boolean; price_of_liquidity_local: number; credit_limit: number
+  }
+  tranches: { drawdown: PeriodQuantiles; repayment: PeriodQuantiles; debt: PeriodQuantiles; cash: PeriodQuantiles }
+  oos: { gross_expected: number; gross_cvar: number; expected: number; cvar: number; gap_expected: number; gap_cvar: number }
+  fixed_schedule: CashLpSummary & {
+    price_of_inflexible_financing?: number; delta_expected?: number; delta_expected_ci?: [number, number]
+    schedule?: Array<{ t: number; drawdown: number; repayment: number }>
+  }
+  price_of_liquidity?: { l_min: number; value: number; ci: [number, number]; objective_delta: number; local_dual: number; definition: string }
+  pol_curve?: PolPoint[]
+  unconstrained: CashLpSummary
+  waterfall: { lp_recourse: CashWaterfallKpi; rule: CashWaterfallKpi }
+  total_ms: number
 }
 export interface OptRunSummary {
   id: string; scenario_id: string; objective: string; samples: string; alpha: string; created_at: string
@@ -263,6 +338,8 @@ export interface ScheduleResult {
   plan_id?: string; error_soft?: boolean
 }
 export interface ScheduleParams {
+  /** R5: писать stage1_feedback (поправку мощности для Стадии 2) — только явно. */
+  apply_feedback?: boolean
   run_id?: string; rule?: string; w_time?: number; w_cost?: number; w_risk?: number
   samples?: number; alpha?: number; tail_weight?: number; use_calendar?: boolean
   program?: Array<{ product_id: string; qty: number; due_hours?: number }>
@@ -496,10 +573,19 @@ export const api = {
 
   optimize: {
     run:  (p: OptimizeParams)  => post<OptResult>('/optimize', p),
+    runCash: (p: OptimizeParams) => post<OptResult>('/optimize/cash', p),
     runs: ()                   => get<OptRunSummary[]>('/optimize/runs'),
     run_get: (id: string)      => get<OptResult>(`/optimize/runs/${id}`),
     savePlan: (runId: string, planName: string) =>
       post<{ id: string; name: string; orders: number }>('/optimize/save-plan', { run_id: runId, plan_name: planName }),
+  },
+
+  finance: {
+    params: ()                        => get<FinParams>('/fin_params'),
+    saveParams: (p: Partial<FinParams>) => put<FinParams>('/fin_params', p),
+    passport: ()                      => get<PassportList>('/passport'),
+    updatePassport: (code: string, p: Partial<PassportParam> & { n_obs?: number }) =>
+      put<PassportParam>(`/passport/${encodeURIComponent(code)}`, p),
   },
 
   schedule: {

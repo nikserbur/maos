@@ -1085,9 +1085,9 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     laborCost += (sched.busyByWorker[w] / 60.0) * m.workers[w].costPerHour;
 
   // ── Recourse: обратная связь Стадия 1 → Стадия 2. Фактические часы на единицу
-  // (нормо-часы + доля переналадок) пишутся в stage1_feedback — следующий прогон
-  // оптимизатора калибрует потребление мощности реализованным расписанием.
-  try {
+  // (нормо-часы + доля переналадок) пишутся в stage1_feedback — ТОЛЬКО при явном
+  // p.applyFeedback (R5): оптимизатор читает их тоже только по явному apply_feedback.
+  if (p.applyFeedback) try {
     std::unordered_map<std::string, std::pair<double,double>> agg;   // product → (мин, шт)
     for (int k = 0; k < nOrders; ++k) agg[program[k].productId].second += std::max(1.0, program[k].qty);
     for (const Job& j : jobs)

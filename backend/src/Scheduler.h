@@ -36,6 +36,9 @@ struct ScheduleParams {
   bool   useCalendar = true;          // учитывать рабочий календарь (смены/выходные)
   int    improveIters = 30;           // поколений ГА поверх правил (0 = выкл); см. GaImprover.h
   std::vector<SchedPin> pins;         // ручные правки Ганта (перетаскивание операций)
+  // R5: запись stage1_feedback — только явно (apply_feedback=true); по умолчанию
+  // расписание не меняет то, что читает /api/optimize (воспроизводимость по seed).
+  bool   applyFeedback = false;
   // Конструктор эвристики: взвешенная комбинация критериев (знак веса = направление).
   // Критерии: duration | due | rem | inputs | setup. Пример «длинные раньше, из них
   // раньше те, у кого больше входов»: [{duration,-1},{inputs,-0.2}].

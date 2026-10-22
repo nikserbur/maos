@@ -10,6 +10,7 @@
 #include "Database.h"
 #include "Finance.h"
 #include "Optimizer.h"
+#include "Passport.h"
 #include "PlanMath.h"
 #include "Scheduler.h"
 #include <httplib.h>
@@ -2172,12 +2173,14 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
 
 static void persist_run(Database& db, const std::string& runId, const maos::OptimizeParams& pr,
                         const json& result) {
+  const json fb = result.value("feedback", json::object());        // R5: версия/хэш фидбэка
   db.exec("INSERT INTO optimization_runs"
-          "(id,scenario_id,objective,samples,alpha,lambda,seed,status,result_json) "
-          "VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?)",   // пустой scenario_id → NULL (иначе нарушение FK)
+          "(id,scenario_id,objective,samples,alpha,lambda,seed,status,result_json,feedback_hash,feedback_applied) "
+          "VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?)",   // пустой scenario_id → NULL (иначе нарушение FK)
           { runId, pr.scenarioId, pr.objective, std::to_string(pr.samples),
             std::to_string(pr.alpha), std::to_string(pr.lambda), std::to_string(pr.seed),
-            "done", result.dump() });
+            "done", result.dump(), fb.value("hash", std::string("none")),
+            fb.value("applied", false) ? "1" : "0" });
 
   auto savePortfolio = [&](const std::string& kind, const json& pf) {
     if (!pf.is_object()) return;
@@ -2690,10 +2693,23 @@ static void register_forecast(httplib::Server& svr, Database& db) {
 }
 
 static void register_optimize(httplib::Server& svr, Database& db) {
-  svr.Post("/api/optimize", [&db](const httplib::Request& req, httplib::Response& res) {
+  // /api/optimize и /api/optimize/cash (форсирует cash=true) — один обработчик.
+  auto handle = [&db](const httplib::Request& req, httplib::Response& res, bool forceCash) {
     try {
       auto body = req.body.empty() ? json::object() : json::parse(req.body);
       maos::OptimizeParams pr;
+      auto flag = [&](const char* k) { const std::string v = jstr(body, k); return v == "true" || v == "1"; };
+      // R5: фидбэк Стадии 1 применяется только явно. Волна F: LP с кассой.
+      if (body.contains("apply_feedback")) pr.applyFeedback = flag("apply_feedback");
+      if (body.contains("tail_uplift"))    pr.tailUplift    = flag("tail_uplift");
+      pr.cash = forceCash || (body.contains("cash") && flag("cash"));
+      if (body.contains("beta") && !jstr(body, "beta").empty()) pr.beta = std::stod(jstr(body, "beta"));
+      if (body.contains("l_min") && !jstr(body, "l_min").empty()) { pr.lMin = std::stod(jstr(body, "l_min")); pr.lMinSet = true; }
+      if (!jstr(body, "financing_stage").empty()) pr.financingStage = jstr(body, "financing_stage");
+      if (body.contains("horizon_weeks") && !jstr(body, "horizon_weeks").empty()) pr.horizonWeeks = (int)std::stod(jstr(body, "horizon_weeks"));
+      if (body.contains("cash_samples") && !jstr(body, "cash_samples").empty()) pr.cashSamples = (int)std::stod(jstr(body, "cash_samples"));
+      pr.scheduleRefId = jstr(body, "schedule_ref_id");
+      if (body.contains("pol_curve")) pr.polCurve = flag("pol_curve");
       pr.scenarioId = jstr(body, "scenario_id");
       if (!jstr(body, "objective").empty()) pr.objective = jstr(body, "objective");
       if (body.contains("samples")) pr.samples = (int)std::stod(jstr(body, "samples"));
@@ -2753,6 +2769,39 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       }
       ok(res, result);
     } catch (std::exception& e) { err(res, 400, e.what()); }
+  };
+  svr.Post("/api/optimize", [handle](const httplib::Request& req, httplib::Response& res) { handle(req, res, false); });
+  svr.Post("/api/optimize/cash", [handle](const httplib::Request& req, httplib::Response& res) { handle(req, res, true); });
+
+  // Финансовые параметры водопада/LP (fin_params) и паспорт параметров (волна F).
+  svr.Get("/api/fin_params", [&db](const httplib::Request&, httplib::Response& res) {
+    try { ok(res, maos::passport::fin_params_json(db)); } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  svr.Put("/api/fin_params", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      json out = maos::passport::save_fin_params(db, json::parse(req.body));
+      audit(db, "fin_params", "default", "UPDATE", out);
+      ok(res, out);
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+  svr.Get("/api/passport", [&db](const httplib::Request&, httplib::Response& res) {
+    try {
+      json rows = maos::passport::passport_list(db);
+      json byStatus = json::object();
+      for (auto& r : rows) { const std::string st = r.value("status", std::string()); byStatus[st] = byStatus.value(st, 0) + 1; }
+      ok(res, { {"params", rows}, {"count", (int)rows.size()}, {"by_status", byStatus},
+                {"note", "Р8: данных предприятия нет — статус «О» не присваивается; калибровка не называется оценкой."} });
+    } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  svr.Put("/api/passport/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      json out = maos::passport::passport_update(db, req.matches[1], json::parse(req.body));
+      audit(db, "passport", req.matches[1], "UPDATE", out);
+      ok(res, out);
+    } catch (std::exception& e) {
+      const std::string w = e.what();
+      err(res, w == "not found" ? 404 : 400, w);
+    }
   });
 
   svr.Get("/api/optimize/runs", [&db](const httplib::Request&, httplib::Response& res) {
@@ -2883,6 +2932,10 @@ static void register_schedule(httplib::Server& svr, Database& db) {
       }
       if (body.contains("improve_iters") && !jstr(body, "improve_iters").empty())
         sp.improveIters = (int)std::stod(jstr(body, "improve_iters"));
+      if (body.contains("apply_feedback")) {                    // R5: запись stage1_feedback — явно
+        const std::string af = jstr(body, "apply_feedback");
+        sp.applyFeedback = (af == "true" || af == "1");
+      }
       // Конструктор эвристики: custom_rule = [{criterion, weight}, …]
       if (body.contains("custom_rule") && body["custom_rule"].is_array())
         for (auto& c : body["custom_rule"]) {
@@ -3249,6 +3302,19 @@ static void register_simulation(httplib::Server& svr, Database& db) {
     try {
       auto body = json::parse(req.body);
       if (!body.contains("items") || !body["items"].is_array()) { err(res, 400, "items required"); return; }
+      // R20: калибровка норм по СМОДЕЛИРОВАННОМУ плану методически неверна (повторное
+      // применение растит t_norm в k²). Применение разрешено только при наличии
+      // импортированного план-факта (plan_fact_ops, synthetic=0); предпросмотр
+      // (GET /api/simulation/calibration) остаётся доступным.
+      int nFact = 0;
+      try { nFact = std::stoi(jstr(db.query_one("SELECT COUNT(*) AS n FROM plan_fact_ops WHERE synthetic=0"), "n")); }
+      catch (...) {}
+      if (nFact == 0) {
+        err(res, 409, "Калибровка заблокирована (R20): нет источника план-факта (plan_fact_ops пуста). "
+                      "Импортируйте фактические длительности операций; калибровка по "
+                      "смоделированному плану не применяется (предпросмотр доступен).");
+        return;
+      }
       int updated = 0;
       std::lock_guard<std::recursive_mutex> lk(db.mutex());
       db.exec("BEGIN");
@@ -3676,6 +3742,7 @@ static bool setup_database(Database& db) {
     migrate_v17(db);
     migrate_v18(db);
     migrate_v19(db);
+    maos::passport::migrate(db);        // v20 (волна F): fin_params, param_passport, plan_fact_ops
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -3749,7 +3816,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.63.4"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.64.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.

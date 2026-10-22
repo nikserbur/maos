@@ -83,6 +83,11 @@ makespan/просрочка.
 Программа Стадии 1 берётся из **портфеля Стадии 2** (`POST /api/schedule {run_id}` →
 `portfolio_items`) — «что произвести» → «как произвести». Обратно Стадия 1 даёт
 распределения себестоимости/срока/пропускной способности для уточнения портфеля.
+Скалярная поправка мощности (`stage1_feedback`, `1 + Σsetup/Σwork`) **не пишется**
+побочно каждым расписанием: запись — только при `apply_feedback=true` в `POST
+/api/schedule`, чтение — только при `apply_feedback=true` в `POST /api/optimize` (R5:
+воспроизводимость Стадии 2 по `seed`). Явная передача профиля отгрузок в денежный слой —
+`schedule_ref_id` (plans.id) в `POST /api/optimize/cash` (METHODOLOGY-V2 §5.3).
 Обе стадии **стохастичны** (Стадия 1 — длительности с тяжёлым хвостом; Стадия 2 —
 цены) и решаются под устойчивость.
 
@@ -90,6 +95,7 @@ makespan/просрочка.
 
 | Метод | Назначение |
 |---|---|
-| `POST /api/schedule` | `{program | run_id, rule, w_time/w_cost/w_risk, samples, alpha, tail_weight}` → расписание: Ганта, загрузка, планы рабочих, узкое место, простои, KPI (детерм.+хвост), сравнение правил; **persist** в `plans/plan_tasks`. |
+| `POST /api/schedule` | `{program | run_id, rule, w_time/w_cost/w_risk, samples, alpha, tail_weight, apply_feedback?}` → расписание: Ганта, загрузка, планы рабочих, узкое место, простои, KPI (детерм.+хвост), сравнение правил; **persist** в `plans/plan_tasks`; `stage1_feedback` — только при `apply_feedback=true`. |
+| `POST /api/simulation/calibrate` | применение калибровки норм **заблокировано** (HTTP 409), пока нет импортированного план-факта (`plan_fact_ops`, `synthetic=0`) — R20; предпросмотр `GET /api/simulation/calibration` доступен. |
 
 Типы фронтенда — `ScheduleResult` в `src/lib/api.ts`; экран — `features/plan/PlanScreen.tsx`.

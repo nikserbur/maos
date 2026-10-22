@@ -71,7 +71,16 @@ opCost_o(ω) = t_o(ω)·(machineRate_{wct} + laborRate)
 
 - **Мощности**: суммарная загрузка каждого типа оборудования не превышает
   доступный фонд времени `Cap_{wct} = (Σ машин типа wct)·H·efficiency`, где `H` —
-  часы горизонта. Потребление: `Σ_p x_p·Σ_{o∈routing(p), wct} t̄_o ≤ Cap_{wct}`.
+  часы горизонта. Потребление: `Σ_p x_p·Σ_{o∈routing(p), wct} t̄_o·u_o ≤ Cap_{wct}`,
+  где `u_o = 1 + w·E[min(8, F−1)] + 0.5·risk = 1 + w·(1 − 9^{1−ξ})/(ξ−1) + 0.5·risk` —
+  **хвостовая поправка** (R4, волна F): ожидание той же модели длительности, что
+  симулирует Стадия 1 (`sample_dur`: логнормаль × Парето-хвост с капом 8 + переделка);
+  при `w=0.08, ξ=2.5, risk=0.05` → `u ≈ 1.076`. Статус множителя — **[К]** (паспорт
+  `fin.stage2_tail_uplift`); отключается `tail_uplift=false`.
+- **Обратная связь Стадии 1** (`stage1_feedback`, множитель `1 + Σsetup/Σwork`)
+  применяется **только** при явном `apply_feedback=true` (R5): по умолчанию ответ
+  `/api/optimize` при том же `seed` не зависит от истории расписаний; хэш и факт
+  применения фидбэка пишутся в ответ (`feedback`) и в `optimization_runs.feedback_hash`.
 - **Спрос/сбыт**: `0 ≤ x_p ≤ D_p` (верхняя граница — `demand_max`).
 - Целочисленность по партиям (`batch_size`) — округление вниз.
 
@@ -211,8 +220,11 @@ ID) без потери.
 |---|---|
 | `GET/POST /api/scenarios` | сценарии внешних условий (+ вложенные `price_distributions`) |
 | `GET /api/scenarios/:id` | сценарий с распределениями |
-| `POST /api/optimize` | запуск: `{scenario_id, objective, samples, alpha, lambda, seed, horizon_hours}` → прогон с метриками, портфелями, гистограммой; **persist** в `optimization_runs` |
+| `POST /api/optimize` | запуск: `{scenario_id, objective, samples, alpha, lambda, seed, horizon_hours, apply_feedback?, tail_uplift?, cash?}` → прогон с метриками, портфелями, гистограммой; **persist** в `optimization_runs` (с `feedback_hash`, `feedback_applied`) |
+| `POST /api/optimize/cash` | то же + **CVaR-LP с кассой** (METHODOLOGY-V2 §5.2; `cash:true`): `{beta, l_min, financing_stage: recourse|first, horizon_weeks, cash_samples, schedule_ref_id, pol_curve}` → объект `cash_lp`: портфель, транши (квантили по периодам), E[Π], CVaR(Π), CFaR, двойственные (мощности, ликвидность, лимит), кривая цены ликвидности с парным бутстреп-ДИ, чувствительность «график заранее», OOS, водопад §4.3 (P(разрыв) с интервалом Уилсона, DSCR, тождества) |
 | `GET /api/optimize/runs`, `/:id` | история прогонов и результат |
+| `GET/PUT /api/fin_params` | финансовые параметры водопада/LP (ставки налогов с датой, ядро DSO, DPO, лимит, спред, β, L_min); ед. денег = ед. цен НСИ |
+| `GET /api/passport`, `PUT /api/passport/:code` | паспорт параметров: статус Н/О/К/НОРМ/UI/техн./синтетика, источник, место в коде; статус «О» — только с `source` и `n_obs` |
 | `GET /api/scheme` | 3D-схема как единый сохранённый агрегат (узлы+связи+мета) |
 
 Типы фронтенда — `src/domain/optimization.ts` (зеркало DTO). Экран «Оптимизация»

@@ -39,6 +39,21 @@ struct OptimizeParams {
   bool   compareExact   = false;
   std::string exactCriterion;         // "" → по objective; cvar | expected | worst(case)
   int    exactSegments  = 16;         // мин. число отрезков PWL на криволинейный участок
+  // R5 (воспроизводимость): поправка мощности из stage1_feedback применяется ТОЛЬКО явно;
+  // по умолчанию /api/optimize не зависит от истории расписаний. Хэш фидбэка пишется в прогон.
+  bool   applyFeedback  = false;
+  // R4: хвостовая поправка мощности Стадии 2 (та же модель длительностей, что Стадия 1).
+  bool   tailUplift     = true;
+  // Волна F — CVaR-LP с кассой (METHODOLOGY-V2 §5.2): объект "cash_lp" в ответе.
+  bool   cash           = false;
+  double beta           = -1;         // уровень CVaR минимума кассы; <0 → fin_params.beta
+  double lMin           = 0;          // порог ликвидности L_min; NaN → fin_params.l_min
+  bool   lMinSet        = false;
+  std::string financingStage = "recourse";   // recourse | first (график траншей заранее)
+  int    horizonWeeks   = 0;          // 0 → fin_params.horizon_weeks → ⌈horizon_hours/168⌉
+  int    cashSamples    = 0;          // 0 → fin_params.cash_samples (префикс CRN-выборки)
+  std::string scheduleRefId;          // plans.id опорного расписания → профиль отгрузок φ_{s,t}
+  bool   polCurve       = true;       // кривая цены ликвидности PoL(L) с бутстреп-ДИ
 };
 
 /**

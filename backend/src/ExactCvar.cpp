@@ -14,10 +14,6 @@ constexpr double kCapBoundSlack = 1.05;   // область PWL чуть шир�
                                           // иначе граница отрезка «перехватит» двойственную цену мощности
 constexpr double kFeasTol = 1e-9;
 
-/* Глобальный планировщик задач HiGHS общий на процесс — сериализуем решения из
-   разных потоков httplib (решение занимает доли секунды). */
-std::mutex& highs_mutex() { static std::mutex m; return m; }
-
 /* Строка разреженной матрицы (построчное хранение для HighsLp). */
 struct RowBuilder {
   std::vector<HighsInt> start{ 0 }, index;
@@ -168,6 +164,10 @@ const char* criterion_name(Criterion c) {
 }
 
 const char* solver_version() { return highsVersion(); }
+
+/* Глобальный планировщик задач HiGHS общий на процесс — сериализуем решения из
+   разных потоков httplib (решение занимает доли секунды). Общий с CashLp. */
+std::mutex& highs_mutex() { static std::mutex m; return m; }
 
 double price_mult(const Market& mk, double q) {
   if (mk.capM <= 0) return 1.0;

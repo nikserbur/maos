@@ -1,7 +1,9 @@
 #include "Optimizer.h"
+#include "CashOptimize.h"
 #include "ExactCvar.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <random>
 #include <sstream>
 #include <unordered_map>
@@ -71,6 +73,7 @@ struct Model {
   std::unordered_map<std::string, std::vector<Op>> opsOf;                   // product → операции техкарт
   std::unordered_map<std::string, Wct> wcts;
   std::vector<std::string> sellables;
+  bool tailUplift = true;        // R4: хвостовая поправка мощности (см. tail_uplift)
 };
 
 Model load_model(Database& db) {
@@ -171,6 +174,17 @@ Model load_model(Database& db) {
   return m;
 }
 
+/* ── R4: ожидаемый множитель длительности той же модели, что sample_dur Стадии 1 ──
+   d = LN(mean)·[1 + min(8, F−1)]·1{U<w} + 0.5·mean·1{U<risk},  F = U^{−1/ξ} (Парето):
+   E[min(8, F−1)] = ∫₀⁸ (1+y)^{−ξ} dy = (1 − 9^{1−ξ})/(ξ−1)  (ξ ≠ 1; ξ = 1 → ln 9).
+   E[d]/mean = 1 + w·E[min(8,F−1)] + 0.5·risk  (≈ 1.076 при w=0.08, ξ=2.5, risk=0.05).
+   Статус множителя — [К] (w, ξ, risk — калибровка до идентификации по план-факту). */
+double tail_uplift(const Op& o) {
+  const double xi = std::max(1.2, o.tailIndex), w = std::max(0.0, o.tailWeight);
+  const double eMin = std::fabs(xi - 1.0) < 1e-9 ? std::log(9.0) : (1.0 - std::pow(9.0, 1.0 - xi)) / (xi - 1.0);
+  return 1.0 + w * eMin + 0.5 * std::max(0.0, o.riskCoef);
+}
+
 /* ── Часы на единицу изделия по типам оборудования (детерминир., для мощности) ──
    Загрузка распространяется по производственной цепочке через ВХОДЫ операций
    (operation_inputs) — общий полуфабрикат тянет за собой весь верхний передел
@@ -187,7 +201,7 @@ void hours_per_unit(const Model& m, const std::string& pid,
       // Наладка входит в фонд мощности (на партию → делим на размер партии):
       // иначе Стадия 2 обещает мощность, которую Стадия 1 съедает переналадками.
       if (!o.primaryWct.empty())
-        out[o.primaryWct] += (pertMean(o) + o.setupTime / batch) / 60.0;
+        out[o.primaryWct] += (pertMean(o) * (m.tailUplift ? tail_uplift(o) : 1.0) + o.setupTime / batch) / 60.0;
       for (const OpInput& in : o.inputs) {            // входы операции → цепочка
         std::unordered_map<std::string, double> sub;
         hours_per_unit(m, in.productId, sub, visiting, depth + 1);
@@ -232,6 +246,23 @@ double unit_cost(const Model& m, const std::string& pid,
     }
   visiting.erase(pid);
   memo[pid] = c;
+  return c;
+}
+
+/* ── Материальная себестоимость единицы (только покупное сырьё по base_cost, без
+   обработки) — доля m_s = mat/cost нужна денежному слою: НДС и кредиторка только на
+   материалы, конверсионные затраты — OPEX периода (CashWaterfall). */
+double material_cost(const Model& m, const std::string& pid,
+                     std::unordered_set<std::string>& visiting, int depth = 0) {
+  if (depth > 48 || visiting.count(pid) || !m.prods.count(pid)) return 0;
+  const Prod& p = m.prods.at(pid);
+  if (p.purchased) return p.baseCost;
+  visiting.insert(pid);
+  double c = 0;
+  if (auto oit = m.opsOf.find(pid); oit != m.opsOf.end())
+    for (const Op& o : oit->second)
+      for (const OpInput& in : o.inputs) c += in.qty * material_cost(m, in.productId, visiting, depth + 1);
+  visiting.erase(pid);
   return c;
 }
 
@@ -637,11 +668,21 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   // ── RECOURSE (обратный ход Стадия 1 → Стадия 2): поправка потребления мощности
   // из ФАКТИЧЕСКОГО расписания (stage1_feedback: наладки и пр. поверх нормо-часов).
   // Оптимизатор перестаёт обещать мощность по наивной сумме нормо-часов.
+  // R5: читается ТОЛЬКО при явном apply_feedback — иначе /api/optimize не зависит от
+  // истории расписаний (воспроизводимость по seed). Хэш фидбэка пишется в ответ/прогон.
   std::unordered_map<std::string, double> fbFactor;
+  std::string fbHash = "none"; int fbRows = 0;
   try {
-    for (auto& r : db.query_json("SELECT product_id, factor FROM stage1_feedback"))
-      fbFactor[str(r, "product_id")] = std::max(1.0, num(r, "factor", 1.0));
+    uint64_t h = 1469598103934665603ull;
+    for (auto& r : db.query_json("SELECT product_id, factor FROM stage1_feedback ORDER BY product_id")) {
+      const std::string pid = str(r, "product_id"), f = str(r, "factor");
+      for (char ch : pid + "=" + f + ";") { h ^= (unsigned char)ch; h *= 1099511628211ull; }
+      ++fbRows;
+      if (p.applyFeedback) fbFactor[pid] = std::max(1.0, num(r, "factor", 1.0));
+    }
+    if (fbRows > 0) { char buf[20]; std::snprintf(buf, sizeof buf, "%016llx", (unsigned long long)h); fbHash = buf; }
   } catch (...) {}
+  m.tailUplift = p.tailUplift;
 
   // Часы на единицу по типам (детерминированно) + суммарные часы.
   int calibrated = 0;
@@ -1137,6 +1178,8 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     {"sellables", (int)S},
     {"calendar_factor", calFactor},
     {"stage1_calibrated", calibrated},   // изделий с recourse-поправкой из расписания
+    {"feedback", { {"applied", p.applyFeedback}, {"hash", fbHash}, {"rows", fbRows} }},   // R5
+    {"tail_uplift", p.tailUplift},       // R4: хвостовая поправка мощности (tail_uplift)
     {"robust", robustPf}, {"expected", expPf},
     {"price_of_robustness", priceOfRobustness},
     {"oos", oosJson},
@@ -1160,6 +1203,30 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       result["exact"] = exact_compare(in, p);
     } catch (const std::exception& e) {
       result["exact"] = { {"status", "error"}, {"solver", "HiGHS"}, {"reason", e.what()} };
+    }
+  }
+
+  // ── Волна F: CVaR-LP с кассой (§5.2) по тем же сценариям + водопад §4.3 ──────
+  if (p.cash) {
+    try {
+      CashInputs ci;
+      ci.sellables = m.sellables; ci.hpu = hpu; ci.cap = cap;
+      ci.price = price; ci.cost = cost; ci.price2 = price2; ci.cost2 = cost2;
+      ci.market.resize(S); ci.meanPrice = meanPrice; ci.maxShare = maxShare;
+      ci.enforceShare = bestRobust > -1e299; ci.horizonHours = horizon;
+      for (size_t s = 0; s < S; ++s) {
+        const Prod& pr = m.prods.at(m.sellables[s]);
+        ci.market[s].capM = capOf(s); ci.market[s].competitor = pr.competitorSupply;
+        ci.market[s].elasticity = pr.priceElasticity; ci.market[s].absorb = absorb[s];
+        ci.upper.push_back(pr.demandMax > 0 ? pr.demandMax : (absorb[s] < 1e17 ? std::max(0.0, absorb[s]) : 1e9));
+        ci.batch.push_back(std::max(1.0, pr.batchSize));
+        std::unordered_set<std::string> vis;
+        const double mat = material_cost(m, m.sellables[s], vis);
+        ci.matShare.push_back(meanCost[s] > 0 ? std::min(1.0, std::max(0.0, mat / meanCost[s])) : 0.0);
+      }
+      result["cash_lp"] = cash_compare(db, ci, p);
+    } catch (const std::exception& e) {
+      result["cash_lp"] = { {"status", "error"}, {"solver", "HiGHS"}, {"reason", e.what()} };
     }
   }
   return result;
