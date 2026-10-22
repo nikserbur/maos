@@ -1,47 +1,51 @@
+/**
+ * Мониторинг [7] (`#/monitoring`): внешние условия и прогноз цен — веера на chart-системе
+ * (`FanChart`: история → сейчас → P10–P90 + медиана + тренд), одна общая легенда над сеткой
+ * малых кратных, качество подбора/бэктеста строкой под заголовком карточки, детальные значения
+ * и настройка цены — в `ForecastZoom`. Все числа — через src/explain/format.ts.
+ */
 import { useEffect, useState, useCallback } from 'react'
-import { api, type ForecastResult, type ForecastProduct, type PriceScenario, type PriceDistribution, type DistType } from '../../lib/api'
+import { api, type ForecastResult, type ForecastProduct, type ForecastFit, type PriceScenario, type PriceDistribution } from '../../lib/api'
 import { BlockChips } from '../../ui/BlockChip'
+import { FanChart, type FanQuality } from '../../ui/FanChart'
+import { Legend, fanLegend } from '../../ui/charts'
+import { Icon } from '../../shell/icons'
+import { money, num, pct, signed } from '../../explain/format'
+import { ForecastZoom } from './ForecastZoom'
 import './forecast.css'
 
-const W = 340, CH = 150, PADL = 6, PADR = 6, PADT = 12, PADB = 22
-
-/** ИСТОРИЯ (факт) → «сейчас» → веер прогноза P10–P90 + медиана + линия ТРЕНДА. */
-function PriceFan({ p }: { p: ForecastProduct }) {
-  const hist = p.history ?? []
-  const H = hist.length
-  const N = p.p50.length - 1
-  const fcStart = H > 0 ? H - 1 : 0           // прогноз стыкуется с концом истории
-  const total = fcStart + N + 1
-  const all = [...hist, ...p.p10, ...p.p90, ...(p.trend ?? [])]
-  const lo = Math.min(...all), hi = Math.max(...all)
-  const span = hi - lo || 1
-  const X = (i: number) => PADL + (i / Math.max(1, total - 1)) * (W - PADL - PADR)
-  const Y = (v: number) => PADT + (1 - (v - lo) / span) * (CH - PADT - PADB)
-  const histLine = hist.map((v, i) => `${X(i)},${Y(v)}`).join(' ')
-  const fc = (arr: number[]) => arr.map((v, f) => `${X(fcStart + f)},${Y(v)}`).join(' ')
-  const band = `${p.p90.map((v, f) => `${X(fcStart + f)},${Y(v)}`).join(' ')} ${[...p.p10].map((v, f) => ({ v, f })).reverse().map(({ v, f }) => `${X(fcStart + f)},${Y(v)}`).join(' ')}`
-  const fmt = (v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : Math.round(v).toFixed(v < 10 ? 1 : 0)
-  const nowX = X(fcStart)
-  return (
-    <svg viewBox={`0 0 ${W} ${CH}`} width="100%" role="img" className="fan">
-      <rect x={nowX} y={PADT} width={W - PADR - nowX} height={CH - PADT - PADB} fill="var(--accent,#2d72d2)" opacity={0.05} />
-      <line x1={nowX} y1={PADT} x2={nowX} y2={CH - PADB} stroke="var(--text-muted,#8a929c)" strokeWidth={0.8} strokeDasharray="2 2" />
-      {H > 0 && <polyline points={histLine} fill="none" stroke="var(--text,#e6e9ee)" strokeWidth={1.6} />}
-      <polygon points={band} fill="var(--accent,#2d72d2)" opacity={0.16} />
-      <polyline points={fc(p.p90)} fill="none" stroke="var(--accent,#2d72d2)" strokeWidth={0.8} opacity={0.5} strokeDasharray="3 2" />
-      <polyline points={fc(p.p10)} fill="none" stroke="var(--accent,#2d72d2)" strokeWidth={0.8} opacity={0.5} strokeDasharray="3 2" />
-      <polyline points={fc(p.p50)} fill="none" stroke="var(--accent,#2d72d2)" strokeWidth={2} />
-      {p.trend && <polyline points={fc(p.trend)} fill="none" stroke="#caa83a" strokeWidth={1.4} strokeDasharray="4 3" />}
-      <text x={PADL} y={10} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">{fmt(hi)}</text>
-      <text x={PADL} y={CH - PADB + 12} fontSize={9} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">{fmt(lo)}</text>
-      {H > 0 && <text x={PADL} y={CH - 6} fontSize={8.5} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">−{H - 1}м</text>}
-      <text x={nowX + 2} y={CH - 6} fontSize={8.5} fill="var(--text-muted,#8a929c)" fontFamily="var(--font-mono,monospace)">сейчас</text>
-      <text x={W - PADR} y={CH - 6} fontSize={8.5} fill="var(--text-muted,#8a929c)" textAnchor="end" fontFamily="var(--font-mono,monospace)">+{N}м</text>
-    </svg>
-  )
+/** Подпись подобранного распределения; у ставки (MacroSampler) AIC-полей нет — только n_obs. */
+export function fitLabel(fit: ForecastFit): string {
+  switch (fit.dist) {
+    case 'stable': return `◆ α-stable (α=${num(fit.alpha ?? 2, 2)}, тяж. хвосты)`
+    case 't': return `◆ t-Стьюдент (ν=${num(fit.nu ?? 0, 0)}, тяж. хвосты)`
+    case 'laplace': return '◆ Лаплас (тяж. хвосты)'
+    case 'normal': return '○ нормаль'
+    default: return `◆ ${String(fit.dist)}`
+  }
 }
 
-const money = (v: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
+/** Подсказка с AIC по тем распределениям, для которых он посчитан (`fit?.aic_*` может отсутствовать). */
+export function aicTitle(fit: ForecastFit): string | undefined {
+  const parts = [
+    ['нормаль', fit.aic_normal], ['Лаплас', fit.aic_laplace], ['t', fit.aic_t], ['α-stable', fit.aic_stable],
+  ].filter((x): x is [string, number] => typeof x[1] === 'number' && Number.isFinite(x[1]))
+  return parts.length ? `AIC: ${parts.map(([n, v]) => `${n} ${num(v, 1)}`).join(' · ')}` : undefined
+}
+
+/** Качество прогноза из бэктеста (skill < 1 — лучше наивного). */
+export function qualityOf(p: ForecastProduct): FanQuality {
+  const b = p.backtest
+  if (!b) return { status: 'none' }
+  return {
+    skill: 1 - b.skill, coverage80: b.coverage80, backtestK: b.k,
+    crps: (b.pinball10 + b.pinball90) / 2, crpsLabel: 'прокси CRPS',
+    status: b.skill < 1 ? 'ok' : 'warn',
+  }
+}
+
+/** Форматтер значений: ставка — проценты (значения уже в %), цены — рубли. */
+export const fmtFor = (p: ForecastProduct) => (p.role === 'rate' ? (v: number) => pct(v / 100, 1) : (v: number) => money(v))
 
 export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distributions, refreshKey }:
   { scenarioId?: string
@@ -98,96 +102,85 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distr
   const goods = products.filter((p) => p.role === 'product')
   const raws = products.filter((p) => p.role === 'raw')
   const cumInfl = res ? (res.inflation_index[res.inflation_index.length - 1] - 100) : 0
+  const hasHistory = products.some((p) => (p.history?.length ?? 0) > 0)
+  const hasTrend = products.some((p) => Boolean(p.trend))
 
   return (
-    <div className="forecast">
+    <div className={`forecast${loading && res ? ' is-refetching' : ''}`}>
       {!embedded && <header className="forecast__head">
-        <div>
-          <h1 className="forecast__title">
-            Мониторинг: внешние условия и прогноз цен
-            <span className="forecast__blocks"><BlockChips blocks={['monitoring', 'external']} /></span>
-          </h1>
-          <p className="forecast__desc">
-            Методика (System Dynamics + EMD-разложение): история → <b>тренд</b> (остаток EMD,
-            данные-адаптивный) + <b>гармоники</b> (доминирующие колебания) + <b>нерегулярный остаток</b>; к остатку
-            подбирается распределение по AIC (нормаль/Лаплас/t/α-stable). Прогноз =
-            тренд + продолжение колебаний + случайный остаток (Монте-Карло) с учётом
-            макрофакторов. Веер — P10/P50/P90. «⛶» — детальные значения по месяцам.
-          </p>
-        </div>
+        <p className="text-caps forecast__eyebrow">Наблюдение · блок [7]</p>
+        <h1 className="forecast__title">
+          Мониторинг: внешние условия и прогноз цен
+          <span className="forecast__blocks"><BlockChips blocks={['monitoring', 'external']} /></span>
+        </h1>
+        <p className="forecast__desc">
+          История → тренд (EMD) + гармоники + случайный остаток (распределение по AIC) → Монте-Карло с учётом
+          макрофакторов. Веер — P10/P50/P90; кнопка «развернуть» на карточке — значения по месяцам и настройка цены.
+        </p>
       </header>}
 
-      {!embedded && <section className="forecast__controls">
-        {!embedded && <label>Сценарий
+      {!embedded && <section className="forecast__controls" aria-label="Параметры прогноза">
+        <label>Сценарий
           <select value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
             <option value="">— ручные параметры —</option>
             {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-        </label>}
-        {!embedded && <>
-          <label>Горизонт, мес
-            <input type="number" min={1} max={36} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(36, Number(e.target.value) || 6)))} />
-          </label>
-          <label>Инфляция, %/мес
-            <input type="number" step={0.1} value={inflation} onChange={(e) => setInfl(Number(e.target.value) || 0)} />
-          </label>
-          <label>Курс (×)
-            <input type="number" step={0.05} value={fx} onChange={(e) => setFx(Number(e.target.value) || 1)} />
-          </label>
-          <label>Спрос (×)
-            <input type="number" step={0.05} value={demand} onChange={(e) => setDemand(Number(e.target.value) || 1)} />
-          </label>
-          <label>Волатильность, %/мес
-            <input type="number" step={0.5} value={volatility} onChange={(e) => setVol(Number(e.target.value) || 0)} />
-          </label>
-          <label>Корреляция рынка
-            <input type="number" step={0.05} min={0} max={1} value={corr} onChange={(e) => setCorr(Math.max(0, Math.min(1, Number(e.target.value) || 0)))} />
-          </label>
-        </>}
+        </label>
+        <label>Горизонт, мес
+          <input type="number" min={1} max={36} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(36, Number(e.target.value) || 6)))} />
+        </label>
+        <label>Инфляция, %/мес
+          <input type="number" step={0.1} value={inflation} onChange={(e) => setInfl(Number(e.target.value) || 0)} />
+        </label>
+        <label>Курс (×)
+          <input type="number" step={0.05} value={fx} onChange={(e) => setFx(Number(e.target.value) || 1)} />
+        </label>
+        <label>Спрос (×)
+          <input type="number" step={0.05} value={demand} onChange={(e) => setDemand(Number(e.target.value) || 1)} />
+        </label>
+        <label>Волатильность, %/мес
+          <input type="number" step={0.5} value={volatility} onChange={(e) => setVol(Number(e.target.value) || 0)} />
+        </label>
+        <label>Корреляция рынка
+          <input type="number" step={0.05} min={0} max={1} value={corr} onChange={(e) => setCorr(Math.max(0, Math.min(1, Number(e.target.value) || 0)))} />
+        </label>
         <button className="btn btn--primary" onClick={run} disabled={loading}>
           {loading ? 'Считаем…' : 'Пересчитать прогноз'}
         </button>
       </section>}
 
-      {error && <div className="forecast__error">{error}</div>}
+      {error && <div className="forecast__error" role="alert"><span className="glyph-down" aria-hidden="true" /> {error}</div>}
 
       {res && (
-        <div className="forecast__macro mono">
-          Накопленная инфляция за {res.months} мес: <b>+{cumInfl.toFixed(1)}%</b>
+        <p className="forecast__macro num">
+          Накопленная инфляция за {res.months} мес: <b>{signed(cumInfl / 100, '%')}</b>
           {res.mode === 'deterministic' && <> · <b>режим: детерминированный (точечный)</b></>}
-          {fx !== 1 && <> · курс ×{fx.toFixed(2)}</>}
-          {demand !== 1 && <> · спрос ×{demand.toFixed(2)}</>}
-          {' · '}индекс: {res.inflation_index.map((v) => v.toFixed(0)).join(' → ')}
-        </div>
+          {fx !== 1 && <> · курс ×{num(fx, 2)}</>}
+          {demand !== 1 && <> · спрос ×{num(demand, 2)}</>}
+          {' · '}индекс: {res.inflation_index.map((v) => num(v, 0)).join(' → ')}
+        </p>
       )}
 
-      {res && (
-        <div className="forecast__legend mono">
-          <span><i className="lg lg--hist" /> история (факт)</span>
-          <span><i className="lg lg--band" /> веер P10–P90 (разброс по подобранному распределению)</span>
-          <span><i className="lg lg--p50" /> медиана</span>
-          <span><i className="lg lg--trend" /> тренд (детерм. дрейф)</span>
-        </div>
-      )}
+      {res && <Legend className="forecast__legend" items={fanLegend({ hasHistory, hasTrend })} />}
 
       {res?.rate && !embedded && (
         <>
-          <h2 className="forecast__group">Внешнее условие — ключевая ставка (тот же движок)</h2>
-          <div className="forecast__grid"><Card p={res.rate} pct onZoom={setZoom} /></div>
+          <h2 className="forecast__group text-caps">Внешнее условие — ключевая ставка (тот же движок)</h2>
+          <div className="forecast__grid"><Card p={res.rate} onZoom={setZoom} /></div>
         </>
       )}
 
-      {goods.length > 0 && <h2 className="forecast__group">Изделия (цены сбыта)</h2>}
+      {goods.length > 0 && <h2 className="forecast__group text-caps">Изделия (цены сбыта)</h2>}
       <div className="forecast__grid">
         {goods.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
       </div>
 
-      {raws.length > 0 && <h2 className="forecast__group">Сырьё (закупочные цены)</h2>}
+      {raws.length > 0 && <h2 className="forecast__group text-caps">Сырьё (закупочные цены)</h2>}
       <div className="forecast__grid">
         {raws.map((p) => <Card key={p.id} p={p} onZoom={setZoom} />)}
       </div>
 
-      {zoom && <ZoomModal p={zoom} pct={zoom.role === 'rate'}
+      {zoom && <ForecastZoom p={zoom}
         onOverride={onOverride ? applyOverride : undefined}
         onSetDist={onSetDist} dist={distributions?.find((d) => d.product_id === zoom.id)}
         onClose={() => setZoom(null)} />}
@@ -195,194 +188,38 @@ export function ForecastScreen({ scenarioId: fixed, onOverride, onSetDist, distr
   )
 }
 
-function Card({ p, pct, onZoom }: { p: ForecastProduct; pct?: boolean; onZoom?: (p: ForecastProduct) => void }) {
+/** Карточка-веер одного ряда: заголовок · дельта к горизонту · подбор распределения · качество. */
+function Card({ p, onZoom }: { p: ForecastProduct; onZoom?: (p: ForecastProduct) => void }) {
   const last = p.p50.length - 1
-  const delta = ((p.p50[last] - p.base) / p.base) * 100
-  const fmtVal = (v: number) => (pct ? `${v.toFixed(1)}%` : money(v))
+  const delta = p.base > 0 ? (p.p50[last] - p.base) / p.base : 0
+  const fmt = fmtFor(p)
   return (
     <div className="forecast__card">
-      <div className="forecast__card-head">
-        <span className="forecast__name">{p.name}</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <span className={`forecast__delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span>
-          {onZoom && <button className="forecast__zoom" title="Открыть на весь экран · значения · оверрайд цены" onClick={() => onZoom(p)}>⛶</button>}
+      <FanChart
+        a={p}
+        fmt={fmt}
+        quality={qualityOf(p)}
+        title={p.name}
+        showLegend={false}
+        badges={<span className="forecast__delta num" title="Медиана к горизонту относительно базовой цены">{signed(delta, '%')}</span>}
+      />
+      <div className="forecast__card-foot">
+        <span className="forecast__fit num" title={p.fit?.data_driven ? aicTitle(p.fit) : undefined}>
+          {p.fit?.data_driven && <>
+            {fitLabel(p.fit)}
+            {Number.isFinite(p.fit.sigma) && <>{' · σ '}{pct(p.fit.sigma, 1)}/мес</>}
+            {' · история '}{num(p.fit.n_obs, 0)}
+          </>}
         </span>
-      </div>
-      <PriceFan p={p} />
-      {p.fit?.data_driven && (
-        <div className="forecast__fit mono" title={`AIC: нормаль ${p.fit.aic_normal.toFixed(1)} · Лаплас ${p.fit.aic_laplace.toFixed(1)}${p.fit.aic_t != null ? ` · t ${p.fit.aic_t.toFixed(1)}` : ''}${p.fit.aic_stable != null ? ` · α-stable ${p.fit.aic_stable.toFixed(1)}` : ''}`}>
-          {p.fit.dist === 'stable' ? `◆ α-stable (α=${(p.fit.alpha ?? 2).toFixed(2)}, тяж. хвосты)`
-            : p.fit.dist === 't' ? `◆ t-Стьюдент (ν=${(p.fit.nu ?? 0).toFixed(0)}, тяж. хвосты)`
-            : p.fit.dist === 'laplace' ? '◆ Лаплас (тяж. хвосты)' : '○ нормаль'}
-          {' · σ '}{(p.fit.sigma * 100).toFixed(1)}%/мес · история {p.fit.n_obs}
-        </div>
-      )}
-      {p.backtest && (
-        <div className="forecast__fit mono"
-             title={`Out-of-sample: прогноз по истории без последних ${p.backtest.k} мес против факта. MAPE — ошибка медианы; skill<1 — лучше наивного (последнее значение); покрытие — доля фактов в веере P10–P90 (идеал 80%).`}>
-          {p.backtest.skill < 1 ? '✓' : '⚠'} бэктест {p.backtest.k}м: MAPE {p.backtest.mape.toFixed(1)}%
-          {' '}(наив {p.backtest.mape_naive.toFixed(1)}%) · покрытие {(p.backtest.coverage80 * 100).toFixed(0)}%
-        </div>
-      )}
-      <div className="forecast__card-foot mono">
-        через {last} мес: <b>{fmtVal(p.p50[last])}</b>
-        <span className="forecast__range"> ({fmtVal(p.p10[last])} – {fmtVal(p.p90[last])})</span>
-      </div>
-    </div>
-  )
-}
-
-/** Полноэкранный график + детальная таблица + НАСТРОЙКА: оверрайд базовой цены и
- *  стохастического распределения (тип/СКО/коридор) — только здесь. */
-/** Водопад вклада факторов в прогноз на горизонте: из чего сложился рост/падение цены. */
-function ContribBars({ c }: { c: NonNullable<ForecastProduct['contrib']> }) {
-  const items: Array<{ label: string; v: number; hint: string }> = [
-    { label: 'История ряда', v: c.hist_trend, hint: 'исторический тренд цены (МНК по логарифму)' },
-    { label: 'Инфляция', v: c.inflation, hint: 'накопленная месячная инфляция за горизонт' },
-    { label: 'Санкции/ставка', v: c.risk_drift, hint: 'риск-дрейф: санкции ↑, ключевая ставка ↓' },
-    { label: 'Курс', v: c.fx, hint: 'валютный множитель уровня цен' },
-    { label: 'Спрос', v: c.demand, hint: 'множитель спроса' },
-    { label: 'Энергия/логистика', v: c.macro, hint: 'налоги, энергия, логистика (cost-push)' },
-  ].filter((x) => Math.abs(x.v) > 0.0005)
-  const mx = Math.max(0.01, ...items.map((x) => Math.abs(x.v)))
-  return (
-    <div className="forecast__contrib">
-      <div className="forecast__contrib-h mono">
-        Вклад факторов в прогноз (к горизонту): итог <b>{c.total >= 0 ? '+' : ''}{(c.total * 100).toFixed(1)}%</b>
-      </div>
-      {items.map((x) => (
-        <div key={x.label} className="forecast__contrib-row" title={x.hint}>
-          <span className="forecast__contrib-l">{x.label}</span>
-          <span className="forecast__contrib-bar">
-            <span className="forecast__contrib-fill"
-                  style={{ width: `${Math.abs(x.v) / mx * 100}%`,
-                           background: x.v >= 0 ? 'var(--intent-danger)' : 'var(--intent-success)' }} />
-          </span>
-          <span className="forecast__contrib-v mono">{x.v >= 0 ? '+' : ''}{(x.v * 100).toFixed(1)}%</span>
-        </div>
-      ))}
-      <div className="forecast__contrib-note">
-        Красным — что толкает цену вверх, зелёным — вниз. Множители комбинируются мультипликативно.
-      </div>
-    </div>
-  )
-}
-
-/** Мини-предпросмотр плотности выбранного распределения (форма хвостов). */
-function DistPreview({ type, rel }: { type: DistType; rel: number }) {
-  const W = 150, H = 46
-  const s = Math.max(0.05, Math.min(0.6, rel))
-  const pdf = (x: number): number => {
-    switch (type) {
-      case 't':        return Math.pow(1 + (x * x) / (5 * s * s), -3)          // ν=5, тяжёлые хвосты
-      case 'pareto':   return Math.exp(-Math.abs(x) / (s * 2.2))               // резкие хвосты
-      case 'uniform':  return Math.abs(x) < 1.7 * s ? 1 : 0.02
-      case 'triangular': return Math.max(0.02, 1 - Math.abs(x) / (2 * s))
-      case 'lognormal': { const y = x + 2.2 * s; return y > 0 ? Math.exp(-Math.pow(Math.log(y / (2.2 * s)), 2) / (2 * s * s)) / y : 0 }
-      default:         return Math.exp(-(x * x) / (2 * s * s))                 // normal
-    }
-  }
-  const xs = Array.from({ length: 61 }, (_, i) => (i / 60 - 0.5) * 2.4)
-  const ys = xs.map(pdf)
-  const my = Math.max(...ys) || 1
-  const pts = xs.map((x, i) => `${(x / 2.4 + 0.5) * W},${H - 3 - (ys[i] / my) * (H - 8)}`).join(' ')
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block' }}>
-      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={1.6} />
-      <line x1={W / 2} y1={2} x2={W / 2} y2={H - 3} stroke="var(--border)" strokeWidth={0.8} strokeDasharray="2 2" />
-    </svg>
-  )
-}
-
-function ZoomModal({ p, pct, onOverride, onSetDist, dist, onClose }: {
-  p: ForecastProduct; pct?: boolean
-  onOverride?: (productId: string, price: string) => void
-  onSetDist?: (productId: string, patch: Partial<PriceDistribution>) => void
-  dist?: PriceDistribution
-  onClose: () => void
-}) {
-  const fmtVal = (v: number) => (pct ? `${v.toFixed(2)}%` : money(v))
-  const N = p.p50.length
-  // Настройку РАСПРЕДЕЛЕНИЯ включаем и для СЫРЬЯ (закупочные цены) — backend уже
-  // применяет price_distributions к любому product_id. Оверрайд базовой цены пока
-  // только для товарной продукции (raw-оверрайд идёт в base_cost — отдельная ветка).
-  const canEdit = !!onOverride && p.role === 'product'
-  const canDist = !!onSetDist && (p.role === 'product' || p.role === 'raw')
-  const distRel = (() => {
-    const sd = Number(dist?.stddev)
-    return sd > 0 && p.base > 0 ? sd / p.base : 0.12
-  })()
-  const [base, setBase] = useState(String(Math.round(p.base)))
-  const apply = () => { if (onOverride && base) { onOverride(p.id, base); onClose() } }
-  return (
-    <div className="forecast__modal" onClick={onClose}>
-      <div className="forecast__modal-box" onClick={(e) => e.stopPropagation()}>
-        <div className="forecast__modal-head">
-          <b>{p.name} — прогноз по месяцам</b>
-          <button className="btn" onClick={onClose}>✕ Закрыть</button>
-        </div>
-        <div className="forecast__modal-chart"><PriceFan p={p} /></div>
-        {p.contrib && <ContribBars c={p.contrib} />}
-        {canEdit && (
-          <div className="forecast__ovr forecast__ovr--modal">
-            <span className="forecast__ovr-l">Настройка — базовая цена (ввод данных):</span>
-            <input type="number" value={base} onChange={(e) => setBase(e.target.value)}
-                   onKeyDown={(e) => e.key === 'Enter' && apply()} />
-            <button className="btn btn--primary" disabled={!base} onClick={apply}>Применить и пересчитать</button>
-            <button className="btn" onClick={() => { onOverride!(p.id, ''); onClose() }}>Сброс</button>
-          </div>
+        <span className="forecast__range num">
+          через {last} мес: <b>{fmt(p.p50[last])}</b> ({fmt(p.p10[last])} – {fmt(p.p90[last])})
+        </span>
+        {onZoom && (
+          <button type="button" className="btn btn--ghost btn--icon forecast__zoom" title="Развернуть: значения по месяцам, настройка цены" aria-label="Развернуть"
+            onClick={() => onZoom(p)}>
+            <Icon name="expand" size={16} />
+          </button>
         )}
-        {canDist && (
-          <div className="forecast__ovr forecast__ovr--modal forecast__distrow">
-            <span className="forecast__ovr-l">Распределение цены (форма стохастики):</span>
-            <select value={dist?.dist_type ?? 'normal'} onChange={(e) => onSetDist!(p.id, { dist_type: e.target.value as DistType })}>
-              <option value="normal">нормаль</option>
-              <option value="t">Стьюдент (тяж. хвосты)</option>
-              <option value="pareto">Парето (скачки/обвалы)</option>
-              <option value="lognormal">логнормаль</option>
-              <option value="uniform">равномерное</option>
-              <option value="triangular">треугольное</option>
-            </select>
-            <label className="forecast__distf">СКО
-              <input type="number" value={dist?.stddev ?? ''} placeholder={String(Math.round(p.base * 0.12))}
-                     onChange={(e) => onSetDist!(p.id, { stddev: e.target.value })} />
-            </label>
-            <label className="forecast__distf">мин
-              <input type="number" value={dist?.min_val ?? ''} placeholder="—" onChange={(e) => onSetDist!(p.id, { min_val: e.target.value })} />
-            </label>
-            <label className="forecast__distf">макс
-              <input type="number" value={dist?.max_val ?? ''} placeholder="—" onChange={(e) => onSetDist!(p.id, { max_val: e.target.value })} />
-            </label>
-            <div className="forecast__distprev">
-              <span className="forecast__dist-note" style={{ marginBottom: 2 }}>форма плотности:</span>
-              <DistPreview type={(dist?.dist_type ?? 'normal') as DistType} rel={distRel} />
-            </div>
-            <span className="forecast__dist-note">центр = базовая цена выше · волатильность сценария масштабирует · затем «Применить и пересчитать»</span>
-          </div>
-        )}
-        <table className="forecast__vtable mono">
-          <thead><tr><th>Мес</th><th>P10</th><th>Медиана (P50)</th><th>P90</th><th>Тренд</th></tr></thead>
-          <tbody>
-            {canEdit && (
-              <tr className="forecast__vrow-base">
-                <td>База</td><td>—</td>
-                <td><input className="forecast__vedit" type="number" value={base}
-                           onChange={(e) => setBase(e.target.value)}
-                           onKeyDown={(e) => e.key === 'Enter' && apply()} /></td>
-                <td>—</td><td>—</td>
-              </tr>
-            )}
-            {Array.from({ length: N }, (_, t) => (
-              <tr key={t}>
-                <td>+{t}</td>
-                <td>{fmtVal(p.p10[t])}</td>
-                <td><b>{fmtVal(p.p50[t])}</b></td>
-                <td>{fmtVal(p.p90[t])}</td>
-                <td className="forecast__vtrend">{p.trend ? fmtVal(p.trend[t]) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   )

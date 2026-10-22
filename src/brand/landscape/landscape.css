@@ -71,9 +71,11 @@
 .ga-hud__stats span { font-size: 10px; color: var(--text-muted); }
 .ga-hud__stats b { font-size: var(--fs-16); font-weight: 400; color: var(--text); }
 .ga-hud__chart { display: block; width: 100%; height: 56px; margin-top: var(--space-3); overflow: visible; }
-.ga-hud__best { fill: none; stroke: var(--ochre); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.ga-hud__mean { fill: none; stroke: var(--verdigris); stroke-width: 1.2; stroke-dasharray: 3 3; opacity: 0.8; }
-.ga-hud__target { stroke: var(--cinnabar); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
+.ga-hud__best { stroke: var(--chart-2); }
+.ga-hud__mean { fill: none; stroke: var(--chart-3); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
+.ga-hud__dot { --ch-surface: var(--bg-panel); }
+/* Порог цели — единственный пунктир: «порог», а не сетка (dataviz) */
+.ga-hud__target { stroke: var(--chart-4); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
 .ga-hud__status { margin: var(--space-2) 0 0; color: var(--text-secondary); }
 .ga-hud__status.is-done { color: var(--ochre); }
 .ga-hud__caption { margin: var(--space-3) 0 0; font-size: 10.5px; line-height: 1.5; color: var(--text-muted); }

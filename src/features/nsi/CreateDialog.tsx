@@ -1,5 +1,4 @@
 import { Modal } from '../../shell/Modal'
-import { RoutingSchemeEditor } from './RoutingSchemeEditor'
 import { WorkCenterTypeForm } from './forms/WorkCenterTypeForm'
 import { MachineForm }        from './forms/MachineForm'
 import { ProductForm }        from './forms/ProductForm'
@@ -27,13 +26,7 @@ export function CreateDialog({ registryId, edit, onClose }: CreateDialogProps) {
   const [createT, editT] = TITLES[registryId] ?? ['Создать запись', 'Запись']
   const title = edit ? `Редактирование — ${editT}` : createT
 
-  if (registryId === 'routing') {
-    return (
-      <Modal title={title} size="full" onClose={onClose}>
-        <RoutingSchemeEditor edit={edit} onSave={onClose} onCancel={onClose} />
-      </Modal>
-    )
-  }
+  // Техкарты редактируются экраном `#/nsi/routing/:id` (G3 1.4), не модалом.
 
   const form = (() => {
     switch (registryId) {

@@ -95,38 +95,8 @@
   color: var(--text-muted);
 }
 
-/* ── Канвас ────────────────────────────────────────────────────────────── */
-.wfb__canvas {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-  background-color: var(--bg-app);
-  /* Сетка на фоне — рисуем поверх при пане через background-position */
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 24px 24px, 24px 24px;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-.wfb__canvas--panning {
-  cursor: grabbing;
-}
-.wfb__world {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
-}
-.wfb__edges {
-  position: absolute;
-  top: 0;
-  left: 0;
-  overflow: visible;
-  pointer-events: none;
-}
+/* ── Канвас: вьюпорт/сетка/слои — общий GraphCanvas (src/ui/graph-canvas); здесь — рёбра ── */
+.wfb__canvas { flex: 1 1 auto; min-height: 0; }
 .wfb__edge {
   fill: none;
   stroke: var(--border-strong);

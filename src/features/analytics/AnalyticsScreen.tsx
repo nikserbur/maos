@@ -11,6 +11,7 @@ import { KPI_CATALOG, KPI_CATEGORIES } from './kpiCatalog'
 import { kpiDeltaText, kpiParts, kpiText } from './kpiFormat'
 import { KpiDashboard } from './KpiDashboard'
 import { Icon } from '../../shell/icons'
+import { Sankey } from '../../ui/charts'
 import './analytics.css'
 
 type Tab = 'kpi' | 'bottleneck' | 'invest' | 'flow'
@@ -471,41 +472,18 @@ function FlowTab({ plan, machines, nameOfType }: {
     return { types, links }
   }, [plan, machines])
 
-  if (!sankey || sankey.types.length < 2) return <p className="an__muted">Недостаточно данных для диаграммы потоков.</p>
-
-  // Простой Sankey: типы — столбцами по стадии, толщина связи ∝ числу партий.
-  const W = 900, rowH = 46, pad = 12
-  const H = sankey.types.length * rowH + pad * 2
-  const yOf = (t: string) => pad + sankey.types.indexOf(t) * rowH + rowH / 2
-  const maxV = Math.max(1, ...sankey.links.map((l) => l.v))
-  const nodeX = 190, curveX = 660
+  const nodes = sankey?.types.map((t) => ({ id: t, label: nameOfType(t) })) ?? []
+  const links = sankey?.links.map((l) => ({ from: l.from, to: l.to, value: l.v })) ?? []
   return (
     <div className="an__panel">
-      <p className="an__panel-t">Материальный поток между типами РЦ (Sankey)</p>
-      <p className="an__muted" style={{ margin: '0 0 6px' }}>Толщина ленты ∝ числу партий, перетекающих между переделами.</p>
-      <div style={{ overflowX: 'auto' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 620 }}>
-          {sankey.links.map((l, i) => {
-            const y1 = yOf(l.from), y2 = yOf(l.to)
-            const sw = 1.5 + (l.v / maxV) * 16
-            return (
-              <path key={i} d={`M ${nodeX} ${y1} C ${(nodeX + curveX) / 2} ${y1}, ${(nodeX + curveX) / 2} ${y2}, ${curveX} ${y2}`}
-                fill="none" stroke="var(--accent)" strokeOpacity={0.35} strokeWidth={sw} />
-            )
-          })}
-          {sankey.types.map((t) => {
-            const y = yOf(t)
-            return (
-              <g key={t}>
-                <text x={nodeX - 8} y={y + 4} textAnchor="end" fontSize={12} fill="var(--text)">{nameOfType(t)}</text>
-                <circle cx={nodeX} cy={y} r={5} fill="var(--accent)" />
-                <circle cx={curveX} cy={y} r={5} fill="var(--accent)" />
-                <text x={curveX + 8} y={y + 4} fontSize={12} fill="var(--text-muted)">{nameOfType(t)}</text>
-              </g>
-            )
-          })}
-        </svg>
-      </div>
+      <Sankey
+        nodes={nodes}
+        links={links}
+        unit="партий"
+        title="Материальный поток между типами РЦ"
+        subtitle="Толщина ленты ∝ числу партий между переделами; наведите на тип РЦ — подсветится его цепочка."
+        ariaLabel="Потоки партий между типами рабочих центров"
+      />
     </div>
   )
 }

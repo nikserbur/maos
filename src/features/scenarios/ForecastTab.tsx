@@ -6,8 +6,9 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { api, type ForecastProduct, type ForecastResult, type PriceScenario } from '../../lib/api'
-import { money, num, pct } from '../../explain/format'
+import { money, num, pct, signed } from '../../explain/format'
 import { FanChart, type FanQuality } from '../../ui/FanChart'
+import { BarList, Legend, Meter, fanLegend, type BarRow } from '../../ui/charts'
 import { InfoTip } from '../../ui/InfoTip'
 import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import { Chip, InlineError, SkeletonRows } from '../plan/ui'
@@ -15,6 +16,9 @@ import { fromMacroMode, toMacroMode } from './regimeMenu'
 import './scenarios-v2.css'
 
 interface Props { sc: PriceScenario; refreshKey?: number }
+
+/** Сколько худших изделий показывать в таблице качества по умолчанию. */
+const QUALITY_TOP = 10
 
 export function qualityOf(p: ForecastProduct): FanQuality {
   const b = p.backtest
@@ -33,6 +37,7 @@ export function ForecastTab({ sc, refreshKey = 0 }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [contribId, setContribId] = useState<string | null>(null)
+  const [showAllQuality, setShowAllQuality] = useState(false)
   const months = Number(sc.months) || 6
 
   useEffect(() => {
@@ -49,7 +54,9 @@ export function ForecastTab({ sc, refreshKey = 0 }: Props) {
 
   const goods = useMemo(() => res?.products.filter((p) => p.role === 'product') ?? [], [res])
   const raws = useMemo(() => res?.products.filter((p) => p.role === 'raw') ?? [], [res])
-  const quality = useMemo(() => [...goods, ...raws].map((p) => ({ p, q: qualityOf(p) })).filter((x) => x.q.status !== 'none'), [goods, raws])
+  // Худшие — первыми (по skill); в таблице по умолчанию топ-10, остальные — по кнопке.
+  const quality = useMemo(() => [...goods, ...raws].map((p) => ({ p, q: qualityOf(p) })).filter((x) => x.q.status !== 'none')
+    .sort((a, b) => (a.q.skill ?? 0) - (b.q.skill ?? 0)), [goods, raws])
   const worse = quality.filter((x) => x.q.status === 'warn').length
   const covAvg = quality.length ? quality.reduce((a, x) => a + (x.q.coverage80 ?? 0), 0) / quality.length : null
   const skillAvg = quality.length ? quality.reduce((a, x) => a + (x.q.skill ?? 0), 0) / quality.length : null
@@ -96,30 +103,43 @@ export function ForecastTab({ sc, refreshKey = 0 }: Props) {
           <p className="sc2-muted">▲ Хуже наивного: {quality.filter((x) => x.q.status === 'warn').slice(0, 6).map((x) => x.p.name).join(', ')}{worse > 6 ? ` и ещё ${worse - 6}` : ''} — упростите модель (тип «нормальное», меньше гармоник) или переоцените после импорта факта; на синтетической истории это ожидаемо.</p>
         )}
         <table className="sc2-qtable">
-          <thead><tr><th>Изделие</th><th>MAPE</th><th>наивный</th><th>skill</th><th>покрытие</th><th>прокси CRPS</th><th>распределение (AIC)</th><th />
+          <thead><tr>
+            <th scope="col">Изделие</th><th scope="col">MAPE</th><th scope="col">наивный</th>
+            <th scope="col" className="sc2-qtable__skill">skill к наивному</th><th scope="col">покрытие</th><th scope="col">прокси CRPS</th><th scope="col">распределение (AIC)</th><th scope="col" />
           </tr></thead>
           <tbody>
-            {quality.map(({ p, q }) => (
+            {(showAllQuality ? quality : quality.slice(0, QUALITY_TOP)).map(({ p, q }) => (
               <tr key={p.id}>
-                <td>{p.name}</td>
-                <td className="num">{pct(p.backtest!.mape, 1)}</td>
-                <td className="num">{pct(p.backtest!.mape_naive, 1)}</td>
-                <td className="num">{pct(q.skill ?? 0, 0)}</td>
+                <th scope="row">{p.name}</th>
+                <td className="num">{pct(p.backtest!.mape / 100, 1)}</td>
+                <td className="num">{pct(p.backtest!.mape_naive / 100, 1)}</td>
+                <td className="num sc2-qtable__skill">
+                  <span className="sc2-qtable__meter">
+                    <Meter value={Math.max(-1, Math.min(1, q.skill ?? 0))} min={-1} max={1} tone={q.status === 'ok' ? 'accent' : 'warn'}
+                      label={`skill ${pct(q.skill ?? 0, 0)}`} />
+                    <span>{signed(q.skill ?? 0, '%')}</span>
+                  </span>
+                </td>
                 <td className="num">{pct(q.coverage80 ?? 0, 0)}</td>
-                <td className="num">{num(q.crps ?? 0, 3)}</td>
-                <td className="sc2-muted">{p.fit?.data_driven ? `${p.fit.dist}${p.fit.nu ? ` ν=${num(p.fit.nu, 0)}` : ''} · n=${p.fit.n_obs}` : '—'}</td>
+                <td className="num">{money(q.crps ?? 0)}</td>
+                <td><span className="sc2-chip">{p.fit?.data_driven ? `${p.fit.dist}${p.fit.nu ? ` ν=${num(p.fit.nu, 0)}` : ''} · n=${p.fit.n_obs}` : '—'}</span></td>
                 <td><span className={q.status === 'ok' ? 'glyph-running' : 'glyph-setup'} aria-label={q.status === 'ok' ? 'лучше наивного' : 'хуже наивного'} /></td>
               </tr>
             ))}
           </tbody>
         </table>
+        {quality.length > QUALITY_TOP && (
+          <button type="button" className="btn btn--ghost sc2-qtable__more" onClick={() => setShowAllQuality((v) => !v)}>
+            {showAllQuality ? `показать худшие ${QUALITY_TOP}` : `все ${quality.length}`}
+          </button>
+        )}
       </section>
 
       {res.rate && (
         <section className="sc2-group" aria-label="Ключевая ставка">
           <p className="sc2-group__t text-caps">Внешнее условие — ключевая ставка <span className="sc2-muted">{res.rate.source ?? ''}{res.rate.regimes ? ` · ${res.rate.regimes} режима` : ''}</span></p>
           <div className="sc2-fans">
-            <FanChart a={res.rate} fmt={(v) => `${v.toFixed(1)} %`} monthLabel={monthLabel} quality={qualityOf(res.rate)}
+            <FanChart a={res.rate} fmt={(v) => pct(v / 100, 1)} monthLabel={monthLabel} quality={qualityOf(res.rate)}
               title={res.rate.name} badges={<ProvenanceBadge status={res.rate.synthetic === false ? 'Н' : 'синтетика'} />} />
           </div>
         </section>
@@ -128,14 +148,15 @@ export function ForecastTab({ sc, refreshKey = 0 }: Props) {
       {[{ title: 'Изделия (цены сбыта)', items: goods }, { title: 'Сырьё (закупочные цены)', items: raws }].map((g) => g.items.length > 0 && (
         <section key={g.title} className="sc2-group" aria-label={g.title}>
           <p className="sc2-group__t text-caps">{g.title}</p>
+          <Legend className="sc2-fans__legend" items={fanLegend({ hasHistory: g.items.some((p) => (p.history?.length ?? 0) > 0), hasTrend: g.items.some((p) => Boolean(p.trend)) })} />
           <div className="sc2-fans">
             {g.items.map((p) => {
               const last = p.p50.length - 1
               const delta = p.base > 0 ? p.p50[last] / p.base - 1 : 0
               return (
                 <div key={p.id} className="sc2-fan">
-                  <FanChart a={p} fmt={(v) => money(v)} monthLabel={monthLabel} quality={qualityOf(p)} title={p.name}
-                    badges={<><Chip tone={delta >= 0 ? 'good' : 'bad'}>{delta >= 0 ? '+' : ''}{pct(delta, 1)}</Chip>{res.synthetic && <ProvenanceBadge status="синтетика" />}</>} />
+                  <FanChart a={p} fmt={(v) => money(v)} monthLabel={monthLabel} quality={qualityOf(p)} title={p.name} showLegend={false}
+                    badges={<><Chip>{signed(delta, '%')}</Chip>{res.synthetic && <ProvenanceBadge status="синтетика" />}</>} />
                   <div className="sc2-fan__foot">
                     <span className="sc2-muted num">через {last} мес: <b>{money(p.p50[last])}</b> ({money(p.p10[last])} – {money(p.p90[last])})</span>
                     {p.contrib && <button type="button" className="pf-link" onClick={() => setContribId(contribId === p.id ? null : p.id)}>{contribId === p.id ? 'скрыть вклад' : 'вклад факторов'}</button>}
@@ -151,23 +172,18 @@ export function ForecastTab({ sc, refreshKey = 0 }: Props) {
   )
 }
 
-/** Вклад факторов под веером (не в модале): история, инфляция, курс, спрос; устаревшие множители = 0. */
+/** Вклад факторов под веером (не в модале): двуполярные бары от нуля; устаревшие множители = 0. */
 function Contrib({ c }: { c: NonNullable<ForecastProduct['contrib']> }) {
-  const items = [
-    { label: 'История ряда', v: c.hist_trend }, { label: 'Инфляция', v: c.inflation }, { label: 'Курс', v: c.fx }, { label: 'Спрос', v: c.demand },
-    { label: 'Санкции/ставка (устарело)', v: c.risk_drift }, { label: 'Энергия/логистика (устарело)', v: c.macro },
-  ].filter((x) => Math.abs(x.v) > 0.0005 || x.label.includes('устарело'))
-  const mx = Math.max(0.01, ...items.map((x) => Math.abs(x.v)))
+  const rows: BarRow[] = [
+    { key: 'hist', label: 'История ряда', value: c.hist_trend }, { key: 'infl', label: 'Инфляция', value: c.inflation },
+    { key: 'fx', label: 'Курс', value: c.fx }, { key: 'demand', label: 'Спрос', value: c.demand },
+    { key: 'risk', label: 'Санкции/ставка', value: c.risk_drift, secondary: 'устарело' },
+    { key: 'macro', label: 'Энергия/логистика', value: c.macro, secondary: 'устарело' },
+  ].filter((x) => Math.abs(x.value) > 0.0005 || x.secondary)
   return (
     <div className="sc2-contrib">
-      <p className="sc2-muted">итог к горизонту <b>{c.total >= 0 ? '+' : ''}{pct(c.total, 1)}</b> <InfoTip id="forecast.factors" values={{ hist: c.hist_trend, inflation: c.inflation, risk: c.risk_drift, macro: c.macro, fx: c.fx, demand: c.demand, total: c.total }} /></p>
-      {items.map((x) => (
-        <div key={x.label} className="sc2-contrib__row">
-          <span>{x.label}</span>
-          <span className="sc2-contrib__bar"><span style={{ width: `${(Math.abs(x.v) / mx) * 100}%`, background: x.v >= 0 ? 'var(--cinnabar)' : 'var(--verdigris)' }} /></span>
-          <span className="num">{x.v >= 0 ? '+' : ''}{pct(x.v, 1)}</span>
-        </div>
-      ))}
+      <BarList rows={rows} bipolar fmt={(v) => signed(v, '%')} valueHeader="Вклад" compact
+        title={<>итог к горизонту <b className="num">{signed(c.total, '%')}</b> <InfoTip id="forecast.factors" values={{ hist: c.hist_trend, inflation: c.inflation, risk: c.risk_drift, macro: c.macro, fx: c.fx, demand: c.demand, total: c.total }} /></>} />
     </div>
   )
 }

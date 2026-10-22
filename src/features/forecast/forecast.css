@@ -1,173 +1,146 @@
+/* Мониторинг [7]: сетка вееров на chart-системе; только токены (--fs-*, --space-*, --chart-*). */
 .forecast {
-  padding: 20px 24px;
+  padding: var(--space-5) var(--space-6);
   overflow-y: auto;
   height: 100%;
 }
-.forecast__head { margin-bottom: 16px; }
-.forecast__title { font-size: 20px; margin: 0 0 4px; }
-.forecast__blocks { display: inline-flex; margin-left: 12px; vertical-align: middle; }
-.forecast__desc { color: var(--text-muted, #8a929c); font-size: 13px; max-width: 760px; margin: 0; }
+.forecast.is-refetching .forecast__grid { opacity: 0.55; transition: opacity var(--dur-fast) var(--ease-out); }
+.forecast__head { margin-bottom: var(--space-4); }
+.forecast__eyebrow { margin: 0 0 var(--space-1); color: var(--text-muted); }
+.forecast__title { font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; line-height: var(--lh-display); margin: 0 0 var(--space-1); }
+.forecast__blocks { display: inline-flex; margin-left: var(--space-3); vertical-align: middle; }
+.forecast__desc { color: var(--text-muted); font-size: var(--fs-13); line-height: var(--lh-body); max-width: 84ch; margin: 0; }
 
+/* ── Параметры ───────────────────────────────────────────────────────────── */
 .forecast__controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: var(--space-3) var(--space-4);
   align-items: flex-end;
-  padding: 14px 16px;
-  background: var(--surface, #161a20);
-  border: 1px solid var(--border, #2a2f37);
-  border-radius: 10px;
-  margin-bottom: 14px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-3);
 }
 .forecast__controls label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-muted, #8a929c);
+  gap: var(--space-1);
+  font-size: var(--fs-11);
+  color: var(--text-muted);
 }
-.forecast__controls input {
-  width: 92px;
-  padding: 6px 8px;
-  background: var(--surface-2, #0f1318);
-  border: 1px solid var(--border, #2a2f37);
-  border-radius: 6px;
-  color: var(--text, #e6e9ee);
-  font-size: 13px;
+.forecast__controls input,
+.forecast__controls select {
+  min-width: 92px;
+  height: var(--control);
+  padding: 0 var(--space-2);
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-13);
 }
-.forecast__controls .btn { margin-left: auto; }
+.forecast__controls .btn { margin-left: auto; height: var(--control); }
 
 .forecast__error {
-  color: #ff6b6b;
-  padding: 8px 12px;
-  border: 1px solid #ff6b6b55;
-  border-radius: 6px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--status-down) 50%, var(--border));
+  border-radius: var(--radius);
+  margin-bottom: var(--space-3);
 }
 .forecast__macro {
-  font-size: 12px;
-  color: var(--text-muted, #8a929c);
-  padding: 8px 12px;
-  background: var(--surface, #161a20);
-  border-radius: 8px;
-  margin-bottom: 18px;
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  margin: 0 0 var(--space-3);
 }
-.forecast__macro b { color: var(--text, #e6e9ee); }
+.forecast__macro b { color: var(--text); }
+.forecast__legend { margin-bottom: var(--space-4); }
 
+/* ── Группы и сетка малых кратных ────────────────────────────────────────── */
 .forecast__group {
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted, #8a929c);
-  margin: 6px 0 10px;
+  color: var(--text-muted);
+  margin: var(--space-2) 0 var(--space-3);
 }
 .forecast__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
-  margin-bottom: 22px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
 }
 .forecast__card {
-  background: var(--surface, #161a20);
-  border: 1px solid var(--border, #2a2f37);
-  border-radius: 10px;
-  padding: 12px 14px 10px;
-}
-.forecast__card-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 4px;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4) var(--space-3);
 }
-.forecast__name { font-size: 13px; font-weight: 600; }
-.forecast__delta { font-size: 12px; font-variant-numeric: tabular-nums; }
-.forecast__delta.up { color: #4caf72; }
-.forecast__delta.down { color: #e0795a; }
-.forecast .fan { display: block; }
-.forecast__legend {
-  display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px;
-  color: var(--text-muted, #8a929c); margin-bottom: 14px;
+.forecast__delta { font-size: var(--fs-12); color: var(--text-secondary); }
+.forecast__card-foot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'fit zoom' 'range zoom';
+  align-items: center;
+  gap: 2px var(--space-2);
 }
-.forecast__legend span { display: inline-flex; align-items: center; gap: 5px; }
-.forecast__legend .lg { width: 16px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
-.forecast__legend .lg--hist  { border-top-color: var(--text, #e6e9ee); }
-.forecast__legend .lg--band  { height: 9px; border: none; background: var(--accent, #2d72d2); opacity: 0.25; border-radius: 2px; }
-.forecast__legend .lg--p50   { border-top-color: var(--accent, #2d72d2); border-top-width: 3px; }
-.forecast__legend .lg--trend { border-top-color: #caa83a; border-top-style: dashed; }
-.forecast__fit { font-size: 10px; color: var(--text-muted, #8a929c); margin-top: 2px; }
-.forecast__card-foot { font-size: 11px; color: var(--text, #e6e9ee); margin-top: 2px; }
-.forecast__range { color: var(--text-muted, #8a929c); }
+.forecast__fit { grid-area: fit; font-size: var(--fs-11); color: var(--text-muted); }
+.forecast__range { grid-area: range; font-size: var(--fs-12); color: var(--text-muted); }
+.forecast__range b { color: var(--text); }
+.forecast__zoom { grid-area: zoom; color: var(--text-muted); }
+.forecast__zoom:hover { color: var(--text); }
 
-/* Кнопка «увеличить» + модал с детальной таблицей значений */
-.forecast__zoom {
-  background: transparent; border: 1px solid var(--border, #2a2f37); border-radius: 6px;
-  color: var(--text-muted, #8a929c); cursor: pointer; font-size: 12px; line-height: 1;
-  padding: 2px 6px;
-}
-.forecast__zoom:hover { color: var(--text, #e6e9ee); border-color: var(--accent, #2d72d2); }
+/* ── Развёрнутый веер ────────────────────────────────────────────────────── */
 .forecast__modal {
-  position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.55);
-  display: flex; align-items: center; justify-content: center; padding: 24px;
+  position: fixed; inset: 0; z-index: 1000; background: oklch(0.08 0.02 268 / 0.6);
+  display: flex; align-items: center; justify-content: center; padding: var(--space-6);
 }
 .forecast__modal-box {
-  background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37);
-  border-radius: 12px; padding: 16px 18px; width: min(760px, 94vw);
-  max-height: 90vh; overflow: auto;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); width: min(800px, 94vw);
+  max-height: 90vh; overflow: auto; box-shadow: var(--shadow-3);
 }
-.forecast__modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.forecast__modal-chart { margin-bottom: 12px; }
-.forecast__vtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.forecast__modal-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.forecast__modal-chart { margin-bottom: var(--space-3); }
+.forecast__vtable { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
 .forecast__vtable th, .forecast__vtable td {
-  text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--border, #2a2f37);
-  font-variant-numeric: tabular-nums;
+  text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--border);
 }
-.forecast__vtable th { color: var(--text-muted, #8a929c); }
-.forecast__vtable td:first-child, .forecast__vtable th:first-child { text-align: left; color: var(--text-muted, #8a929c); }
-.forecast__vtrend { color: #caa83a; }
+.forecast__vtable thead th { color: var(--text-muted); font-weight: 600; }
+.forecast__vtable tbody th { text-align: left; font-weight: 500; color: var(--text-muted); }
+.forecast__vtable thead th:first-child { text-align: left; }
+.forecast__vtrend { color: var(--text-secondary); }
 
-/* ── Оверрайд цены прямо на графике (⚙) ────────────────────────────────── */
-.forecast__gear {
-  background: transparent; border: 1px solid var(--border, #2a2f37); border-radius: 6px;
-  color: var(--text-muted, #8a929c); cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px;
-}
-.forecast__gear:hover { color: var(--accent, #2d72d2); border-color: var(--accent, #2d72d2); }
+/* Оверрайд цены и распределение — только в развёрнутом виде */
 .forecast__ovr {
-  display: flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 8px;
-  background: var(--surface-2, #0f1318); border: 1px solid var(--border, #2a2f37); border-radius: 8px;
+  display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0; padding: var(--space-2);
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
 }
-.forecast__ovr-l { font-size: 11px; color: var(--text-muted, #8a929c); white-space: nowrap; }
-.forecast__ovr input {
-  flex: 1; min-width: 60px; background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37);
-  border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 5px 7px;
+.forecast__ovr-l { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
+.forecast__ovr input, .forecast__distrow select {
+  flex: 1; min-width: 60px; height: var(--control-compact); background: var(--bg-input); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); color: var(--text); font-size: var(--fs-12); padding: 0 7px;
 }
-.forecast__ovr .btn { padding: 4px 8px; font-size: 11px; }
-
-/* Настройка-оверрайд в полноэкранном режиме + редактируемая ячейка таблицы */
-.forecast__ovr--modal { margin: 10px 0; }
-.forecast__vrow-base { background: color-mix(in srgb, var(--accent, #2d72d2) 10%, transparent); }
-.forecast__vrow-base td { font-weight: 600; }
+.forecast__ovr .btn { font-size: var(--fs-11); }
+.forecast__vrow-base { background: color-mix(in oklch, var(--accent) 10%, transparent); }
+.forecast__vrow-base td, .forecast__vrow-base th { font-weight: 600; }
 .forecast__vedit {
-  width: 100%; background: var(--surface, #161a20); border: 1px solid var(--accent, #2d72d2);
-  border-radius: 5px; color: var(--text, #e6e9ee); font: inherit; padding: 3px 6px; text-align: right;
+  width: 100%; background: var(--bg-input); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); color: var(--text); font: inherit; padding: 3px 6px; text-align: right;
 }
-
-/* Распределение цены в полноэкранной настройке */
 .forecast__distrow { flex-wrap: wrap; }
-.forecast__distf { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted, #8a929c); }
-.forecast__distf input { width: 90px; }
-.forecast__distrow select { background: var(--surface, #161a20); border: 1px solid var(--border, #2a2f37); border-radius: 6px; color: var(--text, #e6e9ee); font-size: 12px; padding: 5px 7px; }
-.forecast__dist-note { font-size: 10px; color: var(--text-muted, #6a7079); flex-basis: 100%; }
-
-/* Вклад факторов в прогноз (водопад) */
-.forecast__contrib { margin: 10px 0; padding: 8px 10px; background: var(--bg-card, #12161c);
-  border: 1px solid var(--border); border-radius: 8px; }
-.forecast__contrib-h { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
-.forecast__contrib-row { display: grid; grid-template-columns: 120px 1fr 52px; align-items: center;
-  gap: 8px; margin: 3px 0; }
-.forecast__contrib-l { font-size: 11.5px; color: var(--text-secondary); }
-.forecast__contrib-bar { height: 10px; background: var(--bg-app, #0d1014); border-radius: 3px; overflow: hidden; }
-.forecast__contrib-fill { display: block; height: 100%; border-radius: 3px; }
-.forecast__contrib-v { font-size: 11px; text-align: right; color: var(--text); }
-.forecast__contrib-note { font-size: 10.5px; color: var(--text-muted); margin-top: 5px; }
-.forecast__distprev { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.forecast__distf { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-11); color: var(--text-muted); }
+.forecast__distf input { width: 90px; flex: none; }
+.forecast__dist-note { font-size: var(--fs-11); color: var(--text-muted); flex-basis: 100%; }
+.forecast__distprev { display: flex; flex-direction: column; gap: 2px; margin-top: var(--space-1); }
+.forecast__distprev .forecast__dist-note { flex-basis: auto; }
+.forecast__distsvg { display: block; }
+.forecast__contrib { margin: var(--space-3) 0; padding: var(--space-2) var(--space-3); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); }

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { REGISTRIES } from './registries'
 import { CreateDialog } from './CreateDialog'
+import { RoutingScreen } from './routing/RoutingScreen'
 import { api, type WorkCenterType, type Product } from '../../lib/api'
 import { KIND_META } from '../plant-scene/graph/sceneModel'
+import { useHashRoute } from '../../shell/router'
 import './nsi.css'
 
 type AnyRow = Record<string, unknown>
@@ -53,8 +55,15 @@ function cellText(
   return s
 }
 
+/**
+ * Справочники: `#/nsi/<реестр>` — реестр в адресе (переживает F5), `#/nsi/routing/<id|new>` —
+ * конструктор техкарты экраном вместо модала (G3 1.4).
+ */
 export function NsiScreen() {
-  const [activeId, setActiveId]     = useState(REGISTRIES[0].id)
+  const { anchor, navigate } = useHashRoute()
+  const [seg, routingId] = (anchor ?? '').split('/')
+  const activeId = REGISTRIES.some((r) => r.id === seg) ? seg : REGISTRIES[0].id
+  const setActiveId = (id: string) => navigate('nsi', id)
   const [createOpen, setCreateOpen] = useState(false)
   const [editRow, setEditRow]       = useState<AnyRow | null>(null)
   const [rows, setRows]             = useState<AnyRow[]>([])
@@ -83,7 +92,7 @@ export function NsiScreen() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchRows() }, [activeId])
+  useEffect(() => { fetchRows() }, [activeId, routingId])
 
   const filtered = search.trim()
     ? rows.filter((r) =>
@@ -100,6 +109,11 @@ export function NsiScreen() {
     if (activeId === 'workcentertype') api.workCenterTypes.list().then(setWcTypes).catch(() => {})
     if (activeId === 'product')        api.products.list().then(setProducts).catch(() => {})
   }
+
+  if (activeId === 'routing' && routingId) return <RoutingScreen key={routingId} id={routingId} />
+
+  const openCreate = () => (activeId === 'routing' ? navigate('nsi', 'routing/new') : setCreateOpen(true))
+  const openRow = (row: AnyRow) => (activeId === 'routing' ? navigate('nsi', `routing/${String(row.id ?? '')}`) : setEditRow(row))
 
   return (
     <div className="nsi">
@@ -133,7 +147,7 @@ export function NsiScreen() {
             <h1 className="nsi__title">{active.title}</h1>
             <p className="nsi__desc">{active.description}</p>
           </div>
-          <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
+          <button className="btn btn--primary" onClick={openCreate}>
             + Создать
           </button>
         </header>
@@ -176,8 +190,8 @@ export function NsiScreen() {
                 filtered.map((row, i) => (
                   <tr key={String(row.id ?? row.tab_no ?? i)}
                       className="nsi__row--clickable"
-                      onClick={() => setEditRow(row)}
-                      title="Открыть для редактирования">
+                      onClick={() => openRow(row)}
+                      title={activeId === 'routing' ? 'Открыть конструктор техкарты' : 'Открыть для редактирования'}>
                     {active.columns.map((col) => (
                       <td key={col.key}>
                         {col.key === 'role'

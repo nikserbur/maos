@@ -1,6 +1,8 @@
 /** HUD заставки: фазы ГА, счётчики, кривая сходимости и прокручиваемые настройки. */
 
 import { useEffect, useId, useState, type ChangeEvent } from 'react'
+import { areaPath, linePath } from '../../ui/charts/scale'
+import '../../ui/charts/charts.css'
 
 export const PHASES = ['Оценка', 'Отбор', 'Скрещивание', 'Мутация'] as const
 
@@ -51,6 +53,7 @@ function sameParams(a: GaLiveParams, b: GaLiveParams) {
     && a.genSec === b.genSec
 }
 
+/** Кривая сходимости на примитивах chart-системы: площадь 10 %, линии 2/1,2 px, порог — пунктир цели. */
 function Convergence({ history }: { history: HudState['history'] }) {
   const W = 220
   const H = 56
@@ -58,20 +61,16 @@ function Convergence({ history }: { history: HudState['history'] }) {
   const n = Math.max(history.length - 1, 1)
   const x = (i: number) => (i / n) * W
   const y = (v: number) => H - 4 - Math.max(0, Math.min(1, v)) * (H - 8)
-  const line = (k: 'best' | 'mean') => history.map((h, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(h[k]).toFixed(1)}`).join('')
-  const area = `${line('best')}L${W},${H}L0,${H}Z`
+  const pts = (k: 'best' | 'mean') => history.map((h, i) => ({ x: x(i), y: y(h[k]) }))
+  const best = pts('best')
+  const last = best[best.length - 1]
   return (
-    <svg className="ga-hud__chart" viewBox={`0 0 ${W} ${H}`} aria-label="Сходимость: лучшее и среднее значение по поколениям">
-      <defs>
-        <linearGradient id="ga-best-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--ochre)" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="var(--ochre)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
+    <svg className="ga-hud__chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Сходимость: лучшее и среднее значение по поколениям">
       <line x1="0" x2={W} y1={y(1)} y2={y(1)} className="ga-hud__target" />
-      <path d={area} fill="url(#ga-best-fill)" />
-      <path d={line('mean')} className="ga-hud__mean" />
-      <path d={line('best')} className="ga-hud__best" />
+      <path d={areaPath(best, H)} className="ch-area" fill="var(--chart-2)" />
+      <path d={linePath(pts('mean'))} className="ga-hud__mean" />
+      <path d={linePath(best)} className="ch-line ga-hud__best" />
+      <circle className="ch-marker ga-hud__dot" cx={last.x} cy={last.y} r={3.5} fill="var(--chart-2)" />
     </svg>
   )
 }

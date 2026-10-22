@@ -11,23 +11,14 @@ import {
   type WorkflowNode,
 } from './types'
 import { loadGraph, saveGraph } from './storage'
+import { GraphCanvas, type GraphCanvasHandle, type Point } from '../../ui/graph-canvas'
 import './workflow-builder.css'
 
-/** Точка в координатах канваса (мира). */
-interface Point {
-  x: number
-  y: number
-}
+/*
+ * Конструктор AI-воркфлоу. Пан/зум/«вписать» — общий движок `GraphCanvas` (src/ui/graph-canvas,
+ * UX-V2 §6.1); здесь остаются только предметные жесты: перетаскивание узлов и протяжка связей.
+ */
 
-/** Смещение и масштаб вьюпорта (пан + зум). */
-interface View {
-  x: number
-  y: number
-  zoom: number
-}
-
-const MIN_ZOOM = 0.35
-const MAX_ZOOM = 2
 const AUTOSAVE_MS = 400
 
 /** Центр входного порта узла в координатах мира. */
@@ -41,19 +32,27 @@ function edgePath(from: Point, to: Point): string {
   return `M ${from.x} ${from.y} C ${from.x} ${from.y + dy}, ${to.x} ${to.y - dy}, ${to.x} ${to.y}`
 }
 
+/** Границы графа в мире — для «вписать». */
+function graphBounds(nodes: ReadonlyArray<WorkflowNode>) {
+  if (nodes.length === 0) return { x: 0, y: 0, w: 800, h: 600 }
+  const xs = nodes.map((n) => n.x)
+  const ys = nodes.map((n) => n.y)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  return { x, y, w: Math.max(...xs) + NODE_W - x, h: Math.max(...ys) + NODE_H - y }
+}
+
 type Drag =
   | { kind: 'none' }
   | { kind: 'node'; id: string; offsetX: number; offsetY: number }
-  | { kind: 'pan'; startX: number; startY: number; origX: number; origY: number }
   | { kind: 'connect'; from: string; pointer: Point }
 
 export function WorkflowBuilder() {
   const [graph, setGraph] = useState<WorkflowGraph>(() => loadGraph())
-  const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 })
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
 
-  const canvasRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<GraphCanvasHandle>(null)
   const dragRef = useRef<Drag>({ kind: 'none' })
   const [dragKind, setDragKind] = useState<Drag['kind']>('none')
   const [connectPointer, setConnectPointer] = useState<Point | null>(null)
@@ -75,26 +74,19 @@ export function WorkflowBuilder() {
     return map
   }, [graph.nodes])
 
-  /** Экранные координаты события → координаты мира (учёт пана и зума). */
-  const toWorld = useCallback(
-    (clientX: number, clientY: number): Point => {
-      const rect = canvasRef.current?.getBoundingClientRect()
-      const left = rect?.left ?? 0
-      const top = rect?.top ?? 0
-      return {
-        x: (clientX - left - view.x) / view.zoom,
-        y: (clientY - top - view.y) / view.zoom,
-      }
-    },
-    [view],
-  )
+  const bounds = useMemo(() => graphBounds(graph.nodes), [graph.nodes])
 
-  // ── Добавление узла из палитры (около центра канваса) ─────────────────
+  /** Экранные координаты события → координаты мира (через движок канваса). */
+  const toWorld = useCallback((clientX: number, clientY: number): Point => {
+    return canvasRef.current?.toWorld(clientX, clientY) ?? { x: clientX, y: clientY }
+  }, [])
+
+  // ── Добавление узла из палитры (около центра видимой области) ─────────
   const addNode = useCallback(
     (type: NodeType) => {
-      const rect = canvasRef.current?.getBoundingClientRect()
-      const cx = ((rect?.width ?? 800) / 2 - view.x) / view.zoom - NODE_W / 2
-      const cy = ((rect?.height ?? 600) / 2 - view.y) / view.zoom - NODE_H / 2
+      const view = canvasRef.current?.getView() ?? { x: 0, y: 0, k: 1 }
+      const cx = (400 - view.x) / view.k - NODE_W / 2
+      const cy = (300 - view.y) / view.k - NODE_H / 2
       const jitter = graph.nodes.length * 12
       const node: WorkflowNode = {
         id: makeId(),
@@ -108,7 +100,7 @@ export function WorkflowBuilder() {
       setSelectedNodeId(node.id)
       setSelectedEdgeId(null)
     },
-    [graph.nodes.length, view],
+    [graph.nodes.length],
   )
 
   // ── Обновление узла (иммутабельно) ────────────────────────────────────
@@ -144,8 +136,7 @@ export function WorkflowBuilder() {
       if (e.button !== 0) return
       e.stopPropagation()
       const world = toWorld(e.clientX, e.clientY)
-      const drag: Drag = { kind: 'node', id: node.id, offsetX: world.x - node.x, offsetY: world.y - node.y }
-      dragRef.current = drag
+      dragRef.current = { kind: 'node', id: node.id, offsetX: world.x - node.x, offsetY: world.y - node.y }
       setDragKind('node')
       setSelectedNodeId(node.id)
       setSelectedEdgeId(null)
@@ -166,19 +157,7 @@ export function WorkflowBuilder() {
     [toWorld],
   )
 
-  // ── Пан по пустому канвасу ────────────────────────────────────────────
-  const onCanvasPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.button !== 0) return
-      dragRef.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y }
-      setDragKind('pan')
-      setSelectedNodeId(null)
-      setSelectedEdgeId(null)
-    },
-    [view.x, view.y],
-  )
-
-  // ── Глобальные move/up на время любого перетаскивания ─────────────────
+  // ── Глобальные move/up на время перетаскивания узла или связи ─────────
   useEffect(() => {
     if (dragKind === 'none') return
 
@@ -187,8 +166,6 @@ export function WorkflowBuilder() {
       if (drag.kind === 'node') {
         const world = toWorld(e.clientX, e.clientY)
         patchNode(drag.id, { x: Math.round(world.x - drag.offsetX), y: Math.round(world.y - drag.offsetY) })
-      } else if (drag.kind === 'pan') {
-        setView((v) => ({ ...v, x: drag.origX + (e.clientX - drag.startX), y: drag.origY + (e.clientY - drag.startY) }))
       } else if (drag.kind === 'connect') {
         setConnectPointer(toWorld(e.clientX, e.clientY))
       }
@@ -224,30 +201,6 @@ export function WorkflowBuilder() {
     }
   }, [dragKind, toWorld, patchNode, graph.nodes])
 
-  // ── Зум колесом (к точке под курсором) ────────────────────────────────
-  const onWheel = useCallback(
-    (e: React.WheelEvent) => {
-      const rect = canvasRef.current?.getBoundingClientRect()
-      const px = e.clientX - (rect?.left ?? 0)
-      const py = e.clientY - (rect?.top ?? 0)
-      setView((v) => {
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
-        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor))
-        // Сохраняем точку под курсором на месте при масштабировании.
-        const wx = (px - v.x) / v.zoom
-        const wy = (py - v.y) / v.zoom
-        return { zoom, x: px - wx * zoom, y: py - wy * zoom }
-      })
-    },
-    [],
-  )
-
-  const worldStyle = { transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }
-  const gridStyle = {
-    backgroundPosition: `${view.x}px ${view.y}px, ${view.x}px ${view.y}px`,
-    backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px, ${24 * view.zoom}px ${24 * view.zoom}px`,
-  }
-
   const rubber =
     dragKind === 'connect' && connectPointer
       ? (() => {
@@ -255,6 +208,38 @@ export function WorkflowBuilder() {
           return source ? edgePath(outPort(source), connectPointer) : null
         })()
       : null
+
+  const edgesSvg = (
+    <>
+      <defs>
+        <marker id="wfb-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--border-strong)" />
+        </marker>
+      </defs>
+      {graph.edges.map((edge) => {
+        const from = nodeById.get(edge.from)
+        const to = nodeById.get(edge.to)
+        if (!from || !to) return null
+        const d = edgePath(outPort(from), inPort(to))
+        const isSel = edge.id === selectedEdgeId
+        return (
+          <g key={edge.id} data-gc-node="true">
+            <path
+              className="wfb__edge-hit"
+              d={d}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                setSelectedEdgeId(edge.id)
+                setSelectedNodeId(null)
+              }}
+            />
+            <path className={isSel ? 'wfb__edge wfb__edge--selected' : 'wfb__edge'} d={d} markerEnd="url(#wfb-arrow)" />
+          </g>
+        )
+      })}
+      {rubber && <path className="wfb__rubber" d={rubber} />}
+    </>
+  )
 
   return (
     <div className="wfb">
@@ -302,92 +287,54 @@ export function WorkflowBuilder() {
           </div>
         </header>
 
-        <div
+        <GraphCanvas
           ref={canvasRef}
-          className={dragKind === 'pan' ? 'wfb__canvas wfb__canvas--panning' : 'wfb__canvas'}
-          style={gridStyle}
-          onPointerDown={onCanvasPointerDown}
-          onWheel={onWheel}
+          bounds={bounds}
+          autoFit={false}
+          minZoom={0.35}
+          maxZoom={2}
+          ariaLabel="Канвас воркфлоу: колесо — масштаб, перетаскивание фона — сдвиг, F — вписать"
+          className="wfb__canvas"
+          svg={edgesSvg}
+          onBackgroundPointerDown={() => {
+            setSelectedNodeId(null)
+            setSelectedEdgeId(null)
+          }}
         >
-          {/* Слой связей */}
-          <svg className="wfb__edges" style={worldStyle}>
-            <defs>
-              <marker
-                id="wfb-arrow"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
+          {graph.nodes.map((node) => {
+            const meta = NODE_META[node.type]
+            const cls =
+              node.id === selectedNodeId
+                ? 'wfb__node wfb__node--selected'
+                : dragKind === 'node' && (dragRef.current as { id?: string }).id === node.id
+                  ? 'wfb__node wfb__node--dragging'
+                  : 'wfb__node'
+            return (
+              <div
+                key={node.id}
+                className={cls}
+                data-gc-node="true"
+                style={{ left: node.x, top: node.y }}
+                onPointerDown={(e) => onNodePointerDown(e, node)}
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--border-strong)" />
-              </marker>
-            </defs>
-            {graph.edges.map((edge) => {
-              const from = nodeById.get(edge.from)
-              const to = nodeById.get(edge.to)
-              if (!from || !to) return null
-              const d = edgePath(outPort(from), inPort(to))
-              const isSel = edge.id === selectedEdgeId
-              return (
-                <g key={edge.id}>
-                  <path
-                    className="wfb__edge-hit"
-                    d={d}
-                    onPointerDown={(e) => {
-                      e.stopPropagation()
-                      setSelectedEdgeId(edge.id)
-                      setSelectedNodeId(null)
-                    }}
-                  />
-                  <path
-                    className={isSel ? 'wfb__edge wfb__edge--selected' : 'wfb__edge'}
-                    d={d}
-                    markerEnd="url(#wfb-arrow)"
-                  />
-                </g>
-              )
-            })}
-            {rubber && <path className="wfb__rubber" d={rubber} />}
-          </svg>
-
-          {/* Слой узлов */}
-          <div className="wfb__world" style={worldStyle}>
-            {graph.nodes.map((node) => {
-              const meta = NODE_META[node.type]
-              const cls =
-                node.id === selectedNodeId
-                  ? 'wfb__node wfb__node--selected'
-                  : dragKind === 'node' && (dragRef.current as { id?: string }).id === node.id
-                    ? 'wfb__node wfb__node--dragging'
-                    : 'wfb__node'
-              return (
-                <div
-                  key={node.id}
-                  className={cls}
-                  style={{ left: node.x, top: node.y }}
-                  onPointerDown={(e) => onNodePointerDown(e, node)}
-                >
-                  <div className="wfb__node-head" style={{ background: meta.color }}>
-                    {meta.label}
-                  </div>
-                  <div className="wfb__node-title">{node.title || '—'}</div>
-                  <span className="wfb__port wfb__port--in" title="Вход" />
-                  <span
-                    className={
-                      dragKind === 'connect' && (dragRef.current as { from?: string }).from === node.id
-                        ? 'wfb__port wfb__port--out wfb__port--active'
-                        : 'wfb__port wfb__port--out'
-                    }
-                    title="Выход — тяните к другому узлу"
-                    onPointerDown={(e) => onPortPointerDown(e, node)}
-                  />
+                <div className="wfb__node-head" style={{ background: meta.color }}>
+                  {meta.label}
                 </div>
-              )
-            })}
-          </div>
-        </div>
+                <div className="wfb__node-title">{node.title || '—'}</div>
+                <span className="wfb__port wfb__port--in" title="Вход" />
+                <span
+                  className={
+                    dragKind === 'connect' && (dragRef.current as { from?: string }).from === node.id
+                      ? 'wfb__port wfb__port--out wfb__port--active'
+                      : 'wfb__port wfb__port--out'
+                  }
+                  title="Выход — тяните к другому узлу"
+                  onPointerDown={(e) => onPortPointerDown(e, node)}
+                />
+              </div>
+            )
+          })}
+        </GraphCanvas>
       </section>
 
       {/* ── Инспектор ───────────────────────────────────────────────── */}
