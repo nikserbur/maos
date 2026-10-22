@@ -133,7 +133,10 @@ export interface PriceScenario {
   mode?: string; inflation?: string; fx?: string; demand?: string
   volatility?: string; months?: string
   plan_id?: string; start_date?: string; end_date?: string
+  /** @deprecated волна M: ползунки приняты, но в расчёте не используются (паспорт r1.50–r1.53). */
   sanctions?: string; tax_change?: string; energy?: string; logistics?: string; key_rate?: string
+  /** Волна M: режим макро-генератора (JSON-строка MacroMode или 'base'). */
+  macro_mode?: string
   created_at: string
   distributions?: PriceDistribution[]
   overrides?: ScenarioOverride[]
@@ -144,9 +147,80 @@ export interface ScenarioPayload {
   mode?: string; inflation?: number; fx?: number; demand?: number
   volatility?: number; months?: number
   plan_id?: string; start_date?: string; end_date?: string
+  /** @deprecated волна M: не используются в расчёте. */
   sanctions?: number; tax_change?: number; energy?: number; logistics?: number; key_rate?: number
+  /** Волна M: меню режимов/стрессов вместо ползунков (METHODOLOGY-V2 §2.6б). */
+  macro_mode?: MacroMode | MacroModeName
   distributions?: PriceDistribution[]
   overrides?: ScenarioOverride[]
+}
+
+/* ── Волна M: обученный макро-генератор (MacroSampler; rl/macro) ─────────────── */
+export type MacroModeName = 'base' | 'regime' | 'quantile' | 'episode' | 'iid_v063'
+/** Стресс §2.6б: режим навязан | квантиль Student-t | исторический эпизод. null → базовый. */
+export type MacroStress =
+  | { regime: number }
+  | { quantile_t: number }
+  | { episode: string; months?: number }
+  | null
+/** Базовая траектория [НОРМ]: инфляция flat | узлы ЦБ | пользовательская; ставка flat | пользовательская. */
+export interface MacroRef { cpi?: 'flat' | 'nodes' | number[]; key?: 'flat' | number[] }
+export interface MacroMode { mode: MacroModeName; stress?: MacroStress; ref?: MacroRef }
+export interface MacroRegime {
+  index: number; label: string; share_of_history: number; n_months: number; stationary_prob: number
+  resid_sd: { log_cpi_pp: number; real_key_pp: number; log_fx_pct: number }
+  mean_duration_months: number; months: string[]; stay_prob: number; stay_prob_block: number
+}
+export interface MacroLastObs { month: string; cpi_yoy_pp: number; key_pp: number; usd_rub: number }
+/** GET /macro/regimes */
+export interface MacroRegimes {
+  k: number; block_months: number; regimes: MacroRegime[]; transition: number[][]; crisis_index: number
+  p_last: number[]; note: string; last_obs: MacroLastObs; stress_quantiles: number[]; episodes_available: [string, string]
+}
+export interface MacroHoldoutVar {
+  coverage80: number; coverage90: number; mean_CRPS: number; mean_CRPS_persistence: number; mean_CRPS_fixed4?: number
+  rmse_mean: number; rmse_persistence: number; PIT_histogram10: number[]
+}
+/** GET /macro/summary — данные, выбор (R, b), таблица CRPS, отложенное покрытие, хвосты. */
+export interface MacroSummary {
+  schema: string; trained_at: string; data: { source: string; n: number; first: string; last: string; synthetic: number }
+  features: string[]; regimes: number; block_months: number; rank: number; n_resid: number
+  ridge: number; spectral_radius: number; fx_trend: number[]; sigma_bb: Record<string, number | string>
+  selection: { choice: { regimes: number; block_months: number; joint_standardized_CRPS_13months: number; naive_persistence_joint_CRPS: number; n_validation_targets: number }
+               grid: Array<{ regimes: number; block_months: number; joint_standardized_CRPS_13months: number; per_variable_CRPS: number[] }>
+               train_end: string; validation_targets: string; criterion: string }
+  holdout?: { n: number; horizon_months: number; start_target: string; variables: Record<'cpi_yoy_pp' | 'key_pp' | 'usd_rub', MacroHoldoutVar>
+              flags: { threshold: number; undercoverage80: string[]; note: string }; caveat: string }
+  last_obs: MacroLastObs; usd_inflation: number; status: string
+}
+export interface MacroSampleParams {
+  n?: number; seed?: number; horizon_weeks?: number; horizon_months?: number; paths?: number
+  stress?: MacroStress; ref?: MacroRef
+}
+export interface MacroQuantiles { p05: number[]; p50: number[]; p95: number[]; mean: number[] }
+export interface MacroSeriesQuantiles { cpi: MacroQuantiles; key: MacroQuantiles; fx: MacroQuantiles }
+export interface MacroPath {
+  id: number; regime: number[]
+  monthly: { cpi: number[]; key: number[]; fx: number[] }
+  weekly: { cpi: number[]; key: number[]; fx: number[] } | null
+}
+/** POST /macro/sample — слово «прогноз» допустимо только при is_forecast (базовый режим). */
+export interface MacroSampleResult {
+  n: number; seed: number; horizon_weeks: number; months: number
+  mode: MacroModeName; stress: MacroStress; is_forecast: boolean; label: string
+  ref: { cpi: number[]; key: number[] }; regime_share: number[]
+  monthly: MacroSeriesQuantiles; weekly: MacroSeriesQuantiles | null
+  paths: MacroPath[]; sigma_bb_fx: number
+  streams: { macro: [number, number]; bridge: [number, number] }
+  last_obs: MacroLastObs; ms: number
+}
+/** Блок macro в ответе /optimize: что генератор сделал со сценариями (§2.4). */
+export interface OptMacroInfo {
+  available: boolean; on: boolean; mode: MacroModeName; stress: MacroStress; ref: MacroRef | null
+  months: number; weeks: number; regime_share: number[]
+  streams: { macro: [number, number]; bridge: [number, number] }
+  pass_through: { fx_product: number; fx_raw: number; cpi: number; conv_cpi: number; logistics_fx: number; logistics_cpi: number; status: string }
+  factor_sd: number
 }
 
 /* ── Результат робастной оптимизации (зеркало Optimizer.cpp) ──────────────── */
@@ -190,6 +264,8 @@ export interface OptResult {
   tail_uplift?: boolean
   /** Волна F: CVaR-LP с кассой (cash:true / POST /optimize/cash). */
   cash_lp?: CashLpResult
+  /** Волна M: макро-генератор в этом прогоне (режим, доли режимов, pass-through, потоки CRN). */
+  macro?: OptMacroInfo
 }
 export interface OptimizeParams {
   scenario_id?: string; objective?: string; samples?: number
@@ -201,6 +277,10 @@ export interface OptimizeParams {
   /** Волна F: CVaR-LP с кассой (METHODOLOGY-V2 §5.2) → поле cash_lp в ответе. */
   cash?: boolean; beta?: number; l_min?: number; financing_stage?: 'recourse' | 'first'
   horizon_weeks?: number; cash_samples?: number; schedule_ref_id?: string; pol_curve?: boolean
+  /** Волна M: режим генератора (иначе — из сценария macro_mode, иначе base); 'iid_v063' — прежний i.i.d. фактор (только для E1). */
+  macro_mode?: MacroMode | MacroModeName; macro_stress?: MacroStress; macro_ref?: MacroRef
+  /** E1: оценить заданный план {product_id: qty} через водопад без решения LP → cash_lp.fixed_portfolio. */
+  eval_portfolio?: Record<string, number>
 }
 
 /* ── Волна F: денежный слой (fin_params, паспорт, CVaR-LP с кассой) ──────── */
@@ -263,6 +343,15 @@ export interface CashLpResult extends CashLpSummary {
   pol_curve?: PolPoint[]
   unconstrained: CashLpSummary
   waterfall: { lp_recourse: CashWaterfallKpi; rule: CashWaterfallKpi }
+  /** Волна M: источник ставки линии по сценарию/неделе (MacroSampler | fin_params) и её квантили по неделям. */
+  key_rate?: { source: 'MacroSampler' | 'fin_params'; annual?: PeriodQuantiles | null }
+  /** E1 (eval_portfolio): заданный план, валовые метрики и водопад по правилу; per_scenario — для парного бутстрепа. */
+  fixed_portfolio?: {
+    items: Array<{ product_id: string; qty: number }>
+    gross: { expected: number; cvar: number; worst: number }
+    waterfall_rule: CashWaterfallKpi
+    per_scenario: { profit: number[]; min_cash: number[]; breach: number[]; interest: number[] }
+  }
   total_ms: number
 }
 export interface OptRunSummary {
@@ -417,6 +506,8 @@ export interface ForecastParams {
   months?: number; inflation?: number; fx?: number; demand?: number
   volatility?: number; corr?: number; runs?: number; scenario_id?: string
   backtest?: number   // k месяцев истории для out-of-sample проверки (0 = выкл)
+  /** Волна M: стресс/опора для веера ключевой ставки (MacroSampler). */
+  macro_stress?: MacroStress; macro_ref?: MacroRef
 }
 export interface ForecastFit {
   data_driven: boolean; dist: 'normal' | 'laplace' | 't' | 'stable'; n_obs: number
@@ -438,6 +529,8 @@ export interface ForecastProduct {
   fit?: ForecastFit
   backtest?: ForecastBacktest
   contrib?: ForecastContrib
+  /** Волна M: веер ставки — из обученного генератора (synthetic=false) или синтетического macro_ts. */
+  synthetic?: boolean; source?: string; regimes?: number; stress?: MacroStress
 }
 export interface ForecastResult {
   months: number; inflation_monthly: number; fx: number; demand: number
@@ -445,6 +538,11 @@ export interface ForecastResult {
   inflation_index: number[]
   rate?: ForecastProduct | null
   products: ForecastProduct[]
+  /** Волна M (§3.3, R7): истории цен ts_data синтетические → бейдж «демонстрационные данные». */
+  synthetic: boolean; demo: boolean; note?: string
+  /** @deprecated поля-ползунки, которые больше не участвуют в расчёте. */
+  deprecated_fields: string[]
+  macro: { available: boolean; error: string }
 }
 
 export const api = {
@@ -593,6 +691,13 @@ export const api = {
   },
 
   forecast: (p: ForecastParams) => post<ForecastResult>('/forecast', p),
+
+  /** Волна M: обученный макро-генератор (режимы вместо ползунков; §2.6б). */
+  macro: {
+    regimes: ()                      => get<MacroRegimes>('/macro/regimes'),
+    summary: ()                      => get<MacroSummary>('/macro/summary'),
+    sample:  (p: MacroSampleParams)  => post<MacroSampleResult>('/macro/sample', p),
+  },
 
   calendar: {
     get:    ()                       => get<WorkCalendar>('/calendar'),

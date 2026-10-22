@@ -32,13 +32,21 @@
 
 | Источник неопределённости | Где задаётся | Распределение |
 |---|---|---|
-| **Цена продукции** `π_p` | сценарий → `price_distributions` | normal / lognormal / triangular / uniform |
+| **Макро-условия** `(i_t, S_t, π_t)` — ключевая ставка, курс USD/RUB, инфляция | обученный генератор `MacroSampler` (волна M, [METHODOLOGY-V2 §2](METHODOLOGY-V2.md)); режим/стресс — `price_scenarios.macro_mode` | VAR(1)+SVD+HMM (2 режима) + эмпирические блоки остатков cbr.ru [О]; опора [НОРМ] |
+| **Цена продукции** `π_p` | сценарий → `price_distributions` | normal / lognormal / triangular / uniform; общий фактор `F_i` — первая SVD-компонента макро-инноваций (вместо i.i.d. `M` v0.63), `β_p` — как прежде; pass-through `exp(b^FX·Δln S̄ + b^π·Π̄)` [К] |
 | **Время операции** `t_o` | НСИ-операция `t_opt/t_norm/t_pess` | PERT-треугольное (β-PERT) |
 | **Риск операции** `r_o` | НСИ-операция `risk_coef` | Бернулли(r) → множитель брака/переделки |
-| **Цена закупки сырья** `b_p` | изделие `base_cost` (± вариация) | normal (опц.) |
+| **Цена закупки сырья** `b_p` | изделие `base_cost` (± вариация) | логнормаль CV 0.2 + скачок × pass-through курса/инфляции (`macro.pt_fx_raw`, `macro.pt_cpi`) [К] |
+| **Конверсионные затраты** (труд, энергия, прочее) | ставка машино-часа | индексация на накопленную инфляцию горизонта (`macro.pt_conv_cpi`) [К] |
+| **Ставка кредитной линии** `r_{i,t}` | `MacroSampler` → `CashLp.rate[i][t]`, водопад `PeriodInput.keyRate` | `i_{i,t} + spread` по сценарию и неделе (ступень по месяцам, `macro.rate_lag = 0` [НОРМ]) |
 | **Спрос** `D_p` | изделие `demand_max` (± вариация) | усечённое normal (опц.) |
 
-Каждый **прогон** Монте-Карло — это вектор реализаций `ω = (π, t, r, b, D)`.
+Каждый **прогон** Монте-Карло — это вектор реализаций `ω = (макро-путь, π, t, r, b, D)`; макро-путь
+сценария `i` берётся из отдельного потока CRN `[seed, 871]` (мост недель — `[seed, 872]`) и **общий для всех
+сравниваемых портфелей/планов**. Меню §2.6б вместо ползунков `sanctions/energy/logistics/key_rate`
+(поля приняты, но в расчёте не участвуют — паспорт r1.50–r1.53): `base` (прогноз), `{"regime": h}`,
+`{"quantile_t": q}`, `{"episode": "YYYY-MM"}`; `iid_v063` — прежний i.i.d. фактор (только для сравнения E1).
+Отчёт волны M — [research/M1-macro-wave.md](research/M1-macro-wave.md).
 
 ## 2. Себестоимость (cost model) — снизу вверх
 
@@ -220,11 +228,15 @@ ID) без потери.
 |---|---|
 | `GET/POST /api/scenarios` | сценарии внешних условий (+ вложенные `price_distributions`) |
 | `GET /api/scenarios/:id` | сценарий с распределениями |
-| `POST /api/optimize` | запуск: `{scenario_id, objective, samples, alpha, lambda, seed, horizon_hours, apply_feedback?, tail_uplift?, cash?}` → прогон с метриками, портфелями, гистограммой; **persist** в `optimization_runs` (с `feedback_hash`, `feedback_applied`) |
+| `POST /api/optimize` | запуск: `{scenario_id, objective, samples, alpha, lambda, seed, horizon_hours, apply_feedback?, tail_uplift?, cash?, macro_mode?}` → прогон с метриками, портфелями, гистограммой, блоком `macro` (режим, доли режимов, pass-through, потоки CRN); **persist** в `optimization_runs` (с `feedback_hash`, `feedback_applied`) |
 | `POST /api/optimize/cash` | то же + **CVaR-LP с кассой** (METHODOLOGY-V2 §5.2; `cash:true`): `{beta, l_min, financing_stage: recourse|first, horizon_weeks, cash_samples, schedule_ref_id, pol_curve}` → объект `cash_lp`: портфель, транши (квантили по периодам), E[Π], CVaR(Π), CFaR, двойственные (мощности, ликвидность, лимит), кривая цены ликвидности с парным бутстреп-ДИ, чувствительность «график заранее», OOS, водопад §4.3 (P(разрыв) с интервалом Уилсона, DSCR, тождества) |
 | `GET /api/optimize/runs`, `/:id` | история прогонов и результат |
 | `GET/PUT /api/fin_params` | финансовые параметры водопада/LP (ставки налогов с датой, ядро DSO, DPO, лимит, спред, β, L_min); ед. денег = ед. цен НСИ |
 | `GET /api/passport`, `PUT /api/passport/:code` | паспорт параметров: статус Н/О/К/НОРМ/UI/техн./синтетика, источник, место в коде; статус «О» — только с `source` и `n_obs` |
+| `GET /api/macro/regimes` | волна M: режимы HMM обученного генератора (доля истории, σ остатков, длительность, матрица переходов, индекс «кризиса», сетка квантилей стресса, доступные эпизоды) |
+| `GET /api/macro/summary` | данные cbr.ru (n, даты, SHA256), выбор (R, b), таблица CRPS, отложенное покрытие 80/90 % с флагами недопокрытия, хвосты |
+| `POST /api/macro/sample` | `{n, seed, horizon_weeks|horizon_months, stress, ref, paths}` → квантили по неделям/месяцам (π, ставка, курс), доли режимов, первые пути; `is_forecast` только для `base` |
+| `POST /api/optimize[/cash]` (доп.) | `macro_mode` (строка или `{mode, stress, ref}`), `macro_stress`, `macro_ref`; `eval_portfolio: {product_id: qty}` → `cash_lp.fixed_portfolio` (E1: один план через водопад, пер-сценарные Π/C_min/разрыв) |
 | `GET /api/scheme` | 3D-схема как единый сохранённый агрегат (узлы+связи+мета) |
 
 Типы фронтенда — `src/domain/optimization.ts` (зеркало DTO). Экран «Оптимизация»

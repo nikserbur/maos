@@ -132,6 +132,34 @@ const Row kCode[] = {
   { "kpi.debt_peak", "KPI", "Светофор пика долга (доля лимита)", "0.70 / 0.90", "доля", "К", "§6.0", "fin_params (светофоры)" },
 };
 
+/* Волна M: обученный макро-генератор (блок [1]) и pass-through §2.4. Статусы по §10.2:
+   генератор — О (cbr.ru, n = 157, валидация CRPS), опора — НОРМ, эластичности предприятия — К (Р8). */
+const Row kMacro[] = {
+  { "macro.generator", "макро", "VAR(1)+SVD+HMM+блоки: A, Σ, V, P_HMM, μ_HMM, b, число режимов", "2 режима, блок 4 мес, ρ(A)=0.949, ранг 3", "—", "О", "cbr.ru 2013-09…2026-09, n_obs=157; выбор по CRPS на 24 целях 2021–2022 (rl/macro/params/learning.json)", "rl/macro/fit.py; MacroSampler.cpp" },
+  { "macro.selection_crps", "макро", "Совместный стандартизованный CRPS выбранной модели / персистентности", "0.976 / 1.141", "—", "О", "24 перекрывающихся цели, 384 пути; learning.json", "rl/macro/anchored.py:select" },
+  { "macro.holdout_coverage80", "макро", "Покрытие 80 % полос на отложенных месяцах 2023-01…2026-09, h = 12", "π 0.62 · ставка 0.40 · курс 0.76 (n = 45)", "доля", "О", "learning.json holdout; недопокрытие ставки раскрыто (хвост 2023–24 вне носителя)", "rl/macro/validate.py" },
+  { "macro.sigma_bb_fx", "макро", "σ броуновского моста курса (месяц → неделя)", "6.89", "%-лог", "О", "дневной курс cbr.ru 2013–2026, 156 месяцев", "rl/macro/data.py:_bridge_sigma; MacroSampler.cpp:to_weeks" },
+  { "macro.sigma_bb_key", "макро", "σ моста ключевой ставки", "0 (ступень)", "—", "Н", "ставка меняется только в даты заседаний", "MacroSampler.cpp:to_weeks" },
+  { "macro.sigma_bb_cpi", "макро", "σ моста инфляции", "0 (линейно)", "—", "НОРМ", "дневного ряда нет — помечено", "MacroSampler.cpp:to_weeks" },
+  { "macro.ref_cpi", "макро", "Опора инфляции π_ref", "flat = последнее наблюдение; nodes = узлы прогноза ЦБ от 24.07.2026", "% г/г", "НОРМ", "reference_nodes.json (сценарная опора, не распределение)", "MacroSampler.cpp:reference" },
+  { "macro.ref_key", "макро", "Опора ключевой ставки i_ref", "flat = последнее наблюдение (14.0)", "% год.", "НОРМ", "форвардные узлы ЦБ по ставке не загружены", "MacroSampler.cpp:reference" },
+  { "macro.usd_inflation", "макро", "π_USD ППС-опоры курса", "0.02", "год.", "НОРМ", "RJMF §6.3", "MacroSampler.cpp:to_levels" },
+  { "macro.seed_streams", "макро", "Потоки CRN генератора", "[seed,871] макро · [seed,872] мост; 3841 равномерных/id", "—", "техн.", "RJMF §6.1: путь id не зависит от n и пакета", "MacroSampler.cpp:sample_months" },
+  { "macro.pt_fx_product", "pass-through", "b^FX изделий: Δln p = … + b^FX·Δln S", "0.10", "—", "К", "истории цен предприятия нет → доля импортной составляющей (§2.4); цель: О (HAC-регрессия)", "Optimizer.cpp:genScenarios" },
+  { "macro.pt_fx_raw", "pass-through", "b^FX покупного сырья", "0.30", "—", "К", "структура затрат (доля импорта) — НСИ без поля; цель: О", "Optimizer.cpp:genScenarios" },
+  { "macro.pt_cpi", "pass-through", "b^π цен изделий и сырья (на накопленную инфляцию горизонта)", "1.0", "—", "К", "полная индексация; цель: О", "Optimizer.cpp:genScenarios" },
+  { "macro.pt_conv_cpi", "pass-through", "Индексация конверсионных затрат (труд, энергия, прочее) на инфляцию", "1.0", "—", "К", "§2.4: тариф на энергию — ряда нет → индекс по инфляции", "Optimizer.cpp:genScenarios" },
+  { "macro.pt_energy", "pass-through", "Эластичность тарифа на энергию τ_t к инфляции", "1.0", "—", "К", "ряда тарифа нет (§2.1 опционально)", "Optimizer.cpp:genScenarios" },
+  { "macro.pt_logistics_fx", "pass-through", "Эластичность логистического индекса ℓ_t к курсу", "0.30", "—", "К", "ряда нет; применяется к Pay^log (в демо = 0)", "CashOptimize.cpp:waterfall_eval" },
+  { "macro.pt_logistics_cpi", "pass-through", "Эластичность ℓ_t к инфляции", "1.0", "—", "К", "то же", "CashOptimize.cpp:waterfall_eval" },
+  { "macro.gamma_F", "pass-through", "γ_s — загрузка цены на общий макро-фактор F (первая SVD-компонента)", "β_s из price_distributions (сохраняется)", "—", "К", "§2.4: F заменяет i.i.d. фактор M v0.63; β — как в сценарии", "Optimizer.cpp:genScenarios" },
+  { "macro.rate_lag", "pass-through", "Лаг ставки кредита за ключевой l_r", "0", "нед", "НОРМ", "кредитного договора нет; r_t = i_t + spread", "CashOptimize.cpp:cash_compare" },
+  { "macro.mode_default", "макро", "Режим генератора по умолчанию", "base (p_last, P_HMM, эмпирические блоки)", "—", "НОРМ", "§2.6б; стрессы — не прогноз", "main.cpp:/api/optimize" },
+};
+
+/* Волна M: UI-коэффициенты ползунков больше не участвуют в расчёте (R1 §2.11, §2.5). */
+const char* kDeprecatedUi[] = { "r1.50", "r1.51", "r1.52", "r1.53", "r1.58" };
+
 const char* kFinColumns[] = {
   "c0", "c_min", "credit_limit", "d0", "key_rate", "spread", "overdraft_spread", "overdraft_limit",
   "tau_v", "tau_p", "tau_soc", "property_tax_weekly", "payroll_fixed_weekly", "repair_budget_weekly",
@@ -196,6 +224,21 @@ void migrate(Database& db) {
   db.exec_safe("ALTER TABLE optimization_runs ADD COLUMN feedback_applied INTEGER NOT NULL DEFAULT 0");
   seed_rows(db, kFinance, sizeof(kFinance) / sizeof(kFinance[0]));
   seed_rows(db, kCode, sizeof(kCode) / sizeof(kCode[0]));
+  seed_rows(db, kMacro, sizeof(kMacro) / sizeof(kMacro[0]));
+  for (const char* code : kDeprecatedUi)
+    db.exec("UPDATE param_passport SET note='подобрано для UI — не используется в расчёте (волна M: заменено MacroSampler)', "
+            "updated_at=datetime('now') WHERE code=? AND COALESCE(note,'') NOT LIKE 'подобрано для UI%'", { code });
+  db.exec("UPDATE param_passport SET note='synthetic=1 (macro_ts); прогноз ставки — MacroSampler по cbr.ru', "
+          "updated_at=datetime('now') WHERE code='r1.61' AND COALESCE(note,'')=''");
+  db.exec("UPDATE param_passport SET note='synthetic=1 (ts_data); запрет в обучении/валидации', "
+          "updated_at=datetime('now') WHERE code IN ('r1.59','r1.60') AND COALESCE(note,'')=''");
+}
+
+double number(Database& db, const std::string& code, double def) {
+  try {
+    json r = db.query_one("SELECT value FROM param_passport WHERE code=?", { code });
+    return jnum(r, "value", def);
+  } catch (...) { return def; }
 }
 
 json fin_params_json(Database& db) {

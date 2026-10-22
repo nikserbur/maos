@@ -1,0 +1,26 @@
+[
+  {
+    "file": "inflation.html",
+    "url": "https://www.cbr.ru/hd_base/infl/?UniDbQuery.Posted=True&UniDbQuery.From=01.01.2013&UniDbQuery.To=22.10.2026",
+    "retrieval_date": "2026-10-22",
+    "bytes": 139169,
+    "sha256": "d1e15b8083b15ad021b5827ee6508098535a8ee4216eff365dcbd97a55af3643",
+    "vintage": "revised downloadable history, not real-time vintage"
+  },
+  {
+    "file": "keyrate.html",
+    "url": "https://www.cbr.ru/hd_base/keyrate/?UniDbQuery.Posted=True&UniDbQuery.From=01.01.2013&UniDbQuery.To=22.10.2026",
+    "retrieval_date": "2026-10-22",
+    "bytes": 347772,
+    "sha256": "249a2ea746a07a28f0b9fcc0f04b8770c43c53e36bfc73bab02cd0f78b10b932",
+    "vintage": "revised downloadable history, not real-time vintage"
+  },
+  {
+    "file": "fx_usd.xml",
+    "url": "https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=01/01/2013&date_req2=22/10/2026&VAL_NM_RQ=R01235",
+    "retrieval_date": "2026-10-22",
+    "bytes": 405178,
+    "sha256": "531e9bec2cff760d3583b55400ab01ab32cc81f180beb50e57c43efb4a83876b",
+    "vintage": "revised downloadable history, not real-time vintage"
+  }
+]

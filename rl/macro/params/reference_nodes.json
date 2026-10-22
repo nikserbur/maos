@@ -1,0 +1,21 @@
+{
+  "schema": "maos.macro_reference/1",
+  "status": "НОРМ — датированный прогноз Банка России (сценарная опора, не распределение)",
+  "provenance": {
+    "official_full_forecast_date": "2026-07-24",
+    "commentary_date": "2026-08-05",
+    "source_file": "cbr_forecast_graphs_20260805.xlsx (Табл 3), https://www.cbr.ru/Content/Document/File/194307/commet_graph_05082026.xlsx",
+    "source_xlsx_sha256": "983cf6b5dbd1575e44a72164d5ff86551dfb83497d75a346ab3d7e2bfda57b0e",
+    "copied_from": "RJMF package 2026-10-21, research/revision/data/processed/official_cbr_forecast_nodes.json (Бураков 2026; RJMF 2026)",
+    "next_forecast_scheduled": "2026-10-23",
+    "note": "узлы интерполируются в ln(1+π/100); середина диапазона 6–7 % на 2026Q4 — исследовательская конвенция, не вероятностное распределение"
+  },
+  "usd_inflation_pct": 2.0,
+  "cpi_quarterly_nodes": [
+    {"period": "2026Q4", "month": "2026-12", "lower_pp": 6.0, "midpoint_pp": 6.5, "upper_pp": 7.0, "status": "official_forecast"},
+    {"period": "2027Q4", "month": "2027-12", "lower_pp": 4.0, "midpoint_pp": 4.0, "upper_pp": 4.0, "status": "official_forecast"},
+    {"period": "2028Q4", "month": "2028-12", "lower_pp": 4.0, "midpoint_pp": 4.0, "upper_pp": 4.0, "status": "official_forecast"},
+    {"period": "2029Q4", "month": "2029-12", "lower_pp": 4.0, "midpoint_pp": 4.0, "upper_pp": 4.0, "status": "official_forecast"}
+  ],
+  "key_rate": {"mode": "flat", "note": "плоская ставка = последнее наблюдение cbr.ru [НОРМ]; форвардные узлы ЦБ по ключевой ставке не загружены"}
+}

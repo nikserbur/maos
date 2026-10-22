@@ -16,6 +16,7 @@
  * «наивно лучшее» по матожиданию.
  */
 namespace maos {
+namespace macro { class MacroSampler; }
 
 using nlohmann::json;
 
@@ -54,6 +55,16 @@ struct OptimizeParams {
   int    cashSamples    = 0;          // 0 → fin_params.cash_samples (префикс CRN-выборки)
   std::string scheduleRefId;          // plans.id опорного расписания → профиль отгрузок φ_{s,t}
   bool   polCurve       = true;       // кривая цены ликвидности PoL(L) с бутстреп-ДИ
+  // Волна M (METHODOLOGY-V2 §2.4, §2.6б): обученный макро-генератор вместо i.i.d. фактора M и ползунков.
+  // Сценарий i получает ОДИН макро-путь (ставка, курс, инфляция) для всех сравниваемых портфелей (CRN);
+  // общий фактор цен F_i — первая SVD-компонента макро-инноваций; ставка кредита — по сценарию.
+  const macro::MacroSampler* macro = nullptr;   // nullptr → генератор не загружен → iid_v063 + предупреждение
+  std::string macroMode;              // "" → из сценария (macro_mode) → base; base|regime|quantile|episode|iid_v063
+  json macroStress;                   // {"regime":h} | {"quantile_t":q} | {"episode":"YYYY-MM","months":12}
+  json macroRef;                      // {"cpi":"flat|nodes|[…]","key":"flat|[…]"}
+  // E1 (§11.6 волна M): оценить ЗАДАННЫЙ план {product_id: qty} через водопад на тех же сценариях —
+  // без решения LP; ответ cash_lp.fixed_portfolio с пер-сценарными Π, C_min, разрыв (парный бутстреп снаружи).
+  json evalPortfolio;
 };
 
 /**

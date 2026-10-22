@@ -1,6 +1,8 @@
 #include "Optimizer.h"
 #include "CashOptimize.h"
 #include "ExactCvar.h"
+#include "MacroSampler.h"
+#include "Passport.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -220,7 +222,8 @@ double unit_cost(const Model& m, const std::string& pid,
                  const std::vector<double>& riskInfl,
                  const std::unordered_map<std::string, double>& matFactor,  // множитель цены сырья
                  std::unordered_map<std::string, double>& memo,
-                 std::unordered_set<std::string>& visiting, int depth = 0) {
+                 std::unordered_set<std::string>& visiting, int depth = 0,
+                 double convMul = 1.0) {                                     // индексация конверсии (волна M, §2.4)
   if (auto it = memo.find(pid); it != memo.end()) return it->second;
   if (depth > 48 || visiting.count(pid)) return 0;   // защита от циклов цепочки
   visiting.insert(pid);
@@ -240,9 +243,9 @@ double unit_cost(const Model& m, const std::string& pid,
       double proc = (t / 60.0) * (o.hourRate + o.laborRate)
                   + (o.setupRequired ? o.setupCost / std::max(1.0, p.batchSize) : 0.0)  // наладка — на партию
                   + o.cost;
-      c += proc * inf;
+      c += proc * inf * convMul;
       for (const OpInput& in : o.inputs)
-        c += in.qty * unit_cost(m, in.productId, realizedTime, riskInfl, matFactor, memo, visiting, depth + 1);
+        c += in.qty * unit_cost(m, in.productId, realizedTime, riskInfl, matFactor, memo, visiting, depth + 1, convMul);
     }
   visiting.erase(pid);
   memo[pid] = c;
@@ -610,15 +613,30 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   double horizon = p.horizonHours;
   double marketCorr = 0.5;            // взаимосвязь цен (общий рыночный фактор)
   std::string scenName = "Базовые цены НСИ";
+  std::string macroMode = p.macroMode;
+  json macroStress = p.macroStress, macroRef = p.macroRef;
   if (!p.scenarioId.empty()) {
     try {
       auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { p.scenarioId });
       scenName = str(sc, "name");
       if (horizon <= 0) horizon = num(sc, "horizon_hours", 720);
       marketCorr = num(sc, "market_corr", 0.5);
+      // Волна M: режим генератора из сценария (macro_mode — JSON), если не задан в запросе.
+      if (macroMode.empty() && !str(sc, "macro_mode").empty()) {
+        try {
+          json mm = json::parse(str(sc, "macro_mode"));
+          if (mm.is_string()) macroMode = mm.get<std::string>();
+          else if (mm.is_object()) {
+            macroMode = mm.value("mode", std::string("base"));
+            if (mm.contains("stress")) macroStress = mm["stress"]; else macroStress = mm;
+            if (mm.contains("ref")) macroRef = mm["ref"];
+          }
+        } catch (...) { macroMode = str(sc, "macro_mode"); }
+      }
     } catch (...) { warnings.push_back("Сценарий не найден — берутся базовые цены."); }
   }
   if (horizon <= 0) horizon = 720;
+  if (macroMode.empty()) macroMode = "base";
 
   // НСИ хранит спрос/ёмкость/конкурентов как ГОДОВЫЕ объёмы (год = 12 мес × 720 ч).
   // Планирование само «дисконтирует» их на горизонт: 6 мес → половина годового.
@@ -750,12 +768,61 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   std::vector<std::string> rawMats;
   for (auto& [id, pr] : m.prods) if (pr.purchased && pr.baseCost > 0) rawMats.push_back(id);
 
+  // ── Волна M: макро-пути сценариев (§2.4). Отдельный поток CRN [seed, 871]; сценарий i делит
+  // свой макро-путь между всеми сравниваемыми портфелями/планами. F_i — общий фактор цен
+  // (первая SVD-компонента макро-инноваций) вместо i.i.d. M; Δln S̄ и накопленная инфляция Π̄
+  // по горизонту — детерминированные pass-through множители с эластичностями [К] из паспорта.
+  struct MacroPaths {
+    bool on = false; int months = 0, weeks = 0;
+    std::vector<double> F, dlnS, cumPi, logIdx;          // по сценарию
+    std::vector<std::vector<double>> keyRate;            // N×T годовая
+    json regimeShare;
+  };
+  const int weeksT = std::max(1, (int)std::ceil(horizon / 168.0 - 1e-9));
+  const bool macroOn = p.macro != nullptr && macroMode != "iid_v063";
+  if (p.macro == nullptr && macroMode != "iid_v063")
+    warnings.push_back("Макро-генератор не загружен (rl/macro/params/macro_params.json) — цены по i.i.d. фактору v0.63, "
+                       "ставка — константа fin_params.");
+  const double ptFxProd = passport::number(db, "macro.pt_fx_product", 0.10), ptFxRaw = passport::number(db, "macro.pt_fx_raw", 0.30);
+  const double ptCpi = passport::number(db, "macro.pt_cpi", 1.0), ptConv = passport::number(db, "macro.pt_conv_cpi", 1.0);
+  const double ptLogFx = passport::number(db, "macro.pt_logistics_fx", 0.30), ptLogCpi = passport::number(db, "macro.pt_logistics_cpi", 1.0);
+  // Разрешение меню §2.6б: стресс задаёт режим; режим без параметров стресса → базовый.
+  const macro::Stress macroSt = macro::Stress::from_json(macroStress);
+  if (macroOn) macroMode = macroSt.mode;
+  auto genMacro = [&](unsigned seed, int n) {
+    MacroPaths mp;
+    if (!macroOn) return mp;
+    const macro::SampleResult r = p.macro->sample(n, seed, weeksT, 0, 0, macroSt, macro::Reference::from_json(macroRef));
+    mp.on = true; mp.months = r.months; mp.weeks = r.weeks;
+    mp.F = p.macro->common_factor(r.paths);
+    mp.keyRate.assign(n, std::vector<double>(weeksT, 0.0));
+    const double s0 = r.monthly.fx.empty() ? 1.0 : p.macro->params()["last_obs"]["usd_rub"].get<double>();
+    std::vector<int> share(std::max(1, p.macro->regimes()), 0); int total = 0;
+    for (int i = 0; i < n; ++i) {
+      double ds = 0, cum = 0, cumAvg = 0;
+      for (int w = 0; w < weeksT; ++w) {
+        ds += std::log(r.weekly.fx[i][w] / s0);
+        cum += r.weekly.cpi[i][w] / 52.0 / 100.0;          // π г/г, % → доля за неделю
+        cumAvg += cum;
+        mp.keyRate[i][w] = r.weekly.key[i][w] / 100.0;     // % годовых → доля
+      }
+      mp.dlnS.push_back(ds / weeksT); mp.cumPi.push_back(cumAvg / weeksT);
+      mp.logIdx.push_back(std::exp(ptLogFx * mp.dlnS.back() + ptLogCpi * mp.cumPi.back()));
+      for (int t = 0; t < r.months; ++t) { const int g = r.paths.regime[i][t]; if (g >= 0 && g < (int)share.size()) { ++share[g]; } ++total; }
+    }
+    mp.regimeShare = json::array();
+    for (size_t g = 0; g < share.size(); ++g) mp.regimeShare.push_back(total > 0 ? (double)share[g] / total : 0.0);
+    return mp;
+  };
+  const MacroPaths macroMain = genMacro(p.seed, N), macroOos = genMacro(p.seed + 9973u, N);
+
   // Генератор сценариев (цены + себестоимости) при заданном сиде. Вызывается
   // дважды: основная выборка И независимая out-of-sample проверка решения (SAA:
   // оценка на свежих сценариях выявляет переобучение портфеля под выборку).
   auto genScenarios = [&](unsigned seed, int n,
                           std::vector<std::vector<double>>& price,
-                          std::vector<std::vector<double>>& cost) {
+                          std::vector<std::vector<double>>& cost,
+                          const MacroPaths& mp) {
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> u01(0, 1);
     std::normal_distribution<double> nstd(0.0, 1.0);
@@ -786,12 +853,18 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       // Цены товарных изделий — КОРРЕЛИРОВАННО (гауссова копула): общий рыночный
       // шок M роднит цены, β_s задаёт силу связи. z_s = β_s·M + √(1−β_s²)·ε_s.
       // Корреляция цен s,t ≈ β_s·β_t — это и есть «анализ взаимосвязи цен».
-      double M = nstd(rng);
+      // Волна M: M := F_i из обученного генератора (i.i.d. розыгрыш остаётся в потоке — парное
+      // сравнение iid_v063 vs learned при тех же идиосинкратических числах, E1).
+      const double Miid = nstd(rng);
+      const double M = mp.on ? mp.F[i] : Miid;
+      const double ptPrice = mp.on ? std::exp(ptFxProd * mp.dlnS[i] + ptCpi * mp.cumPi[i]) : 1.0;
+      const double ptRaw   = mp.on ? std::exp(ptFxRaw  * mp.dlnS[i] + ptCpi * mp.cumPi[i]) : 1.0;
+      const double convMul = mp.on ? std::exp(ptConv * mp.cumPi[i]) : 1.0;
       for (size_t s = 0; s < S; ++s) {
         const PriceDist& pd = priceDist[m.sellables[s]];
         double eps = nstd(rng);
         double z = pd.beta * M + std::sqrt(std::max(0.0, 1.0 - pd.beta * pd.beta)) * eps;
-        price[i][s] = price_from_z(pd, z);
+        price[i][s] = price_from_z(pd, z) * ptPrice;
       }
       // Цена СЫРЬЯ — тоже стохастична и может СИЛЬНО вырасти: логнормальный множитель
       // (CV ~20%), коррелирован с рынком (β=√market_corr) + редкий скачок (Парето).
@@ -804,20 +877,20 @@ json run_optimization(Database& db, const OptimizeParams& p) {
           double f = std::exp(slRaw * zr - 0.5 * slRaw * slRaw);
           if (u01(rng) < 0.06)                          // редкий скачок цены сырья
             f *= 1.0 + std::min(2.5, std::pow(std::max(1e-9, 1.0 - u01(rng)), -1.0 / 2.0) - 1.0);
-          matFactor[mid] = f;
+          matFactor[mid] = f * ptRaw;
         }
       }
       // Себестоимость (мемоизация в пределах прогона).
       std::unordered_map<std::string, double> memo;
       for (size_t s = 0; s < S; ++s) {
         std::unordered_set<std::string> vis;
-        cost[i][s] = unit_cost(m, m.sellables[s], realizedTime, riskInfl, matFactor, memo, vis);
+        cost[i][s] = unit_cost(m, m.sellables[s], realizedTime, riskInfl, matFactor, memo, vis, 0, convMul);
       }
     }
   };
 
   std::vector<std::vector<double>> price, cost;
-  genScenarios(p.seed, N, price, cost);
+  genScenarios(p.seed, N, price, cost, macroMain);
 
   // Средние маржа/себестоимость (для генерации кандидатов).
   std::vector<double> meanCost(S, 0), meanPrice(S, 0), stdMargin(S, 0);
@@ -1107,7 +1180,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
   json oosJson = nullptr;
   std::vector<std::vector<double>> price2, cost2;   // нужны и точной модели (OOS)
   {
-    genScenarios(p.seed + 9973u, N, price2, cost2);
+    genScenarios(p.seed + 9973u, N, price2, cost2, macroOos);
     const Portfolio& xr = cand[robustIdx];
     std::vector<double> mul(S);
     for (size_t s = 0; s < S; ++s) mul[s] = priceMul(xr[s], s);
@@ -1180,6 +1253,13 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     {"stage1_calibrated", calibrated},   // изделий с recourse-поправкой из расписания
     {"feedback", { {"applied", p.applyFeedback}, {"hash", fbHash}, {"rows", fbRows} }},   // R5
     {"tail_uplift", p.tailUplift},       // R4: хвостовая поправка мощности (tail_uplift)
+    {"macro", { {"available", p.macro != nullptr}, {"on", macroOn}, {"mode", macroMode},
+                {"stress", macroStress}, {"ref", macroRef}, {"months", macroMain.months}, {"weeks", macroMain.weeks},
+                {"regime_share", macroMain.regimeShare}, {"streams", { {"macro", { (int)p.seed, 871 }}, {"bridge", { (int)p.seed, 872 }} }},
+                {"pass_through", { {"fx_product", ptFxProd}, {"fx_raw", ptFxRaw}, {"cpi", ptCpi}, {"conv_cpi", ptConv},
+                                   {"logistics_fx", ptLogFx}, {"logistics_cpi", ptLogCpi}, {"status", "К (паспорт macro.pt_*)"} }},
+                {"factor_sd", [&]{ if (!macroOn) return 0.0; double s1 = 0, s2 = 0; for (double f : macroMain.F) { s1 += f; s2 += f * f; }
+                                   const double mu = s1 / N; return std::sqrt(std::max(0.0, s2 / N - mu * mu)); }()} }},
     {"robust", robustPf}, {"expected", expPf},
     {"price_of_robustness", priceOfRobustness},
     {"oos", oosJson},
@@ -1214,6 +1294,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       ci.price = price; ci.cost = cost; ci.price2 = price2; ci.cost2 = cost2;
       ci.market.resize(S); ci.meanPrice = meanPrice; ci.maxShare = maxShare;
       ci.enforceShare = bestRobust > -1e299; ci.horizonHours = horizon;
+      ci.keyRate = macroMain.keyRate; ci.logisticsIndex = macroMain.logIdx;   // волна M: ставка по сценарию
       for (size_t s = 0; s < S; ++s) {
         const Prod& pr = m.prods.at(m.sellables[s]);
         ci.market[s].capM = capOf(s); ci.market[s].competitor = pr.competitorSupply;

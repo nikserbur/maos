@@ -33,5 +33,7 @@ cash::FinParams load_fin_params(Database& db);
 json passport_list(Database& db);
 /** Обновить статус/источник/значение одной записи — PUT /api/passport/:code. */
 json passport_update(Database& db, const std::string& code, const json& body);
+/** Числовое значение записи паспорта (волна M: эластичности pass-through macro.*); def — если нет/не число. */
+double number(Database& db, const std::string& code, double def);
 
 }  // namespace maos::passport

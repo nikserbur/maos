@@ -9,6 +9,7 @@
  */
 #include "Database.h"
 #include "Finance.h"
+#include "MacroSampler.h"
 #include "Optimizer.h"
 #include "Passport.h"
 #include "PlanMath.h"
@@ -32,6 +33,7 @@
 #include <chrono>
 #include <mutex>
 #include <filesystem>
+#include <memory>
 
 using json = nlohmann::json;
 
@@ -76,6 +78,10 @@ static std::mutex g_sess_mtx;
 static std::unordered_map<std::string, AuthSession> g_sessions;
 // Актор текущего запроса (устанавливается pre-routing фильтром) — попадает в аудит.
 static thread_local std::string g_actor;
+// Волна M: обученный макро-генератор (MacroSampler) — загружается при старте; nullptr → /api/macro/* 503,
+// оптимизатор работает по i.i.d. фактору v0.63 с предупреждением (ошибка загрузки — в g_macro_error).
+static std::unique_ptr<maos::macro::MacroSampler> g_macro;
+static std::string g_macro_error;
 
 static void audit(Database& db, const std::string& entity, const std::string& id,
                   const std::string& action, const json& payload = nullptr) {
@@ -1922,6 +1928,57 @@ static void migrate_v19(Database& db) {
   std::cout << "Migration v19 done.\n";
 }
 
+// v21 (волна M, METHODOLOGY-V2 §2.1, §3.3, §11.1): флаг synthetic у синтетических историй
+// (ts_data/macro_ts из v9/v10/seed_missing_ts_data — все синтетические → DEFAULT 1; реальный импорт
+// пишет 0), режим макро-генератора в сценарии (macro_mode, JSON §2.6б) и таблица macro_series
+// (ряды cbr.ru с происхождением: URL, дата выгрузки, SHA256, synthetic=0) — заполняется из
+// параметров генератора при старте (sync_macro_series). Старые ползунки сценария остаются
+// в схеме, но не участвуют в расчёте (паспорт r1.50–r1.53).
+static void migrate_v21(Database& db) {
+  if (db.user_version() >= 21) return;
+  std::cout << "Migrating schema → v21 (волна M: synthetic, macro_mode, macro_series)…\n";
+  db.exec_safe("ALTER TABLE ts_data ADD COLUMN synthetic INTEGER NOT NULL DEFAULT 1");
+  db.exec_safe("ALTER TABLE macro_ts ADD COLUMN synthetic INTEGER NOT NULL DEFAULT 1");
+  db.exec_safe("ALTER TABLE price_scenarios ADD COLUMN macro_mode TEXT");
+  db.exec("CREATE TABLE IF NOT EXISTS macro_series ("
+          "  series TEXT NOT NULL,"            // 'cpi_yoy_pp' | 'key_pp' | 'usd_rub'
+          "  month TEXT NOT NULL,"             // 'YYYY-MM'
+          "  value REAL NOT NULL,"
+          "  source_url TEXT, fetched_at TEXT, sha256 TEXT,"
+          "  synthetic INTEGER NOT NULL DEFAULT 0,"
+          "  PRIMARY KEY(series, month))");
+  db.set_user_version(21);
+  std::cout << "Migration v21 done.\n";
+}
+
+// Идемпотентно переносит историю cbr.ru из macro_params.json (history + data.sources) в macro_series.
+static void sync_macro_series(Database& db) {
+  if (!g_macro) return;
+  try {
+    const json& p = g_macro->params();
+    if (!p.contains("history")) return;
+    const json& h = p["history"];
+    std::string url, fetched, sha;
+    if (p.contains("data") && p["data"].contains("sources"))
+      for (auto& src : p["data"]["sources"]) {
+        if (!url.empty()) url += " ; ";
+        url += src.value("url", std::string()); fetched = src.value("retrieval_date", std::string());
+        sha += (sha.empty() ? "" : ";") + src.value("sha256", std::string());
+      }
+    std::lock_guard<std::recursive_mutex> lk(db.mutex());
+    db.exec("BEGIN");
+    try {
+      const char* keys[] = { "cpi_yoy_pp", "key_pp", "usd_rub" };
+      for (const char* k : keys)
+        for (size_t i = 0; i < h["month"].size() && i < h[k].size(); ++i)
+          db.exec("INSERT OR REPLACE INTO macro_series(series,month,value,source_url,fetched_at,sha256,synthetic) "
+                  "VALUES(?,?,?,?,?,?,0)",
+                  { k, h["month"][i].get<std::string>(), std::to_string(h[k][i].get<double>()), url, fetched, sha });
+      db.exec("COMMIT");
+    } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+  } catch (std::exception& e) { std::cerr << "macro_series sync failed: " << e.what() << "\n"; }
+}
+
 /* ── 3D-схема как единый сохранённый агрегат ─────────────────────────────── */
 
 static void register_scheme(httplib::Server& svr, Database& db) {
@@ -2060,10 +2117,10 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       try {
       db.exec("INSERT INTO price_scenarios(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,"
               "mode,inflation,fx,demand,volatility,months,plan_id,start_date,end_date,"
-              "sanctions,tax_change,energy,logistics,key_rate) "
+              "sanctions,tax_change,energy,logistics,key_rate,macro_mode) "
               "VALUES(?,?,?,?,?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),"
               "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),"
-              "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
+              "NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''),NULLIF(?,''))",
               { id, jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
@@ -2075,7 +2132,7 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"volatility"), jstr(body,"months"),
                 jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"),
                 jstr(body,"sanctions"), jstr(body,"tax_change"), jstr(body,"energy"),
-                jstr(body,"logistics"), jstr(body,"key_rate") });
+                jstr(body,"logistics"), jstr(body,"key_rate"), jstr(body,"macro_mode") });   // волна M: режим генератора (JSON §2.6б)
       writeDists(id, body);
       writeOverrides(id, body);
       db.exec("COMMIT");
@@ -2104,7 +2161,7 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
               "end_date=COALESCE(NULLIF(?,''),end_date), "
               "sanctions=COALESCE(NULLIF(?,''),sanctions), tax_change=COALESCE(NULLIF(?,''),tax_change), "
               "energy=COALESCE(NULLIF(?,''),energy), logistics=COALESCE(NULLIF(?,''),logistics), "
-              "key_rate=COALESCE(NULLIF(?,''),key_rate) WHERE id=?",
+              "key_rate=COALESCE(NULLIF(?,''),key_rate), macro_mode=COALESCE(NULLIF(?,''),macro_mode) WHERE id=?",
               { jstr(body,"name"), jstr(body,"description"),
                 jstr(body,"horizon_hours").empty() ? "720" : jstr(body,"horizon_hours"),
                 jstr(body,"market_corr").empty() ? "0.5" : jstr(body,"market_corr"),
@@ -2115,7 +2172,7 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"demand"), jstr(body,"volatility"), jstr(body,"months"),
                 jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"),
                 jstr(body,"sanctions"), jstr(body,"tax_change"), jstr(body,"energy"),
-                jstr(body,"logistics"), jstr(body,"key_rate"), id });
+                jstr(body,"logistics"), jstr(body,"key_rate"), jstr(body,"macro_mode"), id });
       writeDists(id, body);
       writeOverrides(id, body);
       db.exec("COMMIT");
@@ -2138,10 +2195,10 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
       try {
       db.exec("INSERT INTO price_scenarios"
               "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months,"
-              "plan_id,start_date,end_date,sanctions,tax_change,energy,logistics,key_rate) "
+              "plan_id,start_date,end_date,sanctions,tax_change,energy,logistics,key_rate,macro_mode) "
               "SELECT ?, name || ' (копия)', description, horizon_hours, market_corr, objective, alpha, max_share,"
               "mode, inflation, fx, demand, volatility, months, plan_id, start_date, end_date,"
-              "sanctions, tax_change, energy, logistics, key_rate "
+              "sanctions, tax_change, energy, logistics, key_rate, macro_mode "
               "FROM price_scenarios WHERE id=?", { nid, src });
       db.exec("INSERT INTO price_distributions"
               "(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
@@ -2296,12 +2353,12 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       }
       const bool deterministic = (mode == "deterministic");   // точечный прогноз (без разброса)
 
-      // Риск-факторы → понятные макро-связи: дрейф, волатильность, уровень цен (cost-push).
-      // Коэффициенты усилены, чтобы движение ползунков давало ЗАМЕТНЫЙ эффект на прогноз.
-      const double riskDrift = 0.012 * sanctions - 0.0018 * (keyRate - 8.0);      // мес. лог-дрейф
-      vol *= (1.0 + 1.6 * sanctions);                                             // санкции = неопределённость
-      const double riskMacro = (1.0 + 1.0 * taxChange / 100.0)                    // налоги (полный passthrough)
-                             * std::pow(energy, 0.32) * std::pow(logistics, 0.18); // энергия/логистика
+      // Волна M (R1 §2.11, METHODOLOGY-V2 §2.5): UI-коэффициенты ползунков sanctions/energy/logistics/
+      // key_rate УДАЛЕНЫ из расчёта. Поля принимаются и возвращаются как deprecated (паспорт r1.50–r1.53,
+      // r1.58: «подобрано для UI — не используется в расчёте»); внешние условия — обученный генератор
+      // (MacroSampler: /api/macro/regimes, /api/macro/sample; сценарий хранит macro_mode). Бэктест (R6)
+      // больше не зависит от ползунков: driftStep = ln(1+infl) без сценарного риск-дрейфа.
+      const double riskDrift = 0.0, riskMacro = 1.0;
 
       // Точечные оверрайды цены/себестоимости из сценария (Стадия E).
       std::unordered_map<std::string, double> fcOvrPrice, fcOvrCost;
@@ -2666,17 +2723,48 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         products.push_back(j);
       }
 
-      // Прогноз КЛЮЧЕВОЙ СТАВКИ тем же движком (канон: ставка и цены — единообразно).
+      // Прогноз КЛЮЧЕВОЙ СТАВКИ: волна M — веер обученного генератора (MacroSampler, cbr.ru, synthetic=false);
+      // без генератора — прежний движок по синтетическому macro_ts (synthetic=true, демо).
       json rateJson = nullptr;
-      {
+      if (g_macro) {
+        try {
+          const int H = std::max(months, 1);
+          maos::macro::Stress st = maos::macro::Stress::from_json(body.value("macro_stress", json(nullptr)));
+          const auto r = g_macro->sample(std::min(runs, 4000), seed, 0, H, 0, st, maos::macro::Reference::from_json(body.value("macro_ref", json(nullptr))));
+          const int n = (int)r.monthly.key.size();
+          json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
+          const double k0 = g_macro->params()["last_obs"]["key_pp"].get<double>();
+          p10.push_back(k0); p50.push_back(k0); p90.push_back(k0); mean.push_back(k0);
+          std::vector<double> col(n);
+          for (int t = 0; t < H; ++t) {
+            double sum = 0;
+            for (int i = 0; i < n; ++i) { col[i] = r.monthly.key[i][t]; sum += col[i]; }
+            std::sort(col.begin(), col.end());
+            auto q = [&](double f) { return col[(size_t)std::round(f * (n - 1))]; };
+            p10.push_back(q(0.10)); p50.push_back(q(0.50)); p90.push_back(q(0.90)); mean.push_back(sum / n);
+          }
+          json history = json::array();
+          for (auto& row : db.query_json("SELECT value FROM macro_series WHERE series='key_pp' AND synthetic=0 ORDER BY month DESC LIMIT 12"))
+            history.insert(history.begin(), numOf(row));
+          rateJson = { {"id", "keyrate"}, {"name", "Ключевая ставка"}, {"role", "rate"}, {"base", k0},
+                       {"history", history}, {"p10", p10}, {"p50", p50}, {"p90", p90}, {"mean", mean},
+                       {"synthetic", false}, {"source", "MacroSampler (cbr.ru, обучено; §2.2)"},
+                       {"regimes", g_macro->regimes()}, {"stress", st.to_json()},
+                       {"fit", { {"data_driven", true}, {"dist", "empirical_blocks"}, {"n_obs", g_macro->nResid()} }} };
+        } catch (std::exception& e) { rateJson = { {"id", "keyrate"}, {"role", "rate"}, {"error", e.what()} }; }
+      } else {
         auto rh = db.query_json("SELECT value FROM macro_ts WHERE series='keyrate' ORDER BY month_idx");
         std::vector<double> rv; for (auto& row : rh) rv.push_back(numOf(row));
         if (rv.size() >= 5 && rv.back() > 0) {
           json j = fanFromHistory(rv.back(), rv, 0.0, 1.0, beta, "", 0.0);   // ставка: чистый исторический дрейф
           j["id"] = "keyrate"; j["name"] = "Ключевая ставка"; j["role"] = "rate";
+          j["synthetic"] = true; j["source"] = "macro_ts (синтетика v10, демо)";
           rateJson = j;
         }
       }
+      // Флаг синтетики (§3.3, R7): истории цен ts_data — синтетические, пока нет импорта synthetic=0.
+      bool tsSynthetic = true;
+      try { tsSynthetic = std::stoi(jstr(db.query_one("SELECT COUNT(*) AS n FROM ts_data WHERE synthetic=0"), "n")) == 0; } catch (...) {}
 
       json inflIdx = json::array();
       for (int t = 0; t <= months; ++t) inflIdx.push_back(std::pow(1.0 + infl, t) * 100.0);
@@ -2686,8 +2774,85 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         {"volatility", vol}, {"corr", corr}, {"mode", mode}, {"scenario_id", scenarioId},
         {"sanctions", sanctions}, {"tax_change", taxChange}, {"energy", energy},
         {"logistics", logistics}, {"key_rate", keyRate}, {"risk_macro", riskMacro},
+        {"deprecated_fields", { "sanctions", "tax_change", "energy", "logistics", "key_rate" }},   // волна M: не используются
+        {"synthetic", tsSynthetic}, {"demo", true},
+        {"note", "Прогноз цен — демонстрационный модуль (R1 B11–B13); внешние условия — MacroSampler (/api/macro)."},
+        {"macro", { {"available", (bool)g_macro}, {"error", g_macro_error} }},
         {"inflation_index", inflIdx}, {"rate", rateJson}, {"products", products},
       });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+}
+
+/* ── Волна M: обученный макро-генератор (METHODOLOGY-V2 §2.6б, §11.3) ─────────────────
+ * GET  /api/macro/regimes — режимы HMM с их статистикой (меню вместо ползунков);
+ * GET  /api/macro/summary — данные, выбор (R, b), таблица CRPS, отложенное покрытие, хвосты;
+ * POST /api/macro/sample  — {n, seed, horizon_weeks|horizon_months, stress, ref, paths} → квантили по
+ *                          неделям/месяцам, доли режимов, первые пути; слово «прогноз» — только для base. */
+static json quantile_rows(const std::vector<std::vector<double>>& m) {
+  json out = { {"p05", json::array()}, {"p50", json::array()}, {"p95", json::array()}, {"mean", json::array()} };
+  if (m.empty()) return out;
+  std::vector<double> col(m.size());
+  for (size_t t = 0; t < m.front().size(); ++t) {
+    double sum = 0;
+    for (size_t i = 0; i < m.size(); ++i) { col[i] = m[i][t]; sum += col[i]; }
+    std::sort(col.begin(), col.end());
+    auto q = [&](double f) { return col[(size_t)std::round(f * (col.size() - 1))]; };
+    out["p05"].push_back(q(0.05)); out["p50"].push_back(q(0.5)); out["p95"].push_back(q(0.95)); out["mean"].push_back(sum / m.size());
+  }
+  return out;
+}
+
+static void register_macro(httplib::Server& svr, Database& db) {
+  auto unavailable = [](httplib::Response& res) {
+    err(res, 503, "Макро-генератор не загружен: " + (g_macro_error.empty() ? std::string("нет параметров") : g_macro_error));
+  };
+  svr.Get("/api/macro/regimes", [unavailable](const httplib::Request&, httplib::Response& res) {
+    if (!g_macro) return unavailable(res);
+    try { ok(res, g_macro->regimes_json()); } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  svr.Get("/api/macro/summary", [unavailable](const httplib::Request&, httplib::Response& res) {
+    if (!g_macro) return unavailable(res);
+    try { ok(res, g_macro->summary_json()); } catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  svr.Post("/api/macro/sample", [&db, unavailable](const httplib::Request& req, httplib::Response& res) {
+    if (!g_macro) return unavailable(res);
+    try {
+      auto body = req.body.empty() ? json::object() : json::parse(req.body);
+      auto geti = [&](const char* k, int d) { return body.contains(k) && body[k].is_number() ? body[k].get<int>() : d; };
+      const int n = std::max(1, std::min(20000, geti("n", 1000)));
+      const uint64_t seed = (uint64_t)std::max(0, geti("seed", 42));
+      const int weeks = std::max(0, std::min(maos::macro::kMaxWeeks, geti("horizon_weeks", 26)));
+      const int months = std::max(0, std::min(120, geti("horizon_months", 0)));
+      const int keep = std::max(0, std::min(n, geti("paths", 20)));
+      const auto st = maos::macro::Stress::from_json(body.value("stress", json(nullptr)));
+      const auto rf = maos::macro::Reference::from_json(body.value("ref", json(nullptr)));
+      const auto t0 = std::chrono::steady_clock::now();
+      const auto r = g_macro->sample(n, seed, weeks, months, 0, st, rf);
+      std::vector<int> share(std::max(1, g_macro->regimes()), 0); int total = 0;
+      for (auto& row : r.paths.regime) for (int g : row) { if (g >= 0 && g < (int)share.size()) ++share[g]; ++total; }
+      json regimeShare = json::array();
+      for (int c : share) regimeShare.push_back(total ? (double)c / total : 0.0);
+      json paths = json::array();
+      for (int i = 0; i < keep; ++i)
+        paths.push_back({ {"id", i}, {"regime", r.paths.regime[i]},
+                          {"monthly", { {"cpi", r.monthly.cpi[i]}, {"key", r.monthly.key[i]}, {"fx", r.monthly.fx[i]} }},
+                          {"weekly", weeks ? json{ {"cpi", r.weekly.cpi[i]}, {"key", r.weekly.key[i]}, {"fx", r.weekly.fx[i]} } : json(nullptr)} });
+      json out = {
+        {"n", n}, {"seed", (int64_t)seed}, {"horizon_weeks", weeks}, {"months", r.months},
+        {"mode", st.mode}, {"stress", st.to_json()}, {"is_forecast", st.mode == "base"},
+        {"label", st.mode == "base" ? "прогноз (базовый)" : "стресс — не прогноз"},
+        {"ref", { {"cpi", r.cpiRef}, {"key", r.keyRef} }},
+        {"regime_share", regimeShare},
+        {"monthly", { {"cpi", quantile_rows(r.monthly.cpi)}, {"key", quantile_rows(r.monthly.key)}, {"fx", quantile_rows(r.monthly.fx)} }},
+        {"weekly", weeks ? json{ {"cpi", quantile_rows(r.weekly.cpi)}, {"key", quantile_rows(r.weekly.key)}, {"fx", quantile_rows(r.weekly.fx)} } : json(nullptr)},
+        {"paths", paths}, {"sigma_bb_fx", r.sigmaBbFx},
+        {"streams", { {"macro", r.macroStream}, {"bridge", r.bridgeStream} }},
+        {"last_obs", g_macro->params()["last_obs"]},
+        {"ms", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()},
+      };
+      audit(db, "macro", "sample", "SAMPLE", { {"n", n}, {"seed", (int64_t)seed}, {"stress", st.to_json()} });
+      ok(res, out);
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 }
@@ -2710,6 +2875,19 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       if (body.contains("cash_samples") && !jstr(body, "cash_samples").empty()) pr.cashSamples = (int)std::stod(jstr(body, "cash_samples"));
       pr.scheduleRefId = jstr(body, "schedule_ref_id");
       if (body.contains("pol_curve")) pr.polCurve = flag("pol_curve");
+      // Волна M: макро-генератор; режим/стресс/опора из запроса, иначе из сценария (macro_mode), иначе base.
+      pr.macro = g_macro.get();
+      if (body.contains("macro_mode")) {
+        if (body["macro_mode"].is_string()) pr.macroMode = body["macro_mode"].get<std::string>();
+        else if (body["macro_mode"].is_object()) {
+          pr.macroMode = body["macro_mode"].value("mode", std::string("base"));
+          pr.macroStress = body["macro_mode"].contains("stress") ? body["macro_mode"]["stress"] : body["macro_mode"];
+          if (body["macro_mode"].contains("ref")) pr.macroRef = body["macro_mode"]["ref"];
+        }
+      }
+      if (body.contains("macro_stress")) pr.macroStress = body["macro_stress"];
+      if (body.contains("macro_ref"))    pr.macroRef    = body["macro_ref"];
+      if (body.contains("eval_portfolio") && body["eval_portfolio"].is_object()) pr.evalPortfolio = body["eval_portfolio"];   // E1
       pr.scenarioId = jstr(body, "scenario_id");
       if (!jstr(body, "objective").empty()) pr.objective = jstr(body, "objective");
       if (body.contains("samples")) pr.samples = (int)std::stod(jstr(body, "samples"));
@@ -3743,6 +3921,7 @@ static bool setup_database(Database& db) {
     migrate_v18(db);
     migrate_v19(db);
     maos::passport::migrate(db);        // v20 (волна F): fin_params, param_passport, plan_fact_ops
+    migrate_v21(db);                    // v21 (волна M): synthetic, macro_mode, macro_series
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -3761,6 +3940,19 @@ int main(int argc, char* argv[]) {
 
   Database db(db_path);
   if (!setup_database(db)) return 1;
+
+  // Волна M: параметры обученного макро-генератора ($MAOS_MACRO_PARAMS → rl/macro/params → backend/data).
+  try {
+    const std::string mp = maos::macro::MacroSampler::default_path();
+    g_macro = std::make_unique<maos::macro::MacroSampler>(maos::macro::MacroSampler::load(mp));
+    std::cout << "Macro generator: " << mp << " (" << g_macro->regimes() << " режима, блок "
+              << g_macro->block() << " мес, остатков " << g_macro->nResid() << ")\n";
+    sync_macro_series(db);
+  } catch (std::exception& e) {
+    g_macro_error = e.what();
+    std::cerr << "ОШИБКА: " << e.what() << "\n  Макро-генератор недоступен: /api/macro/* → 503, "
+                 "оптимизация — по i.i.d. фактору v0.63 с предупреждением.\n";
+  }
 
   httplib::Server svr;
 
@@ -3800,7 +3992,7 @@ int main(int argc, char* argv[]) {
       auto starts = [&](const char* p) { return path.rfind(p, 0) == 0; };
       if (starts("/api/users") || starts("/api/roles")) need = "MANAGE_USERS";
       else if (starts("/api/optimize") || starts("/api/schedule") ||
-               starts("/api/forecast") || starts("/api/mrp")) need = "RUN_OPTIMIZE";
+               starts("/api/forecast") || starts("/api/mrp") || starts("/api/macro")) need = "RUN_OPTIMIZE";
       else if (starts("/api/demand_orders") || starts("/api/production_plans") ||
                starts("/api/scenarios") || starts("/api/calendar")) need = "WRITE_PLAN";
       else need = "EDIT_NSI";                          // НСИ и прочие мутации
@@ -3816,7 +4008,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.65.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.66.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.
@@ -3914,6 +4106,7 @@ int main(int argc, char* argv[]) {
 
   // Устойчивая стохастическая оптимизация (Стадия 2)
   register_optimize(svr, db);
+  register_macro(svr, db);
   register_forecast(svr, db);
 
   // Расписание производства (Стадия 1)

@@ -27,6 +27,9 @@ struct CashInputs {
   double maxShare = 1.0;
   bool   enforceShare = false;
   double horizonHours = 720;
+  // Волна M: ключевая ставка по сценарию и неделе (N×T, годовая) из MacroSampler; пусто → fin_params.key_rate.
+  std::vector<std::vector<double>> keyRate;
+  std::vector<double> logisticsIndex;                             // ℓ_i (множитель Pay^log), пусто → 1
 };
 
 nlohmann::json cash_compare(Database& db, const CashInputs& in, const OptimizeParams& p);

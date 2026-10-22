@@ -1,0 +1,453 @@
+{
+ "plan": {
+  "items": {
+   "fin-0000": 123.64067443637515,
+   "fin-0005": 245.03945602156202,
+   "fin-0009": 56.05794270833335,
+   "fin-0011": 101.73861706403764,
+   "fin-0014": 43.03632319619031,
+   "fin-0015": 23.98094981536551,
+   "fin-0017": 64.24381967124638,
+   "fin-0025": 36.44791666666667,
+   "fin-0027": 157.68823976878596,
+   "fin-0029": 108.38940097814908,
+   "fin-0031": 265.7816091954022,
+   "fin-0038": 72.50449727888913,
+   "fin-0044": 293.5896762734721,
+   "fin-0048": 165.73940840188888,
+   "fin-0051": 134.81007421503796,
+   "fin-0052": 29.078869047619044,
+   "fin-0060": 201.86197916666666
+  },
+  "n_items": 17,
+  "objective": "cvar",
+  "alpha": 0.1,
+  "beta": 0.05,
+  "samples": 2000,
+  "cash_samples": 1000,
+  "seed": 42,
+  "horizon_weeks": 5,
+  "scenario_id": "scen-base",
+  "lp_cvar_profit_iid": 108145859.40385629,
+  "lp_expected_iid": 272203620.5477386
+ },
+ "results": {
+  "iid_v063": {
+   "metrics": {
+    "expected_profit": 284235808.31937486,
+    "cvar_profit": 94912612.90465891,
+    "cvar_min_cash": -248194.74610790788,
+    "p_breach": 0.001,
+    "min_cash_p50": 0.0,
+    "interest_mean": 325825.70819002006
+   },
+   "gross": {
+    "cvar": 135317376.67710254,
+    "expected": 383764261.2120326,
+    "worst": -28906817.640442535
+   },
+   "waterfall_rule": {
+    "cfar": -248194.74610790788,
+    "cfar_ci": [
+     -744584.2383237237,
+     0.0
+    ],
+    "p_breach": 0.001,
+    "p_breach_ci": [
+     0.00017654637062607809,
+     0.0056425585979579355
+    ],
+    "dscr_min_p05": 506.699813006261,
+    "debt_peak_share": 0.690836657421087,
+    "int_cost": 325825.7081900201
+   },
+   "macro": {
+    "available": true,
+    "factor_sd": 0.0,
+    "mode": "iid_v063",
+    "months": 0,
+    "on": false,
+    "pass_through": {
+     "conv_cpi": 1.0,
+     "cpi": 1.0,
+     "fx_product": 0.1,
+     "fx_raw": 0.3,
+     "logistics_cpi": 1.0,
+     "logistics_fx": 0.3,
+     "status": "К (паспорт macro.pt_*)"
+    },
+    "ref": null,
+    "regime_share": null,
+    "streams": {
+     "bridge": [
+      42,
+      872
+     ],
+     "macro": [
+      42,
+      871
+     ]
+    },
+    "stress": null,
+    "weeks": 0
+   }
+  },
+  "learned_base": {
+   "metrics": {
+    "expected_profit": 301259250.90249926,
+    "cvar_profit": 134076074.32198735,
+    "cvar_min_cash": -5863737.204455133,
+    "p_breach": 0.005,
+    "min_cash_p50": 0.0,
+    "interest_mean": 297304.511866418
+   },
+   "gross": {
+    "cvar": 200678384.47711423,
+    "expected": 406711626.52006096,
+    "worst": -78635240.99677089
+   },
+   "waterfall_rule": {
+    "cfar": -5863737.204455133,
+    "cfar_ci": [
+     -11592741.6594864,
+     -1187476.954501901
+    ],
+    "p_breach": 0.005,
+    "p_breach_ci": [
+     0.0021375355273244596,
+     0.011650955373375113
+    ],
+    "dscr_min_p05": 791.4061092111039,
+    "debt_peak_share": 0.6955766712047726,
+    "int_cost": 297304.511866418
+   },
+   "macro": {
+    "available": true,
+    "factor_sd": 1.007193446350646,
+    "mode": "base",
+    "months": 3,
+    "on": true,
+    "pass_through": {
+     "conv_cpi": 1.0,
+     "cpi": 1.0,
+     "fx_product": 0.1,
+     "fx_raw": 0.3,
+     "logistics_cpi": 1.0,
+     "logistics_fx": 0.3,
+     "status": "К (паспорт macro.pt_*)"
+    },
+    "ref": null,
+    "regime_share": [
+     0.964,
+     0.036
+    ],
+    "streams": {
+     "bridge": [
+      42,
+      872
+     ],
+     "macro": [
+      42,
+      871
+     ]
+    },
+    "stress": null,
+    "weeks": 5
+   }
+  },
+  "stress_regime_crisis": {
+   "metrics": {
+    "expected_profit": 223058008.23134154,
+    "cvar_profit": -77492084.66251406,
+    "cvar_min_cash": -62206046.345280066,
+    "p_breach": 0.164,
+    "min_cash_p50": 0.0,
+    "interest_mean": 318316.2063363813
+   },
+   "gross": {
+    "cvar": -77107000.57526475,
+    "expected": 306551169.5666664,
+    "worst": -84375393.96223734
+   },
+   "waterfall_rule": {
+    "cfar": -62206046.345280066,
+    "cfar_ci": [
+     -62998411.386906795,
+     -61312544.12314343
+    ],
+    "p_breach": 0.164,
+    "p_breach_ci": [
+     0.14234418773548693,
+     0.18822739396680613
+    ],
+    "dscr_min_p05": -54.161379616569,
+    "debt_peak_share": 0.7063904814106972,
+    "int_cost": 318316.20633638115
+   },
+   "macro": {
+    "available": true,
+    "factor_sd": 2.7686043254923245,
+    "mode": "regime",
+    "months": 3,
+    "on": true,
+    "pass_through": {
+     "conv_cpi": 1.0,
+     "cpi": 1.0,
+     "fx_product": 0.1,
+     "fx_raw": 0.3,
+     "logistics_cpi": 1.0,
+     "logistics_fx": 0.3,
+     "status": "К (паспорт macro.pt_*)"
+    },
+    "ref": null,
+    "regime_share": [
+     0.0,
+     1.0
+    ],
+    "streams": {
+     "bridge": [
+      42,
+      872
+     ],
+     "macro": [
+      42,
+      871
+     ]
+    },
+    "stress": {
+     "regime": 1
+    },
+    "weeks": 5
+   }
+  },
+  "stress_quantile_095": {
+   "metrics": {
+    "expected_profit": 471729475.5576088,
+    "cvar_profit": 399566671.2176168,
+    "cvar_min_cash": -2548.493820173442,
+    "p_breach": 0.001,
+    "min_cash_p50": 0.0,
+    "interest_mean": 345868.4922106035
+   },
+   "gross": {
+    "cvar": 590862430.8147838,
+    "expected": 635781693.2502338,
+    "worst": 556170597.2074568
+   },
+   "waterfall_rule": {
+    "cfar": -2548.493820173442,
+    "cfar_ci": [
+     -7645.481460520327,
+     0.0
+    ],
+    "p_breach": 0.001,
+    "p_breach_ci": [
+     0.00017654637062607809,
+     0.0056425585979579355
+    ],
+    "dscr_min_p05": 1615.8837584572439,
+    "debt_peak_share": 0.7511713563332252,
+    "int_cost": 345868.49221060396
+   },
+   "macro": {
+    "available": true,
+    "factor_sd": 3.411346626906135e-07,
+    "mode": "quantile",
+    "months": 3,
+    "on": true,
+    "pass_through": {
+     "conv_cpi": 1.0,
+     "cpi": 1.0,
+     "fx_product": 0.1,
+     "fx_raw": 0.3,
+     "logistics_cpi": 1.0,
+     "logistics_fx": 0.3,
+     "status": "К (паспорт macro.pt_*)"
+    },
+    "ref": null,
+    "regime_share": [
+     0.0,
+     0.0
+    ],
+    "streams": {
+     "bridge": [
+      42,
+      872
+     ],
+     "macro": [
+      42,
+      871
+     ]
+    },
+    "stress": {
+     "quantile_t": 0.95
+    },
+    "weeks": 5
+   }
+  },
+  "stress_quantile_005": {
+   "metrics": {
+    "expected_profit": 87604374.87807572,
+    "cvar_profit": 47407758.53194755,
+    "cvar_min_cash": 0.0,
+    "p_breach": 0.0,
+    "min_cash_p50": 0.0,
+    "interest_mean": 249838.34101149798
+   },
+   "gross": {
+    "cvar": 75504880.66135481,
+    "expected": 118932053.00083089,
+    "worst": 47675823.19858162
+   },
+   "waterfall_rule": {
+    "cfar": 0.0,
+    "cfar_ci": [
+     0.0,
+     0.0
+    ],
+    "p_breach": 0.0,
+    "p_breach_ci": [
+     2.168404344971009e-19,
+     0.0038267584855551234
+    ],
+    "dscr_min_p05": 339.02619794265206,
+    "debt_peak_share": 0.642431414921219,
+    "int_cost": 249838.34101149757
+   },
+   "macro": {
+    "available": true,
+    "factor_sd": 4.5363597562675233e-07,
+    "mode": "quantile",
+    "months": 3,
+    "on": true,
+    "pass_through": {
+     "conv_cpi": 1.0,
+     "cpi": 1.0,
+     "fx_product": 0.1,
+     "fx_raw": 0.3,
+     "logistics_cpi": 1.0,
+     "logistics_fx": 0.3,
+     "status": "К (паспорт macro.pt_*)"
+    },
+    "ref": null,
+    "regime_share": [
+     0.0,
+     0.0
+    ],
+    "streams": {
+     "bridge": [
+      42,
+      872
+     ],
+     "macro": [
+      42,
+      871
+     ]
+    },
+    "stress": {
+     "quantile_t": 0.05
+    },
+    "weeks": 5
+   }
+  }
+ },
+ "paired_deltas_vs_iid": {
+  "learned_base": {
+   "d_cvar_profit": 39163461.41732843,
+   "d_cvar_profit_ci": [
+    17672809.279022586,
+    58058697.73571017
+   ],
+   "d_cvar_min_cash": -5615542.458347225,
+   "d_cvar_min_cash_ci": [
+    -11362975.86484997,
+    -991139.9005433362
+   ],
+   "d_p_breach": 0.004,
+   "d_p_breach_ci": [
+    0.0,
+    0.009
+   ],
+   "d_expected_profit": 17023442.5831244,
+   "d_expected_profit_ci": [
+    8157202.570598221,
+    25945840.030877333
+   ]
+  },
+  "stress_regime_crisis": {
+   "d_cvar_profit": -172404697.56717297,
+   "d_cvar_profit_ci": [
+    -184515388.15242118,
+    -161185431.16281584
+   ],
+   "d_cvar_min_cash": -61957851.59917216,
+   "d_cvar_min_cash_ci": [
+    -62838102.54046888,
+    -60933546.456862114
+   ],
+   "d_p_breach": 0.163,
+   "d_p_breach_ci": [
+    0.139975,
+    0.188
+   ],
+   "d_expected_profit": -61177800.08803332,
+   "d_expected_profit_ci": [
+    -78738547.6498198,
+    -44101267.46764635
+   ]
+  },
+  "stress_quantile_095": {
+   "d_cvar_profit": 304654058.3129579,
+   "d_cvar_profit_ci": [
+    282188870.54028606,
+    325654259.2766013
+   ],
+   "d_cvar_min_cash": 245646.25228773445,
+   "d_cvar_min_cash_ci": [
+    -5096.987640346884,
+    744584.2383237237
+   ],
+   "d_p_breach": 0.0,
+   "d_p_breach_ci": [
+    -0.003,
+    0.003
+   ],
+   "d_expected_profit": 187493667.23823392,
+   "d_expected_profit_ci": [
+    181384919.44252554,
+    193660619.12457582
+   ]
+  },
+  "stress_quantile_005": {
+   "d_cvar_profit": -47504854.37271136,
+   "d_cvar_profit_ci": [
+    -59260484.49499157,
+    -36286165.08887858
+   ],
+   "d_cvar_min_cash": 248194.74610790788,
+   "d_cvar_min_cash_ci": [
+    0.0,
+    744584.2383237237
+   ],
+   "d_p_breach": -0.001,
+   "d_p_breach_ci": [
+    -0.003,
+    0.0
+   ],
+   "d_expected_profit": -196631433.44129914,
+   "d_expected_profit_ci": [
+    -202604044.01466066,
+    -190335979.18255687
+   ]
+  }
+ },
+ "timings_s": {
+  "plan_lp_s": 33.33635091781616,
+  "iid_v063_s": 0.2689380645751953,
+  "learned_base_s": 0.31142711639404297,
+  "stress_regime_crisis_s": 0.3162109851837158,
+  "stress_quantile_095_s": 0.33174920082092285,
+  "stress_quantile_005_s": 0.28123974800109863
+ },
+ "note": "один план (LP при iid_v063) оценён через водопад (правило выборки) на N сценариях каждого режима; CRN по i; парный бутстреп B=1000"
+}

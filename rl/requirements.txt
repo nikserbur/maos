@@ -1,0 +1,9 @@
+# rl/.venv — обучение макро-генератора (rl/macro). Без torch в волне M.
+numpy==2.5.4
+scipy==1.18.1
+pandas==3.1.0
+scikit-learn==1.9.1
+hmmlearn==0.3.3
+pytest==9.1.1
+requests==2.34.2
+lxml==6.1.3

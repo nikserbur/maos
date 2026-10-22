@@ -90,7 +90,8 @@ json lp_summary(const cashlp::Result& r) {
 /* Прогон решения LP через водопад §4.3 (нелинейности: NOL, разрыв, приоритеты) по каждому сценарию. */
 json waterfall_eval(const cashlp::Problem& P, const cashlp::Result& r, const cash::FinParams& fp,
                     const json& fin, const std::vector<double>& matShare, double alpha, bool useLpSchedule,
-                    unsigned seed) {
+                    unsigned seed, const std::vector<std::vector<double>>& keyRate,
+                    const std::vector<double>& logIdx, json* perScenario = nullptr) {
   const size_t N = P.base.price.size(), S = P.base.market.size();
   const int T = P.T, TT = T + P.cp.runoffWeeks;
   const double payroll = jget(fin, "payroll_fixed_weekly", 0), repair = jget(fin, "repair_budget_weekly", 0);
@@ -116,12 +117,21 @@ json waterfall_eval(const cashlp::Problem& P, const cashlp::Result& r, const cas
           in.periods[std::max(0, t - fp.leadWeeks)].orders += c * matShare[s];   // заказ за L до выпуска (как ψ в LP)
         }
         q.payrollGross = payroll; q.repairPlanned = repair; q.otherFixed = other;
+        if (!logIdx.empty()) q.logistics *= logIdx[i];                       // ℓ_i (§2.4; в демо Pay^log = 0)
       }
+      // Волна M: ключевая ставка периода из макро-пути сценария (ставка линии = ключевая + спред в водопаде).
+      if (!keyRate.empty() && i < keyRate.size() && !keyRate[i].empty())
+        q.keyRate = keyRate[i][std::min((size_t)t, keyRate[i].size() - 1)];
       if (useLpSchedule) { q.drawdown = r.draw[i][t]; q.repayment = r.repay[i][t]; }
     }
     rs.push_back(cash::run(fp, in));
   }
   const cash::Summary S1 = cash::summarize(rs, alpha, P.cp.beta, fp.creditLimit, seed, 1000);
+  if (perScenario) {                                   // E1: пер-сценарные величины для парного бутстрепа
+    json pr = json::array(), mc = json::array(), br = json::array(), it = json::array();
+    for (const auto& r1 : rs) { pr.push_back(r1.profit); mc.push_back(r1.minCash); br.push_back(r1.breach ? 1 : 0); it.push_back(r1.totalInterest); }
+    *perScenario = { {"profit", pr}, {"min_cash", mc}, {"breach", br}, {"interest", it} };
+  }
   return {
     {"financing", useLpSchedule ? "lp_recourse" : "rule"},
     {"cash_min_p50", S1.cashMinP50}, {"cfar", S1.cfar}, {"cfar_ci", { S1.cfarLo, S1.cfarHi }},
@@ -180,12 +190,37 @@ json cash_compare(Database& db, const CashInputs& in, const OptimizeParams& p) {
   const double rw = cash::weekly_rate(fp.keyRate + fp.spread);
   P.fixed.assign(N, std::vector<double>(TT, 0.0)); P.rate.assign(N, std::vector<double>(TT, rw));
   for (size_t i = 0; i < N; ++i) for (int t = 0; t < T; ++t) P.fixed[i][t] = F;
+  // Волна M: ставка линии по сценарию и неделе r_{i,t} = i_{i,t} + spread (l_r = 0 [НОРМ], паспорт macro.rate_lag);
+  // после горизонта (дорасчёт) — последняя неделя пути. CRN: макро-путь i общий для всех портфелей.
+  const bool macroRate = !in.keyRate.empty();
+  if (macroRate)
+    for (size_t i = 0; i < N; ++i)
+      for (int t = 0; t < TT; ++t)
+        P.rate[i][t] = cash::weekly_rate(in.keyRate[i][std::min((size_t)t, in.keyRate[i].size() - 1)] + fp.spread);
   cashlp::CashParams& cp = P.cp;
   cp.c0 = fp.c0; cp.d0 = fp.d0; cp.creditLimit = fp.creditLimit; cp.tauV = fp.tauV; cp.tauP = fp.tauP;
   cp.vatPeriodWeeks = fp.vatPeriodWeeks; cp.vatInstalments = fp.vatInstalments; cp.vatInstalmentLagWeeks = fp.vatInstalmentLagWeeks;
   cp.dsoKernel = fp.dsoKernel; cp.taxPeriodWeeks = fp.taxPeriodWeeks; cp.beta = beta; cp.lMin = lMin;
   cp.liquidityConstraint = true; cp.runoffWeeks = runoff; cp.firstStage = p.financingStage == "first";
 
+  // E1: заданный план → только водопад (правило выборки) и валовые метрики на тех же сценариях.
+  if (p.evalPortfolio.is_object() && !p.evalPortfolio.empty()) {
+    cashlp::Result fixed; fixed.x.assign(S, 0.0);
+    json items = json::array();
+    for (size_t s = 0; s < S; ++s)
+      if (p.evalPortfolio.contains(in.sellables[s]) && p.evalPortfolio[in.sellables[s]].is_number()) {
+        fixed.x[s] = std::max(0.0, p.evalPortfolio[in.sellables[s]].get<double>());
+        if (fixed.x[s] > 0) items.push_back({ {"product_id", in.sellables[s]}, {"qty", fixed.x[s]} });
+      }
+    const exact::Metrics gross = exact::evaluate_on(b, b.price, b.cost, fixed.x);
+    json per;
+    json wf = waterfall_eval(P, fixed, fp, fin, in.matShare, p.alpha, false, p.seed, in.keyRate, in.logisticsIndex, &per);
+    return { {"n_scenarios", (int)N}, {"horizon_weeks", T}, {"runoff_weeks", runoff}, {"beta", beta},
+             {"key_rate", { {"source", macroRate ? "MacroSampler" : "fin_params"} }},
+             {"fixed_portfolio", { {"items", items}, {"gross", { {"expected", gross.expected}, {"cvar", gross.cvar}, {"worst", gross.worst} }},
+                                   {"waterfall_rule", wf}, {"per_scenario", per} }},
+             {"total_ms", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()} };
+  }
   // Основная постановка (рекурс по Р4), «график заранее» и LP без ограничения ликвидности.
   const cashlp::Result rec = cashlp::solve(P);
   json out = {
@@ -194,6 +229,9 @@ json cash_compare(Database& db, const CashInputs& in, const OptimizeParams& p) {
     {"financing_stage", cp.firstStage ? "first" : "recourse"},
     {"shipment_profile", { {"source", fromPlan > 0 ? "plan" : "uniform"}, {"plan_id", p.scheduleRefId}, {"products_from_plan", fromPlan} }},
     {"fixed_weekly", F}, {"weekly_rate", rw}, {"tail_k", rec.tailK}, {"tail_k_beta", rec.tailKBeta},
+    {"key_rate", { {"source", macroRate ? "MacroSampler" : "fin_params"},
+                   {"annual", macroRate ? quantiles_by_period(std::vector<std::vector<double>>(in.keyRate.begin(), in.keyRate.begin() + N))
+                                        : json(nullptr)} }},
   };
   out.update(lp_summary(rec));
   if (!rec.reason.empty()) out["reason"] = rec.reason;
@@ -287,8 +325,8 @@ json cash_compare(Database& db, const CashInputs& in, const OptimizeParams& p) {
     out["unconstrained"] = u;
   }
   // Водопад §4.3 на решении LP: рекурс LP и правило выборки — P(разрыв), DSCR, тождества.
-  out["waterfall"] = { {"lp_recourse", waterfall_eval(P, rec, fp, fin, in.matShare, p.alpha, true, p.seed)},
-                       {"rule", waterfall_eval(P, rec, fp, fin, in.matShare, p.alpha, false, p.seed)} };
+  out["waterfall"] = { {"lp_recourse", waterfall_eval(P, rec, fp, fin, in.matShare, p.alpha, true, p.seed, in.keyRate, in.logisticsIndex)},
+                       {"rule", waterfall_eval(P, rec, fp, fin, in.matShare, p.alpha, false, p.seed, in.keyRate, in.logisticsIndex)} };
   out["total_ms"] = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
   return out;
 }

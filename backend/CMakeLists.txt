@@ -55,11 +55,15 @@ add_library(maos_core STATIC
   src/Database.cpp
   src/ExactCvar.cpp
   src/GaImprover.cpp
+  src/MacroSampler.cpp
   src/Optimizer.cpp
   src/Passport.cpp
   src/Scheduler.cpp
 )
 target_include_directories(maos_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Волна M: MacroSampler обязан воспроизводить rl/macro/sample.py побитово — без слияния
+# умножения-сложения в FMA (порядок операций фиксирован в обоих файлах).
+set_source_files_properties(src/MacroSampler.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 target_link_libraries(maos_core PUBLIC
   nlohmann_json::nlohmann_json
   SQLite3::SQLite3
@@ -102,11 +106,13 @@ if(MAOS_BUILD_TESTS)
     tests/test_cashwaterfall.cpp
     tests/test_finance.cpp
     tests/test_ga.cpp
+    tests/test_macrosampler.cpp
     tests/test_optimizer.cpp
     tests/test_planmath.cpp
     tests/test_scheduler.cpp
   )
   target_link_libraries(maos_tests PRIVATE maos_core GTest::gtest_main)
+  target_compile_definitions(maos_tests PRIVATE MAOS_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
   include(GoogleTest)
   gtest_discover_tests(maos_tests DISCOVERY_TIMEOUT 60)
 endif()
