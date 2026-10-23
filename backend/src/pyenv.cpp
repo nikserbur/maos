@@ -52,7 +52,10 @@ NB_MODULE(maos_env, m) {
     .def_rw("breakdowns", &EnvConfig::breakdowns).def_rw("deterministic", &EnvConfig::deterministic).def_rw("dense_reward", &EnvConfig::denseReward)
     .def_rw("c_tard", &EnvConfig::cTard).def_rw("c_setup", &EnvConfig::cSetup).def_rw("w_profit", &EnvConfig::wProfit).def_rw("w_cash", &EnvConfig::wCash)
     .def_rw("lambda_breach", &EnvConfig::lambdaBreach).def_rw("tard_penalty_per_week", &EnvConfig::tardPenaltyPerWeek).def_rw("tard_penalty_cap", &EnvConfig::tardPenaltyCap)
-    .def_rw("repair_cost_mul", &EnvConfig::repairCostMul).def_rw("wait_window_min", &EnvConfig::waitWindowMin).def_rw("c_wait", &EnvConfig::cWait).def_rw("seed", &EnvConfig::seed);
+    .def_rw("repair_cost_mul", &EnvConfig::repairCostMul).def_rw("wait_window_min", &EnvConfig::waitWindowMin).def_rw("c_wait", &EnvConfig::cWait).def_rw("seed", &EnvConfig::seed)
+    .def_rw("invest_enabled", &EnvConfig::investEnabled).def_rw("shock_window_min", &EnvConfig::shockWindowMin)
+    .def_rw("recover_share", &EnvConfig::recoverShare).def_rw("rush_price_mul", &EnvConfig::rushPriceMul)
+    .def_rw("rush_late_loss", &EnvConfig::rushLateLoss);
 
   nb::class_<SimEnv>(m, "SimEnv")
     .def(nb::init<Instance, EnvConfig>(), nb::arg("instance"), nb::arg("config"))
@@ -71,6 +74,8 @@ NB_MODULE(maos_env, m) {
     .def("candidates", [](const SimEnv& e) { return e.candidates(); })
     .def("rule_choice", &SimEnv::rule_choice).def("rule_slot", &SimEnv::rule_slot)
     .def("key_choice", [](const SimEnv& e, const std::vector<double>& k) { return e.key_choice(k); })
+    .def("expedite_choice", [](const SimEnv& e, const std::string& r, const std::vector<double>& k) { return e.expedite_choice(r, k); },
+         nb::arg("rule"), nb::arg("key") = std::vector<double>{})
     .def("describe_l2", &SimEnv::describe_l2)
     .def("summary", [](const SimEnv& e) { return e.summary().dump(); })
     .def("gantt", [](const SimEnv& e) { return e.gantt().dump(); })
@@ -86,6 +91,20 @@ NB_MODULE(maos_env, m) {
         nb::arg("env"), nb::arg("rule"), nb::arg("seed"), nb::arg("scenario_json") = std::string());
   m.def("evaluate_key", [](SimEnv& e, const std::vector<double>& key, uint64_t seed, const std::string& sc) { return evaluate_key(e, key, seed, scenario_of(sc)).dump(); },
         nb::arg("env"), nb::arg("key"), nb::arg("seed"), nb::arg("scenario_json") = std::string());
+  m.def("rule_key", [](const SimEnv& e, const std::string& rule) {   // ключ правила по развёртке среды (как run_schedule)
+          std::vector<double> ow(e.instance().orders.size(), 0.0);
+          for (auto& j : e.jobs()) ow[j.orderIdx] += j.durMean;
+          return maos::sched::priorities(rule, e.jobs(), ow); },
+        nb::arg("env"), nb::arg("rule"));
+  m.def("simulate_plan", [](SimEnv& e, const std::vector<double>& key, const std::vector<double>& starts,
+                             const std::vector<std::string>& machines, uint64_t seed) { return simulate_plan(e, key, starts, machines, seed).dump(); },
+        nb::arg("env"), nb::arg("key"), nb::arg("starts") = std::vector<double>{}, nb::arg("machines") = std::vector<std::string>{},
+        nb::arg("seed") = 0);
+  m.def("ga_improve_keys", [](SimEnv& e, const std::vector<std::vector<double>>& seeds, const std::vector<std::string>& machines,
+                               int generations, int nScen, uint64_t seed0, double timeSec, unsigned gaSeed, int stallGens) {
+          return ga_improve_keys(e, seeds, machines, generations, nScen, seed0, timeSec, gaSeed, stallGens).dump(); },
+        nb::arg("env"), nb::arg("seeds"), nb::arg("machines") = std::vector<std::string>{}, nb::arg("generations") = 30,
+        nb::arg("n_scen") = 0, nb::arg("seed0") = 1000, nb::arg("time_sec") = 30.0, nb::arg("ga_seed") = 1991, nb::arg("stall_gens") = 8);
   m.def("ga_improve", [](const SimEnv& e, int generations, int nScen, uint64_t seed0, double timeSec, const std::vector<std::string>& rules) {
           return ga_improve(e, generations, nScen, seed0, timeSec, rules).dump(); },
         nb::arg("env"), nb::arg("generations") = 30, nb::arg("n_scen") = 8, nb::arg("seed0") = 1000, nb::arg("time_sec") = 30.0,

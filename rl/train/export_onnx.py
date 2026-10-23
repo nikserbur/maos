@@ -19,7 +19,9 @@ import onnxruntime as ort
 import torch
 from sb3_contrib import MaskablePPO
 
-FEATURE_VERSION = "l0-v1 (kCandFeats=12, kMachFeats=4, kPoolFeats=4, kGlobFeats=6; L2: kOrderFeats=8, kFinFeats=12)"
+from rl.env.l0_env import RULES
+
+FEATURE_VERSION = "l0-v2 (kCandFeats=12, kMachFeats=4, kPoolFeats=4, kGlobFeats=6, kShockFeats=4 [A2]; L2: kOrderFeats=8, kFinFeats=12)"
 
 
 class LogitsNet(torch.nn.Module):
@@ -54,7 +56,8 @@ def export(ckpt: Path, out: Path, level: str) -> dict:
     act_sb3, _ = model.predict(obs, action_masks=mask, deterministic=True)
     assert np.array_equal(act_onnx, np.asarray(act_sb3)), "маскированный argmax ≠ predict"
     sha = hashlib.sha256(out.read_bytes()).hexdigest()
-    meta = {"level": level, "obs_size": d, "act_size": a, "sha256": sha, "source_ckpt": str(ckpt), "exported": str(date.today()),
+    extra = {"action_space": "rule", "rules": list(RULES)} if level == "L0rule" else {"action_space": "slot"}
+    meta = {**extra, "level": level, "obs_size": d, "act_size": a, "sha256": sha, "source_ckpt": str(ckpt), "exported": str(date.today()),
             "feature_version": FEATURE_VERSION, "bytes": out.stat().st_size, "regenerate": f"python -m rl.train.export_onnx --ckpt {ckpt} --out {out} --level {level}"}
     out.with_suffix(".json").write_text(json.dumps(meta, indent=1, ensure_ascii=False), encoding="utf-8")
     return meta
@@ -64,7 +67,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--level", type=str, default="L0")
+    ap.add_argument("--level", type=str, default="L0", help="L0 | L0rule (выбор правила, A2) | L2")
     a = ap.parse_args()
     print(json.dumps(export(a.ckpt, a.out, a.level), indent=1, ensure_ascii=False))
 

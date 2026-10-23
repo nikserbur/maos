@@ -33,7 +33,7 @@ TRAIN_SCEN_SEED, N_TRAIN_SCEN = 100, 64
 VALID_N_PER_INSTANCE = 4     # [НОРМ] rl.valid: 4 сценария × все экземпляры (WAIT-тяжёлые политики дорого оценивать по-одному)
 
 
-def stage_env(stage: int, names: list[str], seed: int, weeks: int) -> DummyVecEnv:
+def stage_env(stage: int, names: list[str], seed: int, weeks: int, env_cls=L0Env, n_envs: int = N_ENVS) -> DummyVecEnv:
     small = [n for n in names if n.startswith("maos-rnd")][:4] or names
     insts_small, insts_all = load_instances(small), load_instances(names)
     base = ScenarioSet(N_TRAIN_SCEN, TRAIN_SCEN_SEED, weeks=weeks)
@@ -41,19 +41,19 @@ def stage_env(stage: int, names: list[str], seed: int, weeks: int) -> DummyVecEn
 
     def mk(i: int):
         if stage == 1:
-            return lambda: L0Env(insts_small, {"breakdowns": False}, base, seed_base=seed * 100000 + i * 1000)
+            return lambda: env_cls(insts_small, {"breakdowns": False}, base, seed_base=seed * 100000 + i * 1000)
         if stage == 2:
-            return lambda: L0Env(insts_all, {"breakdowns": True}, base, seed_base=seed * 100000 + i * 1000)
+            return lambda: env_cls(insts_all, {"breakdowns": True}, base, seed_base=seed * 100000 + i * 1000)
         sc = crisis if i % 2 else base
-        return lambda: L0Env(insts_all, {"breakdowns": True}, sc, seed_base=seed * 100000 + i * 1000)
-    return DummyVecEnv([mk(i) for i in range(N_ENVS)])
+        return lambda: env_cls(insts_all, {"breakdowns": True}, sc, seed_base=seed * 100000 + i * 1000)
+    return DummyVecEnv([mk(i) for i in range(n_envs)])
 
 
-def validate(model, names: list[str], weeks: int, spec: EvalSpec) -> dict:
+def validate(model, names: list[str], weeks: int, spec: EvalSpec, policy_fn=sb3_policy) -> dict:
     """IQM отдачи и KPI на валидационных сценариях; EDD — на тех же (CRN)."""
     insts = load_instances(names)
     vs = ScenarioSet(VALID_N_PER_INSTANCE, spec.valid_seed, weeks=weeks)
-    pol = sb3_policy(model)
+    pol = policy_fn(model)
     out = {"instances": {}, "iqm_profit_rl": 0.0, "iqm_profit_edd": 0.0}
     rl_all, edd_all = [], []
     for n, inst in zip(names, insts):
@@ -72,27 +72,31 @@ def validate(model, names: list[str], weeks: int, spec: EvalSpec) -> dict:
     return out
 
 
-def train_seed(seed: int, steps: list[int], names: list[str], weeks: int, spec: EvalSpec, eval_every: int) -> dict:
+def train_seed(seed: int, steps: list[int], names: list[str], weeks: int, spec: EvalSpec, eval_every: int,
+               env_cls=L0Env, policy_fn=sb3_policy, tag: str = "l0", max_sec: float = float("inf"), n_envs: int = N_ENVS) -> dict:
     torch.manual_seed(seed); np.random.seed(seed)
     CKPT.mkdir(parents=True, exist_ok=True)
     log: dict = {"seed": seed, "stages": [], "validations": []}
     model = None
-    best, best_path = -np.inf, CKPT / f"l0_seed{seed}_best.zip"
+    best, best_path = -np.inf, CKPT / f"{tag}_seed{seed}_best.zip"
     t0 = time.time()
     total = 0
     for stage, n_steps in enumerate(steps, start=1):
-        venv = stage_env(stage, names, seed, weeks)
+        if time.time() - t0 > max_sec:            # бюджет времени на сид исчерпан
+            log["stopped_by_time"] = True
+            break
+        venv = stage_env(stage, names, seed, weeks, env_cls, n_envs)
         if model is None:
             model = MaskablePPO("MlpPolicy", venv, seed=seed, verbose=0, ent_coef=ENT[0], **PPO)
         else:
             model.set_env(venv)
         model.ent_coef = ENT[min(stage - 1, len(ENT) - 1)]
         done_in_stage = 0
-        while done_in_stage < n_steps:
+        while done_in_stage < n_steps and time.time() - t0 <= max_sec:
             chunk = min(eval_every, n_steps - done_in_stage)
             model.learn(total_timesteps=chunk, reset_num_timesteps=False)
             done_in_stage += chunk; total += chunk
-            v = validate(model, names, weeks, spec)
+            v = validate(model, names, weeks, spec, policy_fn)
             v.update({"stage": stage, "steps": total, "sec": time.time() - t0})
             log["validations"].append({k: v[k] for k in ("stage", "steps", "sec", "iqm_profit_rl", "iqm_profit_edd", "score")})
             print(f"seed {seed} stage {stage} steps {total:7d}  IQM(Π/EDD): RL {v['iqm_profit_rl']:.4f}  EDD {v['iqm_profit_edd']:.4f}  "
@@ -101,10 +105,10 @@ def train_seed(seed: int, steps: list[int], names: list[str], weeks: int, spec: 
                 best = v["score"]; model.save(best_path)
                 log["best"] = {"stage": stage, "steps": total, "score": best, "validation": v}
         log["stages"].append({"stage": stage, "steps": n_steps, "ent_coef": model.ent_coef})
-    model.save(CKPT / f"l0_seed{seed}_last.zip")
+    model.save(CKPT / f"{tag}_seed{seed}_last.zip")
     log["total_steps"] = total; log["sec"] = time.time() - t0
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / f"train_l0_seed{seed}.json").write_text(json.dumps(log, indent=1, ensure_ascii=False), encoding="utf-8")
+    (RESULTS / f"train_{tag}_seed{seed}.json").write_text(json.dumps(log, indent=1, ensure_ascii=False), encoding="utf-8")
     return log
 
 

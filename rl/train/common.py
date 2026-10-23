@@ -44,16 +44,17 @@ def rule_policy(rule: str) -> str:
 
 def run_episodes(instance, policy: str | Policy, scenarios: ScenarioSet, idxs: Sequence[int], seed_base: int,
                  cfg: dict | None = None, key: list[float] | None = None, l2_policy: Policy | None = None,
-                 l0_inner: str | Policy | None = None) -> list[dict]:
+                 l0_inner: str | Policy | None = None, twin: bool = False) -> list[dict]:
     """Прогон набора сценариев одной политикой; обученные политики — батчем по всем средам сразу.
     policy: 'rule:EDD' | 'key' (с key) | callable L0. l2_policy — политика L2 (если среда с L2)."""
     me = load_module()
     c = make_config(cfg)
     envs = [me.SimEnv(instance, c) for _ in idxs]
     for e, i in zip(envs, idxs):
-        e.reset(seed_base + i, scenarios.scenario_json(i))
+        e.reset(seed_base + i, scenarios.twin_json(i) if twin else scenarios.scenario_json(i))   # twin — тот же сценарий без шоков (A2)
     out: list[dict | None] = [None] * len(envs)
     active = list(range(len(envs)))
+    hold: list[tuple[int, float] | None] = [None] * len(envs)   # A2: (действие, до момента) для макро-шага Δ
     inner = l0_inner if l0_inner is not None else policy
     while active:
         # L2-эпохи
@@ -76,6 +77,21 @@ def run_episodes(instance, policy: str | Policy, scenarios: ScenarioSet, idxs: S
             elif inner == "key":
                 for k in l0:
                     envs[k].step_job(envs[k].key_choice(key))
+            elif getattr(inner, "rule_select", False):      # L0 как выбор правила (A2): действие → правило/CP-SAT/чемпион
+                from rl.env.l0_env import A_CPSAT, N_ACTIONS, dispatch, resolve_action
+                cpk = inner.cp_keys.get(instance.name) if inner.cp_keys else None
+                dflt = inner.defaults.get(instance.name, 0) if inner.defaults else 0
+                delta = getattr(inner, "delta_min", 0.0)
+                need = [k for k in l0 if hold[k] is None or delta <= 0 or envs[k].now >= hold[k][1]]
+                if need:
+                    obs = np.stack([envs[k].obs_l0() for k in need])
+                    mask = np.ones((len(need), N_ACTIONS), dtype=bool); mask[:, A_CPSAT] = cpk is not None
+                    for k, a in zip(need, inner(obs, mask)):
+                        hold[k] = (resolve_action(int(a), dflt, cpk is not None), envs[k].now + delta)
+                for k in l0:
+                    ra = hold[k][0]
+                    inner.log_action(instance.name, ra)
+                    envs[k].step_job(dispatch(envs[k], ra, cpk, dflt))
             else:
                 obs = np.stack([envs[k].obs_l0() for k in l0]); mask = np.stack([envs[k].mask_l0() for k in l0]).astype(bool)
                 acts = inner(obs, mask)
@@ -94,6 +110,32 @@ def sb3_policy(model) -> Policy:
         acts, _ = model.predict(obs, action_masks=mask, deterministic=True)
         return np.asarray(acts)
     return f
+
+
+class RuleSelectPolicy:
+    """Политика L0 «выбор правила» (A2): действие 0..6 — правило, 7 — ключ CP-SAT, 8 — статический
+    чемпион экземпляра (defaults: имя экземпляра → действие 0..7; cp_keys: имя → ключ CP-SAT).
+    model = None → «всегда чемпион» (BC-цель); fn(obs, mask) — произвольная политика (оракулы)."""
+    rule_select = True
+
+    def __init__(self, model=None, defaults: dict | None = None, cp_keys: dict | None = None, fn=None,
+                 delta_h: float = 0.0) -> None:
+        self.model, self.fn = model, fn
+        self.delta_min = float(delta_h) * 60.0      # макро-шаг: действие держится Δ часов модельного времени
+        self.defaults, self.cp_keys = defaults or {}, cp_keys or {}
+        self.counts: dict[str, np.ndarray] = {}
+
+    def __call__(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        if self.fn is not None:
+            return np.asarray(self.fn(obs, mask))
+        if self.model is None:
+            return np.full(len(obs), 8)
+        acts, _ = self.model.predict(obs, action_masks=mask, deterministic=True)
+        return np.asarray(acts)
+
+    def log_action(self, name: str, a: int) -> None:
+        c = self.counts.setdefault(name, np.zeros(10, dtype=np.int64))
+        c[a] += 1
 
 
 # ── Статистика ─────────────────────────────────────────────────────────────

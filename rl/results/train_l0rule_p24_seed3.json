@@ -1,0 +1,350 @@
+{
+ "seed": 3,
+ "tag": "l0rule_p24",
+ "delta_h": 24.0,
+ "dense": false,
+ "paired": 9.0,
+ "bc": {
+  "n_obs": 1085,
+  "loss": 1.2374625205993652,
+  "validation": {
+   "score": 0.0,
+   "per_instance": {
+    "maos-plan1": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-plan2": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-plan3": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd1": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd2": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd3": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd4": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd5": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd6": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd7": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd8": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    },
+    "maos-rnd9": {
+     "d_cvar": 0.0,
+     "d_cash": 0.0,
+     "d_mean": 0.0
+    }
+   },
+   "actions": {
+    "maos-plan1": [
+     0,
+     21288,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-plan2": [
+     0,
+     20632,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-plan3": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     14561,
+     0,
+     0
+    ],
+    "maos-rnd1": [
+     5450,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd2": [
+     0,
+     0,
+     0,
+     7166,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd3": [
+     0,
+     0,
+     7693,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd4": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     7160,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd5": [
+     0,
+     0,
+     15472,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd6": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     15616,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd7": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     15024,
+     0,
+     0
+    ],
+    "maos-rnd8": [
+     22428,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "maos-rnd9": [
+     0,
+     21561,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "sec": 20.860337018966675
+ },
+ "validations": [
+  {
+   "steps": 0,
+   "score": 0.0,
+   "sec": 20.86033797264099,
+   "phase": "bc"
+  },
+  {
+   "steps": 20000,
+   "score": 0.0,
+   "sec": 109.3026180267334,
+   "phase": "ppo"
+  },
+  {
+   "steps": 40000,
+   "score": 0.0,
+   "sec": 196.1129801273346,
+   "phase": "ppo"
+  },
+  {
+   "steps": 60000,
+   "score": 0.0,
+   "sec": 281.78303694725037,
+   "phase": "ppo"
+  },
+  {
+   "steps": 80000,
+   "score": 0.0,
+   "sec": 368.13777709007263,
+   "phase": "ppo"
+  },
+  {
+   "steps": 100000,
+   "score": 0.0,
+   "sec": 456.37718892097473,
+   "phase": "ppo"
+  },
+  {
+   "steps": 120000,
+   "score": 0.0,
+   "sec": 542.009330034256,
+   "phase": "ppo"
+  },
+  {
+   "steps": 140000,
+   "score": 0.0,
+   "sec": 619.6316177845001,
+   "phase": "ppo"
+  },
+  {
+   "steps": 160000,
+   "score": 0.0,
+   "sec": 697.4780640602112,
+   "phase": "ppo"
+  },
+  {
+   "steps": 180000,
+   "score": 0.0,
+   "sec": 776.1248180866241,
+   "phase": "ppo"
+  },
+  {
+   "steps": 200000,
+   "score": 0.0,
+   "sec": 853.8433740139008,
+   "phase": "ppo"
+  },
+  {
+   "steps": 220000,
+   "score": 0.0,
+   "sec": 932.4766747951508,
+   "phase": "ppo"
+  },
+  {
+   "steps": 240000,
+   "score": 0.0,
+   "sec": 1008.601930141449,
+   "phase": "ppo"
+  },
+  {
+   "steps": 260000,
+   "score": 0.0,
+   "sec": 1086.472410917282,
+   "phase": "ppo"
+  },
+  {
+   "steps": 280000,
+   "score": 0.0,
+   "sec": 1163.7964618206024,
+   "phase": "ppo"
+  },
+  {
+   "steps": 300000,
+   "score": 0.0,
+   "sec": 1250.6723191738129,
+   "phase": "ppo"
+  }
+ ],
+ "cvar": [
+  0.1,
+  0.5
+ ],
+ "ppo": {
+  "n_steps": 1024,
+  "batch_size": 512,
+  "learning_rate": 0.0001,
+  "gamma": 0.999,
+  "gae_lambda": 0.95,
+  "clip_range": 0.1,
+  "n_epochs": 4,
+  "vf_coef": 0.5,
+  "max_grad_norm": 0.5,
+  "ent_coef": 0.003,
+  "policy_kwargs": {
+   "net_arch": [
+    128,
+    128
+   ]
+  }
+ },
+ "best": {
+  "steps": 0,
+  "score": 0.0,
+  "phase": "bc"
+ },
+ "total_steps": 300000,
+ "sec": 1250.6814649105072
+}

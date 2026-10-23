@@ -7,6 +7,7 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <tuple>
 
 namespace maos::env {
 namespace {
@@ -272,6 +273,10 @@ Scenario Scenario::from_json(const json& j) {
   if (j.contains("regime")) s.regime = j["regime"].get<std::vector<int>>();
   s.defaultWeek = (int)num(j, "default_week", -1); s.lgd = num(j, "lgd", 0);
   s.leadMul = num(j, "lead_mul", 1.0); s.priceMul = num(j, "price_mul", 1.0);
+  s.outageAt = num(j, "outage_at", -1); s.outageDur = num(j, "outage_dur", 0);
+  s.rushAt = num(j, "rush_at", -1); s.rushQty = num(j, "rush_qty", 0.5); s.rushDue = num(j, "rush_due", 1.5);
+  s.rushOrder = (int)num(j, "rush_order", 0); s.supplyDelay = num(j, "supply_delay", 0);
+  s.regimeShockWeek = (int)num(j, "regime_shock_week", -1);
   return s;
 }
 
@@ -281,6 +286,7 @@ SimEnv::SimEnv(Instance inst, EnvConfig cfg) : inst_(std::move(inst)), cfg_(cfg)
   std::vector<std::string> wcts; for (auto& [w, _] : m.machinesOf) wcts.push_back(w);
   std::sort(wcts.begin(), wcts.end());
   for (auto& w : wcts) { wctIdx_[w] = (int)wctIds_.size(); wctIds_.push_back(w); for (auto& mid : m.machinesOf.at(w)) { machineIdx_[mid] = (int)machineIds_.size(); machineIds_.push_back(mid); } }
+  nBaseOrders_ = (int)inst_.orders.size();
   ord_.assign(inst_.orders.size(), OrderState{});
   due_.assign(inst_.orders.size(), 0);
   rebuild_jobs();
@@ -319,7 +325,8 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
 
   jobs_.clear();
   const int K = (int)inst_.orders.size();
-  for (int k = 0; k < K; ++k) {
+  const int KB = std::min(K, nBaseOrders_);
+  auto expandOrder = [&](int k) {
     OrderState& os = ord_[k]; const OrderSpec& o = inst_.orders[k];
     std::unordered_map<std::string,int> batchOv; if (os.nBatches > 0) batchOv[o.productId] = os.nBatches;
     std::unordered_map<std::string,std::vector<Op>> opsOv;
@@ -334,8 +341,10 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
     ex.expand(k, o.productId, o.qty, due_.empty() ? 1e12 : due_[k]);
     os.jobEnd = (int)jobs_.size();
     for (int i = os.jobBegin; i < os.jobEnd; ++i) { jobs_[i].releaseMin = o.releaseMin + os.shiftWeeks * kWeekMin; jobs_[i].dueMin = due_.empty() ? 1e12 : due_[k]; }
-  }
-  // Дефицит покупного сырья → «поставка» как предшественник заказа (как run_schedule).
+  };
+  // Дефицит покупного сырья → «поставка» как предшественник заказа (как run_schedule). Потребность —
+  // по заказам ЭКЗЕМПЛЯРА: срочный заказ сценария (A2) не меняет поставок плана, получает ту же.
+  double supplyLead = 0;
   {
     std::unordered_map<std::string,double> matNeed;
     std::function<void(const std::string&, double, std::unordered_set<std::string>&, int)> reqf =
@@ -345,18 +354,21 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
           for (auto& o : it->second) for (auto& in : o.inputs) { matNeed[in.first] += mult * in.second; reqf(in.first, mult * in.second, vis, depth + 1); }
         vis.erase(pid);
       };
-    for (auto& o : inst_.orders) { std::unordered_set<std::string> vis; reqf(o.productId, o.qty, vis, 0); }
-    double supplyLead = 0;
+    for (int k = 0; k < KB; ++k) { std::unordered_set<std::string> vis; reqf(inst_.orders[k].productId, inst_.orders[k].qty, vis, 0); }
     for (auto& [mid, need] : matNeed) { auto pit = m.prods.find(mid); if (pit != m.prods.end() && pit->second.purchased && need > pit->second.stock) supplyLead = std::max(supplyLead, pit->second.leadHours); }
-    if (supplyLead > 0) for (int k = 0; k < K; ++k) {
-      Job sj; sj.orderIdx = k; sj.productId = "supply"; sj.opId = "supply"; sj.opName = "Поставка/подготовка сырья";
-      sj.durMean = supplyLead * 60.0 * sc_.leadMul; sj.sigma = supplyLead * 60.0 * 0.2; sj.riskCoef = 0.05; sj.tailWeight = 0.12; sj.tailIndex = 2.0;
-      sj.hourRate = 0; sj.laborRate = 0; sj.dueMin = due_.empty() ? 1e12 : due_[k]; sj.needsWorker = false;
-      sj.releaseMin = inst_.orders[k].releaseMin + ord_[k].shiftWeeks * kWeekMin;
-      const int sjIdx = (int)jobs_.size(); jobs_.push_back(sj);
-      for (int i = ord_[k].jobBegin; i < ord_[k].jobEnd; ++i) if (jobs_[i].preds.empty()) jobs_[i].preds.push_back(sjIdx);
-    }
   }
+  auto addSupply = [&](int k) {
+    Job sj; sj.orderIdx = k; sj.productId = "supply"; sj.opId = "supply"; sj.opName = "Поставка/подготовка сырья";
+    sj.durMean = supplyLead * 60.0 * sc_.leadMul; sj.sigma = supplyLead * 60.0 * 0.2; sj.riskCoef = 0.05; sj.tailWeight = 0.12; sj.tailIndex = 2.0;
+    sj.hourRate = 0; sj.laborRate = 0; sj.dueMin = due_.empty() ? 1e12 : due_[k]; sj.needsWorker = false;
+    sj.releaseMin = inst_.orders[k].releaseMin + ord_[k].shiftWeeks * kWeekMin;
+    const int sjIdx = (int)jobs_.size(); jobs_.push_back(sj);
+    for (int i = ord_[k].jobBegin; i < ord_[k].jobEnd; ++i) if (jobs_[i].preds.empty()) jobs_[i].preds.push_back(sjIdx);
+  };
+  for (int k = 0; k < KB; ++k) expandOrder(k);
+  if (supplyLead > 0) for (int k = 0; k < KB; ++k) addSupply(k);
+  // Срочные заказы сценария — ПОСЛЕ джоб экземпляра: индексы плана (ключи ГА/CP-SAT) не сдвигаются.
+  for (int k = KB; k < K; ++k) { expandOrder(k); if (supplyLead > 0) addSupply(k); }
   const size_t J = jobs_.size();
   // Ключи правил, работа заказов, топологический порядок.
   orderWork_.assign(K, 0); for (auto& j : jobs_) orderWork_[j.orderIdx] += j.durMean;
@@ -404,18 +416,42 @@ void SimEnv::draw_durations() {
     if (cfg_.deterministic) { dur_[j] = jobs_[j].durMean; continue; }
     std::mt19937 r = job_rng((int)j, 1); dur_[j] = sched::sample_dur(jobs_[j], inst_.tailWeight, r);
   }
+  // A2: срыв поставки критичного входа — задержка раскрывается только по факту (длительность поставки).
+  if (supplyExtra_ > 0)
+    for (size_t j = 0; j < jobs_.size(); ++j)
+      if (jobs_[j].productId == "supply" && supplyShockOrders_.count(jobs_[j].orderIdx)) dur_[j] += supplyExtra_;
 }
 
 /* ── Эпизод ──────────────────────────────────────────────────────────────── */
 void SimEnv::reset(uint64_t seed, const Scenario& sc) {
   seed_ = seed; sc_ = sc;
+  // Срочные заказы прошлого эпизода убираются; шоки разрешаются заново по LB базового плана.
+  inst_.orders.resize(nBaseOrders_); ord_.resize(nBaseOrders_); due_.resize(nBaseOrders_);
+  outageMi_ = -1; outA_ = outB_ = rushRelease_ = shockT_ = -1; supplyExtra_ = 0; supplyShockOrders_.clear();
   for (auto& o : ord_) o = OrderState{};
   while (!events_.empty()) events_.pop();
   moves_.clear(); moveSeq_ = 0; weekly_.clear(); drawPlan_.clear(); repayPlan_.clear(); cashValid_ = false;
   now_ = 0; done_ = false; level_ = 0; curMachine_ = -1; nDecisions_ = nWait_ = nPlaced_ = 0; week_ = 0; movesThisWeek_ = 0; inL2_ = false;
   pendingReward_ = 0; lastSetup_ = 0;
   rebuild_jobs();
-  update_bounds(); scaleT_ = std::max(1.0, lbCmax_);
+  update_bounds();
+  if (sc_.has_shock() || sc_.regimeShockWeek >= 0) {
+    resolve_shocks(); rebuild_jobs();
+    if (rushRelease_ >= 0) {                 // жёсткий срок срочного заказа: прибытие + rushDue × его цепочка
+      const int k = (int)ord_.size() - 1;
+      // Цепочка — в рабочих минутах; срок — в календарном времени (смены/выходные общего календаря).
+      // Нижняя оценка цикла САМОГО заказа: max(цепочка партии, Σ работы на тип / станков типа) — партии
+      // проходят узкое место последовательно; без этого срок был бы невыполним при любой очерёдности.
+      std::unordered_map<std::string,double> byType;
+      for (int i = ord_[k].jobBegin; i < ord_[k].jobEnd; ++i) if (!jobs_[i].wcType.empty()) byType[jobs_[i].wcType] += jobs_[i].durMean;
+      double lbk = order_cycle_min(k);
+      for (auto& [t, w] : byType) { auto it = inst_.model.machinesOf.find(t); if (it != inst_.model.machinesOf.end() && !it->second.empty()) lbk = std::max(lbk, w / it->second.size()); }
+      due_[k] = inst_.cal.advance(rushRelease_, std::max(0.1, sc_.rushDue) * lbk);
+      rebuild_jobs();                        // ключи правил (EDD/CR/MS) видят срок срочного заказа
+    }
+    update_bounds();
+  }
+  scaleT_ = std::max(1.0, lbCmax_);
   if (cfg_.mode == EpochMode::Event) init_events();
   if (cfg_.l2Enabled) { inL2_ = true; level_ = 2; movesThisWeek_ = 0; build_obs_l2(); return; }
   if (!advance()) finish_episode();
@@ -440,13 +476,14 @@ void SimEnv::place_job(int j, const std::string& machineId, double notBefore) {
   const sched::Placement pl = sched::sim_place(st_, inst_.model, jobs_, j, dur_, inst_.cal, inst_.calByM, {},
                                                cfg_.breakdowns ? &brng : nullptr, machineId, notBefore);
   finishAt_[j] = pl.end; ++nPlaced_;
+  if (outageMi_ >= 0 && pl.machineId == machineIds_[outageMi_]) apply_outage(j);
   if (!machineId.empty() && machineIdx_.count(machineId)) idle_[machineIdx_.at(machineId)] = 0;
   const Job& jb = jobs_[j];
   OrderState& os = ord_[jb.orderIdx];
   if (!os.started) { os.started = true; os.startMin = pl.start; book_order_start(jb.orderIdx, pl.start); }
   // Конверсионные затраты недели завершения (машино-часы × ставка, труд × ставка, ремонт).
   if (jb.productId != "supply" && jb.opId != "outsource") {
-    const int w = (int)std::floor(pl.end / kWeekMin);
+    const int w = (int)std::floor(st_.out.end[j] / kWeekMin);
     if ((int)weekly_.size() <= w) weekly_.resize(w + 1);
     const double h = (pl.proc + pl.setup) / 60.0;
     weekly_[w].conversion += h * jb.hourRate; weekly_[w].payrollGross += h * jb.laborRate;
@@ -537,6 +574,10 @@ bool SimEnv::advance() {
     }
     const int mi = e.id; pollPending_[mi] = 0;
     if (!idle_[mi]) { if (st_.mFree.count(machineIds_[mi]) && st_.mFree.at(machineIds_[mi]) <= now_ + 1e-9) idle_[mi] = 1; else continue; }
+    if (mi == outageMi_ && now_ >= outA_ - 1e-9 && now_ < outB_ - 1e-9) {   // A2: станок в отказе до outB_
+      if (!pollPending_[mi]) { pollPending_[mi] = 1; events_.push({ outB_, kEvMachine, mi }); }
+      continue;
+    }
     const Calendar& mcal = inst_.calByM.count(machineIds_[mi]) ? inst_.calByM.at(machineIds_[mi]) : inst_.cal;
     const double nw = mcal.nextWork(now_);
     if (nw > now_ + 1e-9) { if (!pollPending_[mi]) { pollPending_[mi] = 1; events_.push({ nw, kEvMachine, mi }); } continue; }
@@ -619,9 +660,19 @@ int SimEnv::rule_choice(const std::string& rule) const {
 }
 int SimEnv::key_choice(const std::vector<double>& key) const {
   if (cands_.empty()) return -1;
+  // Джобы вне ключа (срочный заказ сценария, A2): статический план о них не знал — диспетчер ставит их
+  // первыми по сроку (сильнейшая разумная реакция статического плана, а не «в конец очереди»).
+  auto k = [&](int j) { return j < (int)key.size() ? key[j] : -1e18 + jobs_[j].dueMin; };
   int best = cands_[0];
-  for (int j : cands_) if (j < (int)key.size() && (key[j] < key[best] || (key[j] == key[best] && j < best))) best = j;
+  for (int j : cands_) if (k(j) < k(best) || (k(j) == k(best) && j < best)) best = j;
   return best;
+}
+int SimEnv::expedite_choice(const std::string& rule, const std::vector<double>& key) const {
+  int best = -1;
+  for (int j : cands_)
+    if (jobs_[j].orderIdx >= nBaseOrders_ && (best < 0 || jobs_[j].dueMin < jobs_[best].dueMin || (jobs_[j].dueMin == jobs_[best].dueMin && j < best))) best = j;
+  if (best >= 0) return best;
+  return rule.empty() ? key_choice(key) : rule_choice(rule);
 }
 int SimEnv::rule_slot(const std::string& rule) const {
   const int j = rule_choice(rule);
@@ -699,6 +750,17 @@ void SimEnv::build_obs_l0() {
   const int wk = std::min((int)std::floor(now_ / kWeekMin), std::max(0, (int)sc_.keyRate.size() - 1));
   g[12] = (float)((!sc_.keyRate.empty() ? sc_.keyRate[wk] : inst_.fin.keyRate) / 0.2);
   g[13] = jobs_.empty() ? 0.f : (float)st_.nDone / jobs_.size();
+  // A2: экстренные события, наблюдаемые к моменту now_ (будущее не раскрывается).
+  g[14] = (outageMi_ >= 0 && now_ >= outA_ - 1e-9 && now_ < outB_ - 1e-9) ? 1.f : 0.f;
+  g[15] = (shockT_ >= 0 && now_ >= shockT_ - 1e-9) ? 1.f : 0.f;
+  if (rushRelease_ >= 0 && now_ >= rushRelease_ - 1e-9 && (int)ord_.size() > nBaseOrders_) {
+    double rem = 0, tot = 0;
+    for (int k = nBaseOrders_; k < (int)ord_.size(); ++k)
+      for (int i = ord_[k].jobBegin; i < ord_[k].jobEnd; ++i) { tot += jobs_[i].durMean; if (!st_.done[i]) rem += jobs_[i].durMean; }
+    g[16] = tot > 0 ? (float)(rem / tot) : 0.f;
+  }
+  for (size_t j = 0; j < jobs_.size() && supplyExtra_ > 0; ++j)
+    if (jobs_[j].productId == "supply" && st_.done[j] && now_ > st_.out.start[j] + jobs_[j].durMean && now_ < finishAt_[j]) { g[17] = 1.f; break; }
   // WAIT — только если ожидается событие завершения (иначе тупик).
   // WAIT — только если ближайшее завершение операции наступит в окне Δ (§7.3а); иначе тупик/простой.
   bool pending = false; { auto copy = events_; while (!copy.empty()) { const Event& e = copy.top(); if (e.kind == kEvJobDone && e.t > now_ + 1e-9) { pending = e.t - now_ <= cfg_.waitWindowMin; break; } copy.pop(); } }
@@ -775,6 +837,15 @@ bool SimEnv::move_allowed(int kind, int k) const {
 bool SimEnv::apply_move(int action, std::string& why) {
   const int K = cfg_.kMaxOrders, base = 1 + kMoveKinds * K;
   MoveLog ml; ml.week = week_; ml.id = "mv-" + std::to_string(++moveSeq_);
+  if (action >= base + kFinActs) {   // A3-крючок: invest (мощность типа РЦ) — записывается, эффект — волна A3
+    const int wi = action - base - kFinActs;
+    if (!invest_allowed(wi)) { why = "маска"; return false; }
+    ml.kind = "invest"; ml.before = { {"week", week_} };
+    ml.after = { {"wc_type", wctIds_[wi]}, {"capex", inst_.investCapex}, {"lead_weeks", inst_.investLeadWeeks},
+                 {"status", "крючок A3: мощность и транш не моделируются"} };
+    ml.masksChecked = { "investEnabled", "CAPEX задан", "тип РЦ существует" };
+    moves_.push_back(ml); return true;
+  }
   if (action >= base) {    // финансовые действия: транш доли невыбранного лимита / погашение
     const int fa = action - base; const auto [c, u] = cash_state();
     if ((int)drawPlan_.size() <= week_) { drawPlan_.resize(week_ + 1, -1); repayPlan_.resize(week_ + 1, -1); }
@@ -813,6 +884,7 @@ bool SimEnv::apply_move(int action, std::string& why) {
 std::string SimEnv::describe_l2(int action) const {
   if (action <= 0) return "noop";
   const int K = cfg_.kMaxOrders, base = 1 + kMoveKinds * K;
+  if (action >= base + kFinActs) return "invest#" + std::to_string(action - base - kFinActs);   // A3-крючок
   if (action >= base) { static const char* fa[kFinActs] = { "draw25", "draw50", "draw100", "repay50", "repay100" }; return fa[std::min(kFinActs - 1, action - base)]; }
   return std::string(kMoveKindNames[(action - 1) / K]) + "#" + std::to_string((action - 1) % K);
 }
@@ -849,6 +921,8 @@ void SimEnv::build_obs_l2() {
   for (int i = 0; i < 3; ++i) maskL2_[base + i] = u > 0 ? 1 : 0;
   const bool hasDebt = !(cashValid_ && !cashRes_.periods.empty()) ? inst_.fin.d0 > 0 : cashRes_.periods.back().debt > 0;
   maskL2_[base + 3] = maskL2_[base + 4] = (c - inst_.fin.cMin > 0 && hasDebt) ? 1 : 0;
+  if (cfg_.investEnabled)                                   // A3-крючок: invest по типу РЦ
+    for (int wi = 0; wi < cfg_.kMaxWct; ++wi) maskL2_[base + kFinActs + wi] = invest_allowed(wi) ? 1 : 0;
 }
 
 /* ── Деньги ──────────────────────────────────────────────────────────────── */
@@ -863,10 +937,12 @@ void SimEnv::book_order_start(int k, double t) {
 void SimEnv::book_order_finish(int k, double t) {
   const OrderSpec& o = inst_.orders[k]; const int w = (int)std::floor(t / kWeekMin);
   if ((int)weekly_.size() <= w) weekly_.resize(w + 1);
-  const double val = o.price * o.qty * sc_.priceMul;
-  weekly_[w].revenue += val; weekly_[w].cogs += o.matCost * o.qty * (ord_[k].outsourced.empty() ? 1.0 : inst_.outsourceMarkup);
+  double val = o.price * o.qty * sc_.priceMul;
   const double lateW = std::max(0.0, t - due_[k]) / kWeekMin;
-  if (lateW > 0) weekly_[w].otherFixed += std::min(cfg_.tardPenaltyCap, cfg_.tardPenaltyPerWeek * lateW) * val;
+  const bool rush = k >= nBaseOrders_;
+  if (rush && lateW > 0) val *= 1.0 - cfg_.rushLateLoss;      // A2: жёсткий срок срочного заказа сорван
+  weekly_[w].revenue += val; weekly_[w].cogs += o.matCost * o.qty * (ord_[k].outsourced.empty() ? 1.0 : inst_.outsourceMarkup);
+  if (lateW > 0 && !rush) weekly_[w].otherFixed += std::min(cfg_.tardPenaltyCap, cfg_.tardPenaltyPerWeek * lateW) * val;
 }
 cash::ScenarioResult SimEnv::run_cash(int weeks) const {
   cash::ScenarioInput in; in.periods.resize(weeks);
@@ -902,6 +978,108 @@ void SimEnv::finish_episode() {
                   - cfg_.lambdaBreach * (cashRes_.breach ? 1.0 : 0.0) - 0.5 * cfg_.lambdaBreach * (cashRes_.covenantBreach ? 1.0 : 0.0);
 }
 
+/* ── A2: экстренные события (шоки) ───────────────────────────────────────── */
+void SimEnv::resolve_shocks() {
+  const Model& m = inst_.model;
+  // Масштаб времени шоков: календарная нижняя оценка Cmax = max(цепочка, Σ работы типа / станков типа),
+  // переведённая через общий календарь (цепочка одна мало что говорит о длительности плана).
+  double lbw = lbCmax_;
+  {
+    std::unordered_map<std::string,double> load;
+    for (auto& j : jobs_) if (!j.wcType.empty()) load[j.wcType] += j.durMean;
+    for (auto& [t, w] : load) { auto it = m.machinesOf.find(t); if (it != m.machinesOf.end() && !it->second.empty()) lbw = std::max(lbw, w / it->second.size()); }
+  }
+  const double LB = std::max(1.0, inst_.cal.advance(0.0, lbw));
+  const int KB = nBaseOrders_;
+  // Отказ станка УЗКОГО МЕСТА: тип с наибольшей работой на станок (по базовому плану).
+  if (sc_.outageAt >= 0 && sc_.outageDur > 0) {
+    std::unordered_map<std::string,double> load;
+    for (auto& j : jobs_) if (!j.wcType.empty()) load[j.wcType] += j.durMean;
+    std::string bt; double bl = -1;
+    for (auto& [t, w] : load) {
+      auto it = m.machinesOf.find(t); if (it == m.machinesOf.end() || it->second.empty()) continue;
+      const double per = w / it->second.size();
+      if (per > bl || (per == bl && t < bt)) { bl = per; bt = t; }
+    }
+    if (!bt.empty()) { outageMi_ = machineIdx_.at(m.machinesOf.at(bt).front()); outA_ = sc_.outageAt * LB; outB_ = outA_ + sc_.outageDur * LB; }
+  }
+  // Срочный заказ: копия заказа-образца (часть объёма), прибывает по ходу, жёсткий срок.
+  if (sc_.rushAt >= 0 && KB > 0) {
+    const int k0 = ((sc_.rushOrder % KB) + KB) % KB;
+    OrderSpec r = inst_.orders[k0];
+    r.qty = std::max(1.0, std::round(r.qty * std::max(0.05, sc_.rushQty)));
+    r.releaseMin = sc_.rushAt * LB; r.priority = 1; r.price *= cfg_.rushPriceMul;
+    // Срок — после развёртки: прибытие + rushDue × критическая цепочка САМОГО срочного заказа (reset).
+    inst_.orders.push_back(r); ord_.push_back(OrderState{}); due_.push_back(1e12);
+    rushRelease_ = r.releaseMin;
+  }
+  // Срыв поставки КРИТИЧНОГО покупного входа (наибольшие потребность × срок): заказы с ним в BOM.
+  double tSupply = -1;
+  if (sc_.supplyDelay > 0) {
+    std::function<void(const std::string&, double, std::unordered_map<std::string,double>&, int)> need =
+      [&](const std::string& pid, double mult, std::unordered_map<std::string,double>& acc, int depth) {
+        if (depth > 64) return;
+        if (auto it = m.opsOf.find(pid); it != m.opsOf.end())
+          for (auto& o : it->second) for (auto& [q, qty] : o.inputs) { acc[q] += mult * qty; need(q, mult * qty, acc, depth + 1); }
+      };
+    std::vector<std::unordered_map<std::string,double>> per(KB);
+    std::unordered_map<std::string,double> tot;
+    for (int k = 0; k < KB; ++k) { need(inst_.orders[k].productId, inst_.orders[k].qty, per[k], 0); for (auto& [q, v] : per[k]) tot[q] += v; }
+    std::string crit; double cv = -1;
+    for (auto& [q, v] : tot) { auto pit = m.prods.find(q); if (pit == m.prods.end() || !pit->second.purchased) continue;
+      const double sc = v * std::max(1.0, pit->second.leadHours); if (sc > cv || (sc == cv && q < crit)) { cv = sc; crit = q; } }
+    if (!crit.empty()) {
+      for (int k = 0; k < KB; ++k) if (per[k].count(crit)) supplyShockOrders_.insert(k);
+      supplyExtra_ = sc_.supplyDelay * LB;
+      for (auto& j : jobs_) if (j.productId == "supply" && supplyShockOrders_.count(j.orderIdx)) {
+        const double t = j.releaseMin + j.durMean; tSupply = tSupply < 0 ? t : std::min(tSupply, t); }
+    }
+  }
+  // Момент шока = первое из событий (для метрик восстановления).
+  for (double t : { outA_, rushRelease_, tSupply, sc_.regimeShockWeek >= 0 ? sc_.regimeShockWeek * kWeekMin : -1.0 })
+    if (t >= 0) shockT_ = shockT_ < 0 ? t : std::min(shockT_, t);
+}
+
+void SimEnv::apply_outage(int j) {
+  const double s = st_.out.start[j], e = st_.out.end[j];
+  if (!(e > outA_ && s < outB_)) return;
+  const double extra = outB_ - std::max(s, outA_);            // операция стоит на ремонте до outB_
+  const double ne = e + extra;
+  st_.out.end[j] = ne; finishAt_[j] = ne; st_.out.downJ[j] += extra;
+  st_.out.breakdownMinutes += extra; ++st_.out.nBreakdowns;
+  const std::string& mid = machineIds_[outageMi_];
+  st_.mFree[mid] = ne; st_.out.busyByMachine[mid] += extra; st_.usage[mid] += extra;
+  const int w = st_.out.worker[j];
+  if (w >= 0 && w < (int)st_.wFree.size()) st_.wFree[w] = std::max(st_.wFree[w], ne);
+  st_.out.makespan = std::max(st_.out.makespan, ne);
+}
+
+json SimEnv::shock_metrics() const {
+  if (shockT_ < 0) return { {"has_shock", false} };
+  const double W = std::max(60.0, cfg_.shockWindowMin), t0 = shockT_;
+  std::vector<std::pair<double,double>> fin;                  // (окончание, работа) выполненных операций
+  for (size_t j = 0; j < jobs_.size(); ++j)
+    if (st_.done[j] && jobs_[j].productId != "supply" && jobs_[j].opId != "outsource") fin.push_back({ st_.out.end[j], jobs_[j].durMean });
+  std::sort(fin.begin(), fin.end());
+  auto work = [&](double a, double b) { double w = 0; for (auto& [t, d] : fin) { if (t >= b) break; if (t >= a) w += d; } return w; };
+  const double preSpan = std::min(W, t0);
+  const double pre = preSpan > 0 ? work(t0 - preSpan, t0) / preSpan : 0.0;
+  double rec = 0; bool ok = true;
+  if (pre > 0) {
+    ok = false; const double step = 240.0, mk = st_.out.makespan;
+    for (double t = t0 + step; t <= mk + step; t += step)
+      if (work(std::max(0.0, t - W), t) / std::min(W, t) >= cfg_.recoverShare * pre) { rec = t - t0; ok = true; break; }
+    if (!ok) rec = std::max(0.0, mk - t0);
+  }
+  return { {"has_shock", true}, {"shock_t_h", t0 / 60.0}, {"recovery_h", rec / 60.0}, {"recovered", ok},
+           {"pre_rate", pre}, {"outage", outageMi_ >= 0}, {"rush", rushRelease_ >= 0}, {"supply", supplyExtra_ > 0},
+           {"regime", sc_.regimeShockWeek >= 0} };
+}
+
+bool SimEnv::invest_allowed(int wi) const {
+  return cfg_.investEnabled && inst_.investCapex > 0 && wi >= 0 && wi < (int)wctIds_.size();
+}
+
 /* ── Выходы ──────────────────────────────────────────────────────────────── */
 json SimEnv::summary() const {
   int nLate = 0; const double tard = sched::order_tardiness(jobs_, st_.out, (int)ord_.size(), due_, nLate);
@@ -924,6 +1102,7 @@ json SimEnv::summary() const {
     {"covenant_breach", cashValid_ && cashRes_.covenantBreach}, {"interest", cashValid_ ? cashRes_.totalInterest : 0.0},
     {"max_debt", cashValid_ ? cashRes_.maxDebt : 0.0}, {"dscr", cashValid_ ? cashRes_.dscr : 0.0},
     {"moves", mv}, {"n_moves", (int)moves_.size()}, {"done", done_},
+    {"shock", shock_metrics()},
   };
 }
 json SimEnv::gantt() const {
@@ -995,6 +1174,82 @@ json ga_improve(const SimEnv& env0, int generations, int nScen, uint64_t seed0, 
   json hist = json::array(); for (auto& h : ga.history) hist.push_back({ {"gen", h.gen}, {"best", h.best}, {"mean", h.mean} });
   return { {"best_key", decode(ga.bestKey)}, {"genome", ga.bestKey}, {"best_score", ga.bestScore}, {"seed_score", ga.seedScore},
            {"evaluations", ga.evaluations}, {"generations", (int)ga.history.size() - 1}, {"history", hist},
+           {"stopped", ga.stoppedByTime ? "time" : ga.stoppedByStall ? "stall" : "generations"} };
+}
+
+/* ── Волна A2: план по ключу с пинами и ГА по операциям (стенд V4/«цена детерминизма») ─────────── */
+namespace {
+struct PlanCtx {
+  const Model& m; const std::vector<Job>& jobs; const Calendar& cal;
+  const std::unordered_map<std::string, Calendar>& calByM; std::vector<double> due; int K;
+};
+PlanCtx plan_ctx(const SimEnv& env) {
+  const Instance& in = env.instance(); const int K = (int)in.orders.size();
+  std::vector<double> due(K, 1e12);
+  for (auto& j : env.jobs()) due[j.orderIdx] = std::min(due[j.orderIdx], j.dueMin);
+  return { in.model, env.jobs(), in.cal, in.calByM, due, K };
+}
+sched::PinMap pins_of(const std::vector<double>& starts, const std::vector<std::string>& machines, size_t J) {
+  sched::PinMap pins;
+  for (size_t i = 0; i < J; ++i) {
+    const double s = i < starts.size() ? starts[i] : -1.0;
+    const std::string mc = i < machines.size() ? machines[i] : std::string();
+    if (s >= 0 || !mc.empty()) pins[(int)i] = { std::max(0.0, s), mc };
+  }
+  return pins;
+}
+// (Cmax, Σ просрочки, опозданий) прогона по длительностям dur; rng = nullptr → без поломок.
+std::tuple<double, double, int, sched::SimOut> run_plan(const PlanCtx& c, const std::vector<double>& key,
+                                                       const std::vector<double>& dur, const sched::PinMap& pins, std::mt19937* rng) {
+  sched::SimOut so = sched::simulate(c.m, c.jobs, key, dur, c.cal, c.calByM, pins, rng);
+  int nl = 0; const double t = sched::order_tardiness(c.jobs, so, c.K, c.due, nl);
+  return { so.makespan, t, nl, std::move(so) };
+}
+std::vector<double> mean_durs(const std::vector<Job>& jobs) {
+  std::vector<double> d(jobs.size()); for (size_t i = 0; i < jobs.size(); ++i) d[i] = jobs[i].durMean; return d;
+}
+}  // namespace
+
+json simulate_plan(SimEnv& env, const std::vector<double>& key, const std::vector<double>& starts,
+                   const std::vector<std::string>& machines, uint64_t seed) {
+  std::vector<double> dur;
+  if (seed == 0) { env.reset(1); dur = mean_durs(env.jobs()); }
+  else { env.reset(seed); dur = env.durations(); }
+  const PlanCtx c = plan_ctx(env);
+  if (key.size() != c.jobs.size()) throw std::invalid_argument("simulate_plan: длина ключа ≠ числу джоб");
+  std::mt19937 brng((uint32_t)(seed * 7919u + 13u));
+  auto [mk, td, nl, so] = run_plan(c, key, dur, pins_of(starts, machines, c.jobs.size()), seed == 0 ? nullptr : &brng);
+  json st = json::array(); for (double x : so.start) st.push_back(x / 60.0);
+  json mc = so.machineId;
+  return { {"makespan_h", mk / 60.0}, {"tardiness_h", td / 60.0}, {"otd", c.K ? (double)(c.K - nl) / c.K : 1.0},
+           {"starts_h", st}, {"machines", mc} };
+}
+
+json ga_improve_keys(SimEnv& env, const std::vector<std::vector<double>>& seeds, const std::vector<std::string>& machines,
+                     int generations, int nScen, uint64_t seed0, double timeBudgetSec, unsigned gaSeed, int stallGens) {
+  // Розыгрыши обучающих сценариев (CRN) — заранее; nScen = 0 → средние без поломок.
+  std::vector<std::vector<double>> durs; std::vector<uint64_t> sseed;
+  for (int s = 0; s < nScen; ++s) { env.reset(seed0 + s); durs.push_back(env.durations()); sseed.push_back(seed0 + s); }
+  env.reset(1);
+  if (nScen <= 0) { durs.push_back(mean_durs(env.jobs())); sseed.push_back(0); }
+  const PlanCtx c = plan_ctx(env);
+  const sched::PinMap pins = pins_of({}, machines, c.jobs.size());
+  auto fitness = [&](const std::vector<double>& g) {
+    double sum = 0;
+    for (size_t s = 0; s < durs.size(); ++s) {
+      std::mt19937 brng((uint32_t)(sseed[s] * 7919u + 13u));
+      auto [mk, td, nl, so] = run_plan(c, g, durs[s], pins, sseed[s] == 0 ? nullptr : &brng);
+      (void)nl; (void)so;
+      sum += (mk + 0.5 * td) / 60.0;
+    }
+    return sum / (double)durs.size();
+  };
+  GaConfig gc; gc.generations = generations; gc.seed = gaSeed; gc.sigma0 = 0.05;
+  gc.mutationRate = std::min(0.1, 20.0 / std::max<size_t>(1, c.jobs.size())); gc.swapBegin = 0; gc.stallGens = stallGens; gc.timeBudgetSec = timeBudgetSec;
+  const GaResult ga = run_key_ga(seeds, fitness, gc);
+  json hist = json::array(); for (auto& h : ga.history) hist.push_back({ {"gen", h.gen}, {"best", h.best}, {"mean", h.mean} });
+  return { {"best_key", ga.bestKey}, {"best_score", ga.bestScore}, {"seed_score", ga.seedScore}, {"evaluations", ga.evaluations},
+           {"generations", (int)ga.history.size() - 1}, {"history", hist}, {"improvements", ga.improvements},
            {"stopped", ga.stoppedByTime ? "time" : ga.stoppedByStall ? "stall" : "generations"} };
 }
 

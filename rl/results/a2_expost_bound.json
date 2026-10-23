@@ -1,0 +1,62 @@
+{
+ "maos-plan1": {
+  "bound_d_cvar": 0.002926193255010948,
+  "bound_d_mean": 0.0006135775230358625,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-plan2": {
+  "bound_d_cvar": 0.003054233407626471,
+  "bound_d_mean": 0.0006017836642694145,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-plan3": {
+  "bound_d_cvar": 0.00037188381045182505,
+  "bound_d_mean": 0.00043612652991117614,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd1": {
+  "bound_d_cvar": 7.355821581020054e-05,
+  "bound_d_mean": 0.008416621406680475,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd2": {
+  "bound_d_cvar": 1.432436592263045e-05,
+  "bound_d_mean": 0.006164679827044191,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd3": {
+  "bound_d_cvar": 0.00020426630773169547,
+  "bound_d_mean": 0.019385793153361048,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd4": {
+  "bound_d_cvar": 0.00036285806199963825,
+  "bound_d_mean": 0.004706390501323104,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd5": {
+  "bound_d_cvar": 0.004417523496067138,
+  "bound_d_mean": 0.013264104056515624,
+  "expedite_d_cvar": 0.0038189011799580693
+ },
+ "maos-rnd6": {
+  "bound_d_cvar": 0.003600622573232033,
+  "bound_d_mean": 0.0028203392946141146,
+  "expedite_d_cvar": 0.0035770388947047775
+ },
+ "maos-rnd7": {
+  "bound_d_cvar": 9.68520642775598e-05,
+  "bound_d_mean": 0.0022364818723069526,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd8": {
+  "bound_d_cvar": 3.6548679249307716e-05,
+  "bound_d_mean": 0.0007393089656079629,
+  "expedite_d_cvar": 0.0
+ },
+ "maos-rnd9": {
+  "bound_d_cvar": 4.3375857471736245e-05,
+  "bound_d_mean": 0.0008508989209306613,
+  "expedite_d_cvar": 0.0
+ }
+}

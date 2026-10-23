@@ -104,3 +104,56 @@ def test_scenario_set_crn():
     assert len(set(cr.scenario(0)["regime"])) == 1
     jt = ScenarioSet(2, 7, weeks=8, stress=STRESSES["joint"])
     assert jt.scenario(0)["default_week"] > 0 and jt.scenario(0)["lead_mul"] == 2.0
+
+
+def test_l0_rule_env_constant_policy_equals_rule(inst, me):
+    """L0 «выбор правила» (A2): политика «всегда r» воспроизводит правило r в событийном режиме (CRN)."""
+    from rl.env.l0_env import RULES, L0RuleEnv
+    for r_idx, rule in enumerate(RULES):
+        env = L0RuleEnv([inst], {"breakdowns": True, "event_mode": True}, None, seed_base=5)
+        obs, _ = env.reset(options={"instance": 0, "scenario": 3})
+        assert env.action_masks()[:len(RULES)].all() and not env.action_masks()[len(RULES)]   # CP-SAT: нет ключа
+        assert env.action_space.n == len(RULES) + 3
+        done = False
+        while not done:
+            obs, _, done, _, info = env.step(r_idx)
+        ref = me.SimEnv(inst, make_config({"breakdowns": True, "event_mode": True}))
+        want = run_rule(ref, rule, 5 + 3)
+        assert info["summary"]["makespan_h"] == pytest.approx(want["makespan_h"])
+        assert info["summary"]["profit"] == pytest.approx(want["profit"])
+
+
+def test_l0_rule_env_default_and_cpsat_actions(inst, me):
+    """Действие 8 = статический чемпион экземпляра; 7 = очередь по ключу CP-SAT (= evaluate_key)."""
+    from rl.env.l0_env import L0RuleEnv
+    env0 = me.SimEnv(inst, make_config({"breakdowns": True}))
+    env0.reset(1)
+    key = [float(-i) for i in range(env0.n_jobs)]
+    for action, want in ((8, ("rule", "SPT")), (7, ("key", key))):
+        env = L0RuleEnv([inst], {"breakdowns": True}, None, seed_base=5, defaults=[1], cp_keys=[key])
+        env.reset(options={"instance": 0, "scenario": 2})
+        done = False
+        while not done:
+            _, _, done, _, info = env.step(action)
+        ref = me.SimEnv(inst, make_config({"breakdowns": True}))
+        got = run_rule(ref, want[1], 7) if want[0] == "rule" else json.loads(me.evaluate_key(ref, want[1], 7))
+        assert info["summary"]["profit"] == pytest.approx(got["profit"])
+        assert info["summary"]["makespan_h"] == pytest.approx(got["makespan_h"])
+
+
+def test_shock_scenarios_crn_and_twin(inst, me):
+    """Стресс «шок»: ≥ 1 событие в сценарии, детерминизм по индексу; двойник — без событий."""
+    from rl.env.scenarios import STRESSES, ScenarioSet
+    a, b = ScenarioSet(6, 11, stress=STRESSES["shock"]), ScenarioSet(6, 11, stress=STRESSES["shock"])
+    for i in range(6):
+        assert a.has_shock(i) and a.scenario_json(i) == b.scenario_json(i)
+        tw = json.loads(a.twin_json(i))
+        assert "outage_at" not in tw and "rush_at" not in tw and "supply_delay" not in tw
+    env = me.SimEnv(inst, make_config({"breakdowns": True}))
+    seen = 0
+    for i in range(6):           # срыв поставки на этом экземпляре не действует (нет покупных входов)
+        sc = json.loads(a.scenario_json(i))
+        s = json.loads(me.evaluate_rule(env, "EDD", 3, a.scenario_json(i)))
+        if "outage_at" in sc or "rush_at" in sc or "regime_shock_week" in sc:
+            assert s["shock"]["has_shock"]; seen += 1
+    assert seen > 0

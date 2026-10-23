@@ -1,0 +1,703 @@
+{
+ "a2": {
+  "maos-plan1": {
+   "week0": {
+    "shift_plus": 11,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 11,
+    "outsource": 6,
+    "reroute": 3,
+    "reassign": 12,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 11,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 11,
+    "outsource": 6,
+    "reroute": 3,
+    "reassign": 12,
+    "finance": 5
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 9
+  },
+  "maos-plan2": {
+   "week0": {
+    "shift_plus": 11,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 9,
+    "outsource": 5,
+    "reroute": 2,
+    "reassign": 12,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 11,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 9,
+    "outsource": 5,
+    "reroute": 2,
+    "reassign": 12,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 9
+  },
+  "maos-plan3": {
+   "week0": {
+    "shift_plus": 1,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 5,
+    "reroute": 1,
+    "reassign": 10,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 1,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 5,
+    "reroute": 1,
+    "reassign": 10,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd1": {
+   "week0": {
+    "shift_plus": 0,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 3,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 0,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 3,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "merge",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd2": {
+   "week0": {
+    "shift_plus": 4,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 4,
+    "outsource": 2,
+    "reroute": 1,
+    "reassign": 4,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 4,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 4,
+    "outsource": 2,
+    "reroute": 1,
+    "reassign": 4,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 3
+  },
+  "maos-rnd3": {
+   "week0": {
+    "shift_plus": 0,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 1,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 0,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 1,
+    "finance": 3
+   },
+   "ever": [
+    "merge",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd4": {
+   "week0": {
+    "shift_plus": 0,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 1,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 0,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 1,
+    "finance": 3
+   },
+   "ever": [
+    "merge",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd5": {
+   "week0": {
+    "shift_plus": 3,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 2,
+    "reroute": 1,
+    "reassign": 3,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 3,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 2,
+    "reroute": 1,
+    "reassign": 3,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd6": {
+   "week0": {
+    "shift_plus": 6,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 1,
+    "reroute": 0,
+    "reassign": 3,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 6,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 1,
+    "reroute": 0,
+    "reassign": 3,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 3
+  },
+  "maos-rnd7": {
+   "week0": {
+    "shift_plus": 5,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 3,
+    "reroute": 1,
+    "reassign": 4,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 5,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 3,
+    "reroute": 1,
+    "reassign": 4,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 2
+  },
+  "maos-rnd8": {
+   "week0": {
+    "shift_plus": 11,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 12,
+    "outsource": 4,
+    "reroute": 2,
+    "reassign": 7,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 11,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 12,
+    "outsource": 4,
+    "reroute": 2,
+    "reassign": 7,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 3
+  },
+  "maos-rnd9": {
+   "week0": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 14,
+    "outsource": 3,
+    "reroute": 1,
+    "reassign": 6,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 14,
+    "outsource": 3,
+    "reroute": 1,
+    "reassign": 6,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "outsource",
+    "reroute",
+    "reassign",
+    "finance"
+   ],
+   "epochs": 2
+  }
+ },
+ "a1": {
+  "maos-plan1": {
+   "week0": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 11,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 11,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 6
+  },
+  "maos-plan2": {
+   "week0": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 9,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 9,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 6
+  },
+  "maos-plan3": {
+   "week0": {
+    "shift_plus": 10,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 10,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd1": {
+   "week0": {
+    "shift_plus": 3,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 3,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 3,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 3,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd2": {
+   "week0": {
+    "shift_plus": 4,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 4,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 4,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 4,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 2
+  },
+  "maos-rnd3": {
+   "week0": {
+    "shift_plus": 5,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 5,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 2
+  },
+  "maos-rnd4": {
+   "week0": {
+    "shift_plus": 6,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 6,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 5,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd5": {
+   "week0": {
+    "shift_plus": 8,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 8,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd6": {
+   "week0": {
+    "shift_plus": 8,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 8,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 8,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 1
+  },
+  "maos-rnd7": {
+   "week0": {
+    "shift_plus": 10,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 10,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 10,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 3
+  },
+  "maos-rnd8": {
+   "week0": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 12,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 12,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 12,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 2
+  },
+  "maos-rnd9": {
+   "week0": {
+    "shift_plus": 14,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 14,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "peak": {
+    "shift_plus": 14,
+    "shift_minus": 0,
+    "split": 0,
+    "merge": 14,
+    "outsource": 0,
+    "reroute": 0,
+    "reassign": 0,
+    "finance": 3
+   },
+   "ever": [
+    "shift_plus",
+    "merge",
+    "finance"
+   ],
+   "epochs": 2
+  }
+ }
+}

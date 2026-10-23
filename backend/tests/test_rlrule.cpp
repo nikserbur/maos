@@ -53,3 +53,11 @@ TEST(RlRule, ActWithoutPolicyFallsBackToFirstAllowedSlot) {
   std::vector<uint8_t> none(17, 0);
   EXPECT_EQ(maos::rl::act(0, obs, none), -1);
 }
+
+TEST(RlRule, RuleSelectActionsMapToRulesInPythonOrder) {
+  // A2: порядок = rl/env/l0_env.py:RULES; вне диапазона — EDD (безопасный фолбэк).
+  const char* want[] = { "EDD", "SPT", "LPT", "CR", "MWKR", "MS", "FIFO" };
+  for (int a = 0; a < maos::rl::kNumRules; ++a) EXPECT_STREQ(maos::rl::rule_for_action(a), want[a]);
+  EXPECT_STREQ(maos::rl::rule_for_action(-1), "EDD");
+  EXPECT_STREQ(maos::rl::rule_for_action(7), "EDD");
+}

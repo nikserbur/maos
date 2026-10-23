@@ -239,3 +239,76 @@ TEST(SimEnv, AllOrdersFinishedRevenueEqualsPortfolioValue) {
     EXPECT_NEAR(s.at("revenue").get<double>(), value, 1e-6);
   }
 }
+
+// ── Волна A2: экстренные события (шоки) и крючок invest ─────────────────────────────────────
+namespace {
+json run_key_episode(SimEnv& env, uint64_t seed, const Scenario& sc, const std::string& rule) {
+  env.reset(seed, sc);
+  while (!env.done()) { if (env.level() == 2) env.step(0); else env.step_job(env.rule_choice(rule)); }
+  return env.summary();
+}
+}  // namespace
+
+TEST(SimEnv, A2ShocksRevealOnlineAndKeepBaseJobIndices) {
+  SimEnv env(maos::env::instance_from_json(small_instance()), cfg(EpochMode::Event));
+  const json base = run_key_episode(env, 3, Scenario{}, "EDD");
+  const size_t J = env.jobs().size();
+  EXPECT_FALSE(base.at("shock").at("has_shock").get<bool>());
+  // Срочный заказ: джобы — ПОСЛЕ джоб экземпляра (ключи плана не сдвигаются), не раньше прибытия.
+  Scenario r; r.rushAt = 0.3; r.rushQty = 1.0; r.rushDue = 1.0; r.rushOrder = 0;
+  const json sr = run_key_episode(env, 3, r, "EDD");
+  ASSERT_GT(env.jobs().size(), J);
+  const double rel = env.jobs().back().releaseMin;
+  EXPECT_GT(rel, 0.0);
+  for (size_t i = J; i < env.jobs().size(); ++i) EXPECT_EQ(env.jobs()[i].orderIdx, 3);
+  const json g = env.gantt();
+  for (size_t i = J; i < g.size(); ++i) EXPECT_GE(g[i].at("start").get<double>() * 60.0, rel - 1e-6);
+  EXPECT_EQ(sr.at("n_orders").get<int>(), 4);
+  EXPECT_TRUE(sr.at("shock").at("rush").get<bool>());
+  // Следующий эпизод без шока: срочный заказ убран.
+  run_key_episode(env, 3, Scenario{}, "EDD");
+  EXPECT_EQ(env.jobs().size(), J);
+  // Ключ плана (длина J) работает и при срочном заказе: джобы вне ключа — первыми по сроку.
+  env.reset(3, r);
+  std::vector<double> key(J, 0.0);
+  while (!env.done()) env.step_job(env.key_choice(key));
+  EXPECT_TRUE(env.done());
+}
+
+TEST(SimEnv, A2OutageOfBottleneckDelaysAndSupplyShockExtendsLeadTime) {
+  SimEnv env(maos::env::instance_from_json(small_instance()), cfg(EpochMode::Event));
+  const json base = run_key_episode(env, 5, Scenario{}, "SPT");
+  Scenario o; o.outageAt = 0.0; o.outageDur = 0.5;
+  const json so = run_key_episode(env, 5, o, "SPT");
+  EXPECT_GE(so.at("makespan_h").get<double>(), base.at("makespan_h").get<double>() - 1e-9);
+  EXPECT_TRUE(so.at("shock").at("outage").get<bool>());
+  EXPECT_GE(so.at("shock").at("recovery_h").get<double>(), 0.0);
+  // Срыв поставки: покупной R — вход полуфабриката S (есть дефицит → «поставка» у заказов);
+  // поставки затронутых заказов дольше, прочие — как были.
+  json js = small_instance();
+  js["products"][0]["ops"][0]["inputs"] = json::array({ json::array({ "R", 1.0 }) });
+  SimEnv envS(maos::env::instance_from_json(js), cfg(EpochMode::Event));
+  Scenario sp; sp.supplyDelay = 0.5;
+  run_key_episode(envS, 5, Scenario{}, "SPT");
+  const json g0 = envS.gantt();
+  const json s1 = run_key_episode(envS, 5, sp, "SPT");
+  const json g1 = envS.gantt();
+  EXPECT_TRUE(s1.at("shock").at("supply").get<bool>());
+  bool longer = false;
+  for (size_t i = 0; i < g0.size(); ++i)
+    if (g0[i].at("product_id") == "supply" && g1[i].at("proc_h").get<double>() > g0[i].at("proc_h").get<double>() + 1e-9) longer = true;
+  EXPECT_TRUE(longer);
+}
+
+TEST(SimEnv, A3InvestHookDisabledByDefault) {
+  EnvConfig c = cfg(EpochMode::Event, true);
+  SimEnv env(maos::env::instance_from_json(small_instance()), c);
+  EXPECT_EQ(env.act_l2_size(), 1 + SimEnv::kMoveKinds * c.kMaxOrders + SimEnv::kFinActs);
+  c.investEnabled = true;
+  SimEnv env2(maos::env::instance_from_json(small_instance()), c);
+  EXPECT_EQ(env2.act_l2_size(), 1 + SimEnv::kMoveKinds * c.kMaxOrders + SimEnv::kFinActs + c.kMaxWct);
+  env2.reset(1);
+  ASSERT_EQ(env2.level(), 2);
+  const auto& m = env2.mask_l2();
+  for (int a = 1 + SimEnv::kMoveKinds * c.kMaxOrders + SimEnv::kFinActs; a < env2.act_l2_size(); ++a) EXPECT_EQ(m[a], 0);   // CAPEX = 0
+}

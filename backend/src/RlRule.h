@@ -30,6 +30,12 @@ bool available();            // L0 загружена и исполняема
 bool l2_available();
 json status();               // GET /api/rl/status
 
+/** A2: L0 «выбор правила» (Tang 2026) — действие a → правило (тот же порядок, что rl/env/l0_env.py:RULES).
+ *  Политика с метаданными action_space="rule" (export_onnx --level L0rule) диспетчеризует правилом. */
+constexpr int kNumRules = 7;
+constexpr int kActCpSat = 7, kActDefault = 8, kActExpedite = 9;   // = rl/env/l0_env.py: A_CPSAT, A_DEFAULT, A_EXPEDITE
+const char* rule_for_action(int a);
+
 /** Маскированный argmax логитов политики уровня level (0|2). −1 → политики нет. */
 int act(int level, const std::vector<float>& obs, const std::vector<uint8_t>& mask);
 

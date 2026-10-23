@@ -264,6 +264,8 @@ export interface OptResult {
   robust: OptPortfolio; expected: OptPortfolio
   price_of_robustness: number
   histogram: OptHistBin[]; candidates: OptCandidate[]
+  /** Волна A2: гистограмма робастного портфеля — 24 корзины на ЕГО собственный размах (общая — выше). */
+  histogram_robust?: OptHistBin[]
   warnings: string[]; run_id?: string
   error_soft?: boolean
   /** R5: применён ли stage1_feedback и его хэш (пишется в optimization_runs). */
@@ -416,6 +418,38 @@ export interface SchedImprover {
   weights?: { due: number; rem: number; duration: number; inputs: number; setup: number }
   history?: Array<{ gen: number; best: number; mean: number }>
   makespan_mean_rule?: number; makespan_mean_final?: number
+  /** Волна A2: режим хромосомы (auto → both при CP-SAT), победивший режим (null — ГА не принят),
+   *  источник затравки режима «ключи по операциям» и сводка по режимам. */
+  mode?: 'structured' | 'op_keys' | 'both'
+  mode_won?: 'structured' | 'op_keys' | null
+  seed_source?: 'cpsat' | 'rules'
+  modes?: Partial<Record<'structured' | 'op_keys', SchedGaMode>>
+}
+export interface SchedGaMode {
+  score_train: number; score_validation: number; seeds: number; generations: number
+  evaluations: number; genes: number; adoptable: boolean; stopped: 'generations' | 'stall' | 'time'
+}
+/** Волна A2: парная разность «итоговый − жёсткий CP-SAT» по отложенным сценариям (ч), 95 %-ДИ бутстрепа. */
+export interface SchedDeltaCi {
+  n: number; delta_mean: number; ci_mean: [number, number]; delta_cvar: number; ci_cvar: [number, number]
+}
+/** Волна A2: правило «CP-SAT» (sidecar rl/cpsat_service.py) — статус солвера и «цена детерминизма». */
+export interface SchedCpSat {
+  status: 'OPTIMAL' | 'FEASIBLE' | 'HINT' | 'INFEASIBLE' | 'UNKNOWN' | 'ERROR' | 'UNAVAILABLE' | string
+  objective?: number; bound?: number; time_s?: number
+  setup_mode?: string; hint_rule?: string; calendar_mode?: string; routing?: string
+  from_hint?: boolean; note?: string; error?: string; url?: string
+  makespan_solver_h?: number; makespan_replay_h?: number
+  best_rule?: string; best_rule_makespan_h?: number
+  /** (Cmax CP-SAT − Cmax лучшего правила) / Cmax правила, детерминированно; < 0 — CP-SAT лучше. */
+  gap_to_rule?: number; gap_to_rule_score?: number
+  price_of_determinism?: {
+    scenarios: number; held_out: boolean; final_plan: 'ga' | 'cpsat'
+    cpsat_det_makespan_h: number; final_det_makespan_h: number
+    cpsat: { makespan_mean_h: number; makespan_cvar_h: number; tardiness_mean_h: number }
+    final: { makespan_mean_h: number; makespan_cvar_h: number; tardiness_mean_h: number }
+    makespan_delta: SchedDeltaCi | null; tardiness_delta: SchedDeltaCi | null
+  }
 }
 /* ── Волна A: агент RL — статус политики, структурные ходы (контракт UX-V2 §4.7) ───── */
 export type MoveKind = 'reroute' | 'reassign' | 'reorder' | 'split' | 'merge' | 'transfer'
@@ -491,6 +525,8 @@ export interface ScheduleResult {
   /** Волна A: структурные ходы агента L2 (rule='RL'); null без RL. */
   moves?: MovesResult | null
   rl?: RlEval | null
+  /** Волна A2: правило «CP-SAT»; null для прочих правил. */
+  cpsat?: SchedCpSat | null
   plan_id?: string; error_soft?: boolean
 }
 export interface ScheduleParams {
@@ -500,6 +536,8 @@ export interface ScheduleParams {
   samples?: number; alpha?: number; tail_weight?: number; use_calendar?: boolean
   program?: Array<{ product_id: string; qty: number; due_hours?: number }>
   pins?: SchedPin[]; improve_iters?: number
+  /** Волна A2: лимит солвера правила «CP-SAT», с (1…600); режим хромосомы ГА. */
+  cpsat_time_limit?: number; ga_mode?: 'auto' | 'structured' | 'op_keys' | 'both'
   /** Конструктор эвристики: критерии с весами (знак = направление, меньший key — раньше). */
   custom_rule?: Array<{ criterion: 'duration' | 'due' | 'rem' | 'inputs' | 'setup'; weight: number }>
 }

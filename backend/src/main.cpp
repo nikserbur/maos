@@ -1994,6 +1994,139 @@ static void migrate_v21(Database& db) {
   std::cout << "Migration v21 done.\n";
 }
 
+/* ── Волна A2: обогащение демо-НСИ для структурных ходов агентов (PLAN-V2 §8 п.4) ──────────
+   Идемпотентно (маркер — строка паспорта rl.nsi.applied) и только для демо-завода «насосы»
+   (есть fin-0000/fin-0048/semi-000). Номер user_version не занимается: миграции версий ведёт
+   другая ветка работ; повторный запуск ничего не меняет. Все параметры — [К] (rl.nsi.*):
+   1) полуфабрикаты semi-000…004 становятся входами первой операции 10 изделий программы
+      (0,25 заготовки на изделие) и получают цену закупки = 1,3 × материалы (аутсорсинг возможен);
+   2) у операций изделий программы второй допустимый тип РЦ (пары взаимозаменяемых станков);
+   3) альтернативные техкарты (is_default=0) у 3 изделий: те же шаги, где возможно — на
+      альтернативном типе (−15 % нормы, +20 мин наладки);
+   4) сроки заказов ужесточены: план с одинаковыми сроками — лесенка 400…1100 ч, прочие × 0,2. */
+namespace demo_nsi {
+
+// Пары взаимозаменяемых типов РЦ (демо «насосы»): токарные ЧПУ, фрезерные, отрезные.
+const std::vector<std::pair<std::string, std::string>> kAltType = {
+  {"wct-01-00", "wct-01-01"}, {"wct-01-01", "wct-01-00"}, {"wct-01-03", "wct-01-00"},
+  {"wct-01-06", "wct-01-05"}, {"wct-01-05", "wct-01-06"}, {"wct-00-07", "wct-00-06"}, {"wct-00-06", "wct-00-07"},
+};
+std::string alt_type_of(const std::string& t) {
+  for (auto& [a, b] : kAltType) if (a == t) return b;
+  return "";
+}
+// Изделие → полуфабрикат-вход (изделия планов демо).
+const std::vector<std::pair<std::string, std::string>> kSemiInput = {
+  {"fin-0000", "semi-002"}, {"fin-0005", "semi-003"}, {"fin-0031", "semi-000"}, {"fin-0038", "semi-001"},
+  {"fin-0048", "semi-004"}, {"fin-0051", "semi-004"}, {"fin-0029", "semi-000"}, {"fin-0036", "semi-001"},
+  {"fin-0059", "semi-002"}, {"fin-0041", "semi-003"},
+};
+const std::vector<std::string> kAltRoutingProducts = { "fin-0000", "fin-0048", "fin-0005" };
+constexpr double kSemiQty = 0.25, kSemiMarkup = 1.3, kAltTimeMul = 0.85, kAltSetupAdd = 20.0;
+constexpr double kDueFrom = 400, kDueTo = 1100, kDueMul = 0.2, kDueMin = 24;
+
+std::string default_routing(Database& db, const std::string& pid) {
+  auto r = db.query_json("SELECT id FROM routings WHERE product_id=? AND COALESCE(is_default,1)=1 LIMIT 1", { pid });
+  return r.empty() ? std::string() : jstr(r[0], "id");
+}
+
+void add_semi_inputs(Database& db) {
+  for (auto& [pid, semi] : kSemiInput) {
+    const std::string rid = default_routing(db, pid);
+    if (rid.empty()) continue;
+    auto op = db.query_json("SELECT id FROM operations WHERE routing_id=? ORDER BY order_no, id LIMIT 1", { rid });
+    if (op.empty()) continue;
+    db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) VALUES(?,?,?)",
+            { jstr(op[0], "id"), semi, std::to_string(kSemiQty) });
+  }
+  // Цена закупки полуфабриката (для аутсорсинга) = markup × Σ материалов его техкарты.
+  db.exec("UPDATE products SET base_cost = ROUND(CAST(? AS REAL) * COALESCE((SELECT SUM(oi.qty * rp.base_cost) FROM routings r "
+          "JOIN operations o ON o.routing_id=r.id JOIN operation_inputs oi ON oi.operation_id=o.id "
+          "JOIN products rp ON rp.id=oi.product_id WHERE r.product_id=products.id AND COALESCE(r.is_default,1)=1),0)), "
+          "lead_time_hours = CASE WHEN COALESCE(lead_time_hours,0)=0 THEN 72 ELSE lead_time_hours END "
+          "WHERE id IN ('semi-000','semi-001','semi-002','semi-003','semi-004') AND COALESCE(base_cost,0)=0",
+          { std::to_string(kSemiMarkup) });
+}
+
+void add_alt_types(Database& db) {
+  for (auto& o : db.query_json(
+         "SELECT o.id AS op_id, (SELECT wc_type_id FROM operation_wc_types w WHERE w.operation_id=o.id ORDER BY rowid LIMIT 1) AS t "
+         "FROM routings r JOIN operations o ON o.routing_id=r.id "
+         "WHERE COALESCE(r.is_default,1)=1 AND r.product_id IN (SELECT DISTINCT product_id FROM demand_orders)")) {
+    const std::string alt = alt_type_of(jstr(o, "t"));
+    if (!alt.empty())
+      db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)", { jstr(o, "op_id"), alt });
+  }
+}
+
+void add_alt_routing(Database& db, const std::string& pid) {
+  const std::string rid = default_routing(db, pid);
+  if (rid.empty()) return;
+  const std::string arid = "alt-" + pid;
+  db.exec("INSERT OR IGNORE INTO routings(id,name,product_id,version,is_default) "
+          "SELECT ?, 'Альтернативная техкарта (взаимозаменяемые станки): ' || name, product_id, COALESCE(version,1), 0 FROM routings WHERE id=?",
+          { arid, rid });
+  for (auto& o : db.query_json("SELECT * FROM operations WHERE routing_id=? ORDER BY order_no, id", { rid })) {
+    const std::string oid = jstr(o, "id"), aid = "alt-" + oid;
+    auto t = db.query_json("SELECT wc_type_id FROM operation_wc_types WHERE operation_id=? ORDER BY rowid LIMIT 1", { oid });
+    const std::string lead = t.empty() ? std::string() : jstr(t[0], "wc_type_id");
+    const std::string alt = alt_type_of(lead);
+    const double mul = alt.empty() ? 1.0 : kAltTimeMul, add = alt.empty() ? 0.0 : kAltSetupAdd;
+    auto n = [&](const char* k) { const std::string v = jstr(o, k); return v.empty() ? 0.0 : std::stod(v); };
+    db.exec("INSERT OR IGNORE INTO operations(id,routing_id,code,name,op_type,wc_types,order_no,t_norm,t_opt,t_pess,"
+            "setup_time,risk_coef,tail_weight,tail_index,labor_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            { aid, arid, jstr(o, "code"), jstr(o, "name"), jstr(o, "op_type"), jstr(o, "wc_types"), jstr(o, "order_no"),
+              std::to_string(n("t_norm") * mul), std::to_string(n("t_opt") * mul), std::to_string(n("t_pess") * mul),
+              std::to_string(n("setup_time") + add), jstr(o, "risk_coef"), jstr(o, "tail_weight"), jstr(o, "tail_index"),
+              std::to_string(n("labor_rate")) });
+    db.exec("INSERT OR IGNORE INTO operation_wc_types(operation_id,wc_type_id) VALUES(?,?)", { aid, alt.empty() ? lead : alt });
+    for (auto& in : db.query_json("SELECT product_id, qty FROM operation_inputs WHERE operation_id=?", { oid }))
+      db.exec("INSERT OR IGNORE INTO operation_inputs(operation_id,product_id,qty) VALUES(?,?,?)",
+              { aid, jstr(in, "product_id"), jstr(in, "qty") });
+  }
+}
+
+void tighten_dues(Database& db) {
+  for (auto& pl : db.query_json("SELECT plan_id, COUNT(*) AS n, MIN(due_hours) AS lo, MAX(due_hours) AS hi "
+                                "FROM demand_orders WHERE plan_id IS NOT NULL GROUP BY plan_id")) {
+    const std::string plan = jstr(pl, "plan_id");
+    const double lo = std::stod(jstr(pl, "lo").empty() ? "0" : jstr(pl, "lo"));
+    const double hi = std::stod(jstr(pl, "hi").empty() ? "0" : jstr(pl, "hi"));
+    auto rows = db.query_json("SELECT rowid AS rid FROM demand_orders WHERE plan_id=? ORDER BY priority, rowid", { plan });
+    const size_t n = rows.size();
+    for (size_t k = 0; k < n; ++k) {
+      const std::string rid = jstr(rows[k], "rid");
+      if (hi == lo)          // одинаковые сроки (горизонт плана) → лесенка
+        db.exec("UPDATE demand_orders SET due_hours=? WHERE rowid=?",
+                { std::to_string(std::round(kDueFrom + (kDueTo - kDueFrom) * (n > 1 ? (double)k / (n - 1) : 1.0))), rid });  // TEXT → REAL при записи (affinity)
+      else
+        db.exec("UPDATE demand_orders SET due_hours=MAX(CAST(? AS REAL), ROUND(due_hours*CAST(? AS REAL))) WHERE rowid=?",
+                { std::to_string(kDueMin), std::to_string(kDueMul), rid });
+    }
+  }
+}
+
+}  // namespace demo_nsi
+
+static void enrich_demo_nsi(Database& db) {
+  if (!db.query_json("SELECT 1 FROM param_passport WHERE code='rl.nsi.applied'").empty()) return;
+  auto demo = db.query_one("SELECT COUNT(*) AS n FROM products WHERE id IN ('fin-0000','fin-0048','semi-000','semi-004')");
+  if (jstr(demo, "n") != "4") return;                        // не демо «насосы» — не трогаем
+  std::cout << "Волна A2: обогащение демо-НСИ (полуфабрикаты, альтернативы, сроки)…\n";
+  std::lock_guard<std::recursive_mutex> lk(db.mutex());
+  db.exec("BEGIN");
+  try {
+    demo_nsi::add_semi_inputs(db);
+    demo_nsi::add_alt_types(db);
+    for (auto& pid : demo_nsi::kAltRoutingProducts) demo_nsi::add_alt_routing(db, pid);
+    demo_nsi::tighten_dues(db);
+    db.exec("INSERT OR IGNORE INTO param_passport(code,block,name,value,unit,status,source,file_ref) VALUES("
+            "'rl.nsi.applied','агенты','Обогащение демо-НСИ волны A2 применено','1','—','техн.',"
+            "'PLAN-V2 §8 п.4; маркер идемпотентности','main.cpp:enrich_demo_nsi')");
+    db.exec("COMMIT");
+  } catch (...) { try { db.exec("ROLLBACK"); } catch (...) {} throw; }
+}
+
 // Идемпотентно переносит историю cbr.ru из macro_params.json (history + data.sources) в macro_series.
 static void sync_macro_series(Database& db) {
   if (!g_macro) return;
@@ -3179,6 +3312,13 @@ static void register_schedule(httplib::Server& svr, Database& db) {
       }
       if (body.contains("improve_iters") && !jstr(body, "improve_iters").empty())
         sp.improveIters = (int)std::stod(jstr(body, "improve_iters"));
+      // Волна A2: правило «CP-SAT» (sidecar) — лимит солвера, с; режим хромосомы ГА.
+      if (body.contains("cpsat_time_limit") && !jstr(body, "cpsat_time_limit").empty())
+        sp.cpsatTimeLimit = std::clamp(std::stod(jstr(body, "cpsat_time_limit")), 1.0, 600.0);
+      if (!jstr(body, "ga_mode").empty()) {
+        const std::string gm = jstr(body, "ga_mode");
+        if (gm == "auto" || gm == "structured" || gm == "op_keys" || gm == "both") sp.gaMode = gm;
+      }
       if (body.contains("apply_feedback")) {                    // R5: запись stage1_feedback — явно
         const std::string af = jstr(body, "apply_feedback");
         sp.applyFeedback = (af == "true" || af == "1");
@@ -4034,6 +4174,7 @@ static bool setup_database(Database& db) {
     maos::passport::migrate(db);        // v20 (волна F): fin_params, param_passport, plan_fact_ops
     migrate_v21(db);                    // v21 (волна M): synthetic, macro_mode, macro_series
     ensure_shop_manager_role(db);       // роль «Начальник цеха», users.org_unit_id
+    enrich_demo_nsi(db);                // волна A2: демо-НСИ для структурных ходов (маркер rl.nsi.applied)
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -4132,7 +4273,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.69.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.72.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.

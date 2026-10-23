@@ -1168,6 +1168,18 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     for (int b = 0; b < bins; ++b)
       hist.push_back({ {"x0", lo + b*w}, {"x1", lo + (b+1)*w}, {"count", cr[b]}, {"count_expected", ce[b]} });
   }
+  // Волна A2 (G3c §5.3): отдельная гистограмма робастного портфеля — 24 корзины на ЕГО собственный
+  // размах (на общей шкале узкое робастное распределение попадало в 3 корзины). Общая — без изменений.
+  json histRobust = json::array();
+  {
+    const std::vector<double>& vr = profit[robustIdx];
+    const double lo = *std::min_element(vr.begin(), vr.end()), hi = *std::max_element(vr.begin(), vr.end());
+    constexpr int kBins = 24;
+    const double w = hi > lo ? (hi - lo) / kBins : 1.0;
+    std::vector<int> cr(kBins, 0);
+    for (double x : vr) cr[std::clamp((int)((x - lo) / w), 0, kBins - 1)]++;
+    for (int b = 0; b < kBins; ++b) histRobust.push_back({ {"x0", lo + b * w}, {"x1", lo + (b + 1) * w}, {"count", cr[b]} });
+  }
 
   json robustPf = portfolioJson(robustIdx);
   json expPf    = portfolioJson(expIdx);
@@ -1263,7 +1275,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     {"robust", robustPf}, {"expected", expPf},
     {"price_of_robustness", priceOfRobustness},
     {"oos", oosJson},
-    {"histogram", hist}, {"candidates", candList},
+    {"histogram", hist}, {"histogram_robust", histRobust}, {"candidates", candList},
     {"warnings", warnings},
   };
 

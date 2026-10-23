@@ -77,6 +77,7 @@ struct Instance {
   cash::FinParams fin;                                    // параметры водопада (fin_params)
   double payrollFixedWeekly = 0, repairBudgetWeekly = 0, otherFixedWeekly = 0;
   double tailWeight = -1;                                 // <0 → из операций
+  double investCapex = 0, investLeadWeeks = 0;            // A3-крючок: CAPEX станка и срок ввода (0 → ход invest замаскирован)
 };
 
 Instance instance_from_json(const json& j);
@@ -94,7 +95,16 @@ struct Scenario {
   double lgd = 0;
   double leadMul = 1.0;                    // стресс: задержки поставок × leadMul
   double priceMul = 1.0;                   // стресс цен сбыта
+  // Волна A2: ЭКСТРЕННЫЕ события (шоки), раскрываются только по ходу исполнения. Времена и длительности —
+  // доли нижней оценки Cmax (LB) экземпляра на старте, чтобы один набор сценариев годился всем экземплярам.
+  double outageAt = -1, outageDur = 0;     // отказ станка узкого места: начало, длительность (доли LB); <0 → нет
+  double rushAt = -1;                      // срочный заказ: прибытие (доля LB); <0 → нет
+  double rushQty = 0.5, rushDue = 1.5;     // объём (доля заказа-образца), жёсткий срок после прибытия (× цикл образца)
+  int    rushOrder = 0;                    // индекс заказа-образца (mod число заказов)
+  int    regimeShockWeek = -1;             // неделя переключения в кризисный режим (пути — со стенда); для метрик
+  double supplyDelay = 0;                  // срыв поставки критичного входа: + задержка (доля LB) поставок затронутых заказов
   static Scenario from_json(const json& j);
+  bool has_shock() const { return outageAt >= 0 || rushAt >= 0 || supplyDelay > 0; }
 };
 
 enum class EpochMode { Event = 0, Serial = 1 };
@@ -112,10 +122,17 @@ struct EnvConfig {
   bool denseReward = true;
   // Веса награды [К] rl.reward.*
   double cTard = 1.0, cSetup = 0.5, wProfit = 1.0, wCash = 1.0, lambdaBreach = 1.0;
-  double tardPenaltyPerWeek = 0.01, tardPenaltyCap = 0.2;   // штраф за просрочку, доля стоимости заказа/нед [К]
+  double tardPenaltyPerWeek = 0.021, tardPenaltyCap = 0.2;  // штраф за просрочку 0,3 %/день (A2; A1 — 1 %/нед), доля стоимости заказа/нед [К]
   double repairCostMul = 1.0;   // стоимость ремонта = часы × ставка типа × mul [К]
   double waitWindowMin = 240;   // WAIT допустим, только если ближайшее завершение ≤ Δ мин [К] rl.wait_window (§7.3а)
   double cWait = 0.5;           // явная цена простоя при WAIT: c_W·Δt/масштаб [К] rl.reward.c_wait
+  // Волна A3 (крючок): ход L2 «invest» — изменение мощности типа РЦ (CAPEX, срок, транш). Выключен по
+  // умолчанию: при false действия invest в пространство L2 не входят (размеры политик A1 не меняются).
+  bool investEnabled = false;
+  double shockWindowMin = 72 * 60;   // окно пропускной способности для «времени восстановления» [К] rl.shock.window
+  double recoverShare = 0.9;         // восстановлено, если скользящая пропускная ≥ доля × до шока [К] rl.shock.recover
+  double rushPriceMul = 1.3;         // срочный заказ: надбавка к цене за срочность [К] rl.shock.rush_price
+  double rushLateLoss = 0.5;         // срочный заказ после жёсткого срока: доля выручки теряется (отказ/уценка) [К] rl.shock.rush_loss
   unsigned seed = 42;
 };
 
@@ -152,15 +169,17 @@ public:
   const std::vector<uint8_t>& mask_l0() const { return maskL0_; }
   const std::vector<float>& obs_l2() const { return obsL2_; }
   const std::vector<uint8_t>& mask_l2() const { return maskL2_; }
-  int obs_l0_size() const { return cfg_.kMaxCands * kCandFeats + kMachFeats + kPoolFeats + kGlobFeats; }
+  int obs_l0_size() const { return cfg_.kMaxCands * kCandFeats + kMachFeats + kPoolFeats + kGlobFeats + kShockFeats; }
   int act_l0_size() const { return cfg_.kMaxCands + 1; }   // + WAIT
   int obs_l2_size() const { return cfg_.kMaxOrders * kOrderFeats + cfg_.kMaxWct + kFinFeats; }
-  int act_l2_size() const { return 1 + kMoveKinds * cfg_.kMaxOrders + kFinActs; }
+  int act_l2_size() const { return 1 + kMoveKinds * cfg_.kMaxOrders + kFinActs + (cfg_.investEnabled ? cfg_.kMaxWct : 0); }
 
   /** Готовые кандидаты текущей эпохи (полный список, индексы джоб) и слот → джоба. */
   const std::vector<int>& candidates() const { return cands_; }
   int rule_choice(const std::string& rule) const;         // argmin ключа правила по кандидатам
   int key_choice(const std::vector<double>& key) const;   // argmin произвольного ключа (ГА/CUSTOM)
+  /** A2: «ускорить срочный» — кандидат срочного заказа (раньше срок), иначе правило rule (или ключ key, если rule пусто). */
+  int expedite_choice(const std::string& rule, const std::vector<double>& key) const;
   int rule_slot(const std::string& rule) const;           // то же, но слот действия (или WAIT, если вне слотов)
   std::string describe_l2(int action) const;
 
@@ -171,9 +190,11 @@ public:
   const EnvConfig& config() const { return cfg_; }
   const std::vector<MoveLog>& moves() const { return moves_; }
   double lower_bound() const { return lbCmax_; }
+  const std::vector<double>& durations() const { return dur_; }   // розыгрыш текущего сценария (CRN)
   int    n_decisions() const { return nDecisions_; }
 
   static constexpr int kCandFeats = 12, kMachFeats = 4, kPoolFeats = 4, kGlobFeats = 6;
+  static constexpr int kShockFeats = 4;     // A2: отказ активен, был шок, доля срочной работы, поставка запаздывает
   static constexpr int kOrderFeats = 8, kFinFeats = 12;
   static constexpr int kMoveKinds = 7, kFinActs = 5;
   static const char* const kMoveKindNames[kMoveKinds];
@@ -212,6 +233,11 @@ private:
   int week_ = 0, movesThisWeek_ = 0; bool inL2_ = false;
   double lbCmax_ = 0, tardEst_ = 0, scaleT_ = 1, scaleMoney_ = 1;
   double lastSetup_ = 0;
+  // Шоки сценария (A2), разрешённые в абсолютное время на reset.
+  int nBaseOrders_ = 0;                      // заказы экземпляра; срочные — после них
+  int outageMi_ = -1; double outA_ = -1, outB_ = -1;
+  double rushRelease_ = -1, supplyExtra_ = 0, shockT_ = -1;
+  std::set<int> supplyShockOrders_;
   // Финансы по неделям.
   std::vector<cash::PeriodInput> weekly_;
   std::vector<double> drawPlan_, repayPlan_;
@@ -222,6 +248,10 @@ private:
   // Построение.
   void rebuild_jobs(const std::vector<char>* keepDone = nullptr);
   void draw_durations();
+  void resolve_shocks();                 // A2: шоки сценария → абсолютные времена/станок/заказ
+  void apply_outage(int j);              // A2: отказ станка прерывает операцию на окне [outA_, outB_)
+  json shock_metrics() const;            // A2: время восстановления пропускной способности и т. п.
+  bool invest_allowed(int wi) const;     // A3-крючок: маска хода invest
   std::mt19937 job_rng(int j, uint32_t stream) const;
   void init_events();
   bool advance();                        // → true если найдена эпоха решения (L0/L2); false → эпизод завершён
@@ -257,5 +287,17 @@ json evaluate_key(SimEnv& env, const std::vector<double>& key, uint64_t seed, co
  *  Возвращает лучший ключ, историю и оценку. */
 json ga_improve(const SimEnv& env, int generations, int nScen, uint64_t seed0, double timeBudgetSec,
                 const std::vector<std::string>& seedRules);
+
+/** Волна A2: списочная схема ядра (sched::simulate — как run_schedule) по ключу с пинами: starts[i] ≥ 0 →
+ *  «не раньше», machines[i] ≠ "" → станок (пустые векторы — без пинов). seed = 0 → средние длительности
+ *  без поломок; иначе розыгрыш сценария seed (CRN по идентичности, как reset) + поломки ([seed, 7919]).
+ *  Среда должна быть создана с deterministic=false для seed > 0. → {makespan_h, tardiness_h, otd, starts_h}. */
+json simulate_plan(SimEnv& env, const std::vector<double>& key, const std::vector<double>& starts,
+                   const std::vector<std::string>& machines, uint64_t seed);
+/** ГА «ключи по операциям» (random keys) — тот же режим, что op_keys в run_schedule: затравки seeds
+ *  (например, нормированные старты CP-SAT и ранги правил), станки machines (пусто — least-loaded).
+ *  Пригодность — среднее (Cmax + 0.5·просрочка), ч, по сценариям seed0..seed0+nScen−1 (nScen = 0 → средние). */
+json ga_improve_keys(SimEnv& env, const std::vector<std::vector<double>>& seeds, const std::vector<std::string>& machines,
+                     int generations, int nScen, uint64_t seed0, double timeBudgetSec, unsigned gaSeed, int stallGens = 8);
 
 }  // namespace maos::env

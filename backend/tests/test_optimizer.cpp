@@ -144,3 +144,19 @@ TEST(Optimizer, PassportForbidsEstimateStatusWithoutData) {
   EXPECT_NEAR(fp["tau_p"].get<double>(), 0.25, 1e-12);
   EXPECT_NEAR(fp["tau_v"].get<double>(), 0.22, 1e-12);
 }
+
+TEST(Optimizer, A2_HistogramRobustUsesOwnRangeWith24Bins) {
+  // G3c §5.3: робастный портфель — 24 корзины на собственный размах; общая гистограмма не меняется.
+  Fixture f;
+  const json r = maos::run_optimization(f.db, f.params());
+  ASSERT_FALSE(r.value("error_soft", false));
+  const json& hr = r.at("histogram_robust");
+  ASSERT_EQ(hr.size(), 24u);
+  int nr = 0, nj = 0;
+  for (auto& b : hr) nr += b.at("count").get<int>();
+  for (auto& b : r.at("histogram")) nj += b.at("count").get<int>();
+  EXPECT_EQ(nr, nj);                                       // те же сценарии робастного портфеля
+  EXPECT_LE(r.at("histogram").front().at("x0").get<double>(), hr.front().at("x0").get<double>() + 1e-9);
+  EXPECT_GE(r.at("histogram").back().at("x1").get<double>(), hr.back().at("x1").get<double>() - 1e-6);
+  EXPECT_GT(hr.front().at("count").get<int>() + hr.back().at("count").get<int>(), 0);   // края = min/max робастного
+}

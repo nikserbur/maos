@@ -83,3 +83,24 @@ rl/.venv/bin/python -m rl.train.export_onnx --ckpt rl/train/checkpoints/l0_seed1
 
 Сервер ищет `l0_policy.onnx`/`l2_policy.onnx` в `$MAOS_RL_POLICY_DIR` → `rl/results`; без них правило `RL`
 в `POST /api/schedule` отвечает `error_soft` с причиной (`GET /api/rl/status`).
+
+---
+
+# Волна A2 — CP-SAT в продукте, тёплый старт ГА, обогащённая НСИ, реактивный L0
+
+Отчёт: [docs/research/A2-cpsat-warmstart.md](../docs/research/A2-cpsat-warmstart.md).
+
+```bash
+# Sidecar CP-SAT для правила «CP-SAT» Стадии 1 (только 127.0.0.1; backend ищет $MAOS_CPSAT_URL, по умолчанию :8091)
+rl/.venv/bin/python -m rl.cpsat_service                     # GET /health, GET /schema, POST /solve
+curl -s 127.0.0.1:8091/health
+# POST /api/schedule {"rule":"CP-SAT","cpsat_time_limit":30,"improve_iters":20}  → поле cpsat + improver.mode_won
+
+rl/.venv/bin/python -m rl.bench.instances                   # экземпляры (обогащённая НСИ; A1 — в data/instances/a1/)
+rl/.venv/bin/python -m rl.bench.moves_census               # доступные структурные ходы A1 → A2
+rl/.venv/bin/python -m rl.bench.run_v4_a2 --cpsat-sec 60    # V4: CP-SAT в продукте, ГА с тёплым стартом, цена детерминизма
+rl/.venv/bin/python -m rl.bench.cpsat_keys --sec 60         # ключи CP-SAT экземпляров (действие L0 и базовая линия)
+rl/.venv/bin/python -m rl.eval.headroom --n-val 32 --n 100  # запас: ручные оракулы против лучшего правила
+rl/.venv/bin/python -m rl.train.train_l0_rule --seeds 1 2 3 # L0 «выбор правила»: BC → PPO (CVaR, RU)
+rl/.venv/bin/python -m rl.eval.v5_a2 --n 200 --seeds 1 2 3  # V5 + стресс «шок» + экстренное реагирование + гейт
+```

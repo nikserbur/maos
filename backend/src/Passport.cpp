@@ -153,7 +153,12 @@ const Row kRl[] = {
   { "rl.reward.w_cash", "агенты", "Вес минимума кассы (терминальная награда)", "1.0", "—", "К", "§7.3", "SimEnv.h:EnvConfig.wCash" },
   { "rl.reward.lambda_breach", "агенты", "Штраф за кассовый разрыв (ковенант — ½)", "1.0", "—", "К", "§7.3 λ_cov", "SimEnv.h:EnvConfig.lambdaBreach" },
   { "rl.reward.c_energy", "агенты", "Вес энергии в награде L0 (кВт·ч по типам отсутствуют)", "0", "—", "К", "§7.3а: e_w нет в НСИ → 0", "SimEnv.cpp (не используется)" },
-  { "rl.tard_penalty_per_week", "агенты", "Договорной штраф за просрочку, доля стоимости заказа в неделю", "0.01", "доля/нед", "К", "договоров нет", "SimEnv.h:EnvConfig.tardPenaltyPerWeek" },
+  { "rl.tard_penalty_per_week", "агенты", "Договорной штраф за просрочку, доля стоимости заказа в неделю (A2: 0,3 %/день — середина коммерческой практики 0,1–0,5 %/день; A1 — 0,01)", "0.021", "доля/нед", "К", "договоров нет", "SimEnv.h:EnvConfig.tardPenaltyPerWeek" },
+  { "rl.shock.p_base", "агенты", "Генератор событий базы: P(отказ узкого места), P(срочный заказ), P(срыв поставки), P(кризис) на сценарий; стресс «шок» — 0.5 каждого и ≥ 1", "0.2 / 0.3 / 0.2 / 0", "доля", "К", "A2 (владелец): RL — оперативное перепланирование", "rl/env/scenarios.py:EVENTS_BASE" },
+  { "rl.shock.params", "агенты", "Шоки в долях календарной LB Cmax: отказ — начало U(0.1,0.5), длит. U(0.08,0.25); срочный — прибытие U(0.1,0.5), объём U(0.3,1) образца, срок U(1.5,3) × LB заказа; поставка +U(0.05,0.2)", "см. значение", "доля", "К", "A2", "rl/env/scenarios.py:SHOCK; SimEnv.cpp:resolve_shocks" },
+  { "rl.shock.rush_price", "агенты", "Срочный заказ: надбавка к цене", "1.3", "×", "К", "типовая надбавка за срочность", "SimEnv.h:EnvConfig.rushPriceMul" },
+  { "rl.shock.rush_loss", "агенты", "Срочный заказ после жёсткого срока: теряемая доля выручки (отказ/уценка); штраф за просрочку к нему не применяется", "0.5", "доля", "К", "A2", "SimEnv.h:EnvConfig.rushLateLoss" },
+  { "rl.shock.window", "агенты", "Метрики экстренного реагирования: окно пропускной способности и порог восстановления", "72 ч; 0.9", "—", "К", "A2 (владелец): время восстановления", "SimEnv.h:EnvConfig.shockWindowMin/recoverShare" },
   { "rl.tard_penalty_cap", "агенты", "Потолок штрафа за просрочку", "0.2", "доля", "К", "договоров нет", "SimEnv.h:EnvConfig.tardPenaltyCap" },
   { "rl.repair_cost_mul", "агенты", "Стоимость ремонта = часы ремонта × ставка типа × mul", "1.0", "—", "К", "бюджета ТОиР нет", "SimEnv.h:EnvConfig.repairCostMul" },
   { "rl.wait_window", "агенты", "WAIT допустим, если ближайшее завершение ≤ Δ", "240", "мин", "К", "§7.3а «в пределах Δ»; без окна политика выучивала 98 % WAIT", "SimEnv.h:EnvConfig.waitWindowMin" },
@@ -172,6 +177,27 @@ const Row kRl[] = {
   { "rl.cpsat_limit", "агенты", "Лимит времени CP-SAT (V4)", "60", "с", "НОРМ", "§10.1 V4", "rl/bench/run_v4.py" },
   { "rl.gate", "агенты", "Гейт самоулучшения: 95 %-ДИ IQM ΔCVaR_0.1(Π) > 0 и ΔCVaR_0.05(C_min) ≥ 0", "—", "—", "НОРМ", "§7.4, §10.2а п.1", "rl/eval/v5.py:compare" },
   { "rl.policy_version", "агенты", "Версия/SHA256 политики ONNX правила «RL»", "см. rl/results/l0_policy.json", "—", "техн.", "A1 §5", "RlRule.cpp" },
+  // Волна A2: правило «CP-SAT» (sidecar) и тёплый старт ГА (docs/research/A2-cpsat-warmstart.md).
+  { "rl.cpsat.time_limit", "агенты", "Лимит солвера правила «CP-SAT» в продукте (cpsat_time_limit, 1…600)", "30", "с", "К", "PLAN-V2 §8 п.1; V4 — 60 с [НОРМ]", "Scheduler.h:ScheduleParams.cpsatTimeLimit" },
+  { "rl.cpsat.sidecar", "агенты", "Адрес sidecar CP-SAT (только localhost)", "http://127.0.0.1:8091", "—", "техн.", "$MAOS_CPSAT_URL", "CpSatRule.cpp:sidecar_url; rl/cpsat_service.py" },
+  { "rl.cpsat.circuit_max", "агенты", "Кандидатов на станок для точной модели наладок (circuit); больше — станок из подсказки / консервативно", "60", "шт", "К", "размер circuit O(n²)", "rl/bench/cpsat_full.py:CIRCUIT_MAX" },
+  { "rl.cpsat.large_jobs", "агенты", "Крупная модель: presolve без пробинга/симметрий (время — поиску от подсказки)", "1000", "джоб", "техн.", "demo 2808 джоб: presolve съедал 20 с", "rl/bench/cpsat_full.py:LARGE_MODEL_JOBS" },
+  { "rl.cpsat.w_tard", "агенты", "Вес Σ просрочки в критерии CP-SAT = 0.5 / w_time (та же структура, что F Стадии 1)", "0.5", "—", "НОРМ", "Scheduler.cpp: F = w_time·E[Cmax] + … + 0.5·E[просрочка]", "Scheduler.cpp:plan_cpsat" },
+  { "rl.cpsat.calendar", "агенты", "Календарь в модели: единый — ось рабочего времени (warp, семантика sim_place); индивидуальные — запрещённые интервалы", "warp | forbidden", "—", "техн.", "A2 §1", "rl/bench/cpsat_full.py:Warp" },
+  { "rl.ga.opkey", "агенты", "ГА «ключи по операциям»: σ₀, доля мутируемых генов, seed", "0.05; min(0.1, 20/J); seed+991", "—", "К", "random keys (Bean 1994); затравка — старты CP-SAT", "Scheduler.cpp:run_schedule (режим op_keys)" },
+  { "rl.ga.mode", "агенты", "Режим хромосомы ГА по умолчанию: CP-SAT → оба (structured + op_keys), иначе structured", "auto", "—", "К", "PLAN-V2 §8 п.2", "Scheduler.h:ScheduleParams.gaMode" },
+  { "rl.nsi.semi_inputs", "агенты", "Демо-НСИ A2: полуфабрикаты semi-000…004 — входы первой операции 10 изделий программы", "0.25", "шт/изделие", "К", "PLAN-V2 §8 п.4: иначе ход «аутсорсинг» замаскирован", "main.cpp:demo_nsi::add_semi_inputs" },
+  { "rl.nsi.semi_price", "агенты", "Цена закупки полуфабриката (аутсорсинг) = markup × материалы техкарты; срок 72 ч", "1.3", "—", "К", "§7.3в: коммерческих предложений нет", "main.cpp:demo_nsi::add_semi_inputs" },
+  { "rl.nsi.alt_types", "агенты", "Второй допустимый тип РЦ у операций изделий программы (токарные 01-00↔01-01, 01-03→01-00; фрезерные 01-05↔01-06; отрезные 00-06↔00-07)", "7 пар", "—", "К", "взаимозаменяемость по паспортам станков не подтверждена", "main.cpp:demo_nsi::kAltType" },
+  { "rl.nsi.alt_routings", "агенты", "Альтернативные техкарты (is_default=0) fin-0000, fin-0048, fin-0005: шаг на альтернативном типе — норма × 0.85, наладка + 20 мин", "0.85 / +20", "—", "К", "PLAN-V2 §8 п.4", "main.cpp:demo_nsi::add_alt_routing" },
+  { "rl.nsi.due_tightening", "агенты", "Сроки демо-заказов: план с одинаковыми сроками → лесенка 400…1100 ч; прочие × 0.2 (не меньше 24 ч)", "400…1100 ч; 0.2", "—", "К", "A1 §5: при OTD = 1 прибыль нечувствительна к расписанию", "main.cpp:demo_nsi::tighten_dues" },
+  { "rl.nsi.bench_due", "агенты", "Случайные экземпляры стенда: срок заказа = Cmax(EDD) × U(0.35; 1.1)", "0.35…1.1", "доля Cmax", "К", "калибровка напряжённости сроков", "rl/bench/instances.py:DUE_RANGE" },
+  { "rl.l0rule.actions", "агенты", "L0 «выбор правила» (Tang 2026): 0..6 — правило, 7 — очередь по ключу CP-SAT, 8 — статический чемпион экземпляра (валидация), 9 — срочный заказ первым; маски очереди — те же", "10 действий", "—", "НОРМ", "PLAN-V2 §8 п.3; A2 (владелец)", "rl/env/l0_env.py:L0RuleEnv; RlRule.cpp:rule_select_job" },
+  { "rl.l0rule.bc", "агенты", "Клонирование поведения: эпизоды чемпиона (6 стох. + 1 детерм./экз.), 8 эпох, сглаживание меток 0.3 (p(чемпион) ≈ 0.73 — разведка PPO)", "6+1; 8; 0.3", "—", "К", "A2", "rl/train/train_l0_rule.py:BC_*" },
+  { "rl.l0rule.ppo", "агенты", "PPO: n_steps 1024, batch 512, lr 1e-4, γ 0.999, clip 0.1, ent 0.003, MLP [128,128], 16 сред; ≤ 30 мин/сид; ранняя остановка — валидация (seed 777, 16 сц./экз.)", "см. значение", "—", "К", "A2", "rl/train/train_l0_rule.py:PPO" },
+  { "rl.l0rule.cvar", "агенты", "Терминальная прибыль по Рокафеллару–Урясеву: (1−λ)X + λ(η − (η−X)⁺/α), η — α-квантиль X последних 200 эпизодов экземпляра", "α 0.1; λ 0.5", "—", "К", "Rockafellar & Uryasev 2000; A2 (владелец)", "rl/env/l0_env.py:L0RuleEnv._ru_shaping" },
+  { "rl.l0rule.delta", "агенты", "Вариант макро-шага: действие держится Δ часов модельного времени, награда только терминальная", "24 ч", "ч", "К", "A2 (владелец: «каждое событие или каждые Δ часов»)", "rl/env/l0_env.py:L0RuleEnv(delta_h)" },
+  { "rl.cpsat.price_boot", "агенты", "Бутстреп «цены детерминизма» (парный, по отложенным сценариям)", "1000", "шт", "техн.", "95 %-ДИ ΔE и ΔCVaR", "Scheduler.cpp:paired_delta_ci" },
 };
 
 const Row kMacro[] = {
@@ -266,6 +292,10 @@ void migrate(Database& db) {
   seed_rows(db, kCode, sizeof(kCode) / sizeof(kCode[0]));
   seed_rows(db, kMacro, sizeof(kMacro) / sizeof(kMacro[0]));
   seed_rows(db, kRl, sizeof(kRl) / sizeof(kRl[0]));
+  // A2: значение штрафа за просрочку в среде изменено (0.01 → 0.021) — строка из A1 обновляется один раз.
+  db.exec("UPDATE param_passport SET value='0.021', name=?, updated_at=datetime('now') "
+          "WHERE code='rl.tard_penalty_per_week' AND value='0.01'",
+          { "Договорной штраф за просрочку, доля стоимости заказа в неделю (A2: 0,3 %/день; A1 — 0,01)" });
   for (const char* code : kDeprecatedUi)
     db.exec("UPDATE param_passport SET note='подобрано для UI — не используется в расчёте (волна M: заменено MacroSampler)', "
             "updated_at=datetime('now') WHERE code=? AND COALESCE(note,'') NOT LIKE 'подобрано для UI%'", { code });

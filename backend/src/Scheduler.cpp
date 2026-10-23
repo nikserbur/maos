@@ -1,6 +1,7 @@
 #include "Scheduler.h"
 #include "SchedCore.h"
 #include "RlRule.h"
+#include "CpSatRule.h"
 #include "GaImprover.h"
 #include "PlanMath.h"
 #include <algorithm>
@@ -482,6 +483,65 @@ double mean_of(const std::vector<double>& v) { double s = 0; for (double x : v) 
 }  // namespace sched
 using namespace sched;
 
+namespace {
+
+/* ── Волна A2: правило «CP-SAT» (sidecar rl/cpsat_service.py) ──────────────────── */
+struct CpSatPlan {
+  cpsat::Solution sol;
+  PinMap pins;                 // жёсткий план: «не раньше старта CP-SAT» + станок CP-SAT
+  PinMap machinePins;          // только станки CP-SAT — маршрутизация для ГА по операциям
+  std::vector<double> key;     // ранг старта
+  double replayMk = 0;         // детерминированный Cmax воспроизведения пинами (sim_place, мин)
+  std::string hintRule;        // правило-подсказка солверу
+};
+
+// Решение CP-SAT по той же развёртке джобов; подсказка — лучший детерминированный план правила.
+CpSatPlan plan_cpsat(const Model& m, const std::vector<Job>& jobs, const Calendar& cal,
+                     const std::unordered_map<std::string, Calendar>& calByM, const std::vector<double>& due,
+                     const std::vector<double>& orderWork, const std::vector<double>& durMean,
+                     const PinMap& userPins, const ScheduleParams& p, int nOrders) {
+  CpSatPlan cp;
+  SimOut hint; double bestF = 1e300;
+  for (const char* r : { "EDD", "SPT", "CR", "MWKR", "MS", "FIFO", "LPT" }) {
+    SimOut so = simulate(m, jobs, priorities(r, jobs, orderWork), durMean, cal, calByM, userPins);
+    int nl; const double f = so.makespan + 0.5 * order_tardiness(jobs, so, nOrders, due, nl);
+    if (f < bestF) { bestF = f; hint = std::move(so); cp.hintRule = r; }
+  }
+  const double tl = std::clamp(p.cpsatTimeLimit, 1.0, 600.0);
+  const double wTard = 0.5 / std::max(1e-6, p.wTime);    // F ∝ Cmax + (0.5/w_time)·просрочка
+  const json payload = cpsat::build_payload(m, jobs, cal, calByM, due, tl, p.seed, wTard, &hint);
+  cp.sol = cpsat::solve(payload, tl);
+  if (!cp.sol.ok) return cp;
+  cp.pins = cpsat::pins_from(cp.sol, userPins);
+  cp.machinePins = cpsat::machine_pins_from(cp.sol, userPins);
+  cp.key = cpsat::rank_key(cp.sol.starts);
+  cp.replayMk = simulate(m, jobs, cp.key, durMean, cal, calByM, cp.pins).makespan;
+  return cp;
+}
+
+// Парный бутстреп по сценариям: Δ = b − a для среднего и CVaR_α (верхнего хвоста), 95 %-ДИ.
+json paired_delta_ci(const std::vector<double>& a, const std::vector<double>& b, double alpha, unsigned seed) {
+  const size_t n = std::min(a.size(), b.size());
+  if (n == 0) return nullptr;
+  constexpr int kBoot = 1000;                            // техн.: число бутстреп-выборок
+  std::mt19937 rng(seed);
+  std::vector<double> dm, dc;
+  dm.reserve(kBoot); dc.reserve(kBoot);
+  for (int t = 0; t < kBoot; ++t) {
+    std::vector<double> xa(n), xb(n);
+    for (size_t i = 0; i < n; ++i) { const size_t k = rng() % n; xa[i] = a[k]; xb[i] = b[k]; }
+    dm.push_back(mean_of(xb) - mean_of(xa));
+    dc.push_back(cvar_upper(xb, alpha) - cvar_upper(xa, alpha));
+  }
+  std::sort(dm.begin(), dm.end()); std::sort(dc.begin(), dc.end());
+  auto q = [&](const std::vector<double>& v, double t) { return v[std::min(v.size() - 1, (size_t)(t * v.size()))]; };
+  return { {"n", (int)n},
+           {"delta_mean", mean_of(b) - mean_of(a)}, {"ci_mean", { q(dm, 0.025), q(dm, 0.975) }},
+           {"delta_cvar", cvar_upper(b, alpha) - cvar_upper(a, alpha)}, {"ci_cvar", { q(dc, 0.025), q(dc, 0.975) }} };
+}
+
+}  // namespace
+
 /* ── Главная процедура ───────────────────────────────────────────────────── */
 json run_schedule(Database& db, const ScheduleParams& p) {
   Model m = load_model(db);
@@ -606,7 +666,9 @@ json run_schedule(Database& db, const ScheduleParams& p) {
 
   // ── Перебор диспетч-правил (старт), оценка симуляцией + Монте-Карло (хвост) ──
   std::vector<std::string> rules = { "EDD", "SPT", "CR", "MWKR", "MS", "FIFO", "LPT" };
+  const bool wantCpSat = p.rule == "CP-SAT" && p.customRule.empty();
   if (!p.customRule.empty()) rules = { "CUSTOM" };       // конструктор эвристики
+  else if (wantCpSat) rules = { "CP-SAT", "EDD", "SPT", "CR", "MWKR", "MS", "FIFO", "LPT" };  // + правила для сравнения
   else if (p.rule != "auto") rules = { p.rule };
   // Волна A: правило «RL» — политика ONNX (RlRule) в событийной SimEnv даёт ключ приоритетов
   // (ранг старта) по ТОЙ ЖЕ развёртке джобов; остальной конвейер (МК, ГА, Ганта) не меняется.
@@ -631,18 +693,34 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   std::vector<double> durMean(jobs.size());
   for (size_t i = 0; i < jobs.size(); ++i) durMean[i] = jobs[i].durMean;
 
+  // Волна A2: правило «CP-SAT» — точная детерминированная модель в sidecar; старты и станки
+  // фиксируются пинами, дальше — тот же конвейер МК/CVaR. Sidecar недоступен → error_soft.
+  CpSatPlan cp;
+  if (wantCpSat) {
+    cp = plan_cpsat(m, jobs, cal, calByM, due, orderWork, durMean, pinMap, p, nOrders);
+    if (!cp.sol.ok)
+      return { {"error_soft", true}, {"warnings", json::array({ cp.sol.error })},
+               {"cpsat", { {"status", cp.sol.status}, {"error", cp.sol.error}, {"url", cpsat::sidecar_url()} }} };
+  }
+  auto pinsOf = [&](const std::string& rule) -> const PinMap& { return rule == "CP-SAT" ? cp.pins : pinMap; };
+  auto keyOf = [&](const std::string& rule) {
+    if (rule == "CP-SAT") return cp.key;
+    if (rule == "RL") return rlPlan.key;
+    return priorities(rule, jobs, orderWork, p.customRule);
+  };
+
   struct RuleEval { std::string rule; double mkDet, mkMean, mkCVaR, mkWorst, tardMean, tardCVaR, setupMin, bdMin = 0, score; };
   std::vector<RuleEval> evals(rules.size());
   // Монте-Карло-оценка ПРИОРИТЕТНОГО КЛЮЧА на всех N сценариях (общие случайные
   // числа: одинаковые durMC и seed поломок для любого ключа). Используется и для
   // сравнения правил, и (B5) для итогового ключа после локального поиска.
   struct McEval { double mkMean = 0, mkCVaR = 0, mkWorst = 0, tardMean = 0, tardCVaR = 0, bdMin = 0; };
-  auto mcEval = [&](const std::vector<double>& key) {
+  auto mcEval = [&](const std::vector<double>& key, const PinMap& pins) {
     std::vector<double> mks(N), tards(N);
     double bdSum = 0;
     for (int s = 0; s < N; ++s) {
       std::mt19937 brng(p.seed + 7919u * (unsigned)s);   // одинаково для всех ключей
-      SimOut so = simulate(m, jobs, key, durMC[s], cal, calByM, pinMap, &brng);
+      SimOut so = simulate(m, jobs, key, durMC[s], cal, calByM, pins, &brng);
       mks[s] = so.makespan; int nl2; tards[s] = order_tardiness(jobs, so, nOrders, due, nl2);
       bdSum += so.breakdownMinutes;
     }
@@ -658,10 +736,11 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   {
     auto evalRule = [&](size_t ri) {
       const std::string& rule = rules[ri];
-      auto key = rule == "RL" ? rlPlan.key : priorities(rule, jobs, orderWork, p.customRule);
-      SimOut det = simulate(m, jobs, key, durMean, cal, calByM, pinMap);
+      const auto key = keyOf(rule);
+      const PinMap& pins = pinsOf(rule);
+      SimOut det = simulate(m, jobs, key, durMean, cal, calByM, pins);
       int nl; double tardDet = order_tardiness(jobs, det, nOrders, due, nl);
-      const McEval mc = mcEval(key);
+      const McEval mc = mcEval(key, pins);
       RuleEval e; e.rule = rule; e.mkDet = det.makespan; e.bdMin = mc.bdMin;
       e.mkMean = mc.mkMean; e.mkCVaR = mc.mkCVaR; e.mkWorst = mc.mkWorst;
       e.tardMean = mc.tardMean; e.tardCVaR = mc.tardCVaR;
@@ -680,10 +759,17 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     for (auto& t : pool) t.join();
   }
   size_t bestR = 0; for (size_t i = 1; i < evals.size(); ++i) if (evals[i].score < evals[bestR].score) bestR = i;
+  // CP-SAT запрошен явно → он и есть план; лучшее из правил — для сравнения (gap_to_rule).
+  size_t bestRuleR = bestR;
+  if (wantCpSat) {
+    bestRuleR = 1; for (size_t i = 2; i < evals.size(); ++i) if (evals[i].score < evals[bestRuleR].score) bestRuleR = i;
+    bestR = 0;
+  }
   const std::string chosenRule = evals[bestR].rule;
 
   // ── Детальное расписание выбранного правила (по средним — для Ганта) ──
-  auto key = chosenRule == "RL" ? rlPlan.key : priorities(chosenRule, jobs, orderWork, p.customRule);
+  auto key = keyOf(chosenRule);
+  const PinMap* finalPins = &pinsOf(chosenRule);        // пины итогового плана (CP-SAT — жёсткие)
 
   // ── Улучшение ПОВЕРХ правил («Требования эвристики» §4: диспетч-правило —
   // только стартовая точка). Генетический алгоритм по ключам приоритетов
@@ -695,28 +781,45 @@ json run_schedule(Database& db, const ScheduleParams& p) {
   // Пригодность — та же F на ОБУЧАЮЩИХ сценариях [0, NS). Результат принимается,
   // только если F лучше и на ОТЛОЖЕННЫХ сценариях [NS, NS+NV): иначе выигрыш мог
   // быть подгонкой под конкретные сэмплы (оптимистичный сдвиг).
+  //
+  // Волна A2 — второй режим хромосомы: КЛЮЧИ ПО ОПЕРАЦИЯМ (random keys, Bean 1994): ген = ключ
+  // джобы ∈ [0,1]; затравки — нормированные старты CP-SAT (если есть) и ранги ключей правил.
+  // При CP-SAT маршрутизация (станки) берётся из его решения, ГА ищет робастную ОЧЕРЕДНОСТЬ.
+  // Оба режима идут по одному протоколу (обучение [0,NS) → проверка [NS,NS+NV)); принимается
+  // лучший по отложенным сценариям из тех, что лучше базы и там, и там.
   json improverJson = nullptr;
   bool keyImproved = false;                              // ключ изменён ГА
-  {
-    const int G = ((int)jobs.size() > 3000) ? 0 : std::max(0, p.improveIters);
-    if (G > 0) {
-      const int NS = std::min(30, N / 2);                // обучающие сценарии
-      const int NV = std::min(N - NS, 120);              // отложенные — проверка вне выборки
-      auto scoreOn = [&](const std::vector<double>& k2, int s0, int s1) {
-        SimOut det2 = simulate(m, jobs, k2, durMean, cal, calByM, pinMap);
-        int nl2; double tardDet2 = order_tardiness(jobs, det2, nOrders, due, nl2);
-        std::vector<double> mks(s1 - s0), tards(s1 - s0);
-        for (int s = s0; s < s1; ++s) {
-          std::mt19937 brng(p.seed + 7919u * (unsigned)s);
-          SimOut so = simulate(m, jobs, k2, durMC[s], cal, calByM, pinMap, &brng);
-          mks[s - s0] = so.makespan; int n3; tards[s - s0] = order_tardiness(jobs, so, nOrders, due, n3);
-        }
-        double mkMean = mean_of(mks), mkCv = cvar_upper(mks, p.alpha);
-        return p.wTime * mkMean + p.wRisk * (mkCv - mkMean)
-             + p.wCost * det2.setupMinutes + 0.5 * mean_of(tards) + 0.001 * tardDet2;
-      };
-      const std::array<const char*, 5> kCrit = { "due", "rem", "duration", "inputs", "setup" };
-      const int C = (int)kCrit.size();
+  const int G = ((int)jobs.size() > 3000) ? 0 : std::max(0, p.improveIters);
+  const int NS = std::min(30, N / 2);                    // обучающие сценарии
+  const int NV = std::min(N - NS, 120);                  // отложенные — проверка вне выборки
+  // Cmax и просрочка по сценариям [s0, s1) (CRN: те же durMC и seed поломок для любого ключа).
+  auto runScen = [&](const std::vector<double>& k2, const PinMap& pins, int s0, int s1,
+                     std::vector<double>& mks, std::vector<double>& tards) {
+    mks.assign(s1 - s0, 0); tards.assign(s1 - s0, 0);
+    for (int s = s0; s < s1; ++s) {
+      std::mt19937 brng(p.seed + 7919u * (unsigned)s);
+      SimOut so = simulate(m, jobs, k2, durMC[s], cal, calByM, pins, &brng);
+      mks[s - s0] = so.makespan; int n3; tards[s - s0] = order_tardiness(jobs, so, nOrders, due, n3);
+    }
+  };
+  auto scoreOn = [&](const std::vector<double>& k2, int s0, int s1, const PinMap& pins) {
+    SimOut det2 = simulate(m, jobs, k2, durMean, cal, calByM, pins);
+    int nl2; double tardDet2 = order_tardiness(jobs, det2, nOrders, due, nl2);
+    std::vector<double> mks, tards; runScen(k2, pins, s0, s1, mks, tards);
+    double mkMean = mean_of(mks), mkCv = cvar_upper(mks, p.alpha);
+    return p.wTime * mkMean + p.wRisk * (mkCv - mkMean)
+         + p.wCost * det2.setupMinutes + 0.5 * mean_of(tards) + 0.001 * tardDet2;
+  };
+  const std::string gaMode = p.gaMode == "auto" || p.gaMode.empty() ? (wantCpSat ? "both" : "structured") : p.gaMode;
+  const std::string seedSource = cp.sol.ok ? "cpsat" : "rules";
+  if (G > 0) {
+    // Режим прогона ГА: лучшая хромосома, её ключ, пины декодирования, оценка вне выборки.
+    struct ModeRun { std::string name; GaResult ga; std::vector<double> key; const PinMap* pins; double val = 0; int nSeeds = 0; GaConfig gc; };
+    std::vector<ModeRun> runs;
+    // ── Режим 1: структурная хромосома (5 весов + сдвиги заказов) ──
+    const std::array<const char*, 5> kCrit = { "due", "rem", "duration", "inputs", "setup" };
+    const int C = (int)kCrit.size();
+    if (gaMode == "structured" || gaMode == "both") {
       std::vector<std::vector<double>> norm(C);
       for (int c = 0; c < C; ++c) norm[c] = priorities("CUSTOM", jobs, orderWork, { { kCrit[c], 1.0 } });
       auto decode = [&](const std::vector<double>& g) {
@@ -754,57 +857,130 @@ json run_schedule(Database& db, const ScheduleParams& p) {
         return genome({ 1 });                            // EDD
       };
       std::vector<std::vector<double>> seeds = { ruleGenome(chosenRule) };
-      if (chosenRule == "RL") seeds.clear();           // RL-ключ не лежит в пространстве хромосомы — ГА поверх правил
+      // RL/CP-SAT-ключ не лежит в пространстве хромосомы — ГА поверх правил.
+      if (chosenRule == "RL" || chosenRule == "CP-SAT") seeds.clear();
       for (size_t ri = 0; ri < rules.size(); ++ri)
-        if (ri != bestR) seeds.push_back(ruleGenome(rules[ri]));
-      GaConfig gc;
-      gc.generations = G;
-      gc.seed = p.seed + 777;
-      gc.sigma0 = 0.1;                                   // ≈ 10 % шкалы нормированного критерия
-      gc.mutationRate = 0.15;
-      gc.swapBegin = C;                                  // обмен — только приоритетами заказов
-      gc.stallGens = 8;
-      const GaResult ga = run_key_ga(seeds, [&](const std::vector<double>& g) { return scoreOn(decode(g), 0, NS); }, gc);
-      // Базовая линия — НАСТОЯЩИЙ ключ выбранного правила (затравка CR/MS приближённая).
-      const double trainRule = scoreOn(key, 0, NS);
-      const std::vector<double> gaKey = decode(ga.bestKey);
-      const double valRule = NV > 0 ? scoreOn(key, NS, NS + NV) : trainRule;
-      const double valGa   = NV > 0 ? scoreOn(gaKey, NS, NS + NV) : ga.bestScore;
-      const bool adopted = ga.bestScore < trainRule && valGa < valRule;
-      if (adopted) { key = gaKey; keyImproved = true; }
-      auto gainPct = [](double before, double after) { return before > 0 ? (before - after) / before * 100.0 : 0.0; };
-      json hist = json::array();
-      for (const GaGeneration& h : ga.history) hist.push_back({ {"gen", h.gen}, {"best", h.best}, {"mean", h.mean} });
-      improverJson = {
-        {"method", "ga"},
-        {"iterations", (int)ga.history.size() - 1},       // выполнено поколений
-        {"population", gc.popSize}, {"evaluations", ga.evaluations}, {"seeds", (int)seeds.size()},
-        {"accepted", adopted ? ga.improvements : 0},      // улучшений рекорда (0 — не принят)
-        {"adopted", adopted},
-        {"stopped", ga.stoppedByTime ? "time" : ga.stoppedByStall ? "stall" : "generations"},
-        {"score_before", trainRule},
-        {"score_after", adopted ? ga.bestScore : trainRule},
-        {"improvement_pct", adopted ? gainPct(trainRule, ga.bestScore) : 0.0},
-        {"genes", (int)ga.bestKey.size()},
-        {"weights", { {"due", ga.bestKey[0]}, {"rem", ga.bestKey[1]}, {"duration", ga.bestKey[2]},
-                      {"inputs", ga.bestKey[3]}, {"setup", ga.bestKey[4]} }},
-        {"train_scenarios", NS},
-        {"validation", { {"scenarios", NV}, {"score_rule", valRule}, {"score_ga", valGa},
-                         {"improvement_pct", gainPct(valRule, valGa)} }},
-        {"history", hist},
-      };
+        if (ri != bestR && rules[ri] != "CP-SAT") seeds.push_back(ruleGenome(rules[ri]));
+      ModeRun r; r.name = "structured"; r.pins = &pinMap; r.nSeeds = (int)seeds.size();
+      r.gc.generations = G;
+      r.gc.seed = p.seed + 777;
+      r.gc.sigma0 = 0.1;                                 // ≈ 10 % шкалы нормированного критерия
+      r.gc.mutationRate = 0.15;
+      r.gc.swapBegin = C;                                // обмен — только приоритетами заказов
+      r.gc.stallGens = 8;
+      r.ga = run_key_ga(seeds, [&](const std::vector<double>& g) { return scoreOn(decode(g), 0, NS, pinMap); }, r.gc);
+      r.key = decode(r.ga.bestKey);
+      runs.push_back(std::move(r));
     }
+    // ── Режим 2: ключи по операциям (тёплый старт CP-SAT или правила) ──
+    if (gaMode == "op_keys" || gaMode == "both") {
+      std::vector<std::vector<double>> seeds;
+      if (cp.sol.ok) seeds.push_back(cpsat::opkey_from_starts(cp.sol.starts));
+      if (chosenRule != "CP-SAT") seeds.push_back(cpsat::opkey_from_key(key));
+      for (size_t ri = 0; ri < rules.size(); ++ri)
+        if (ri != bestR && rules[ri] != "CP-SAT") seeds.push_back(cpsat::opkey_from_key(keyOf(rules[ri])));
+      ModeRun r; r.name = "op_keys"; r.pins = cp.sol.ok ? &cp.machinePins : &pinMap; r.nSeeds = (int)seeds.size();
+      r.gc.generations = G;
+      r.gc.seed = p.seed + 991;
+      r.gc.sigma0 = 0.05;                                // 5 % шкалы [0,1]
+      r.gc.mutationRate = std::min(0.1, 20.0 / std::max<size_t>(1, jobs.size()));   // ≈ 20 генов на мутацию
+      r.gc.swapBegin = 0;
+      r.gc.stallGens = 8;
+      const PinMap& opPins = *r.pins;
+      r.ga = run_key_ga(seeds, [&](const std::vector<double>& g) { return scoreOn(g, 0, NS, opPins); }, r.gc);
+      r.key = r.ga.bestKey;
+      runs.push_back(std::move(r));
+    }
+    // Базовая линия — НАСТОЯЩИЙ ключ выбранного правила с его пинами (CP-SAT — жёсткий план).
+    const double trainRule = scoreOn(key, 0, NS, *finalPins);
+    const double valRule = NV > 0 ? scoreOn(key, NS, NS + NV, *finalPins) : trainRule;
+    int won = -1;
+    for (size_t i = 0; i < runs.size(); ++i) {
+      runs[i].val = NV > 0 ? scoreOn(runs[i].key, NS, NS + NV, *runs[i].pins) : runs[i].ga.bestScore;
+      const bool ok = runs[i].ga.bestScore < trainRule && runs[i].val < valRule;
+      if (ok && (won < 0 || runs[i].val < runs[won].val)) won = (int)i;
+    }
+    const bool adopted = won >= 0;
+    if (adopted) { key = runs[won].key; finalPins = runs[won].pins; keyImproved = true; }
+    auto gainPct = [](double before, double after) { return before > 0 ? (before - after) / before * 100.0 : 0.0; };
+    json modes = json::object();
+    for (auto& r : runs)
+      modes[r.name] = { {"score_train", r.ga.bestScore}, {"score_validation", r.val}, {"seeds", r.nSeeds},
+                        {"generations", (int)r.ga.history.size() - 1}, {"evaluations", r.ga.evaluations},
+                        {"genes", (int)r.ga.bestKey.size()}, {"adoptable", r.ga.bestScore < trainRule && r.val < valRule},
+                        {"stopped", r.ga.stoppedByTime ? "time" : r.ga.stoppedByStall ? "stall" : "generations"} };
+    // Поля верхнего уровня — у победившего режима (иначе у первого прогнанного) — совместимо с UI.
+    const ModeRun& rep = runs[adopted ? won : 0];
+    json hist = json::array();
+    for (const GaGeneration& h : rep.ga.history) hist.push_back({ {"gen", h.gen}, {"best", h.best}, {"mean", h.mean} });
+    const bool structured = rep.name == "structured";
+    improverJson = {
+      {"method", "ga"},
+      {"iterations", (int)rep.ga.history.size() - 1},
+      {"population", rep.gc.popSize}, {"evaluations", rep.ga.evaluations}, {"seeds", rep.nSeeds},
+      {"accepted", adopted ? rep.ga.improvements : 0},
+      {"adopted", adopted},
+      {"stopped", rep.ga.stoppedByTime ? "time" : rep.ga.stoppedByStall ? "stall" : "generations"},
+      {"score_before", trainRule},
+      {"score_after", adopted ? rep.ga.bestScore : trainRule},
+      {"improvement_pct", adopted ? gainPct(trainRule, rep.ga.bestScore) : 0.0},
+      {"genes", (int)rep.ga.bestKey.size()},
+      {"train_scenarios", NS},
+      {"validation", { {"scenarios", NV}, {"score_rule", valRule}, {"score_ga", rep.val},
+                       {"improvement_pct", gainPct(valRule, rep.val)} }},
+      {"history", hist},
+      {"mode", gaMode}, {"mode_won", adopted ? json(rep.name) : json(nullptr)},
+      {"seed_source", seedSource}, {"modes", modes},
+    };
+    if (structured)                                      // веса составного правила — только у структурной хромосомы
+      improverJson["weights"] = { {"due", rep.ga.bestKey[0]}, {"rem", rep.ga.bestKey[1]}, {"duration", rep.ga.bestKey[2]},
+                                  {"inputs", rep.ga.bestKey[3]}, {"setup", rep.ga.bestKey[4]} };
+  }
+
+  // Волна A2: сводка CP-SAT и «цена детерминизма» — жёсткий план CP-SAT (пины) против итогового
+  // (робастно донастроенного) на ОДНИХ И ТЕХ ЖЕ отложенных сценариях (CRN), парный бутстреп.
+  json cpsatJson = nullptr;
+  if (cp.sol.ok) {
+    const bool heldOut = G > 0 && NV > 0;
+    const int s0 = heldOut ? NS : 0, s1 = heldOut ? NS + NV : N;
+    std::vector<double> mkA, tdA, mkB, tdB;
+    runScen(cp.key, cp.pins, s0, s1, mkA, tdA);
+    runScen(key, *finalPins, s0, s1, mkB, tdB);
+    auto toH = [](std::vector<double> v) { for (double& x : v) x /= 60.0; return v; };
+    const double finalDetMk = simulate(m, jobs, key, durMean, cal, calByM, *finalPins).makespan;
+    const RuleEval& br = evals[bestRuleR];
+    cpsatJson = {
+      {"status", cp.sol.status}, {"objective", cp.sol.objective}, {"bound", cp.sol.bound}, {"time_s", cp.sol.timeS},
+      {"setup_mode", cp.sol.setupMode}, {"hint_rule", cp.hintRule}, {"calendar_mode", cp.sol.calendarMode},
+      {"routing", cp.sol.routing}, {"from_hint", cp.sol.fromHint}, {"note", cp.sol.fromHint ? cp.sol.error : std::string()},
+      {"makespan_solver_h", cp.sol.makespan / 60.0}, {"makespan_replay_h", cp.replayMk / 60.0},
+      {"best_rule", br.rule}, {"best_rule_makespan_h", br.mkDet / 60.0},
+      // Разрыв к лучшему правилу по детерминированному Cmax (воспроизведение пинами); < 0 — CP-SAT лучше.
+      {"gap_to_rule", br.mkDet > 0 ? (cp.replayMk - br.mkDet) / br.mkDet : 0.0},
+      {"gap_to_rule_score", evals[bestRuleR].score > 0 ? (evals[0].score - evals[bestRuleR].score) / evals[bestRuleR].score : 0.0},
+      {"price_of_determinism", {
+        {"scenarios", s1 - s0}, {"held_out", heldOut}, {"final_plan", keyImproved ? "ga" : "cpsat"},
+        {"cpsat_det_makespan_h", cp.replayMk / 60.0}, {"final_det_makespan_h", finalDetMk / 60.0},
+        {"cpsat", { {"makespan_mean_h", mean_of(mkA) / 60.0}, {"makespan_cvar_h", cvar_upper(mkA, p.alpha) / 60.0},
+                    {"tardiness_mean_h", mean_of(tdA) / 60.0} }},
+        {"final", { {"makespan_mean_h", mean_of(mkB) / 60.0}, {"makespan_cvar_h", cvar_upper(mkB, p.alpha) / 60.0},
+                    {"tardiness_mean_h", mean_of(tdB) / 60.0} }},
+        // Δ = итоговый − жёсткий CP-SAT (часы); отрицательное — робастная донастройка лучше.
+        {"makespan_delta", paired_delta_ci(toH(mkA), toH(mkB), p.alpha, p.seed + 5150u)},
+        {"tardiness_delta", paired_delta_ci(toH(tdA), toH(tdB), p.alpha, p.seed + 5151u)},
+      }},
+    };
   }
 
   // B5: риск-KPI (E/CVaR/худший makespan, CVaR просрочки, поломки) — Монте-Карло
   // ИТОГОВОГО ключа (того же, что даёт Ганта), на всех N сценариях. Раньше они
   // брались у правила ДО локального поиска и не относились к показанному плану.
   // Если ключ не менялся — оценка правила и есть оценка итогового ключа (те же CRN).
-  const McEval finalMc = keyImproved ? mcEval(key) : McEval{
+  const McEval finalMc = keyImproved ? mcEval(key, *finalPins) : McEval{
     evals[bestR].mkMean, evals[bestR].mkCVaR, evals[bestR].mkWorst,
     evals[bestR].tardMean, evals[bestR].tardCVaR, evals[bestR].bdMin };
 
-  SimOut sched = simulate(m, jobs, key, durMean, cal, calByM, pinMap);
+  SimOut sched = simulate(m, jobs, key, durMean, cal, calByM, *finalPins);
   double makespan = sched.makespan;
   int nLate = 0; double tardiness = order_tardiness(jobs, sched, nOrders, due, nLate);
 
@@ -1068,6 +1244,8 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     // Волна A: структурные ходы агента (UX-V2 §4.7) и сводка политики RL; null без правила RL.
     {"moves", p.rule == "RL" ? rlPlan.moves : json(nullptr)},
     {"rl", p.rule == "RL" ? rlPlan.rlEval : json(nullptr)},
+    // Волна A2: правило «CP-SAT» — статус солвера, разрыв к лучшему правилу, «цена детерминизма».
+    {"cpsat", cpsatJson},
   };
   return result;
 }

@@ -52,6 +52,7 @@ add_library(maos_core STATIC
   src/CashLp.cpp
   src/CashOptimize.cpp
   src/CashWaterfall.cpp
+  src/CpSatRule.cpp
   src/Database.cpp
   src/ExactCvar.cpp
   src/GaImprover.cpp
@@ -71,6 +72,8 @@ target_link_libraries(maos_core PUBLIC
   SQLite3::SQLite3
 )
 target_link_libraries(maos_core PRIVATE highs::highs)
+# Волна A2: HTTP-клиент к sidecar CP-SAT (CpSatRule.cpp; header-only cpp-httplib).
+target_link_libraries(maos_core PRIVATE httplib::httplib)
 if(UNIX AND NOT APPLE)
   target_link_libraries(maos_core PUBLIC pthread)
 endif()
@@ -130,6 +133,7 @@ if(MAOS_BUILD_TESTS)
   add_executable(maos_tests
     tests/test_cashlp.cpp
     tests/test_cashwaterfall.cpp
+    tests/test_cpsat.cpp
     tests/test_access.cpp
     tests/test_finance.cpp
     tests/test_ga.cpp

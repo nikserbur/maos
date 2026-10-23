@@ -17,6 +17,7 @@ namespace {
 
 struct Policy {
   std::string path, sha; json meta; int obsSize = 0, actSize = 0;
+  bool ruleSelect = false;   // A2: L0 «выбор правила» — действие = индекс правила (rule_for_action)
 #ifdef MAOS_WITH_ONNX
   std::unique_ptr<Ort::Session> session;
 #endif
@@ -58,6 +59,7 @@ void load_policy(Policy& p, const std::string& path) {
     if (shape.size() == 2 && shape[1] > 0) p.obsSize = (int)shape[1];
     if (oshape.size() == 2 && oshape[1] > 0) p.actSize = (int)oshape[1];
     p.ok = p.obsSize > 0 && p.actSize > 0;
+    p.ruleSelect = p.meta.value("action_space", std::string()) == "rule";
   } catch (std::exception& e) { g().error += std::string("onnx: ") + e.what() + "; "; }
 #else
   g().error += "сборка без onnxruntime (MAOS_WITH_ONNX=OFF); ";
@@ -88,15 +90,55 @@ int masked_argmax(const std::vector<float>& lg, const std::vector<uint8_t>& mask
   return best;
 }
 
-// Эпизод политикой RL (L0 из ONNX; L2 — если загружена и l2Enabled).
-json run_policy(env::SimEnv& e, uint64_t seed, const env::Scenario& sc, bool useL2) {
+// Эпизод политикой RL (L0 из ONNX; L2 — если загружена и l2Enabled). L0 «выбор правила» (A2):
+// действие = индекс правила, операцию ставит правило из маскированной очереди (как L0RuleEnv).
+// Действие политики выбора правила (A2): 0..6 — правило, 7 — ключ CP-SAT (в продукте ключа нет → чемпион),
+// 8 — статический чемпион (лучшее правило по F детерминированно), 9 — срочный заказ первым, иначе чемпион.
+int rule_select_job(env::SimEnv& e, int a, const std::string& dflt) {
+  if (a >= 0 && a < kNumRules) return e.rule_choice(rule_for_action(a));
+  if (a == kActExpedite) return e.expedite_choice(dflt, {});
+  return e.rule_choice(dflt);
+}
+
+json run_policy(env::SimEnv& e, uint64_t seed, const env::Scenario& sc, bool useL2, const std::string& dflt = "EDD") {
   e.reset(seed, sc);
+  const bool ruleSel = g().l0.ruleSelect;
+  std::vector<uint8_t> mask(std::max(kNumRules, g().l0.actSize), 1);
+  if ((int)mask.size() > kActCpSat) mask[kActCpSat] = 0;            // ключа CP-SAT в правиле RL нет
   int guard = 0;
   while (!e.done() && ++guard < 10'000'000) {
     if (e.level() == 2) { e.step(useL2 && l2_available() ? act(2, e.obs_l2(), e.mask_l2()) : 0); continue; }
+    if (ruleSel) { e.step_job(rule_select_job(e, act(0, e.obs_l0(), mask), dflt)); continue; }
     e.step(act(0, e.obs_l0(), e.mask_l0()));
   }
   return e.summary();
+}
+
+// Статический чемпион для действия «по умолчанию»: лучшее из 7 правил по Cmax + 0.5·просрочка (по средним).
+std::string best_static_rule(const env::Instance& inst) {
+  env::EnvConfig c; c.mode = env::EpochMode::Event; c.deterministic = true; c.breakdowns = false; c.denseReward = false;
+  env::SimEnv e(inst, c);
+  std::string best = "EDD"; double bf = 1e300;
+  for (int a = 0; a < kNumRules; ++a) {
+    const json s = env::evaluate_rule(e, rule_for_action(a), 1, {});
+    const double f = s.value("makespan_h", 0.0) + 0.5 * s.value("tardiness_h", 0.0);
+    if (f < bf) { bf = f; best = rule_for_action(a); }
+  }
+  return best;
+}
+
+// Итог гейта V5 (rl/results/champion_a2.json рядом с политикой): чемпион, ДИ, прошёл ли гейт.
+json gate_info() {
+  for (const std::string& d : { g().dir, std::string("rl/results"), std::string("../rl/results"), std::string("../../rl/results") }) {
+    if (d.empty() || !file_exists(d + "/champion_a2.json")) continue;
+    try { std::ifstream f(d + "/champion_a2.json"); json c = json::parse(f);
+      const bool pass = c.value("policy", std::string("best_rule")) != "best_rule";
+      return { {"gate_pass", pass}, {"champion", c.value("policy", std::string("best_rule"))}, {"ci95", c.value("ci95", json(nullptr))},
+               {"score", c.value("score", 0.0)}, {"wilcoxon_p", c.value("wilcoxon_p", json(nullptr))}, {"holdout_seed", c.value("holdout_seed", json(nullptr))},
+               {"n", c.value("n", json(nullptr))}, {"source", d + "/champion_a2.json"} };
+    } catch (...) {}
+  }
+  return { {"gate_pass", false}, {"champion", "best_rule"}, {"ci95", nullptr}, {"source", ""} };
 }
 
 double mean_of(const std::vector<double>& v) { return v.empty() ? 0 : std::accumulate(v.begin(), v.end(), 0.0) / v.size(); }
@@ -104,6 +146,11 @@ double cvar_lo(std::vector<double> v, double a) { if (v.empty()) return 0; std::
 double cvar_hi(std::vector<double> v, double a) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); size_t k = std::max<size_t>(1, (size_t)std::floor(a * v.size())); return std::accumulate(v.end() - k, v.end(), 0.0) / k; }
 
 }  // namespace
+
+const char* rule_for_action(int a) {
+  static const char* const kRules[kNumRules] = { "EDD", "SPT", "LPT", "CR", "MWKR", "MS", "FIFO" };   // = rl/env/l0_env.py:RULES
+  return (a >= 0 && a < kNumRules) ? kRules[a] : "EDD";
+}
 
 void load_default() {
   State& s = g(); std::lock_guard<std::mutex> lk(s.mu);
@@ -129,7 +176,7 @@ json status() {
 #else
   const bool built = false;
 #endif
-  return { {"available", s.l0.ok}, {"onnxruntime", built}, {"dir", s.dir}, {"error", s.error}, {"l0", pj(s.l0)}, {"l2", pj(s.l2)},
+  return { {"available", s.l0.ok}, {"onnxruntime", built}, {"l0_rule_select", s.l0.ruleSelect}, {"gate", gate_info()}, {"dir", s.dir}, {"error", s.error}, {"l0", pj(s.l0)}, {"l2", pj(s.l2)},
            {"note", "правило RL: политика L0 → ключ приоритетов (ранг старта) → тот же конвейер Ганта/МК; L2 → moves[] (§4.7)"} };
 }
 
@@ -146,7 +193,8 @@ RlPlan plan(Database& db, const std::vector<std::pair<std::string,double>>& prog
   env::Instance inst = env::instance_from_db(db, program, dueHours, useCalendar);
   env::EnvConfig cfg; cfg.mode = env::EpochMode::Event; cfg.deterministic = true; cfg.breakdowns = false; cfg.denseReward = false;
   env::SimEnv det(inst, cfg);
-  const json detSum = run_policy(det, seed, {}, false);
+  const std::string dflt = best_static_rule(inst);
+  const json detSum = run_policy(det, seed, {}, false, dflt);
   // Ключ = ранг старта операции в RL-расписании (та же развёртка джобов, что в run_schedule).
   const json gantt = det.gantt();
   std::vector<std::pair<double,int>> order; order.reserve(gantt.size());
@@ -155,19 +203,20 @@ RlPlan plan(Database& db, const std::vector<std::pair<std::string,double>>& prog
   r.key.assign(gantt.size(), 0); for (size_t i = 0; i < order.size(); ++i) r.key[order[i].second] = (double)i;
   r.ok = true;
   r.rlEval = { {"makespan_h", detSum.value("makespan_h", 0.0)}, {"tardiness_h", detSum.value("tardiness_h", 0.0)},
+               {"default_rule", dflt}, {"gate", gate_info()},
                {"n_decisions", detSum.value("n_decisions", 0)}, {"n_wait", detSum.value("n_wait", 0)}, {"policy_sha256", g().l0.sha} };
   if (!l2_available() || nScen <= 0) { r.moves = nullptr; return r; }
   // Структурные ходы L2: предложение — по средним; эффект «до/после» — на nScen сценариях CRN.
   env::EnvConfig c2 = cfg; c2.l2Enabled = true;
   env::SimEnv detL2(inst, c2);
-  const json l2Sum = run_policy(detL2, seed, {}, true);
+  const json l2Sum = run_policy(detL2, seed, {}, true, dflt);
   env::EnvConfig cs; cs.mode = env::EpochMode::Event; cs.breakdowns = true; cs.denseReward = false;
   env::EnvConfig cs2 = cs; cs2.l2Enabled = true;
   env::SimEnv before(inst, cs), after(inst, cs2);
   std::vector<double> pB, pA, cB, cA, mkB, mkA, tdB, tdA, otdB, otdA; int brB = 0, brA = 0;
   for (int s = 0; s < nScen; ++s) {
     env::Scenario sc; sc.idx = s;
-    const json a = run_policy(before, seed + 7919u * (unsigned)s, sc, false), b = run_policy(after, seed + 7919u * (unsigned)s, sc, true);
+    const json a = run_policy(before, seed + 7919u * (unsigned)s, sc, false, dflt), b = run_policy(after, seed + 7919u * (unsigned)s, sc, true, dflt);
     pB.push_back(a.value("profit", 0.0)); pA.push_back(b.value("profit", 0.0));
     cB.push_back(a.value("min_cash", 0.0)); cA.push_back(b.value("min_cash", 0.0));
     mkB.push_back(a.value("makespan_h", 0.0)); mkA.push_back(b.value("makespan_h", 0.0));

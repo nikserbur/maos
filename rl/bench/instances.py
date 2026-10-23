@@ -135,11 +135,27 @@ def maos_instances(db_path: Path | None = None, n_random: int = 9, seed: int = 2
         k = sizes[r % len(sizes)]
         idx = rng.choice(len(sellable), size=min(k, len(sellable)), replace=False)
         prog = [(sellable[i][0], float(max(5, round(sellable[i][1] * rng.uniform(0.02, 0.12))))) for i in idx]
-        due = [float(rng.choice([240, 480, 720, 1080, 1440, 2160])) for _ in idx]
+        due = [float(rng.choice([240, 480, 720, 1080, 1440, 2160])) for _ in idx]   # поток rng как в A1
         inst = me.instance_from_db(str(db_path), prog, due, True)
-        out.append((f"maos-rnd{r + 1}", _scale_fin(json.loads(inst.to_json()), f"maos-rnd{r + 1}")))
+        js = _calibrate_due(me, json.loads(inst.to_json()), rng)
+        out.append((f"maos-rnd{r + 1}", _scale_fin(js, f"maos-rnd{r + 1}")))
     con.close()
     return out
+
+
+DUE_RANGE = (0.35, 1.1)   # [К] rl.nsi.bench_due: срок = Cmax(EDD) × U(a, b) — сроки напряжены (A2)
+
+
+def _calibrate_due(me, js: dict, rng: np.random.Generator) -> dict:
+    """Сроки случайного экземпляра — доли детерминированного Cmax правила EDD (A2: при сроках
+    240…2160 ч OTD = 1 и прибыль нечувствительна к расписанию, A1 §5)."""
+    from rl.env.core import make_config, run_rule
+    env = me.SimEnv(me.Instance.from_json(json.dumps(js)),
+                    make_config({"event_mode": False, "deterministic": True, "breakdowns": False, "dense_reward": False}))
+    cmax_h = run_rule(env, "EDD", 1)["makespan_h"]
+    for o in js["orders"]:
+        o["due_h"] = float(round(cmax_h * rng.uniform(*DUE_RANGE), 1))
+    return js
 
 
 def _scale_fin(j: dict, name: str) -> dict:

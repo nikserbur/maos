@@ -27,7 +27,7 @@ struct SchedPin { int jobIdx = -1; double startHours = 0; std::string machineId;
 struct ScheduleParams {
   std::vector<OrderLine> program;     // что и сколько (если пусто → из run/демо)
   std::string runId;                  // optimization_runs.id → программа из портфеля
-  std::string rule = "auto";          // SPT|LPT|EDD|CR|MWKR|MS|FIFO|auto (лучшее)
+  std::string rule = "auto";          // SPT|LPT|EDD|CR|MWKR|MS|FIFO|RL|CP-SAT|auto (лучшее)
   double wTime = 1.0, wCost = 0.0, wRisk = 0.5;  // веса целевой функции
   int    samples = 600;               // прогонов Монте-Карло (тяжёлый хвост)
   double alpha   = 0.10;              // хвост для CVaR makespan/tardiness
@@ -43,6 +43,10 @@ struct ScheduleParams {
   // Критерии: duration | due | rem | inputs | setup. Пример «длинные раньше, из них
   // раньше те, у кого больше входов»: [{duration,-1},{inputs,-0.2}].
   std::vector<std::pair<std::string,double>> customRule;
+  // Волна A2: правило «CP-SAT» (rule="CP-SAT") — лимит солвера sidecar, с (cpsat_time_limit).
+  double cpsatTimeLimit = 30.0;
+  // Режим хромосомы ГА: auto (CP-SAT → both, иначе structured) | structured | op_keys | both.
+  std::string gaMode = "auto";
 };
 
 // Строит и оптимизирует расписание; ПЕРСИСТИТ план (plans/plan_tasks) и

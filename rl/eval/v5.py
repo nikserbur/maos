@@ -23,8 +23,8 @@ from sb3_contrib import MaskablePPO
 
 from rl.env.core import load_module, make_config
 from rl.env.scenarios import STRESSES, ScenarioSet
-from rl.train.common import (ALPHA_PROFIT, CKPT, RESULTS, RULES, EvalSpec, cvar_lower, episode_metrics, iqm, load_instances,
-                             maos_instance_names, paired_bootstrap_ci, run_episodes, sb3_policy, wilcoxon_p)
+from rl.train.common import (ALPHA_PROFIT, CKPT, RESULTS, RULES, EvalSpec, RuleSelectPolicy, cvar_lower, episode_metrics, iqm,
+                             load_instances, maos_instance_names, paired_bootstrap_ci, run_episodes, sb3_policy, wilcoxon_p)
 from rl.train.train_l0 import VALID_N_PER_INSTANCE
 
 GA_TRAIN_SEED0, GA_NS, GA_GENS, GA_SEC = 1000, 8, 30, 30.0   # [К] rl.ga_baseline.*
@@ -98,13 +98,16 @@ def main() -> None:
     ap.add_argument("--baselines-only", action="store_true")
     ap.add_argument("--stress", type=str, default="", help="только один стресс (base|crisis|quantile|joint) — параллельный запуск")
     ap.add_argument("--out", type=Path, default=RESULTS / "v5_results.json")
+    # A2: отдельные кэш/чемпион по тегу (экземпляры обогащённой НСИ) и набор политик.
+    ap.add_argument("--tag", type=str, default="", help="суффикс кэша базовых линий и champion (A2: _a2)")
+    ap.add_argument("--families", type=str, nargs="+", default=["l0", "l2", "l0rule"], help="семейства политик RL")
     a = ap.parse_args()
     me = load_module()
     names = maos_instance_names(); insts = load_instances(names)
     spec = EvalSpec(n_holdout=a.n, weeks=a.weeks)
     t0 = time.time()
     vs = ScenarioSet(VALID_N_PER_INSTANCE, spec.valid_seed, weeks=a.weeks)
-    cache = RESULTS / "v5_baselines.json"          # лучшее правило (валидация) и ключи ГА — детерминированны, кэшируются
+    cache = RESULTS / f"v5{a.tag}_baselines.json"   # лучшее правило (валидация) и ключи ГА — детерминированны, кэшируются
     if cache.exists():
         cj = json.loads(cache.read_text(encoding="utf-8")); best_rule, keys = cj["best_rule"], cj["keys"]
     else:
@@ -119,11 +122,14 @@ def main() -> None:
     l0_models = {}
     for s in a.seeds:
         p = CKPT / f"l0_seed{s}_best.zip"
-        if p.exists():
+        if p.exists() and "l0" in a.families:
             l0_models[s] = MaskablePPO.load(p, device="cpu")
             policies[f"L0_seed{s}"] = ("l0", sb3_policy(l0_models[s]))
+        p = CKPT / f"l0rule_seed{s}_best.zip"     # A2: L0 как выбор правила (Tang 2026)
+        if p.exists() and "l0rule" in a.families:
+            policies[f"L0rule_seed{s}"] = ("l0", RuleSelectPolicy(MaskablePPO.load(p, device="cpu")))
     l2: dict = {}
-    for s in a.seeds:
+    for s in a.seeds if "l2" in a.families else []:
         for tag, inner in (("edd", "rule:EDD"), ("l0", None)):
             p = CKPT / f"l2_{tag}_seed{s}_best.zip"
             if not p.exists():
@@ -160,7 +166,7 @@ def main() -> None:
         return
     # Гейт §7.4: чемпион = лучшая по ДИ политика RL на базовых holdout; иначе остаётся правило/ГА.
     base_comps = results["tables"]["base"]["comparisons"]
-    champ_path = RESULTS / "champion.json"
+    champ_path = RESULTS / f"champion{a.tag}.json"
     champion = json.loads(champ_path.read_text(encoding="utf-8")) if champ_path.exists() else {"policy": "best_rule", "score": 0.0}
     for cand, c in base_comps.items():
         if cand == "GA":
