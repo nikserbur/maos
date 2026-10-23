@@ -5,7 +5,7 @@
  * движений), уход с экрана досылает несохранённое; открытый сценарий — контекст решения.
  */
 import { useEffect, useRef, useState } from 'react'
-import { api, type MacroMode, type MacroModeName, type MacroRegimes, type PriceScenario, type Product, type ScenarioPayload, type PriceDistribution } from '../../lib/api'
+import { api, type MacroRegimes, type PriceScenario, type Product, type PriceDistribution } from '../../lib/api'
 import { setDecisionContext } from '../../shell/context'
 import { BlockChips } from '../../ui/BlockChip'
 import { IconButton } from '../../ui/kit'
@@ -18,6 +18,7 @@ import { ScenarioCreateDialog } from './ScenarioCreateDialog'
 import { ScenarioTabs, type SaveStatus } from './ScenarioTabs'
 import { fromMacroMode, regimeLabel } from './regimeMenu'
 import type { ScenarioTemplate } from './scenarioTemplates'
+import { payloadOf } from './scenarioPayload'
 import './scenario-compare.css'
 import './scenarios-v2.css'
 
@@ -25,13 +26,6 @@ import './scenarios-v2.css'
 const SAVE_DEBOUNCE_MS = 400
 
 const OBJECTIVES: Record<string, string> = { cvar: 'CVaR', worstcase: 'maximin', meanvariance: 'E − λσ', minregret: 'Сэвидж' }
-
-/** `macro_mode` сценария хранится строкой (JSON | имя); в payload уходит объект/имя. */
-function macroModeOf(raw: string | undefined): MacroMode | MacroModeName | undefined {
-  if (!raw) return undefined
-  if (raw === 'base' || raw === 'regime' || raw === 'quantile' || raw === 'episode' || raw === 'iid_v063') return raw
-  try { return JSON.parse(raw) as MacroMode } catch { return undefined }
-}
 
 export function ScenarioCompareScreen() {
   const [scenarios, setScenarios] = useState<PriceScenario[]>([])
@@ -64,18 +58,6 @@ export function ScenarioCompareScreen() {
   }, [])
 
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
-
-  const payloadOf = (sc: PriceScenario, extra: Partial<ScenarioPayload>): ScenarioPayload => ({
-    name: sc.name, description: sc.description,
-    horizon_hours: Number(sc.horizon_hours) || 720, market_corr: Number(sc.market_corr) || 0.5,
-    objective: sc.objective || 'cvar', alpha: Number(sc.alpha) || 0.1, max_share: Number(sc.max_share) || 0.6,
-    mode: sc.mode || 'stochastic', plan_id: sc.plan_id || '', start_date: sc.start_date || '', end_date: sc.end_date || '',
-    inflation: Number(sc.inflation) || 0, fx: Number(sc.fx) || 1, demand: Number(sc.demand) || 1,
-    volatility: Number(sc.volatility) || 0.05, months: Number(sc.months) || 6,
-    sanctions: Number(sc.sanctions) || 0, tax_change: Number(sc.tax_change) || 0, energy: Number(sc.energy) || 1, logistics: Number(sc.logistics) || 1, key_rate: Number(sc.key_rate) || 8,
-    macro_mode: macroModeOf(sc.macro_mode),
-    ...extra,
-  })
 
   const flushSave = (id: string) => {
     const next = pending.current.get(id)

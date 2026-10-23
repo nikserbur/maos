@@ -5,7 +5,7 @@
  * очереди → загрузка → правила и рабочие (свёрнутые таблицы) → касса. Пины →
  * «Пересчитать с правками» создаёт новый прогон, старый остаётся в истории.
  */
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { CashLpResult, ScheduleResult } from '../../lib/api'
 import { num } from '../../explain/format'
 import { Icon } from '../../shell/icons'
@@ -19,6 +19,10 @@ import { QueueChart, QueueFilter } from './QueueChart'
 import { ResultToc, type TocItem } from './ResultToc'
 import { RulesTable, WorkersTable } from './ResultTables'
 import { WhatDrove } from './WhatDrove'
+import { RlEvalCard } from './RlEvalCard'
+import { MovesPanel } from './moves/MovesPanel'
+import { movesSource } from './moves/movesSource'
+import { PlanDiffView } from './diff/PlanDiffView'
 import { Section, Segmented } from '../../ui/kit'
 import './plan.css'
 import './plan-screen.css'
@@ -39,7 +43,7 @@ export interface PlanResultProps {
 
 const TOC: readonly TocItem[] = [
   { id: 'res-kpi', label: 'KPI' }, { id: 'res-bn', label: 'Узкое место' }, { id: 'res-drove', label: 'Что определило' },
-  { id: 'res-gantt', label: 'Гант' }, { id: 'res-queues', label: 'Очереди' }, { id: 'res-load', label: 'Загрузка' },
+  { id: 'res-moves', label: 'Ходы агента' }, { id: 'res-gantt', label: 'Гант' }, { id: 'res-queues', label: 'Очереди' }, { id: 'res-load', label: 'Загрузка' },
   { id: 'res-tables', label: 'Правила · рабочие' }, { id: 'res-cash', label: 'Касса' },
 ]
 
@@ -64,6 +68,7 @@ export function PlanResult({ result, pins, onPin, onClearPins, onRerun, running,
   const [loadView, setLoadView] = useState<'types' | 'machines' | 'time'>('types')
   const [queueWc, setQueueWc] = useState('')
   const hasPins = pins.size > 0
+  const moves = useMemo(() => movesSource(result), [result])
   const ganttTools = (
     <>
       {hasPins && (
@@ -86,11 +91,23 @@ export function PlanResult({ result, pins, onPin, onClearPins, onRerun, running,
           <PlanKpis result={result} cash={cash.result} cashRunning={cash.running} onGoCash={() => scrollTo('res-cash')} />
         </section>
         <section id="res-bn" className="pl-result__sec"><BottleneckBanner result={result} /></section>
-        <section id="res-drove" className="pl-result__sec"><WhatDrove result={result} pins={pins.size} /></section>
+        <section id="res-drove" className="pl-result__sec">
+          <WhatDrove result={result} pins={pins.size} />
+          {result.rl && <RlEvalCard rl={result.rl} rules={result.rules} />}
+        </section>
+
+        {moves.kind !== 'none' && (
+          <Section id="res-moves" title="Структурные ходы агента"
+            meta={moves.kind === 'demo' ? 'пример на фикстурах: правило «RL» в этом прогоне не работало' : 'агент предлагает — вы утверждаете; оба видят одни и те же сценарии'}
+            tools={<a className="btn btn--sm" href="#/map/ag.rl">[6] на карте ↗</a>}>
+            <MovesPanel result={result} source={moves} />
+          </Section>
+        )}
 
         <Section id="res-gantt" title="Диаграмма Ганта" meta={<>{num(result.n_jobs, 0)} операций · {num(result.n_orders, 0)} заказов · полосы можно перетаскивать («не раньше»)</>} tools={ganttTools}>
           <div className="pl-card pl-card--flush">
-            <Gantt result={result} pins={pins} onPin={onPin} startDate={startDate} />
+            <PlanDiffView result={result} source={moves} startDate={startDate}
+              plan={<Gantt result={result} pins={pins} onPin={onPin} startDate={startDate} />} />
           </div>
         </Section>
 

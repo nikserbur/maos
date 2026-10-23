@@ -1,77 +1,133 @@
-/* Экран «Агенты» — зарезервированный пункт блока [6]: шапка, пустое состояние, план экрана. */
+/*
+ * Экран «Агенты» (блок [6]): редакционная композиция — вердикт гейта крупно на всю ширину
+ * (как заголовок статьи), доказательства таблицами, полномочия и устройство агента — асимметричная
+ * пара 7/5, игры — «в плане» штриховой рамкой. Фиолет блока [6] — только штрихи и бейджи.
+ */
 .agents {
   height: 100%;
   overflow: auto;
   padding: var(--space-5) var(--space-6) var(--space-8);
-}
-/* 1 + 3: ведущий пункт во всю строку, остальные — компактный нумерованный список. */
-.agents__plan {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  margin-top: var(--space-5);
+  gap: var(--space-5);
 }
-.agents__lead {
+
+/* ── Вердикт и сервер ───────────────────────────────────────────────────── */
+.ag-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: var(--space-6);
   padding: var(--space-5) var(--space-6);
   border-left: 3px solid var(--block-6);
-  border-style: solid solid solid dashed;
 }
-.agents__where {
-  margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-}
-.agents__lead-title {
-  margin: 0 0 var(--space-2);
+.ag-status.is-live { border-left-color: var(--status-running); }
+.ag-status__eyebrow { margin: 0 0 var(--space-2); color: var(--text-muted); }
+.ag-status__headline {
+  margin: 0 0 var(--space-3);
+  max-width: 22ch;
   font-family: var(--font-display);
-  font-size: var(--fs-20);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--fs-32);
+  font-weight: 400;
+  line-height: var(--lh-display);
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
-.agents__lead-what {
-  margin: 0;
-  max-width: 72ch;
-  font-size: var(--fs-14);
-  color: var(--text-secondary);
+.ag-status__accent { color: var(--accent-text); }
+.ag-status__lead { margin: 0 0 var(--space-3); max-width: 70ch; font-size: var(--fs-14); color: var(--text-secondary); line-height: var(--lh-body); }
+.ag-status__ci { max-width: 560px; margin-bottom: var(--space-3); }
+.ag-status__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ag-status__server {
+  display: flex; flex-direction: column; gap: var(--space-2); margin: 0;
+  padding-left: var(--space-5); border-left: 1px solid var(--border);
 }
-.agents__how {
-  margin: var(--space-3) 0 0;
-  padding-top: var(--space-3);
-  max-width: 72ch;
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-13);
-  color: var(--text-muted);
+.ag-status__server > div { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.ag-status__server dt { font-size: var(--fs-12); color: var(--text-muted); }
+.ag-status__server dd { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); text-align: right; }
+.ag-status__server .ag-status__why { flex-direction: column; align-items: flex-start; gap: 2px; }
+.ag-status__server .ag-status__why dd { text-align: left; line-height: var(--lh-body); word-break: break-word; }
+.ag-status__server > .ag-status__act { flex-wrap: wrap; justify-content: flex-start; gap: var(--space-2); margin-top: auto; padding-top: var(--space-2); }
+
+/* ── Таблицы стенда ─────────────────────────────────────────────────────── */
+.ag-nowrap { white-space: nowrap; }
+.ag-bench { display: flex; flex-direction: column; gap: var(--space-2); }
+.ag-bench__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+
+/* ── Полномочия ─────────────────────────────────────────────────────────── */
+.ag-guard { padding: var(--space-5) var(--space-6); }
+
+.ag-guard__src { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.ag-guard__top { display: grid; grid-template-columns: minmax(280px, 5fr) minmax(0, 7fr); gap: var(--space-6); margin-bottom: var(--space-4); align-items: start; }
+.ag-guard__obj { display: flex; flex-direction: column; gap: var(--space-2); }
+.ag-guard__lbl { margin: 0 0 var(--space-1); color: var(--text-muted); }
+.ag-guard__kinds { border-top: 1px solid var(--border); }
+.ag-guard__kh, .ag-kind {
+  display: grid; grid-template-columns: minmax(170px, 1fr) minmax(0, 1.6fr) minmax(130px, auto);
+  gap: var(--space-3); align-items: center;
 }
-.agents__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-left: 1px solid var(--border);
+.ag-guard__kh { margin: 0; padding: var(--space-2) 0; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.ag-kind { padding: 6px 0; border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent); }
+.ag-kind.is-locked { color: var(--text-muted); }
+.ag-kind__name { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-13); }
+.ag-kind__mask { font-size: var(--fs-12); color: var(--text-secondary); }
+.ag-kind__mask em { font-style: normal; color: var(--text-muted); }
+.ag-kind.is-locked .ag-kind__mask { color: var(--text-muted); }
+.ag-kind__state { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.ag-kind__lvl { font-size: var(--fs-11); color: var(--text-muted); }
+.ag-guard__limits { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.ag-guard__masks { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.ag-guard__list { margin: 0 0 var(--space-2); padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-12); color: var(--text-secondary); }
+.ag-guard__list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+
+/* ── Уровни агента: пара L0/L2 слева (5) · словарь ходов справа (7) ────── */
+.ag-levels { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--space-3) var(--space-5); align-items: start; }
+.ag-levels__pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.ag-levels__side { display: flex; flex-direction: column; gap: var(--space-3); }
+.ag-levels__side .pl-note { margin: 0; }
+.ag-ready { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.ag-ready__note { font-size: var(--fs-11); color: var(--text-muted); line-height: 1.3; }
+.ag-level { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.ag-level--L2 { border-top: 2px solid var(--block-6); }
+.ag-level--L0 { border-top: 2px solid var(--block-4); }
+.ag-level__id { margin: 0; font-size: var(--fs-20); font-weight: 600; color: var(--text); }
+.ag-level__t { margin: 0 0 var(--space-2); font-size: var(--fs-13); font-weight: 600; color: var(--text-secondary); }
+.ag-level__dl { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ag-level__dl dt { font-size: var(--fs-11); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.ag-level__dl dd { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); line-height: 1.4; }
+
+/* ── Игры (в плане) ─────────────────────────────────────────────────────── */
+.ag-games { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.ag-game {
+  padding: var(--space-4) var(--space-5);
+  border: 1px dashed color-mix(in oklch, var(--state-planned) 70%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--bg-panel) 50%, transparent);
 }
-.agents__item {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) minmax(140px, 220px);
-  gap: var(--space-3);
-  align-items: baseline;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
+.ag-game__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.ag-game__t { display: inline-flex; align-items: center; gap: var(--space-1); margin: 0; font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; }
+.ag-game__short { margin: var(--space-2) 0 var(--space-3); font-size: var(--fs-13); color: var(--text-secondary); line-height: var(--lh-body); }
+.ag-game__formula {
+  display: flex; flex-direction: column; gap: 4px; padding: var(--space-3);
+  border-radius: var(--radius); background: var(--bg-card); border: 1px solid var(--border);
+  font-size: var(--fs-12); color: var(--text-secondary); white-space: pre-wrap;
 }
-.agents__item:last-child { border-bottom: 0; }
-.agents__n {
-  font-size: var(--fs-12);
-  color: var(--block-6);
+.ag-game__slot { padding: 0 4px; border-radius: 3px; border: 1px dashed var(--border-strong); color: var(--text-muted); font-weight: 500; }
+.ag-game__needs-h { margin: var(--space-3) 0 var(--space-1); color: var(--text-muted); }
+.ag-game__needs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-12); color: var(--text-secondary); }
+
+/* ── Планшет ────────────────────────────────────────────────────────────── */
+@media (max-width: 1279px) {
+  .ag-levels, .ag-guard__top { grid-template-columns: 1fr; }
+  .ag-guard__limits { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.agents__item-where { margin: 0; text-align: right; }
-.agents__title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--fs-14);
-  font-weight: 600;
+@media (max-width: 1023px) {
+  .agents { padding: var(--space-4); }
+  .ag-status { grid-template-columns: 1fr; }
+  .ag-status__server { padding-left: 0; padding-top: var(--space-3); border-left: 0; border-top: 1px solid var(--border); }
+  .ag-status__headline { font-size: var(--fs-24); }
+  .ag-games, .ag-levels__pair { grid-template-columns: 1fr; }
 }
-.agents__what {
-  margin: 0;
-  font-size: var(--fs-13);
-  color: var(--text-secondary);
-}
-@media (max-width: 720px) {
-  .agents__item { grid-template-columns: 24px minmax(0, 1fr); }
-  .agents__item-where { grid-column: 2; text-align: left; }
+@media (max-width: 767px) {
+  .ag-guard__kh { display: none; }
+  .ag-kind { grid-template-columns: 1fr; gap: 4px; }
+  .ag-guard__masks, .ag-guard__limits { grid-template-columns: 1fr; }
 }

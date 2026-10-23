@@ -201,6 +201,9 @@ export function MapScreen() {
             <span key={e.kind} className="mm-legend__item"><i className={`mm-legend__edge mm-legend__edge--${e.kind}`} aria-hidden="true" />{e.label}</span>
           ))}
         </span>
+        <span className="mm-legend__item">
+          <i className="mm-legend__loop" aria-hidden="true" />петля агента [6] → [4] · <a className="mm-link" href="#/agents">Агенты ↗</a>
+        </span>
         <span className="mm-legend__ctx num">
           контекст: {scenario ? `сценарий «${scenario.name}»` : 'без сценария'}{state.context.portfolioRunId ? ` · портфель ${state.context.portfolioRunId.slice(0, 8)}` : ''}
         </span>

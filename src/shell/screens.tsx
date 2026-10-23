@@ -8,7 +8,7 @@ const NsiScreen = lazy(() => import('../features/nsi/NsiScreen').then((m) => ({ 
 const OptimizationScreen = lazy(() => import('../features/optimization/OptimizationScreen').then((m) => ({ default: m.OptimizationScreen })))
 const ScenariosHub = lazy(() => import('../features/scenarios/ScenariosHub').then((m) => ({ default: m.ScenariosHub })))
 const PlanScreen = lazy(() => import('../features/plan/PlanScreen').then((m) => ({ default: m.PlanScreen })))
-const AgentsStub = lazy(() => import('../features/agents/AgentsStub').then((m) => ({ default: m.AgentsStub })))
+const AgentsScreen = lazy(() => import('../features/agents/AgentsScreen').then((m) => ({ default: m.AgentsScreen })))
 const MonitoringScreen = lazy(() => import('../features/forecast/ForecastScreen').then((m) => ({ default: m.ForecastScreen })))
 const AnalyticsScreen = lazy(() => import('../features/analytics/AnalyticsScreen').then((m) => ({ default: m.AnalyticsScreen })))
 const MapScreen = lazy(() => import('../features/method-map/MapScreen').then((m) => ({ default: m.MapScreen })))
@@ -54,7 +54,7 @@ export interface ScreenDef {
 /**
  * Реестр экранов по карте методологии (UX-V2 §2.3):
  * Модель (Схема · Справочники) → Условия (Сценарии [1][2]) → Решения (Портфель [4][5] ②,
- * План [3][4][5] ①, Агенты [6] — заглушка) → Наблюдение (Мониторинг [7], Аналитика [7]) →
+ * План [3][4][5] ①, Агенты [6] — статус RL, гейт, полномочия, игры) → Наблюдение (Мониторинг [7], Аналитика [7]) →
  * Объяснение (Карта, Методика) → Система (AI-воркфлоу, Администрирование).
  * Стартовый экран после входа — «Схема» (решение владельца, UX-V2 §8).
  */
@@ -64,7 +64,7 @@ export const SCREENS: ScreenDef[] = [
   { id: 'scenarios', label: 'Сценарии', short: 'Сценарии', icon: 'scenarios', group: 'conditions', blocks: ['external', 'distributions', 'criteria'], pipeline: true, Component: ScenariosHub },
   { id: 'optimization', label: 'Оптимизация', short: 'Портфель', icon: 'optimization', group: 'decide', stage: 2, blocks: ['decisions', 'criteria'], pipeline: true, Component: OptimizationScreen },
   { id: 'plan', label: 'План', short: 'План', icon: 'plan', group: 'decide', stage: 1, blocks: ['internal', 'decisions', 'criteria'], pipeline: true, Component: PlanScreen },
-  { id: 'agents', label: 'Агенты', short: 'Агенты', icon: 'sparkle', group: 'decide', blocks: ['agents'], soon: 'волна 3', Component: AgentsStub },
+  { id: 'agents', label: 'Агенты', short: 'Агенты', icon: 'sparkle', group: 'decide', blocks: ['agents'], Component: AgentsScreen },
   { id: 'monitoring', label: 'Мониторинг', short: 'Монитор', icon: 'monitoring', group: 'observe', blocks: ['monitoring', 'external'], pipeline: true, Component: MonitoringScreen },
   { id: 'analytics', label: 'Аналитика', short: 'Аналитика', icon: 'analytics', group: 'observe', blocks: ['monitoring'], Component: AnalyticsScreen },
   { id: 'map', label: 'Карта методологии', short: 'Карта', icon: 'graph', group: 'explain', Component: MapScreen },

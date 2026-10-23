@@ -14,7 +14,8 @@ export function buildScheduleParams(w: WizardState, program: readonly WizardOrde
   const f = effectiveFields(w)
   const crits: readonly Crit[] = w.crits
   return {
-    rule: f.rule === 'custom' ? 'auto' : f.rule,
+    // Правило «RL» бэкенд ждёт в верхнем регистре (A1 §6); конструктор эвристики идёт как auto + custom_rule.
+    rule: f.rule === 'custom' ? 'auto' : f.rule === 'rl' ? 'RL' : f.rule,
     custom_rule: f.rule === 'custom' ? crits.filter((c) => c.weight > 0).map((c) => ({ criterion: c.criterion, weight: c.dir * c.weight })) : undefined,
     samples: f.samples || 500,
     w_time: f.wTime, w_risk: f.wRisk, w_cost: f.wCost, alpha: f.alpha,

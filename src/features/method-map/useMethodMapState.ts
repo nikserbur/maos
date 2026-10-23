@@ -12,6 +12,8 @@ import { usePassport } from '../passport/passportStore'
 import { getDecisionContext, useDecisionContext } from '../../shell/context'
 import { useOptStore } from '../optimization/optStore'
 import { usePlanStore } from '../plan/planStore'
+import { useRlStatus } from '../agents/rlStatusStore'
+import { useGuardrails } from '../agents/guardrailsStore'
 import { EMPTY_COUNTS, type DeriveInput, type RefCounts } from './deriveInput'
 import { deriveState } from './deriveState'
 import type { MethodMapState } from './types'
@@ -146,6 +148,8 @@ export function useMethodMapState(): MethodMapLive {
   const plan = usePlanStore()
   const cash = useCashStore()
   const passport = usePassport()
+  const rl = useRlStatus()
+  const guard = useGuardrails()
 
   useEffect(() => {
     void ensureRefs()
@@ -172,10 +176,12 @@ export function useMethodMapState(): MethodMapLive {
       fin: passport.fin,
       macro: refsState.macro,
       cash: { result: cash.result, ranAt: cash.ranAt, running: cash.running },
+      rl: rl.status ?? undefined,
+      guardrails: guard.loaded ? guard.value : undefined,
       now: Date.now(),
     }
     return deriveState(input)
-  }, [context, scenarioId, scenario, refsState.counts, refsState.calendar, refsState.kpi, refsState.macro, opt, plan, cash, passport])
+  }, [context, scenarioId, scenario, refsState.counts, refsState.calendar, refsState.kpi, refsState.macro, opt, plan, cash, passport, rl.status, guard])
 
   return { state, refs: refsState, scenario, scenarioId, refresh: () => void ensureRefs(true) }
 }

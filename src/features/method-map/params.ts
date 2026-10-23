@@ -137,11 +137,11 @@ export const PARAM_LIST: readonly ParamDef[] = [
   { id: 'plan.improve_iters', label: 'Поколений ГА', unit: '—', owner: 'run', editable: false,
     screen: PLAN('rule'), provenance: 'normative', defaultValue: null, passportCode: 'r1.23', note: 'Задаёт планировщик при правиле «Авто».' },
 
-  /* ── [6] Агенты — волна 3 ──────────────────────────────────────────────── */
+  /* ── [6] Агенты — волна A: статус политики (GET /api/rl/status) и полномочия (prefs agent_guardrails) ── */
   { id: 'agent.policy_version', label: 'Версия политики RL', unit: '—', owner: 'project', editable: false,
-    provenance: 'default', defaultValue: null, stage: 'w3', note: 'Появится после обучения на симуляторе (волна A).' },
+    provenance: 'default', defaultValue: null, note: 'SHA256 опубликованной политики L0; «не опубликована» — ни одна политика не прошла гейт §7.4 (A1 §5).' },
   { id: 'agent.max_moves', label: 'Лимит ходов пакета', unit: 'шт', owner: 'project', range: [1, 50], step: 1,
-    editable: false, provenance: 'normative', defaultValue: 12, stage: 'w3', note: 'Guardrails (UX-V2 §4.10).' },
+    editable: false, provenance: 'normative', defaultValue: 12, note: 'Полномочия агента (UX-V2 §4.10), меняются на экране «Агенты».' },
 ]
 
 export const PARAMS: Readonly<Record<string, ParamDef>> = Object.freeze(

@@ -1,0 +1,99 @@
+/*
+ * Диф плана «как диф кода» (UX-V2 §4.8): удалено — киноварь штрихом и полупрозрачно, добавлено —
+ * вердигрис, перенесено — охра с пунктирной стрелкой, заморожено — контур status-info и ■.
+ * Полосы несут цвет изделия (--c из .pl-cN), вид изменения — обводкой/штрихом, не заливкой:
+ * два признака одновременно (изделие и изменение) читаются без конфликта. Только токены.
+ */
+.pdv { display: flex; flex-direction: column; gap: var(--space-2); }
+.pdv-bar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) var(--space-3) 0; }
+.pdv-bar__sum { font-size: var(--fs-12); color: var(--text-muted); }
+.pdv-box { position: relative; outline: none; border-radius: var(--radius-sm); }
+.pdv-box:focus-visible { box-shadow: var(--halo); }
+.pdv-legend { padding: var(--space-1) var(--space-3); }
+.pdv-keys { margin: 0; padding: var(--space-2) var(--space-3) var(--space-3); font-size: var(--fs-11); color: var(--text-muted); }
+.pdv-keys kbd {
+  display: inline-block; min-width: 16px; padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 3px;
+  font: 600 var(--fs-11)/16px var(--font-mono); color: var(--text-secondary); text-align: center; background: var(--bg-panel);
+}
+
+/* ── Образцы легенды ─────────────────────────────────────────────────────── */
+.gd-sw { width: 14px; height: 10px; border-radius: 2px; background: var(--bg-panel); }
+.gd-sw--removed { background: repeating-linear-gradient(135deg, var(--cinnabar) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--cinnabar); opacity: 0.8; }
+.gd-sw--added { box-shadow: inset 0 0 0 2px var(--verdigris); }
+.gd-sw--moved { box-shadow: inset 0 0 0 2px var(--ochre); }
+.gd-sw--frozen { box-shadow: inset 0 0 0 1.5px var(--status-info); outline: 1px dashed var(--status-info); outline-offset: 1px; }
+
+/* ── Дорожки ─────────────────────────────────────────────────────────────── */
+.gd { position: relative; overflow-x: auto; overflow-y: auto; max-height: 560px; border-top: 1px solid var(--border); }
+.gd-empty { padding: var(--space-3); }
+.gd-axis { position: sticky; top: 0; z-index: 3; display: flex; background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+.gd-corner {
+  position: sticky; left: 0; z-index: 4; flex: none; width: 196px; display: flex; align-items: center;
+  padding: 0 var(--space-3); color: var(--text-muted); background: var(--bg-panel); border-right: 1px solid var(--border);
+}
+.gd-ticks { flex: none; display: block; }
+.gd-ticks line { stroke: var(--chart-axis); }
+.gd-ticks text { font: 500 var(--fs-11) var(--font-mono); fill: var(--text-muted); }
+.gd-ticks .is-major text { fill: var(--text-secondary); }
+
+.gd-lane { display: flex; border-bottom: 1px solid color-mix(in oklch, var(--chart-grid) 70%, transparent); }
+.gd-lane.is-changed { background: color-mix(in oklch, var(--ochre) 5%, transparent); }
+.gd-lane__label {
+  position: sticky; left: 0; z-index: 2; flex: none; width: 196px; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto; column-gap: var(--space-2); align-content: center;
+  padding: 2px var(--space-3); background: var(--bg-card); border-right: 1px solid var(--border);
+}
+.gd-lane.is-changed .gd-lane__label { box-shadow: inset 3px 0 0 var(--ochre); }
+.gd-lane__name { font-size: var(--fs-12); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-lane__wc { grid-row: 2; font-size: var(--fs-11); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-lane__sub { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; justify-content: space-around; font-size: var(--fs-9); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.gd-lane__sub i { font-style: normal; }
+.gd-track { flex: none; display: block; }
+.gd-grid { stroke: var(--chart-grid); }
+.gd-grid.is-major { stroke: color-mix(in oklch, var(--chart-axis) 45%, transparent); }
+.gd-split { stroke: color-mix(in oklch, var(--border) 80%, transparent); stroke-dasharray: 2 3; }
+
+.gd-bar { cursor: pointer; }
+.gd-bar rect { fill: var(--c); stroke: transparent; stroke-width: 2; }
+.gd-bar__label { font: 500 var(--fs-11) var(--font-sans); fill: var(--on-c); pointer-events: none; }
+.gd-bar--same rect { opacity: 0.55; }
+.gd-lane:not(.is-changed) .gd-bar--same rect { opacity: 0.85; }
+.gd-bar--removed rect { opacity: 0.35; stroke: var(--cinnabar); stroke-dasharray: 3 2; }
+.gd-bar--removed .gd-bar__label { fill: var(--text); text-decoration: line-through; }
+.gd-bar--added rect { stroke: var(--verdigris); }
+.gd-bar--moved rect { stroke: var(--ochre); }
+.gd-bar--frozen rect { stroke: var(--status-info); stroke-dasharray: 4 2; }
+.gd-bar:hover rect { stroke: var(--text); }
+.gd-bar.is-selected rect { stroke: var(--accent); stroke-width: 2.5; }
+.gd-bar.is-current rect { stroke: var(--focus); stroke-width: 3; }
+.gd-ghost rect { fill: none; stroke: var(--ochre); stroke-dasharray: 3 3; opacity: 0.7; }
+.gd-ghost line { stroke: var(--ochre); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.gd-arrowhead path { fill: var(--ochre); }
+
+/* ── Маршрут ─────────────────────────────────────────────────────────────── */
+.rd { margin: 0; padding: 0 var(--space-3) var(--space-2); list-style: none; display: flex; flex-direction: column; }
+.rd-row { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: var(--space-3); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.rd-row.is-changed .rd-row__head { box-shadow: inset 3px 0 0 var(--ochre); padding-left: var(--space-2); }
+.rd-row__head { font-size: var(--fs-12); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-chain { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); }
+.rd-step { position: relative; display: flex; flex-direction: column; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); font-size: var(--fs-11); }
+.rd-step + .rd-step::before { content: '→'; position: absolute; left: calc(-1 * var(--space-4) + 2px); top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+.rd-step__op { color: var(--text); font-weight: 500; }
+.rd-step__wc { color: var(--text-muted); }
+.rd-step__kind { margin-top: 2px; font-size: var(--fs-9); }
+.rd-step--removed { border-style: dashed; border-color: var(--cinnabar); opacity: 0.7; }
+.rd-step--removed .rd-step__op { text-decoration: line-through; }
+.rd-step--removed .rd-step__kind { color: var(--cinnabar); }
+.rd-step--added { border-color: var(--verdigris); }
+.rd-step--added .rd-step__kind { color: var(--verdigris); }
+.rd-step--moved { border-color: var(--ochre); }
+.rd-step--moved .rd-step__kind { color: var(--ochre); }
+.rd-step--frozen { border-color: var(--status-info); border-style: dashed; }
+
+/* ── Таблица ходов ───────────────────────────────────────────────────────── */
+.mv-table { padding: 0 var(--space-3); }
+.mv-table__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; }
+
+@media (max-width: 860px) {
+  .rd-row { grid-template-columns: 1fr; }
+}

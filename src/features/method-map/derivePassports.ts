@@ -73,6 +73,8 @@ function liveValue(def: ParamDef, input: DeriveInput): number | string | null | 
     case 'plan.w_cost': return plan.result?.weights.cost ?? undefined
     case 'cal.enabled': return plan.params.useCalendar ? 'вкл' : 'выкл'
     case 'cal.work_fond': return plan.result?.calendar.work_fond_hours ?? undefined
+    case 'agent.policy_version': return input.rl ? (input.rl.l0.ok ? input.rl.l0.sha256.slice(0, 10) : 'не опубликована') : undefined
+    case 'agent.max_moves': return input.guardrails ? input.guardrails.limits.max_moves : undefined
     case 'fin.cash0': return fin ? fin.c0 : undefined
     case 'fin.credit_limit': return fin ? fin.credit_limit : undefined
     case 'fin.credit_rate': return fin ? (fin.key_rate + fin.spread) * 100 : undefined

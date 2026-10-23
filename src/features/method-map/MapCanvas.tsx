@@ -11,6 +11,7 @@ import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'reac
 import { GraphCanvas, type GraphCanvasHandle, type View } from '../../ui/graph-canvas'
 import { BLOCK_META } from './blocks'
 import { MapEdges } from './MapEdges'
+import type { LoopState } from './AgentLoop'
 import { MapNodeView } from './MapNodeView'
 import { dataNeighbours, layoutL0 } from './mapLayout'
 import { getNode, subblocksOf } from './registry'
@@ -94,6 +95,9 @@ export function MapCanvas({ live, selectedId, expanded, fitToken, onSelect, onTo
   }
 
   const focusId = hoveredId ?? (selectedId ? getNode(selectedId)?.block ?? null : null)
+  // Петля [6] → [4]: пульсирует, когда агент реально работал (estimated), тускло — когда реализован, но без политики.
+  const agentState = liveOf(live, 'ag.rl').state
+  const loop: LoopState | null = agentState === 'estimated' ? 'live' : agentState === 'planned' ? null : 'idle'
 
   return (
     <div ref={rootRef} className="mm-canvas">
@@ -112,7 +116,7 @@ export function MapCanvas({ live, selectedId, expanded, fitToken, onSelect, onTo
         grid={false}
         onViewChange={onView}
       >
-        <MapEdges paths={layout.paths} width={layout.width} height={layout.height} focusId={focusId} onPick={onPickEdge} />
+        <MapEdges paths={layout.paths} width={layout.width} height={layout.height} focusId={focusId} onPick={onPickEdge} loop={loop} />
         {layout.rects.map((rect) => (
           <MapNodeView
             key={rect.id}

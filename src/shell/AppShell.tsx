@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useMemo } from 'react'
 import { NavRail } from './NavRail'
 import { TopBar } from './TopBar'
 import { StatusBar } from './StatusBar'
@@ -6,6 +6,11 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { SCREENS } from './screens'
 import { DEFAULT_SCREEN_ID, replaceRoute, useHashRoute } from './router'
 import { PipelineStrip } from '../ui/PipelineStrip'
+import { CommandPalette } from '../ui/CommandPalette'
+import { MentatPanel } from '../features/explain/MentatPanel'
+import { isPaletteShortcut } from './commandIndex'
+import { overlayActions, useOverlays } from './overlays'
+import { buildCommandItems } from './useCommandItems'
 import './shell.css'
 
 const DEFAULT_SCREEN = SCREENS.find((screen) => screen.id === DEFAULT_SCREEN_ID) ?? SCREENS[0]
@@ -30,6 +35,20 @@ export default function AppShell() {
     document.title = `${active.label} · PESCADITO`
   }, [active.label])
 
+  // Командная палитра — Cmd/Ctrl+K в любом месте (UX-V2 §7 G4); MENTAT — из верхней панели или палитры.
+  const overlays = useOverlays()
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isPaletteShortcut(e)) return
+      e.preventDefault()
+      overlayActions.togglePalette()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  // Индекс собирается при открытии: прогоны из кэша и тема — на момент вызова.
+  const commandItems = useMemo(() => (overlays.palette ? buildCommandItems() : []), [overlays.palette])
+
   return (
     <div className="shell">
       <TopBar title={active.label} />
@@ -53,6 +72,8 @@ export default function AppShell() {
         </main>
       </div>
       <StatusBar screen={active.label} />
+      {overlays.palette && <CommandPalette items={commandItems} onClose={overlayActions.closePalette} />}
+      {overlays.mentat && <MentatPanel screenId={active.id} onClose={overlayActions.closeMentat} />}
     </div>
   )
 }

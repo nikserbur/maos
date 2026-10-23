@@ -2,7 +2,8 @@
  * Шаг 5 «Цель и риск» [5] + [4]/[6] (UX-V2 §4.2, §4.4 п. 2): пресеты «Срок / Деньги / Баланс», «Экспертно»
  * раскрывает w_time / w_risk / w_cost, α (из сценария, переопределение — с бейджем), N прогонов,
  * формулу F живьём через bindFormulaParts из реестра «i» plan.objective_weights (X1 §5 п. 16). Метод поиска порядка: Авто (7 правил + ГА), правило,
- * RL (блок [6] — в плане, пока нет ONNX), конструктор эвристики (пресеты — в проекте через prefs).
+ * RL (блок [6] — доступно, только если GET /api/rl/status сообщает опубликованную политику; иначе — честная причина
+ * и ссылка на «Агенты»), конструктор эвристики (пресеты — в проекте через prefs).
  * Критерий кассы: CVaR прибыли / CFaR / оба + «касса ≥ L_min».
  */
 import { useEffect, useState } from 'react'
@@ -12,6 +13,8 @@ import { InfoTip } from '../../../../ui/InfoTip'
 import { ParamField } from '../../../../ui/ParamField'
 import { PromptDialog } from '../../../../ui/PromptDialog'
 import { usePassport } from '../../../passport/passportStore'
+import { rlAvailable, rlReason, shortSha, useRlStatus } from '../../../agents/rlStatusStore'
+import { useGuardrails } from '../../../agents/guardrailsStore'
 import { HeurSummary, HeuristicModal } from '../../HeuristicModal'
 import { loadPresets, savePresets, writeCurrentCrits, type HeuristicPresets, type PresetsSource } from '../../heuristicPresets'
 import { RULES, type Crit } from '../../types'
@@ -42,6 +45,9 @@ export function ObjectiveStep({ data }: { data: WizardData }) {
   useEffect(() => { loadPresets().then((r) => { setPresets(r.presets); setPresetsSrc(r.source) }) }, [])
   useEffect(() => { writeCurrentCrits(w.crits) }, [w.crits])
   const sc = data.scenario
+  const rlState = useRlStatus()
+  const rlOn = rlAvailable(rlState.status)
+  const guard = useGuardrails()
   const owner = (k: 'alpha' | 'objective') => (isChanged(w, k) ? 'этот прогон' : w.owners[k] ?? 'умолчание')
   const setCrits = (next: Crit[] | ((p: Crit[]) => Crit[])) => wizardActions.setCrits(typeof next === 'function' ? next([...w.crits]) : next)
   const saveHeur = async (name: string) => {
@@ -103,16 +109,28 @@ export function ObjectiveStep({ data }: { data: WizardData }) {
             { id: 'auto', title: 'Авто', sub: '7 правил + ГА с проверкой вне выборки', on: f.rule === 'auto' },
             { id: 'rule', title: 'Правило', sub: 'одно диспетчерское правило', on: f.rule !== 'auto' && f.rule !== 'custom' && f.rule !== 'rl' },
             { id: 'custom', title: 'Конструктор эвристики', sub: 'взвешенные критерии; пресеты — в проекте', on: f.rule === 'custom' },
-            { id: 'rl', title: 'RL', sub: 'блок [6] · политика не обучена (волна 3)', on: false, disabled: true },
+            { id: 'rl', title: 'RL', sub: rlOn ? `блок [6] · политика L0 ${shortSha(rlState.status?.l0.sha256 ?? '')}` : 'блок [6] · недоступно — см. ниже', on: f.rule === 'rl', disabled: !rlOn },
           ].map((m) => (
             <button key={m.id} type="button" role="radio" aria-checked={m.on} disabled={m.disabled} className={`wz-method${m.on ? ' is-on' : ''}${m.disabled ? ' is-planned' : ''}`}
-                    onClick={() => wizardActions.setOverride('rule', m.id === 'rule' ? 'EDD' : m.id)} title={m.disabled ? 'Появится после обучения на симуляторе (волна A); на карте — узел [6]' : undefined}>
+                    onClick={() => wizardActions.setOverride('rule', m.id === 'rule' ? 'EDD' : m.id)} title={m.disabled ? `RL недоступно: ${rlReason(rlState)}` : undefined}
+                    aria-describedby={m.disabled ? 'wz-rl-why' : undefined}>
               <span className="wz-method__t">{m.title}</span>
               <span className="wz-method__s">{m.sub}</span>
             </button>
           ))}
         </div>
-        {f.rule !== 'auto' && f.rule !== 'custom' && (
+        {!rlOn && (
+          <p className="pl-note" id="wz-rl-why">
+            <b>RL недоступно:</b> {rlReason(rlState)}. Правило включается только опубликованной политикой, прошедшей гейт на отложенных сценариях. <a className="pf-link" href="#/agents">Почему — «Агенты» →</a>
+          </p>
+        )}
+        {f.rule === 'rl' && (
+          <p className="pl-note">
+            Агент L0 ставит порядок операций; если опубликована политика L2 — результат покажет структурные ходы с «до → после».
+            Полномочия: разрешено {guard.value ? Object.values(guard.value.allowed).filter(Boolean).length : 0} видов ходов · α из сценария · <a className="pf-link" href="#/agents">изменить →</a>
+          </p>
+        )}
+        {f.rule !== 'auto' && f.rule !== 'custom' && f.rule !== 'rl' && (
           <label className="wz-inline">Правило:
             <select className="plan__select" value={f.rule} onChange={(e) => wizardActions.setOverride('rule', e.target.value)}>
               {RULES.filter((r) => r.id !== 'auto' && r.id !== 'custom').map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}

@@ -4,6 +4,7 @@
  * тонкий пунктир. Подпись — на середине кривой, `payload` — в подсказке. Рёбра,
  * касающиеся выбранного/наведённого узла, подсвечиваются, остальные приглушаются.
  */
+import { AgentLoop, type LoopState } from './AgentLoop'
 import { LABEL_H, labelWidth, type EdgePath } from './mapLayout'
 import type { MapEdgeKind } from './types'
 
@@ -13,12 +14,17 @@ interface MapEdgesProps {
   height: number
   focusId: string | null
   onPick: (edgeId: string) => void
+  /** Такт петли агента по ребру [6] → [4]; null — без анимации. */
+  loop?: LoopState | null
 }
+
+const LOOP_EDGE = 'e.6-4'
 
 const KINDS: readonly MapEdgeKind[] = ['data', 'param', 'feedback', 'control', 'explain']
 
-export function MapEdges({ paths, width, height, focusId, onPick }: MapEdgesProps) {
+export function MapEdges({ paths, width, height, focusId, onPick, loop = null }: MapEdgesProps) {
   const anyFocus = focusId !== null
+  const loopPath = loop ? paths.find((p) => p.edge.id === LOOP_EDGE) : undefined
   return (
     <svg className="mm-edges" width={width + 80} height={height + 80} viewBox={`-40 -60 ${width + 80} ${height + 80}`} aria-hidden="true" focusable="false">
       <defs>
@@ -47,6 +53,7 @@ export function MapEdges({ paths, width, height, focusId, onPick }: MapEdgesProp
           </g>
         )
       })}
+      {loopPath && loop && <AgentLoop path={loopPath} state={loop} />}
     </svg>
   )
 }

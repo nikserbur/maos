@@ -55,7 +55,9 @@ describe('deriveState', () => {
     expect(s.computedAt).toBe(new Date(NOW).toISOString())
     for (const n of NODES) expect(s.nodes[n.id], n.id).toBeDefined()
     for (const b of ['external', 'distributions', 'internal']) expect(s.nodes[b].state, b).toBe('unconfigured')
-    expect(s.nodes.agents.state).toBe('planned')
+    // Волна A: агент реализован (среда, стенд, правило «RL»), статус политики ещё не получен → default.
+    expect(s.nodes.agents.state).toBe('default')
+    expect(s.nodes['ag.games'].state).toBe('planned')
     expect(s.nodes.internal.reason).toContain('Справочников')
   })
 
@@ -174,8 +176,20 @@ describe('deriveState', () => {
   })
 
   it('liveOf falls back honestly for unknown and planned nodes', () => {
-    expect(liveOf(null, 'ag.rl').state).toBe('planned')
+    expect(liveOf(null, 'ag.games').state).toBe('planned')
     expect(liveOf(null, 'ext.macro').state).toBe('unconfigured')
     expect(liveOf(null, 'nope').state).toBe('unconfigured')
+  })
+
+  it('derives the RL node honestly from /api/rl/status and the last plan moves', () => {
+    const off = { available: false, onnxruntime: true, dir: '', error: 'нет файла', note: '',
+      l0: { ok: false, path: '', sha256: '', obs_size: 0, act_size: 0, meta: {} }, l2: { ok: false, path: '', sha256: '', obs_size: 0, act_size: 0, meta: {} } }
+    const gated = deriveState({ ...emptyInput(NOW), rl: off })
+    expect(gated.nodes['ag.rl']).toMatchObject({ state: 'default', badge: 'гейт не пройден · чемпион — правило' })
+    expect(gated.params['agent.policy_version'].value).toBe('не опубликована')
+    const on = { ...off, available: true, l0: { ...off.l0, ok: true, sha256: 'abcdef0123456789' } }
+    const live = deriveState({ ...emptyInput(NOW), rl: on })
+    expect(live.nodes['ag.rl'].state).toBe('estimated')
+    expect(live.nodes['ag.rl'].badge).toContain('abcdef01')
   })
 })

@@ -82,6 +82,25 @@
 .topbar__spacer {
   flex: 1 1 auto;
 }
+.topbar__cmd, .topbar__mentat {
+  position: relative;
+  height: 28px;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+}
+.topbar__cmd { min-width: 180px; justify-content: flex-start; border: 1px solid var(--border); }
+.topbar__cmd .topbar__kbd { margin-left: auto; }
+.topbar__mentat[aria-pressed='true'] { color: var(--accent-text); box-shadow: inset 0 -2px 0 var(--accent); }
+.topbar__kbd {
+  padding: 0 5px; border: 1px solid var(--border-strong); border-radius: 3px;
+  font: 600 var(--fs-11)/16px var(--font-mono); color: var(--text-muted); background: var(--bg-panel);
+}
+@media (max-width: 1023px) {
+  .topbar__cmd { min-width: 0; }
+  .topbar__cmd-label, .topbar__cmd .topbar__kbd { display: none; }
+}
 .topbar__theme {
   color: var(--text-secondary);
 }

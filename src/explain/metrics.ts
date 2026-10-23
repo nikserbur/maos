@@ -6,6 +6,7 @@
  *   import { getMetric } from '../../explain/metrics'
  *   <InfoTip id="plan.makespan" values={{ mean: 1123, det: 980, n: 600 }} />
  */
+import { AGENT_METRICS } from './metrics.agent'
 import { ANALYTICS_METRICS } from './metrics.analytics'
 import { CASH_METRICS } from './metrics.cash'
 import { FORECAST_METRICS } from './metrics.forecast'
@@ -24,6 +25,7 @@ export const METRIC_LIST: readonly MetricExplain[] = [
   ...INVEST_METRICS,
   ...ANALYTICS_METRICS,
   ...CASH_METRICS,
+  ...AGENT_METRICS,
 ]
 
 export const METRICS: Readonly<Record<string, MetricExplain>> = Object.freeze(

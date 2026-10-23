@@ -32,7 +32,8 @@ export function GanttLegend({ palette, hasPins }: { palette: Palette; hasPins: b
 const TIP_W = 290
 const TIP_GAP = 14
 
-export function GanttTip({ bar, x, y, palette }: { bar: PlanBar; x: number; y: number; palette: Palette }) {
+/** `extra` — дополнительные строки (диф плана: вид изменения и откуда перенесено). */
+export function GanttTip({ bar, x, y, palette, extra = [] }: { bar: PlanBar; x: number; y: number; palette: Palette; extra?: ReadonlyArray<[string, string]> }) {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
   const left = Math.min(x + TIP_GAP, vw - TIP_W)
@@ -47,6 +48,7 @@ export function GanttTip({ bar, x, y, palette }: { bar: PlanBar; x: number; y: n
     ...(seg.setupFrac > 0 ? [['Переналадка', hours(bar.setup_hours ?? 0), 'glyph-setup'] as [string, string, string]] : []),
     ...(seg.downFrac > 0 ? [['ТО / ремонт', hours(bar.downtime_hours ?? 0), 'glyph-down'] as [string, string, string]] : []),
     ['Срок заказа', hours(bar.due)],
+    ...extra,
   ]
   // Позиция — динамическая геометрия курсора (как у перекрестия графиков), не стиль оформления.
   return (

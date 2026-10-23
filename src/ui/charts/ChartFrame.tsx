@@ -2,9 +2,11 @@
  * Рамка графика (X1 §8 «ChartFrame»): заголовок · подзаголовок · бейджи слева, действия справа,
  * легенда (всегда при ≥ 2 рядов), состояния «загрузка» (прежний кадр с пониженной непрозрачностью,
  * без скелета-вспышки) и «пусто», `role="img"` + `aria-label` на теле графика и переключатель
- * «Таблица» — WCAG-двойник, в котором есть каждое значение графика.
+ * «Таблица» — WCAG-двойник, в котором есть каждое значение графика. Действие «SVG» (G4) выгружает
+ * тело графика файлом со вписанными стилями текущей темы (exportSvg.ts) — для отчётов и диплома.
  */
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { downloadSvg, mainSvg, serializeSvg, svgFileName } from './exportSvg'
 import type { LegendItem } from './palette'
 import './charts.css'
 
@@ -32,14 +34,31 @@ interface ChartFrameProps {
   className?: string
   /** Компактная рамка: без отступов и подписи «Таблица» в заголовке (вложенные графики). */
   compact?: boolean
+  /** Кнопка «SVG» в действиях: по умолчанию — у некомпактных рамок с заголовком. */
+  exportable?: boolean
+  /** Имя файла экспорта; по умолчанию — заголовок (если строка) или aria-label. */
+  exportName?: string
   children?: ReactNode
 }
 
 export function ChartFrame({
-  title, subtitle, badges, actions, legend, ariaLabel, table, loading = false, empty, emptyText, className, compact = false, children,
+  title, subtitle, badges, actions, legend, ariaLabel, table, loading = false, empty, emptyText, className, compact = false,
+  exportable, exportName, children,
 }: ChartFrameProps) {
   const [showTable, setShowTable] = useState(false)
   const bodyId = useId()
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [hasSvg, setHasSvg] = useState(false)
+  const canExport = (exportable ?? (!compact && Boolean(title))) && !empty
+  // Кнопка «SVG» — только если в теле действительно есть SVG (у HTML-форм её нет).
+  useLayoutEffect(() => { setHasSvg(canExport && !showTable && Boolean(bodyRef.current?.querySelector('svg'))) })
+  const exportSvg = () => {
+    const svg = mainSvg(bodyRef.current)
+    if (!svg || !bodyRef.current) return
+    const bg = getComputedStyle(bodyRef.current.closest('.ch-frame') ?? document.body).backgroundColor
+    const opaque = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' ? bg : getComputedStyle(document.body).backgroundColor
+    downloadSvg(serializeSvg(svg, opaque), svgFileName(exportName ?? (typeof title === 'string' ? title : ariaLabel)))
+  }
   const hasHead = Boolean(title || subtitle || badges || actions || table)
   const cls = ['ch-frame', compact ? 'ch-frame--compact' : '', loading ? 'ch-frame--loading' : '', className ?? ''].filter(Boolean).join(' ')
 
@@ -54,6 +73,9 @@ export function ChartFrame({
           {badges && <div className="ch-badges">{badges}</div>}
           <div className="ch-actions">
             {actions}
+            {hasSvg && (
+              <button type="button" className="btn btn--ghost ch-table-toggle" onClick={exportSvg} title="Скачать график в SVG (стили текущей темы)">SVG</button>
+            )}
             {table && (
               <button
                 type="button"
@@ -76,7 +98,7 @@ export function ChartFrame({
           <DataTwin table={table} />
         </div>
       ) : (
-        <div id={bodyId} className="ch-body" role="img" aria-label={ariaLabel}>
+        <div id={bodyId} ref={bodyRef} className="ch-body" role="img" aria-label={ariaLabel}>
           {children}
         </div>
       )}

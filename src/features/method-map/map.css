@@ -410,7 +410,18 @@
   .mm-panel { width: 100%; }
   .mm-legend__ctx { margin-left: 0; }
 }
+/* ── Петля агента [6] → [4] (AgentLoop) ───────────────────────────────── */
+.mm-legend__loop { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--block-6); box-shadow: 0 0 0 3px color-mix(in oklch, var(--block-6) 20%, transparent); }
+.mm-loop__glow { fill: none; stroke: var(--block-6); stroke-width: 6; stroke-linecap: round; opacity: 0.12; }
+.mm-loop__dot { fill: var(--block-6); stroke: var(--bg-app); stroke-width: 1.5; }
+.mm-loop--idle .mm-loop__dot { fill: color-mix(in oklch, var(--block-6) 55%, var(--text-muted)); opacity: 0.7; }
+.mm-loop--idle .mm-loop__glow { opacity: 0.06; }
+.mm-loop--live .mm-loop__glow { animation: mm-loop-pulse var(--dur-flow) var(--ease-flow) infinite; }
+@keyframes mm-loop-pulse { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.28; } }
+
 @media (prefers-reduced-motion: reduce) {
+  .mm-loop__dot { display: none; }
+  .mm-loop--live .mm-loop__glow { animation: none; }
   .mm-node, .mm-edge { transition: none; }
 }
 

@@ -1,0 +1,47 @@
+/*
+ * Панель MENTAT: правая колонка поверх контента под верхней панелью, ширина инспектора.
+ * Путь объяснения — лестница по глубине (отступ = расстояние от результата), как трассировка.
+ */
+.mt {
+  position: fixed; z-index: var(--z-overlay);
+  top: var(--topbar-h); right: 0; bottom: var(--statusbar-h);
+  width: min(400px, 100vw);
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-3);
+  animation: mt-in var(--dur) var(--ease-out);
+}
+@keyframes mt-in { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.mt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.mt-eyebrow { margin: 0; color: var(--block-8); }
+.mt-title { margin: 2px 0 0; font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; }
+.mt-honest { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-3); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+.mt-honest p { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-body); }
+.mt-honest b { color: var(--text); }
+.mt-h { margin: 0; color: var(--text-muted); }
+.mt-tpl { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.mt-tpl__q {
+  width: 100%; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card);
+  color: var(--text); font: 400 var(--fs-13) var(--font-sans); text-align: left; cursor: pointer;
+}
+.mt-tpl__q:hover { border-color: var(--border-strong); }
+.mt-tpl__q.is-on { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.mt-tpl__q:focus-visible { outline: none; box-shadow: var(--halo); }
+.mt-tpl__node { font-size: var(--fs-11); color: var(--text-muted); }
+.mt-steps { margin: var(--space-2) 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.mt-step { display: flex; flex-direction: column; padding-left: calc(var(--d, 0) * 14px); border-left: 1px solid transparent; }
+.mt-step--d1 { --d: 1; } .mt-step--d2 { --d: 2; } .mt-step--d3 { --d: 3; } .mt-step--d4 { --d: 4; }
+.mt-step__a { display: flex; align-items: baseline; gap: var(--space-2); padding: 3px 0; color: var(--text); text-decoration: none; font-size: var(--fs-12); }
+.mt-step__a:hover .mt-step__t { color: var(--accent-text); text-decoration: underline; }
+.mt-step__a:focus-visible { outline: none; box-shadow: var(--halo); border-radius: 2px; }
+.mt-step__tag { flex: none; font-size: var(--fs-11); color: var(--text-muted); }
+.mt-step__t { min-width: 0; }
+.mt-step__k { flex: none; margin-left: auto; font-size: var(--fs-11); color: var(--text-muted); }
+.mt-step__via { font-size: var(--fs-11); color: var(--text-muted); padding-left: 2.2em; }
+.mt-ask { display: flex; flex-direction: column; gap: var(--space-1); margin-top: auto; }
+.mt-ask textarea { resize: none; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-input); color: var(--text-disabled); font: inherit; font-size: var(--fs-12); }
+@media (prefers-reduced-motion: reduce) { .mt { animation: none; } }

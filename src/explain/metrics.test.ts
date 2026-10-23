@@ -17,9 +17,11 @@ const REQUIRED_IDS = [
   'sim.required_operators', 'sim.avg_utilization', 'sim.orders_per_day', 'sim.calibration',
   // Волна G2: касса (METHODOLOGY-V2 §6.0), CRPS прогноза, веса цели плана.
   'cash.cfar', 'cash.p_breach', 'cash.dscr_min_p05', 'cash.pol', 'forecast.crps', 'plan.objective_weights',
+  // Волна G4: агенты (UX-V2 §4.7, METHODOLOGY-V2 §7.5).
+  'agent.move_gain', 'agent.win_share', 'agent.price_of_anarchy', 'agent.stackelberg_rate',
 ]
 
-const NAMESPACES = ['plan', 'opt', 'forecast', 'invest', 'analytics', 'sim', 'cash']
+const NAMESPACES = ['plan', 'opt', 'forecast', 'invest', 'analytics', 'sim', 'cash', 'agent']
 const KEY_FORMAT = /^[A-Za-z0-9_]+$/
 const ID_FORMAT = /^[a-z]+\.[a-z0-9_]+$/
 

@@ -3,7 +3,7 @@
  * активный сценарий, размеры справочников, последние ответы Стадии 2 / Стадии 1,
  * KPI и прогноз. Поля необязательные: чего нет — считается неизвестным, а не нулём.
  */
-import type { CashLpResult, FinParams, ForecastResult, KpiBundle, MacroSummary, PassportParam, PriceScenario, ScheduleResult, WorkCalendar } from '../../lib/api'
+import type { AgentGuardrails, CashLpResult, FinParams, ForecastResult, KpiBundle, MacroSummary, PassportParam, PriceScenario, RlStatus, ScheduleResult, WorkCalendar } from '../../lib/api'
 import type { OptForm } from '../optimization/optStore'
 import type { OptResultExt } from '../optimization/optTypes'
 import type { PlanParams } from '../plan/planStore'
@@ -40,6 +40,10 @@ export interface DeriveInput {
   macro: MacroSummary | null
   /** Волна F: последний результат CVaR-LP с кассой (POST /api/optimize/cash) и когда он получен. */
   cash: { result: CashLpResult | null; ranAt: number | null; running: boolean }
+  /** Волна A: статус политики RL (GET /api/rl/status); undefined — ещё не получен. */
+  rl?: RlStatus | null
+  /** Полномочия агента (prefs agent_guardrails или локально); undefined — не загружены. */
+  guardrails?: AgentGuardrails | null
   /** Момент расчёта (мс); для тестов — детерминированный. */
   now: number
 }

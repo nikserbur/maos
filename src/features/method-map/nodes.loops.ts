@@ -1,6 +1,7 @@
 /**
- * Узлы петель карты: [6] Агенты (RL/игры — волна 3), [7] Прогноз и мониторинг,
- * [8] LLM (MENTAT). Честная граница: что реализовано — `done`, остальное `w1…w3`.
+ * Узлы петель карты: [6] Агенты (RL — среда, стенд и правило «RL» реализованы в волне A, политика
+ * гейт не прошла; игры — волна 3), [7] Прогноз и мониторинг, [8] LLM (MENTAT).
+ * Честная граница: что реализовано — `done`, остальное `w1…w3`.
  */
 import type { MapNode } from './types'
 
@@ -15,17 +16,17 @@ export const LOOP_NODES: readonly MapNode[] = [
   /* ── [6] Агенты ───────────────────────────────────────────────────────── */
   { id: 'ag.rl', kind: 'subblock', block: 'agents', parent: 'agents', shape: 'disc',
     title: 'Агент RL L0/L2 со структурными ходами', short: 'Перестраивает план: маршрут, станок, партии, цех, аутсорсинг, сдвиг, отказ; каждый ход — Монте-Карло по CVaR прибыли и кассы.',
-    screen: { id: 'agents' }, diagram: 'agent-layers', learnMore: 'rl', stage: 'w3', action: 'train' },
+    screen: { id: 'agents' }, diagram: 'agent-layers', learnMore: 'rl', stage: 'done' },
   { id: 'ag.rl.policy', kind: 'parameter', block: 'agents', parent: 'ag.rl', paramId: 'agent.policy_version',
-    title: 'agent.policy_version', shape: 'square', stage: 'w3' },
+    title: 'agent.policy_version', shape: 'square' },
   { id: 'ag.rl.screen', kind: 'screen', block: 'agents', parent: 'ag.rl', title: 'План · правило «RL»',
-    screen: { id: 'plan', anchor: 'objective' }, stage: 'w3' },
+    screen: { id: 'plan', anchor: 'new/objective' } },
 
   { id: 'ag.guardrails', kind: 'subblock', block: 'agents', parent: 'agents', shape: 'square',
     title: 'Полномочия агента (guardrails)', short: 'Разрешённые ходы с масками, лимиты пакета, заморозки, единый α — «агент предлагает, человек утверждает».',
-    screen: { id: 'agents' }, learnMore: 'rl', stage: 'w3' },
+    screen: { id: 'agents' }, learnMore: 'rl', stage: 'done' },
   { id: 'ag.guardrails.max_moves', kind: 'parameter', block: 'agents', parent: 'ag.guardrails', paramId: 'agent.max_moves',
-    title: 'agent.max_moves', shape: 'square', stage: 'w3' },
+    title: 'agent.max_moves', shape: 'square' },
 
   { id: 'ag.games', kind: 'subblock', block: 'agents', parent: 'agents', shape: 'disc',
     title: 'Игры: цена анархии, Штакельберг', short: 'Игра цехов против кооператива; «банк/поставщик → предприятие»; выученные цены планировщика против двойственных LP.',

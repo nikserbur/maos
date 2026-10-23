@@ -1,0 +1,44 @@
+/*
+ * Командная палитра: плита у верхней трети экрана (не центр — взгляд остаётся у рельсы и шапки),
+ * затемнение без размытия (WebGL «Схемы»), активная строка — штрих акцента слева, не заливка.
+ */
+.cp-scrim {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 12vh var(--space-4) var(--space-4);
+  background: var(--scrim);
+}
+.cp {
+  width: min(640px, 100%);
+  max-height: 70vh;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: cp-in var(--dur-fast) var(--ease-out);
+}
+@keyframes cp-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.cp-field { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.cp-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font: 400 var(--fs-16) var(--font-sans); }
+.cp-input::placeholder { color: var(--text-disabled); }
+.cp-kbd {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin: 0 2px;
+  border: 1px solid var(--border-strong); border-radius: 3px; background: var(--bg-panel);
+  font: 600 var(--fs-11)/18px var(--font-mono); color: var(--text-secondary); text-align: center;
+}
+.cp-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-2) 0; }
+.cp-group + .cp-group { margin-top: var(--space-2); }
+.cp-group__t { margin: 0; padding: var(--space-1) var(--space-4); color: var(--text-muted); }
+.cp-opt {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4);
+  padding: 7px var(--space-4) 7px calc(var(--space-4) - 2px);
+  border-left: 2px solid transparent; cursor: pointer;
+}
+.cp-opt.is-active { border-left-color: var(--accent); background: var(--bg-hover); }
+.cp-opt__t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-13); color: var(--text); }
+.cp-opt__h { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-11); color: var(--text-muted); }
+.cp-empty { margin: 0; padding: var(--space-4); font-size: var(--fs-13); color: var(--text-muted); }
+.cp-foot { margin: 0; padding: var(--space-2) var(--space-4); border-top: 1px solid var(--border); font-size: var(--fs-11); color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) { .cp { animation: none; } }

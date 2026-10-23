@@ -195,9 +195,8 @@ function loops(input: DeriveInput): Live {
   const bt = f?.products.find((p) => p.backtest)?.backtest
   const worse = bt ? bt.skill < 0 : false
   return {
-    'ag.rl': { state: 'planned', badge: 'волна 3 · политика не обучена' },
-    'ag.guardrails': { state: 'planned', badge: 'волна 3' },
-    'ag.games': { state: 'planned', badge: 'волна 3' },
+    ...agents(input),
+    'ag.games': { state: 'planned', badge: 'волна 3 · цена анархии, Штакельберг' },
     'mon.forecast': bt
       ? { state: worse ? 'stale' : 'estimated', badge: `MAPE ${pct(bt.mape, 1)} (наив ${pct(bt.mape_naive, 1)})`, detail: `покрытие ${pct(bt.coverage80, 0)}`,
         reason: worse ? 'прогноз хуже наивного — упростите модель или переоцените' : undefined }
@@ -213,6 +212,38 @@ function loops(input: DeriveInput): Live {
     'llm.explain': { state: 'default', badge: `${METRIC_LIST.length} формул с подстановкой` },
     'llm.mentat': { state: 'planned', badge: 'волна 2 · MENTAT' },
   }
+}
+
+/**
+ * Блок [6] (UX-V2 §4.9): `default` — политика не опубликована (гейт §7.4 не пройден, чемпион —
+ * правило) или статус ещё не получен; `estimated` — опубликована (и тогда бейдж ходов последнего
+ * прогона RL «N ходов · ΔCVaR»). Полномочия — `manual`, если отличаются от умолчаний.
+ */
+function agents(input: DeriveInput): Live {
+  const { rl, guardrails } = input
+  const mv = input.plan.result?.moves
+  const live = Boolean(rl && rl.available && rl.onnxruntime && rl.l0.ok)
+  let agent: NodeLive
+  if (mv && mv.moves.length > 0) {
+    const gain = mv.totals.profit.cvar_after - mv.totals.profit.cvar_before
+    agent = { state: 'estimated', badge: `${mv.moves.length} ходов · ${gain >= 0 ? '+' : ''}${money(gain)} CVaR`,
+      detail: `ДИ ${mv.totals.ci95[0] > 0 ? 'выше нуля' : 'задевает ноль'} · ${num(mv.n_scenarios ?? 0, 0)} сценариев`, updatedAt: iso(input.plan.builtAt) }
+  } else if (live && rl) {
+    agent = { state: 'estimated', badge: `политика L0 ${rl.l0.sha256.slice(0, 8)}`, detail: rl.l2.ok ? 'L2 опубликована — ходы в «Плане»' : 'L2 не опубликована — только порядок операций' }
+  } else if (rl) {
+    agent = { state: 'default', badge: 'гейт не пройден · чемпион — правило',
+      detail: rl.onnxruntime ? 'onnxruntime есть, политика не опубликована' : 'сервер без onnxruntime',
+      reason: 'ни одна политика L0/L2 не выиграла у лучшего правила с ДИ на отложенных сценариях (V5)' }
+  } else {
+    agent = { state: 'default', badge: 'статус политики не получен', detail: 'GET /api/rl/status' }
+  }
+  const allowed = guardrails ? Object.values(guardrails.allowed).filter(Boolean).length : null
+  const guard: NodeLive = guardrails
+    ? { state: guardrails.frozen.length || guardrails.rejected_masks.length ? 'manual' : 'default',
+      badge: `${allowed} видов разрешено · ≤ ${guardrails.limits.max_moves} ходов`,
+      detail: `заморожено ${guardrails.frozen.length} · масок отклонения ${guardrails.rejected_masks.length}` }
+    : { state: 'default', badge: 'умолчания полномочий' }
+  return { 'ag.rl': agent, 'ag.guardrails': guard }
 }
 
 /** Состояния всех подблоков. */
