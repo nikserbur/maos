@@ -60,6 +60,19 @@ struct OrderSpec {
   double matCost = 0;         // материальная себестоимость единицы (по BOM, base_cost покупных)
 };
 
+/** Волна A3 (§9): инвестиционный кандидат L3 — станок типа РЦ или модернизация (MTBF↑) с CAPEX,
+ *  сроком поставки/ввода, операционными затратами и финансированием траншем кредитной линии. */
+struct InvestCand {
+  std::string id, kind = "machine", wct;   // kind: machine | modernize
+  double capex = 0;            // деньги экземпляра (тыс. ₽) [К] rl.a3.invest.capex
+  double leadWeeks = 6;        // срок поставки и ввода, недель [К] rl.a3.invest.lead
+  double opexWeekly = 0;       // ТО + экипаж после ввода, в неделю [К] rl.a3.invest.opex
+  double lifeWeeks = 520;      // срок полезного использования (линейная амортизация) [НОРМ] rl.a3.invest.life
+  double mtbfMul = 1, repairMul = 1;   // modernize: MTBF × mtbfMul, ремонт × repairMul [К]
+  double prepayShare = 0.3;    // доля CAPEX при заказе (транш), остаток — при вводе (второй транш) [К]
+  std::string source;          // откуда кандидат: toc | dual | user
+};
+
 /** Экземпляр задачи: модель НСИ + программа + календари + альтернативы для L2. */
 struct Instance {
   std::string name = "instance";
@@ -78,6 +91,15 @@ struct Instance {
   double payrollFixedWeekly = 0, repairBudgetWeekly = 0, otherFixedWeekly = 0;
   double tailWeight = -1;                                 // <0 → из операций
   double investCapex = 0, investLeadWeeks = 0;            // A3-крючок: CAPEX станка и срок ввода (0 → ход invest замаскирован)
+  // Волна A3: договоры с жёсткими сроками для ВСЕХ заказов — при любой просрочке теряется lateFixed стоимости
+  // заказа + latePerWeek за неделю, не более lateCap (<0 → EnvConfig.tardPenalty*; A2-поведение) [К] rl.a3.contract.
+  double lateFixed = 0, latePerWeek = -1, lateCap = -1;
+  // Волна A3: сверхурочная смена на узком месте (суббота) и субподряд операций узкого места [К] rl.a3.overtime/outsource_op.
+  double overtimeHoursWeek = 16;     // доп. часов на станок в неделю (06:00–22:00 субботы)
+  double overtimeCostMul = 0.6;      // фиксированная плата за смену: часы × ставка типа × mul (платится и при простое)
+  double outsourceOpMarkup = 1.6;    // субподряд: mul × (ставка типа + труд) × часы работы
+  double outsourceOpShare = 0.25;    // объём одного хода: доля недельного фонда узкого места
+  std::vector<InvestCand> investCands;                    // ≤ SimEnv::kInvestSlots кандидатов L3 (TOC / двойственные цены)
 };
 
 Instance instance_from_json(const json& j);
@@ -133,6 +155,9 @@ struct EnvConfig {
   double recoverShare = 0.9;         // восстановлено, если скользящая пропускная ≥ доля × до шока [К] rl.shock.recover
   double rushPriceMul = 1.3;         // срочный заказ: надбавка к цене за срочность [К] rl.shock.rush_price
   double rushLateLoss = 0.5;         // срочный заказ после жёсткого срока: доля выручки теряется (отказ/уценка) [К] rl.shock.rush_loss
+  // Волна A3: структурный режим L2/L3 — компактное пространство ходов вокруг узкого места (kStructActs),
+  // эпохи — начало недели И экстренные события (отказ, срочный заказ, вскрывшийся срыв поставки).
+  bool structMode = false;
   unsigned seed = 42;
 };
 
@@ -171,8 +196,23 @@ public:
   const std::vector<uint8_t>& mask_l2() const { return maskL2_; }
   int obs_l0_size() const { return cfg_.kMaxCands * kCandFeats + kMachFeats + kPoolFeats + kGlobFeats + kShockFeats; }
   int act_l0_size() const { return cfg_.kMaxCands + 1; }   // + WAIT
-  int obs_l2_size() const { return cfg_.kMaxOrders * kOrderFeats + cfg_.kMaxWct + kFinFeats; }
-  int act_l2_size() const { return 1 + kMoveKinds * cfg_.kMaxOrders + kFinActs + (cfg_.investEnabled ? cfg_.kMaxWct : 0); }
+  int obs_l2_size() const { return cfg_.structMode ? kStructObs : cfg_.kMaxOrders * kOrderFeats + cfg_.kMaxWct + kFinFeats; }
+  int act_l2_size() const { return cfg_.structMode ? kStructActs : 1 + kMoveKinds * cfg_.kMaxOrders + kFinActs + (cfg_.investEnabled ? cfg_.kMaxWct : 0); }
+
+  // ── Волна A3: структурный режим (SimEnvStruct.cpp) ──
+  enum StructAct { kSNoop = 0, kSOvertime, kSOutsource, kSAltRoute, kSSplit, kSInvest0, kSInvest1, kSInvest2,
+                   kSDraw, kSRepay, kSDispDefault, kSDispEdd, kSDispExpedite, kStructActs };
+  static constexpr int kInvestSlots = 3, kStructObs = 48;
+  static const char* const kStructActNames[kStructActs];
+  /** Диспетчеризация L0 по умолчанию (статический чемпион): правило или ключ (CP-SAT/ГА); сохраняется между эпизодами. */
+  void set_dispatch(const std::string& rule, const std::vector<double>& key);
+  /** Прогон L0 текущим режимом диспетчеризации до следующей эпохи L2/L3 или конца эпизода → накопленная награда. */
+  double run_l0();
+  int  dispatch_choice() const;
+  /** Ход «купить кандидата c в начале недели w» до эпизода (статическая политика / оценка инвестпроекта на CRN). */
+  void schedule_invest(int c, int week);
+  std::string bottleneck_type() const;                    // текущее узкое место: max незавершённой работы на станок
+  json struct_state() const;                              // диагностика: узкое место, проекции, касса, статусы ходов
 
   /** Готовые кандидаты текущей эпохи (полный список, индексы джоб) и слот → джоба. */
   const std::vector<int>& candidates() const { return cands_; }
@@ -198,6 +238,7 @@ public:
   static constexpr int kOrderFeats = 8, kFinFeats = 12;
   static constexpr int kMoveKinds = 7, kFinActs = 5;
   static const char* const kMoveKindNames[kMoveKinds];
+  static constexpr int kEvInvest = 3, kEvShock = 4;        // A3: ввод инвестиции, экстренное событие (эпоха L3)
 
 private:
   struct OrderState {
@@ -206,6 +247,7 @@ private:
     int    routingAlt = -1;           // −1 → действующая техкарта
     std::set<std::string> outsourced; // полуфабрикаты, купленные вместо изготовления
     std::map<std::string,std::string> forcedType;   // opId → тип
+    std::set<std::string> outsourcedOps;            // A3: «opId#batch» — операция узкого места у субподрядчика
     bool   started = false;
     double startMin = -1, finishMin = -1;
     int    jobBegin = 0, jobEnd = 0;
@@ -244,6 +286,17 @@ private:
   cash::ScenarioResult cashRes_; bool cashValid_ = false;
   std::vector<MoveLog> moves_; int moveSeq_ = 0;
   double pendingReward_ = 0;
+  // ── A3: структурный режим ──
+  Model baseModel_; std::unordered_map<std::string, Calendar> baseCalByM_; size_t nBaseMachines_ = 0; bool modelDirty_ = false;
+  std::vector<char> outsrcJob_; std::vector<double> outsrcWork_;   // по джобам: субподряд, работа (мин)
+  std::unordered_map<std::string,double> typeRate_;               // тип РЦ → средняя ставка машино-часа (+труд)
+  std::map<std::string,int> otUntilWeek_;                         // тип → сверхурочные действуют до начала недели
+  std::vector<int> investWeek_;                                   // по кандидатам: неделя заказа (−1 → нет)
+  std::vector<std::pair<int,int>> pendingInvest_;                 // (кандидат, неделя) — запланировано до эпизода
+  std::vector<double> drawFloor_;                                 // транши под CAPEX / буфер ликвидности (минимум выборки)
+  std::string defRule_ = "EDD"; std::vector<double> defKey_; int dispMode_ = 0;
+  double supplyRevealT_ = -1; bool shockEpoch_ = false; int otWeeks_ = 0;
+  double feeOutsource_ = 0, feeOvertime_ = 0, capexTotal_ = 0;
 
   // Построение.
   void rebuild_jobs(const std::vector<char>* keepDone = nullptr);
@@ -276,6 +329,25 @@ private:
   std::string largest_semi_input(int k) const;
   std::string bottleneck_op_of(int k, std::string& altType) const;
   std::pair<double,double> cash_state() const;   // (касса, невыбранный лимит) на текущую неделю
+  // A3 (SimEnvStruct.cpp).
+  void struct_init();                    // снимок базовой модели, ставки типов
+  void struct_reset();                   // восстановить модель/календари, сбросить статусы ходов
+  void build_obs_struct();
+  bool struct_allowed(int a) const;
+  bool apply_struct(int a, std::string& why);
+  void apply_overtime(const std::string& wct);
+  void refresh_calendar(const std::string& wct);
+  void expire_overtime(int week);
+  int  outsource_bottleneck(const std::string& wct, std::vector<std::string>& opsOut);
+  std::vector<int> outsource_pick(const std::string& wct) const;   // джобы узкого места к субподряду (маска = непусто)
+  void place_ready_outsourced();
+  void order_invest(int c);
+  void activate_invest(int c);
+  double week_capacity_min(const std::string& mid) const;   // рабочих минут станка в неделю (календарь)
+  double type_rate(const std::string& wct) const;
+  int  horizon_tt() const;
+  std::vector<double> project_finish(const std::string& wct) const;   // прогноз окончания заказов с учётом мощности узкого места
+  int  urgent_order_for(int kind) const;
 };
 
 /** Правило на одном сценарии — базовая линия стенда. */

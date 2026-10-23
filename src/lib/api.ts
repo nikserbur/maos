@@ -503,7 +503,9 @@ export interface MovesResult {
   l2_makespan_h?: number
 }
 export interface RlPolicyInfo { ok: boolean; path: string; sha256: string; obs_size: number; act_size: number; meta: Record<string, unknown> }
-export interface RlStatus { available: boolean; onnxruntime: boolean; dir: string; error: string; l0: RlPolicyInfo; l2: RlPolicyInfo; note: string }
+export interface RlStatus { available: boolean; onnxruntime: boolean; dir: string; error: string; l0: RlPolicyInfo; l2: RlPolicyInfo; note: string
+  /** Волна A3: гейт структурного RL (L2/L3). */
+  gate_a3?: RlGateA3 }
 /** Сводка правила RL в событийной среде (по средним длительностям). */
 export interface RlEval { makespan_h: number; tardiness_h: number; n_decisions: number; n_wait: number; policy_sha256: string }
 export interface RlInstanceParams { program?: Array<{ product_id: string; qty: number; due_hours?: number }>; use_calendar?: boolean }
@@ -599,6 +601,36 @@ export interface InvestmentResult {
   npv: number; irr_annual: number; roi: number
   util_before: number; util_after: number
   next_bottleneck: { wc_type_id: string; wc_name: string; utilization: number }
+  /** Волна A3: CRN-оценка кандидатов L3 через кассовый водопад (null — выключено `crn: false`). */
+  crn?: InvestCrn | null
+}
+/** Волна A3: кандидат L3 «Инвестпроекты» — метрики на ОТЛОЖЕННОМ наборе сценариев (B) + отбирающий набор (A). */
+export interface InvestCrnCandidate {
+  cand: { id: string; kind: 'machine' | 'modernize'; wc_type: string; capex: number; lead_weeks: number; opex_weekly: number
+          life_weeks: number; mtbf_mul: number; repair_mul: number; prepay_share: number; source: 'toc' | 'dual' | 'load' | 'user' | string }
+  n: number; week: number; horizon_weeks: number; weeks_used: number; cont_weeks: number
+  npv_mean: number; npv_ci95: [number, number]; npv_cvar: number; p_npv_neg: number
+  d_profit_mean: number; d_profit_ci95: [number, number]; d_profit_cvar: number; profit_cvar_base: number; profit_cvar: number
+  cash_min_cvar_base: number; cash_min_cvar: number; liquidity_cvar_base: number; liquidity_cvar: number; liq_threshold: number
+  p_cash_gap: number; p_cash_gap_ci95: [number, number]; p_cash_gap_base: number
+  cf_weekly_mean: number; payback_weeks: number | null; payback_months: number | null; rate_owner: number
+  apply: boolean; reasons: string[]
+  selection: { npv_mean: number; npv_ci95: [number, number]; d_profit_mean: number; cash_min_cvar: number; p_cash_gap: number; apply: boolean }
+}
+export interface InvestCrn {
+  status: 'ok' | 'no_orders' | 'error'; reason?: string
+  rule?: string; rules?: Record<string, { cvar: number; mean: number }> | null
+  n_scenarios?: number; seed?: number; holdout_seed?: number; macro?: boolean; duals_used?: string[]
+  params?: { cont_weeks: number; liq_threshold: number; rate_owner: number; horizon_weeks: number; alpha: number; beta: number
+             salvage: number; tax_cumulative: boolean }
+  rule_of_apply?: string; assumptions?: string[]; candidates?: InvestCrnCandidate[]; ms?: number
+}
+/** Волна A3: гейт структурного RL (GET /api/rl/status → gate_a3). */
+export interface RlGateA3 {
+  gate_pass: boolean; gate_g1: boolean; champion: 'rl_l3' | 'non_rl_champion'; candidate_seed?: number | null
+  ci95_vs_best_rule?: [number, number] | null; ci95_vs_champion?: [number, number] | null; units?: string; source: string
+  /** Строгий контроль: чемпион + «погашение линии излишком кассы» (prereg_a3 П4). */
+  ci95_vs_champion_plus?: [number, number] | null; gate_g2_prereg?: boolean; variant?: 'A' | 'B' | null
 }
 export interface CalibRow {
   op_id: string; op_name: string; product_name: string
@@ -688,6 +720,8 @@ export const api = {
       wc_type_id: string; add_machines: number; machine_capex: number
       discount_rate?: number; life_months?: number; scenario_id?: string
       samples?: number; demand?: number; horizon_hours?: number
+      /** Волна A3: CRN-блок (по умолчанию вкл.), сценариев на набор, seed, продление эффекта, порог ликвидности, правило L0. */
+      crn?: boolean; n_scenarios?: number; seed?: number; cont_weeks?: number; liq_threshold?: number; rule?: string; horizon_weeks?: number
     }) => post<InvestmentResult>('/analytics/investment', p),
   },
 

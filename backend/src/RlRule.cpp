@@ -141,6 +141,29 @@ json gate_info() {
   return { {"gate_pass", false}, {"champion", "best_rule"}, {"ci95", nullptr}, {"source", ""} };
 }
 
+// Волна A3: гейт структурного RL (rl/results/a3/champion_a3.json, rl/eval/v5_a3.py): G2 — замена чемпиона §7.4,
+// G1 — к лучшему правилу §10.2а; ДИ IQM ΔCVaR₀.₁(Π) в % стоимости портфеля, стресс base.
+json gate_a3_info() {
+  for (const std::string& d : { g().dir, std::string("rl/results"), std::string("../rl/results"), std::string("../../rl/results") }) {
+    const std::string f = d + "/a3/champion_a3.json";
+    if (d.empty() || !file_exists(f)) continue;
+    try { std::ifstream in(f); json c = json::parse(in);
+      json ci = nullptr, ciChamp = nullptr, ciPlus = nullptr;
+      if (c.contains("base") && c["base"].is_object()) {
+        ci = c["base"]["vs_best_rule"]["d_cvar_profit"]["ci95"]; ciChamp = c["base"]["vs_champion"]["d_cvar_profit"]["ci95"];
+        if (c["base"].contains("vs_champion+")) ciPlus = c["base"]["vs_champion+"]["d_cvar_profit"]["ci95"];
+      }
+      return { {"gate_pass", c.value("gate_pass", false)}, {"gate_g1", c.value("gate_g1", false)},
+               {"champion", c.value("gate_pass", false) ? "rl_l3" : "non_rl_champion"}, {"candidate_seed", c.value("candidate_seed", json(nullptr))},
+               {"ci95_vs_best_rule", ci}, {"ci95_vs_champion", ciChamp}, {"ci95_vs_champion_plus", ciPlus},
+               {"gate_g2_prereg", c.value("gate_g2_prereg", false)}, {"variant", c.value("variant", json(nullptr))},
+               {"units", "% стоимости портфеля, IQM по экземплярам"},
+               {"source", f} };
+    } catch (...) {}
+  }
+  return { {"gate_pass", false}, {"gate_g1", false}, {"champion", "non_rl_champion"}, {"source", ""} };
+}
+
 double mean_of(const std::vector<double>& v) { return v.empty() ? 0 : std::accumulate(v.begin(), v.end(), 0.0) / v.size(); }
 double cvar_lo(std::vector<double> v, double a) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); size_t k = std::max<size_t>(1, (size_t)std::floor(a * v.size())); return std::accumulate(v.begin(), v.begin() + k, 0.0) / k; }
 double cvar_hi(std::vector<double> v, double a) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); size_t k = std::max<size_t>(1, (size_t)std::floor(a * v.size())); return std::accumulate(v.end() - k, v.end(), 0.0) / k; }
@@ -176,7 +199,7 @@ json status() {
 #else
   const bool built = false;
 #endif
-  return { {"available", s.l0.ok}, {"onnxruntime", built}, {"l0_rule_select", s.l0.ruleSelect}, {"gate", gate_info()}, {"dir", s.dir}, {"error", s.error}, {"l0", pj(s.l0)}, {"l2", pj(s.l2)},
+  return { {"available", s.l0.ok}, {"onnxruntime", built}, {"l0_rule_select", s.l0.ruleSelect}, {"gate", gate_info()}, {"gate_a3", gate_a3_info()}, {"dir", s.dir}, {"error", s.error}, {"l0", pj(s.l0)}, {"l2", pj(s.l2)},
            {"note", "правило RL: политика L0 → ключ приоритетов (ранг старта) → тот же конвейер Ганта/МК; L2 → moves[] (§4.7)"} };
 }
 

@@ -1,0 +1,390 @@
+{
+ "seed": 3,
+ "variant": "sweep",
+ "tag": "l3s",
+ "ppo": {
+  "n_steps": 256,
+  "batch_size": 1024,
+  "learning_rate": 5e-05,
+  "gamma": 0.995,
+  "gae_lambda": 0.95,
+  "clip_range": 0.1,
+  "n_epochs": 5,
+  "vf_coef": 0.5,
+  "max_grad_norm": 0.5,
+  "ent_coef": 0.002,
+  "policy_kwargs": {
+   "net_arch": [
+    256,
+    256
+   ]
+  }
+ },
+ "kappa": 4.0,
+ "alpha": 0.1,
+ "w_cash": 0.5,
+ "bc": {
+  "n": 106477,
+  "loss": 0.2659725844860077,
+  "agreement": 1.0,
+  "score": 0.0,
+  "sec": 67.41224598884583
+ },
+ "curve": [
+  {
+   "steps": 0,
+   "score": 0.0,
+   "phase": "bc",
+   "sec": 67.41224694252014
+  },
+  {
+   "steps": 200704,
+   "score": 0.0,
+   "phase": "ppo",
+   "sec": 224.14493203163147
+  },
+  {
+   "steps": 401408,
+   "score": -0.0001576405441694885,
+   "phase": "ppo",
+   "sec": 378.2328441143036
+  },
+  {
+   "steps": 602112,
+   "score": -0.00016304282541332153,
+   "phase": "ppo",
+   "sec": 532.004714012146
+  },
+  {
+   "steps": 802816,
+   "score": 2.331517935163033e-05,
+   "phase": "ppo",
+   "sec": 683.1402680873871
+  },
+  {
+   "steps": 1003520,
+   "score": 2.004857484456934e-05,
+   "phase": "ppo",
+   "sec": 830.9238710403442
+  }
+ ],
+ "best": {
+  "steps": 802816,
+  "score": 2.331517935163033e-05,
+  "phase": "ppo",
+  "validation": {
+   "score": 2.331517935163033e-05,
+   "per_instance": {
+    "a3-s00": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 4.2911035057804244e-05,
+     "moves": {
+      "finance": 96
+     },
+     "profit_cvar": 13934658.667878175,
+     "p_breach": 0.0
+    },
+    "a3-s01": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.01955531830383661,
+     "moves": {
+      "finance": 240
+     },
+     "profit_cvar": 13878155.574599365,
+     "p_breach": 0.1875
+    },
+    "a3-s02": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.004010941009368125,
+     "moves": {
+      "finance": 102
+     },
+     "profit_cvar": 4118784.3760552933,
+     "p_breach": 0.0
+    },
+    "a3-s03": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.019045187606620096,
+     "moves": {
+      "finance": 180,
+      "dispatch": 9
+     },
+     "profit_cvar": 2322025.9083439815,
+     "p_breach": 0.28125
+    },
+    "a3-s04": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.009722310796937203,
+     "moves": {
+      "overtime": 96,
+      "finance": 98
+     },
+     "profit_cvar": 14212755.284556845,
+     "p_breach": 0.0
+    },
+    "a3-s05": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.03746407733883636,
+     "moves": {
+      "overtime": 351,
+      "finance": 83
+     },
+     "profit_cvar": 6378869.96329314,
+     "p_breach": 0.46875
+    },
+    "a3-s06": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.008221677484532283,
+     "moves": {
+      "overtime": 273,
+      "finance": 44
+     },
+     "profit_cvar": 17561000.39599142,
+     "p_breach": 0.0
+    },
+    "a3-s07": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.0008146570804033039,
+     "moves": {
+      "finance": 171
+     },
+     "profit_cvar": 9947540.94565125,
+     "p_breach": 0.53125
+    },
+    "a3-s08": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.01448017150489671,
+     "moves": {
+      "overtime": 163,
+      "finance": 60
+     },
+     "profit_cvar": 3252359.830665648,
+     "p_breach": 0.0
+    },
+    "a3-s09": {
+     "score_vs_hstar": 0.011966522085506633,
+     "score_vs_rule": 0.027732148690418384,
+     "moves": {
+      "overtime": 183,
+      "dispatch": 9,
+      "finance": 13,
+      "outsource_op": 1
+     },
+     "profit_cvar": 8107448.6802946525,
+     "p_breach": 0.0
+    },
+    "a3-m10": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.030164372782894258,
+     "moves": {
+      "overtime": 260,
+      "finance": 411
+     },
+     "profit_cvar": 11932901.030499332,
+     "p_breach": 0.0
+    },
+    "a3-m11": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.03170580669503139,
+     "moves": {
+      "finance": 780,
+      "dispatch": 9
+     },
+     "profit_cvar": 5520573.980204501,
+     "p_breach": 0.5625
+    },
+    "a3-m12": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.020750064748779426,
+     "moves": {
+      "finance": 204,
+      "overtime": 234
+     },
+     "profit_cvar": 7619730.700055967,
+     "p_breach": 0.0
+    },
+    "a3-m13": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.0033470116780314136,
+     "moves": {
+      "finance": 339
+     },
+     "profit_cvar": 9523149.967452565,
+     "p_breach": 0.625
+    },
+    "a3-m14": {
+     "score_vs_hstar": -0.0010898999045958514,
+     "score_vs_rule": 0.028583004256446564,
+     "moves": {
+      "overtime": 620,
+      "finance": 391
+     },
+     "profit_cvar": 38671103.26274564,
+     "p_breach": 0.0
+    },
+    "a3-m15": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.029807799287606,
+     "moves": {
+      "overtime": 333,
+      "finance": 538
+     },
+     "profit_cvar": 25139158.526396036,
+     "p_breach": 0.40625
+    },
+    "a3-m16": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.03129254160669056,
+     "moves": {
+      "finance": 453,
+      "overtime": 107
+     },
+     "profit_cvar": 24256152.577824723,
+     "p_breach": 0.0
+    },
+    "a3-m17": {
+     "score_vs_hstar": 0.014318598157186991,
+     "score_vs_rule": 0.018141588022079082,
+     "moves": {
+      "overtime": 285,
+      "finance": 88,
+      "dispatch": 9,
+      "outsource_op": 1
+     },
+     "profit_cvar": 10558270.916431986,
+     "p_breach": 0.75
+    },
+    "a3-m18": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.022955059391548377,
+     "moves": {
+      "finance": 516
+     },
+     "profit_cvar": 10553767.05739685,
+     "p_breach": 0.0
+    },
+    "a3-m19": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.03238963380584838,
+     "moves": {
+      "finance": 600,
+      "dispatch": 9
+     },
+     "profit_cvar": 19270789.310313847,
+     "p_breach": 0.34375
+    },
+    "a3-l20": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.021035082392964338,
+     "moves": {
+      "invest": 32,
+      "finance": 606
+     },
+     "profit_cvar": 28421480.402009074,
+     "p_breach": 0.0
+    },
+    "a3-l21": {
+     "score_vs_hstar": -0.01924685797362187,
+     "score_vs_rule": 0.006717729864356457,
+     "moves": {
+      "outsource_op": 176,
+      "finance": 320
+     },
+     "profit_cvar": 9639570.762355864,
+     "p_breach": 0.5625
+    },
+    "a3-l22": {
+     "score_vs_hstar": -0.0035717022694389186,
+     "score_vs_rule": 0.012447348289130737,
+     "moves": {
+      "overtime": 1259,
+      "finance": 573,
+      "dispatch": 1
+     },
+     "profit_cvar": 29212301.964905456,
+     "p_breach": 0.0
+    },
+    "a3-l23": {
+     "score_vs_hstar": -0.0016772047144880745,
+     "score_vs_rule": 0.034876616090440474,
+     "moves": {
+      "overtime": 1296,
+      "outsource_op": 56,
+      "finance": 622,
+      "dispatch": 9
+     },
+     "profit_cvar": 1523052.7146870801,
+     "p_breach": 0.34375
+    },
+    "a3-l24": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.018099712258061233,
+     "moves": {
+      "invest": 32,
+      "overtime": 408,
+      "finance": 827
+     },
+     "profit_cvar": 43226049.79725794,
+     "p_breach": 0.0
+    },
+    "a3-l25": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.029708594320524143,
+     "moves": {
+      "overtime": 619,
+      "finance": 841,
+      "dispatch": 2
+     },
+     "profit_cvar": 30968818.163149547,
+     "p_breach": 0.34375
+    },
+    "a3-l26": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.014141494177746957,
+     "moves": {
+      "invest": 32,
+      "overtime": 366,
+      "finance": 862,
+      "dispatch": 1
+     },
+     "profit_cvar": 12533745.217148378,
+     "p_breach": 0.1875
+    },
+    "a3-l27": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.0328483542766654,
+     "moves": {
+      "overtime": 687,
+      "finance": 770
+     },
+     "profit_cvar": 12789184.725020783,
+     "p_breach": 0.40625
+    },
+    "a3-l28": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.010706292092619613,
+     "moves": {
+      "finance": 917,
+      "dispatch": 9
+     },
+     "profit_cvar": 64985243.57832565,
+     "p_breach": 0.0
+    },
+    "a3-l29": {
+     "score_vs_hstar": 0.0,
+     "score_vs_rule": 0.02288228478432129,
+     "moves": {
+      "invest": 32,
+      "overtime": 793,
+      "finance": 789,
+      "dispatch": 2
+     },
+     "profit_cvar": 17047704.423828755,
+     "p_breach": 0.5
+    }
+   }
+  }
+ },
+ "decisions": 1003520,
+ "sec": 832.3458812236786
+}

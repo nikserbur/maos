@@ -59,6 +59,7 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
   std::vector<double> arIssued(T, 0.0), apSched(ext, 0.0), arrive(ext, 0.0), vatDue(ext, 0.0);
 
   double C = fp.c0, D = std::max(0.0, fp.d0), OD = 0, NOL = 0, vatPos = 0, labAcc = 0, ebtAcc = 0;
+  double cumEbt = 0, taxLiab = 0, taxPaidYtd = 0;       // A3: налог нарастающим итогом (taxCumulative)
   double arOut = 0, Itr = 0, Iraw = 0, Ifg = 0;
   Ledger L1;                       // просрочка переносится между периодами через L1.arr
   // Накопители для тождеств.
@@ -130,19 +131,32 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     s.ebitda = p.revenue - p.cogs - opex - bad;
     s.ebit   = s.ebitda - p.depreciation;
     s.ebt    = s.ebit - intr;
-    ebtAcc  += s.ebt;
-    double tax = 0;
-    if (week % taxP == 0) {
-      tax = fp.tauP * std::max(0.0, ebtAcc - NOL);
-      NOL = std::max(0.0, NOL - ebtAcc);
-      ebtAcc = 0;
+    double tax = 0, taxExp = 0;                            // уплата (касса) / расход по налогу (прибыль)
+    if (fp.taxCumulative) {                                // A3: база нарастающим итогом с начала года
+      cumEbt += s.ebt;
+      if (week % taxP == 0) {
+        const double liab = fp.tauP * std::max(0.0, cumEbt);
+        taxExp = liab - taxLiab; taxLiab = liab;
+        tax = std::max(0.0, liab - taxPaidYtd); taxPaidYtd += tax;
+      }
+      if (week % 52 == 0) { taxPaidYtd = std::max(0.0, taxPaidYtd - taxLiab); taxLiab = 0; cumEbt = 0; }   // новый год: переплата — зачёт
+      NOL = std::max(0.0, -cumEbt);
+    } else {
+      ebtAcc += s.ebt;
+      if (week % taxP == 0) {
+        tax = fp.tauP * std::max(0.0, ebtAcc - NOL);
+        NOL = std::max(0.0, NOL - ebtAcc);
+        ebtAcc = 0;
+      }
+      taxExp = tax;
     }
     L2.due[kTax] += tax + vatDue[t];
     // 10. Закрытие кассы: правило выборки, овердрафт, разрыв с обрезкой по приоритету.
     for (int c = 0; c < kCats; ++c) L2.paid[c] = L2.due[c];
     const double cashHat = C + coll - L2.totalDue();
     double U = std::max(0.0, fp.creditLimit - D);
-    double d = p.drawdown >= 0 ? std::min(U, p.drawdown) : std::min(U, std::max(0.0, fp.cMin - cashHat));
+    double d = p.drawdown >= 0 ? std::min(U, p.drawdown)
+                               : std::min(U, std::max({ 0.0, fp.cMin - cashHat, p.drawFloor }));   // A3: транш под CAPEX
     double cash = cashHat + d;
     double odDraw = 0;
     if (cash < 0 && fp.overdraftLimit > 0) {
@@ -175,7 +189,7 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     s.ap = apFuture + L2.arr[kSup]; s.ar = arOut;
     s.invRaw = Iraw; s.invFg = Ifg; s.invTransit = Itr;
     s.wc = s.ar + Iraw + Ifg + Itr - s.ap;
-    s.profitAcc = s.ebt - tax;
+    s.profitAcc = s.ebt - taxExp;
     s.cfOp = coll - s.payMat - s.payLog - s.payLab - s.payEn - s.payRep - s.payOther - payIntr - payTax;
     const double service = intr + pr;
     s.dscr = service > 1e-12 ? (s.cfOp + payIntr) / service : kInf;
@@ -218,7 +232,8 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
   z.cash = maxResCash;
   double vatFuture = 0; for (int u = T; u < ext; ++u) vatFuture += vatDue[u];
   const double wcExtH = last.ar + Iraw + Ifg + Itr - last.ap - labAcc
-                      - (L1.arrears() - L1.arr[kSup] - L1.arr[kCapex]) - (vatPos + vatFuture);
+                      - (L1.arrears() - L1.arr[kSup] - L1.arr[kCapex]) - (vatPos + vatFuture)
+                      + (taxPaidYtd - taxLiab);              // A3: переплата налога — актив (0 без taxCumulative)
   z.reconciliation = std::fabs(sumProfit - (sumCfOp - sumDep + (wcExtH - wcExt0)));
   double arExpected = 0;
   for (int t = 0; t < T; ++t) {

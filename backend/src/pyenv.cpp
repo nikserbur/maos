@@ -2,6 +2,7 @@
  * nanobind-модуль `maos_env` — стенд rl/ (волна A): SimEnv, экземпляры, сценарии, правила, ГА.
  * Собирается отдельной целью (MAOS_BUILD_PYENV=ON) в rl/env/; сервер от него не зависит.
  */
+#include "InvestEval.h"
 #include "SimEnv.h"
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -55,7 +56,8 @@ NB_MODULE(maos_env, m) {
     .def_rw("repair_cost_mul", &EnvConfig::repairCostMul).def_rw("wait_window_min", &EnvConfig::waitWindowMin).def_rw("c_wait", &EnvConfig::cWait).def_rw("seed", &EnvConfig::seed)
     .def_rw("invest_enabled", &EnvConfig::investEnabled).def_rw("shock_window_min", &EnvConfig::shockWindowMin)
     .def_rw("recover_share", &EnvConfig::recoverShare).def_rw("rush_price_mul", &EnvConfig::rushPriceMul)
-    .def_rw("rush_late_loss", &EnvConfig::rushLateLoss);
+    .def_rw("rush_late_loss", &EnvConfig::rushLateLoss)
+    .def_rw("struct_mode", &EnvConfig::structMode);   // A3: структурный режим L2/L3
 
   nb::class_<SimEnv>(m, "SimEnv")
     .def(nb::init<Instance, EnvConfig>(), nb::arg("instance"), nb::arg("config"))
@@ -77,6 +79,14 @@ NB_MODULE(maos_env, m) {
     .def("expedite_choice", [](const SimEnv& e, const std::string& r, const std::vector<double>& k) { return e.expedite_choice(r, k); },
          nb::arg("rule"), nb::arg("key") = std::vector<double>{})
     .def("describe_l2", &SimEnv::describe_l2)
+    // A3: структурный режим — диспетчеризация чемпионом, прогон L0 до эпохи L3, статические инвестиции.
+    .def("set_dispatch", [](SimEnv& e, const std::string& rule, const std::vector<double>& key) { e.set_dispatch(rule, key); },
+         nb::arg("rule"), nb::arg("key") = std::vector<double>{})
+    .def("run_l0", &SimEnv::run_l0)
+    .def("dispatch_choice", &SimEnv::dispatch_choice)
+    .def("schedule_invest", &SimEnv::schedule_invest, nb::arg("cand"), nb::arg("week") = 0)
+    .def("bottleneck_type", &SimEnv::bottleneck_type)
+    .def("struct_state", [](const SimEnv& e) { return e.struct_state().dump(); })
     .def("summary", [](const SimEnv& e) { return e.summary().dump(); })
     .def("gantt", [](const SimEnv& e) { return e.gantt().dump(); })
     .def("lower_bound", &SimEnv::lower_bound)
@@ -105,6 +115,24 @@ NB_MODULE(maos_env, m) {
           return ga_improve_keys(e, seeds, machines, generations, nScen, seed0, timeSec, gaSeed, stallGens).dump(); },
         nb::arg("env"), nb::arg("seeds"), nb::arg("machines") = std::vector<std::string>{}, nb::arg("generations") = 30,
         nb::arg("n_scen") = 0, nb::arg("seed0") = 1000, nb::arg("time_sec") = 30.0, nb::arg("ga_seed") = 1991, nb::arg("stall_gens") = 8);
+  // A3: оценка инвестпроекта L3 на CRN (ЧДД, CVaR, окупаемость, P(разрыва), правило применения) и кандидаты.
+  m.def("invest_eval", [](const Instance& inst, const EnvConfig& cfg, int cand, const std::vector<std::string>& scen,
+                          const std::vector<uint64_t>& seeds, const std::string& rule, const std::vector<double>& key, int week,
+                          int contWeeks, double liq, int threads) {
+          std::vector<Scenario> sc; for (auto& s : scen) sc.push_back(scenario_of(s));
+          maos::invest::EvalCfg ec; ec.rule = rule; ec.key = key; ec.week = week; ec.contWeeks = contWeeks; ec.liqThreshold = liq; ec.threads = threads;
+          nb::gil_scoped_release rel;
+          return maos::invest::evaluate(inst, cfg, cand, sc, seeds, ec).dump(); },
+        nb::arg("instance"), nb::arg("config"), nb::arg("cand"), nb::arg("scenarios"), nb::arg("seeds"), nb::arg("rule") = std::string("EDD"),
+        nb::arg("key") = std::vector<double>{}, nb::arg("week") = 0, nb::arg("cont_weeks") = 260, nb::arg("liq") = 0.0, nb::arg("threads") = 1);
+  m.def("invest_candidates", [](const Instance& inst, const std::string& rule, const std::vector<std::string>& duals, double capex) {
+          json a = json::array();
+          for (auto& c : maos::invest::candidates(inst, rule, duals, capex))
+            a.push_back({ {"id", c.id}, {"kind", c.kind}, {"wct", c.wct}, {"capex", c.capex}, {"lead_weeks", c.leadWeeks},
+                          {"opex_weekly", c.opexWeekly}, {"life_weeks", c.lifeWeeks}, {"mtbf_mul", c.mtbfMul}, {"repair_mul", c.repairMul},
+                          {"prepay_share", c.prepayShare}, {"source", c.source} });
+          return a.dump(); },
+        nb::arg("instance"), nb::arg("rule") = std::string("EDD"), nb::arg("duals") = std::vector<std::string>{}, nb::arg("capex") = 0.0);
   m.def("ga_improve", [](const SimEnv& e, int generations, int nScen, uint64_t seed0, double timeSec, const std::vector<std::string>& rules) {
           return ga_improve(e, generations, nScen, seed0, timeSec, rules).dump(); },
         nb::arg("env"), nb::arg("generations") = 30, nb::arg("n_scen") = 8, nb::arg("seed0") = 1000, nb::arg("time_sec") = 30.0,

@@ -10,6 +10,7 @@
 #include "AccessScope.h"
 #include "Database.h"
 #include "Finance.h"
+#include "InvestApi.h"
 #include "MacroSampler.h"
 #include "RlRule.h"
 #include "SimEnv.h"
@@ -638,7 +639,14 @@ static void register_analytics(httplib::Server& svr, Database& db) {
       const double payback = dCFmonth > 1e-9 ? capex / dCFmonth : -1;   // мес; -1 = не окупается
       const double roi = capex > 0 ? (dCFmonth * lifeMonths - capex) / capex : 0;
 
+      // A3: CRN-оценка кандидатов L3 через кассовый водопад (ЧДД/CVaR/окупаемость/P(разрыва), вердикт §9).
+      json crn = nullptr;
+      if (!(body.contains("crn") && (body["crn"] == false || jstr(body, "crn") == "false" || jstr(body, "crn") == "0"))) {
+        try { crn = maos::invest::analytics_crn(db, body, r0, g_macro.get()); }
+        catch (std::exception& e) { crn = { {"status", "error"}, {"reason", e.what()} }; }
+      }
       ok(res, {
+        {"crn", crn},
         {"wc_type_id", wct}, {"add_machines", addN},
         {"capex", capex}, {"plan_months", planMonths}, {"life_months", lifeMonths},
         {"discount_annual", discAnnual},
@@ -4273,7 +4281,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.72.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.73.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.

@@ -206,3 +206,45 @@ TEST(CashWaterfall, SummaryStatisticsAndWilsonInterval) {
   EXPECT_EQ(S.cashP50.size(), 3u);
   EXPECT_LE(S.maxResidual, 1e-6);
 }
+
+// ── Волна A3: налог на прибыль нарастающим итогом (ст. 285–287 НК РФ) и транш под CAPEX ─────────────
+// Прибыль в начале горизонта, убыток в конце: при помесячных периодах (NOL только вперёд) налог уплачен с ранней
+// прибыли и поздний убыток пропадает; нарастающим итогом налог = τ·max(0, Σ EBT), переплата — актив.
+TEST(CashWaterfall, A3CumulativeTaxEqualsRateTimesTotalEbtAndIdentitiesHold) {
+  cw::FinParams fp = hand_params(1000);
+  fp.vatPeriodWeeks = 4; fp.taxPeriodWeeks = 4; fp.dsoKernel = { 1.0 };
+  cw::ScenarioInput in;
+  for (int t = 0; t < 12; ++t) {
+    cw::PeriodInput p;
+    p.revenue = t < 4 ? 300 : 0; p.cogs = t < 4 ? 100 : 0; p.orders = p.cogs; p.rawConsumed = p.cogs;
+    p.energy = 60;
+    in.periods.push_back(p);
+  }
+  const cw::ScenarioResult monthly = cw::run(fp, in);
+  fp.taxCumulative = true;
+  const cw::ScenarioResult cum = cw::run(fp, in);
+  double ebt = 0, taxCum = 0, taxMon = 0, pCum = 0;
+  for (size_t t = 0; t < cum.periods.size(); ++t) { ebt += cum.periods[t].ebt; taxCum += cum.periods[t].tax; taxMon += monthly.periods[t].tax; pCum += cum.periods[t].profitAcc; }
+  EXPECT_GT(ebt, 0.0);
+  EXPECT_NEAR(pCum, ebt - 0.25 * std::max(0.0, ebt), 1e-9 * 1000);       // расход по налогу = τ·max(0, Σ EBT)
+  EXPECT_GT(taxMon, 0.25 * ebt + 1.0);                                    // помесячно — налог с ранней прибыли сверх τ·Σ EBT
+  EXPECT_NEAR(taxCum, 0.25 * 4 * (300 - 100 - 60), 1e-9 * 1000);          // уплачено по первой «месячной» прибыли
+  EXPECT_GE(taxCum, 0.25 * ebt - 1e-9);                                   // переплата (актив) ≥ 0, возврата нет
+  EXPECT_LE(cum.residuals.max(), 1e-9 * 5000);                            // тождества §4.6 с налоговым активом
+  EXPECT_LE(monthly.residuals.max(), 1e-9 * 5000);
+}
+
+// Транш под CAPEX (минимум выборки drawFloor): долг растёт на CAPEX, касса не уходит в разрыв, тождества держатся.
+TEST(CashWaterfall, A3CapexTrancheIsDrawnAndIdentitiesHold) {
+  cw::FinParams fp = hand_params(500);
+  cw::ScenarioInput in = hand_input();
+  in.periods[0].capex = 120; in.periods[0].drawFloor = 120; in.periods[1].depreciation = 1.0; in.periods[2].depreciation = 1.0;
+  const cw::ScenarioResult r = cw::run(fp, in);
+  EXPECT_NEAR(r.periods[0].drawdown, 120.0, 1e-9);                        // транш = CAPEX (касса 100 − 60 ≥ 0 без него)
+  EXPECT_NEAR(r.periods[0].capex, 120.0, 1e-9);
+  EXPECT_FALSE(r.breach);
+  EXPECT_LE(r.residuals.max(), 1e-9 * 500);
+  const cw::ScenarioResult base = cw::run(fp, hand_input());
+  EXPECT_NEAR(r.periods[0].netCash, base.periods[0].netCash, 1e-9);      // касса: +транш − CAPEX = 0
+  EXPECT_GT(r.periods.back().debt, base.periods.back().debt + 119.0);
+}

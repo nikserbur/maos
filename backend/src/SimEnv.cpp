@@ -94,6 +94,35 @@ const char* const SimEnv::kMoveKindNames[SimEnv::kMoveKinds] = {
   "shift_plus", "shift_minus", "split", "merge", "outsource", "reroute", "reassign" };
 
 /* ── Экземпляр ───────────────────────────────────────────────────────────── */
+namespace {
+// A3: договоры, сверхурочные, субподряд операций, кандидаты L3.
+json a3_json(const Instance& inst) {
+  json c = json::array();
+  for (auto& ic : inst.investCands)
+    c.push_back({ {"id", ic.id}, {"kind", ic.kind}, {"wct", ic.wct}, {"capex", ic.capex}, {"lead_weeks", ic.leadWeeks},
+                  {"opex_weekly", ic.opexWeekly}, {"life_weeks", ic.lifeWeeks}, {"mtbf_mul", ic.mtbfMul}, {"repair_mul", ic.repairMul},
+                  {"prepay_share", ic.prepayShare}, {"source", ic.source} });
+  return { {"late_fixed", inst.lateFixed}, {"late_per_week", inst.latePerWeek}, {"late_cap", inst.lateCap},
+           {"overtime_hours_week", inst.overtimeHoursWeek}, {"overtime_cost_mul", inst.overtimeCostMul},
+           {"outsource_op_markup", inst.outsourceOpMarkup}, {"outsource_op_share", inst.outsourceOpShare},
+           {"invest_cands", c} };
+}
+void a3_from(const json& a, Instance& inst) {
+  if (!a.is_object()) return;
+  inst.lateFixed = num(a, "late_fixed", 0); inst.latePerWeek = num(a, "late_per_week", -1); inst.lateCap = num(a, "late_cap", -1);
+  inst.overtimeHoursWeek = num(a, "overtime_hours_week", 16); inst.overtimeCostMul = num(a, "overtime_cost_mul", 0.6);
+  inst.outsourceOpMarkup = num(a, "outsource_op_markup", 1.6); inst.outsourceOpShare = num(a, "outsource_op_share", 0.25);
+  if (a.contains("invest_cands") && a["invest_cands"].is_array())
+    for (auto& c : a["invest_cands"]) {
+      InvestCand ic; ic.id = str(c, "id"); ic.kind = c.value("kind", std::string("machine")); ic.wct = str(c, "wct");
+      ic.capex = num(c, "capex"); ic.leadWeeks = num(c, "lead_weeks", 6); ic.opexWeekly = num(c, "opex_weekly");
+      ic.lifeWeeks = std::max(1.0, num(c, "life_weeks", 520)); ic.mtbfMul = num(c, "mtbf_mul", 1); ic.repairMul = num(c, "repair_mul", 1);
+      ic.prepayShare = std::min(1.0, std::max(0.0, num(c, "prepay_share", 0.3))); ic.source = str(c, "source");
+      inst.investCands.push_back(ic);
+    }
+}
+}  // namespace
+
 json instance_to_json(const Instance& inst) {
   const Model& m = inst.model;
   json machines = json::array();
@@ -136,14 +165,14 @@ json instance_to_json(const Instance& inst) {
                {"spread", f.spread}, {"overdraft_spread", f.overdraftSpread}, {"overdraft_limit", f.overdraftLimit},
                {"tau_v", f.tauV}, {"tau_p", f.tauP}, {"tau_soc", f.tauSoc}, {"dso_kernel", f.dsoKernel},
                {"prepay_share", f.prepayShare}, {"dpo_weeks", f.dpoWeeks}, {"lead_weeks", f.leadWeeks},
-               {"dscr_covenant", f.dscrCovenant}, {"payroll_weeks", f.payrollWeeks} };
+               {"dscr_covenant", f.dscrCovenant}, {"payroll_weeks", f.payrollWeeks}, {"tax_cumulative", f.taxCumulative} };
   return { {"name", inst.name}, {"machines", machines}, {"wc_types", wcts}, {"products", products},
            {"workers", workers}, {"eligible", elig}, {"orders", orders}, {"calendar", calendar_json(inst.cal)},
            {"machine_calendars", mcal},
            {"outsource", { {"lead_h", inst.outsourceLeadHours}, {"markup", inst.outsourceMarkup}, {"prepay", inst.outsourcePrepay} }},
            {"fin", fin}, {"fixed", { {"payroll_w", inst.payrollFixedWeekly}, {"repair_w", inst.repairBudgetWeekly},
                                      {"other_w", inst.otherFixedWeekly} }},
-           {"tail_weight", inst.tailWeight} };
+           {"tail_weight", inst.tailWeight}, {"a3", a3_json(inst)} };
 }
 
 Instance instance_from_json(const json& j) {
@@ -197,9 +226,11 @@ Instance instance_from_json(const json& j) {
     fp.prepayShare = num(f, "prepay_share", fp.prepayShare); fp.dpoWeeks = (int)num(f, "dpo_weeks", fp.dpoWeeks);
     fp.leadWeeks = (int)num(f, "lead_weeks", fp.leadWeeks); fp.dscrCovenant = num(f, "dscr_covenant", fp.dscrCovenant);
     if (f.contains("payroll_weeks") && f["payroll_weeks"].is_array()) fp.payrollWeeks = f["payroll_weeks"].get<std::vector<int>>();
+    fp.taxCumulative = f.value("tax_cumulative", false);
   }
   if (j.contains("fixed")) { auto& f = j["fixed"]; inst.payrollFixedWeekly = num(f, "payroll_w"); inst.repairBudgetWeekly = num(f, "repair_w"); inst.otherFixedWeekly = num(f, "other_w"); }
   inst.tailWeight = j.value("tail_weight", -1.0);
+  if (j.contains("a3")) a3_from(j["a3"], inst);
   return inst;
 }
 
@@ -301,6 +332,7 @@ SimEnv::SimEnv(Instance inst, EnvConfig cfg) : inst_(std::move(inst)), cfg_(cfg)
   if (scaleMoney_ <= 0) scaleMoney_ = 1;
   obsL0_.assign(obs_l0_size(), 0.f); maskL0_.assign(act_l0_size(), 0);
   obsL2_.assign(obs_l2_size(), 0.f); maskL2_.assign(act_l2_size(), 0);
+  struct_init();
 }
 
 std::mt19937 SimEnv::job_rng(int j, uint32_t stream) const {
@@ -324,6 +356,7 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
   std::vector<double> oldReady = keep ? readyAt_ : std::vector<double>{}, oldFinish = keep ? finishAt_ : std::vector<double>{};
 
   jobs_.clear();
+  std::vector<std::pair<int,double>> outsrcMark;   // A3: (джоба, работа мин) — субподряд операций
   const int K = (int)inst_.orders.size();
   const int KB = std::min(K, nBaseOrders_);
   auto expandOrder = [&](int k) {
@@ -341,6 +374,16 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
     ex.expand(k, o.productId, o.qty, due_.empty() ? 1e12 : due_[k]);
     os.jobEnd = (int)jobs_.size();
     for (int i = os.jobBegin; i < os.jobEnd; ++i) { jobs_[i].releaseMin = o.releaseMin + os.shiftWeeks * kWeekMin; jobs_[i].dueMin = due_.empty() ? 1e12 : due_[k]; }
+    // A3: операции узкого места у субподрядчика — джоба без станка: срок субподрядчика + сама работа.
+    for (int i = os.jobBegin; i < os.jobEnd && !os.outsourcedOps.empty(); ++i) {
+      Job& jb = jobs_[i];
+      if (!os.outsourcedOps.count(jb.opId + "#" + std::to_string(jb.batchIdx))) continue;
+      const double work = jb.durMean;
+      jb.wcTypes.clear(); jb.wcType.clear(); jb.durByType.clear(); jb.needsWorker = false; jb.setupTime = 0;
+      jb.durMean = inst_.outsourceLeadHours * 60.0 + work; jb.sigma = 0.2 * jb.durMean;
+      jb.tailWeight = 0.05; jb.tailIndex = 2.5;
+      outsrcMark.push_back({ i, work });
+    }
   };
   // Дефицит покупного сырья → «поставка» как предшественник заказа (как run_schedule). Потребность —
   // по заказам ЭКЗЕМПЛЯРА: срочный заказ сценария (A2) не меняет поставок плана, получает ту же.
@@ -370,6 +413,8 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
   // Срочные заказы сценария — ПОСЛЕ джоб экземпляра: индексы плана (ключи ГА/CP-SAT) не сдвигаются.
   for (int k = KB; k < K; ++k) { expandOrder(k); if (supplyLead > 0) addSupply(k); }
   const size_t J = jobs_.size();
+  outsrcJob_.assign(J, 0); outsrcWork_.assign(J, 0.0);
+  for (auto& [i, w] : outsrcMark) { outsrcJob_[i] = 1; outsrcWork_[i] = w; }
   // Ключи правил, работа заказов, топологический порядок.
   orderWork_.assign(K, 0); for (auto& j : jobs_) orderWork_[j.orderIdx] += j.durMean;
   keyByRule_.clear();
@@ -384,6 +429,9 @@ void SimEnv::rebuild_jobs(const std::vector<char>* keepDone) {
   st_.out.nBreakdowns = oldSt.out.nBreakdowns; st_.out.breakdownMinutes = oldSt.out.breakdownMinutes; st_.out.maintMinutes = oldSt.out.maintMinutes;
   st_.out.busyByMachine = oldSt.out.busyByMachine; st_.out.busyByWorker = oldSt.out.busyByWorker.empty() ? st_.out.busyByWorker : oldSt.out.busyByWorker;
   st_.out.makespan = oldSt.out.makespan;
+  // A3: рабочие экипажей купленных станков (модель могла вырасти после прошлого снимка).
+  if (st_.wFree.size() < m.workers.size()) st_.wFree.resize(m.workers.size(), now_);
+  if (st_.out.busyByWorker.size() < m.workers.size()) st_.out.busyByWorker.resize(m.workers.size(), 0.0);
   readyAt_.assign(J, 0); finishAt_.assign(J, -1);
   draw_durations();
   if (keep) {
@@ -415,6 +463,9 @@ void SimEnv::draw_durations() {
   for (size_t j = 0; j < jobs_.size(); ++j) {
     if (cfg_.deterministic) { dur_[j] = jobs_[j].durMean; continue; }
     std::mt19937 r = job_rng((int)j, 1); dur_[j] = sched::sample_dur(jobs_[j], inst_.tailWeight, r);
+    if (j < outsrcJob_.size() && outsrcJob_[j]) {   // A3: субподряд — свой поток (длительность не связана с цехом)
+      std::mt19937 r3 = job_rng((int)j, 3); dur_[j] = sched::sample_dur(jobs_[j], 0.0, r3);
+    }
   }
   // A2: срыв поставки критичного входа — задержка раскрывается только по факту (длительность поставки).
   if (supplyExtra_ > 0)
@@ -433,6 +484,7 @@ void SimEnv::reset(uint64_t seed, const Scenario& sc) {
   moves_.clear(); moveSeq_ = 0; weekly_.clear(); drawPlan_.clear(); repayPlan_.clear(); cashValid_ = false;
   now_ = 0; done_ = false; level_ = 0; curMachine_ = -1; nDecisions_ = nWait_ = nPlaced_ = 0; week_ = 0; movesThisWeek_ = 0; inL2_ = false;
   pendingReward_ = 0; lastSetup_ = 0;
+  struct_reset();                          // A3: базовая модель/календари, статусы ходов (до развёртки)
   rebuild_jobs();
   update_bounds();
   if (sc_.has_shock() || sc_.regimeShockWeek >= 0) {
@@ -453,7 +505,8 @@ void SimEnv::reset(uint64_t seed, const Scenario& sc) {
   }
   scaleT_ = std::max(1.0, lbCmax_);
   if (cfg_.mode == EpochMode::Event) init_events();
-  if (cfg_.l2Enabled) { inL2_ = true; level_ = 2; movesThisWeek_ = 0; build_obs_l2(); return; }
+  for (auto& [c, w] : pendingInvest_) if (w == 0) order_invest(c);   // A3: статические инвестиции недели 0
+  if (cfg_.l2Enabled) { inL2_ = true; level_ = 2; movesThisWeek_ = 0; shockEpoch_ = false; build_obs_l2(); return; }
   if (!advance()) finish_episode();
 }
 
@@ -463,6 +516,12 @@ void SimEnv::init_events() {
   for (int mi = 0; mi < M; ++mi) { events_.push({ 0.0, kEvMachine, mi }); pollPending_[mi] = 1; }
   for (int w = 1; w <= cfg_.horizonWeeks + kMaxShiftWeeks + 1; ++w) events_.push({ w * kWeekMin, kEvWeek, w });
   events_.push({ 0.0, kEvJobDone, -1 });   // «старт»: поставки без станка размещаются после эпохи L2 недели 0
+  // A3: экстренные события открывают внеочередную эпоху L3 (будущее не раскрывается: эпоха — в момент события).
+  if (cfg_.structMode && cfg_.l2Enabled) {
+    if (outageMi_ >= 0) events_.push({ outA_, kEvShock, 0 });
+    if (rushRelease_ >= 0) events_.push({ rushRelease_, kEvShock, 1 });
+    if (supplyRevealT_ >= 0) events_.push({ supplyRevealT_, kEvShock, 2 });
+  }
 }
 
 void SimEnv::auto_place_ready_supply(int j) {
@@ -481,8 +540,15 @@ void SimEnv::place_job(int j, const std::string& machineId, double notBefore) {
   const Job& jb = jobs_[j];
   OrderState& os = ord_[jb.orderIdx];
   if (!os.started) { os.started = true; os.startMin = pl.start; book_order_start(jb.orderIdx, pl.start); }
+  // A3: субподряд операции — плата субподрядчику в неделю передачи (вместо машино-часов цеха).
+  if (j < (int)outsrcJob_.size() && outsrcJob_[j]) {
+    const int w = (int)std::floor(pl.start / kWeekMin);
+    if ((int)weekly_.size() <= w) weekly_.resize(w + 1);
+    const double fee = inst_.outsourceOpMarkup * outsrcWork_[j] / 60.0 * (jb.hourRate + jb.laborRate);
+    weekly_[w].otherFixed += fee; feeOutsource_ += fee;
+  }
   // Конверсионные затраты недели завершения (машино-часы × ставка, труд × ставка, ремонт).
-  if (jb.productId != "supply" && jb.opId != "outsource") {
+  else if (jb.productId != "supply" && jb.opId != "outsource") {
     const int w = (int)std::floor(st_.out.end[j] / kWeekMin);
     if ((int)weekly_.size() <= w) weekly_.resize(w + 1);
     const double h = (pl.proc + pl.setup) / 60.0;
@@ -565,11 +631,18 @@ bool SimEnv::advance() {
       else on_job_done(e.id);
       continue;
     }
+    if (e.kind == kEvInvest) { activate_invest(e.id); continue; }
+    if (e.kind == kEvShock) {
+      if (cfg_.l2Enabled && cfg_.structMode) { inL2_ = true; level_ = 2; movesThisWeek_ = 0; shockEpoch_ = true; build_obs_l2(); return true; }
+      continue;
+    }
     if (e.kind == kEvWeek) {
       week_ = e.id;
+      expire_overtime(e.id);                 // A3: сверхурочные недели e.id−1 закончились
+      for (auto& [c, w] : pendingInvest_) if (w == e.id) order_invest(c);
       // Поставки без станка, чей запуск (сдвиг L2) наступил, размещаются на границе недели.
       for (size_t j = 0; j < jobs_.size(); ++j) if (st_.predLeft[j] == 0 && !st_.done[j] && jobs_[j].wcTypes.empty() && jobs_[j].wcType.empty() && jobs_[j].releaseMin <= now_ + 1e-9) auto_place_ready_supply((int)j);
-      if (cfg_.l2Enabled && e.id <= cfg_.horizonWeeks) { inL2_ = true; level_ = 2; movesThisWeek_ = 0; build_obs_l2(); return true; }
+      if (cfg_.l2Enabled && e.id <= cfg_.horizonWeeks) { inL2_ = true; level_ = 2; movesThisWeek_ = 0; shockEpoch_ = false; build_obs_l2(); return true; }
       continue;
     }
     const int mi = e.id; pollPending_[mi] = 0;
@@ -629,7 +702,7 @@ StepResult SimEnv::step(int action) {
       r.reward = pendingReward_; pendingReward_ = 0; return r;
     }
     std::string why;
-    if (apply_move(action, why)) { ++movesThisWeek_; }
+    if (cfg_.structMode ? apply_struct(action, why) : apply_move(action, why)) { ++movesThisWeek_; }
     if (cfg_.denseReward) pendingReward_ += dense_delta();
     build_obs_l2(); r.level = 2; r.reward = pendingReward_; pendingReward_ = 0; return r;
   }
@@ -883,6 +956,7 @@ bool SimEnv::apply_move(int action, std::string& why) {
 
 std::string SimEnv::describe_l2(int action) const {
   if (action <= 0) return "noop";
+  if (cfg_.structMode) return action < kStructActs ? kStructActNames[action] : "?";
   const int K = cfg_.kMaxOrders, base = 1 + kMoveKinds * K;
   if (action >= base + kFinActs) return "invest#" + std::to_string(action - base - kFinActs);   // A3-крючок
   if (action >= base) { static const char* fa[kFinActs] = { "draw25", "draw50", "draw100", "repay50", "repay100" }; return fa[std::min(kFinActs - 1, action - base)]; }
@@ -890,6 +964,7 @@ std::string SimEnv::describe_l2(int action) const {
 }
 
 void SimEnv::build_obs_l2() {
+  if (cfg_.structMode) { build_obs_struct(); return; }
   std::fill(obsL2_.begin(), obsL2_.end(), 0.f); std::fill(maskL2_.begin(), maskL2_.end(), 0);
   maskL2_[0] = 1;
   const int K = cfg_.kMaxOrders, nO = std::min(K, (int)ord_.size());
@@ -942,7 +1017,11 @@ void SimEnv::book_order_finish(int k, double t) {
   const bool rush = k >= nBaseOrders_;
   if (rush && lateW > 0) val *= 1.0 - cfg_.rushLateLoss;      // A2: жёсткий срок срочного заказа сорван
   weekly_[w].revenue += val; weekly_[w].cogs += o.matCost * o.qty * (ord_[k].outsourced.empty() ? 1.0 : inst_.outsourceMarkup);
-  if (lateW > 0 && !rush) weekly_[w].otherFixed += std::min(cfg_.tardPenaltyCap, cfg_.tardPenaltyPerWeek * lateW) * val;
+  if (lateW > 0 && !rush) {   // A3: договорный штраф (доля при любой просрочке + за неделю, потолок); иначе A2
+    const double perW = inst_.latePerWeek >= 0 ? inst_.latePerWeek : cfg_.tardPenaltyPerWeek;
+    const double cap = inst_.lateCap >= 0 ? inst_.lateCap : cfg_.tardPenaltyCap;
+    weekly_[w].otherFixed += std::min(cap, inst_.lateFixed + perW * lateW) * val;
+  }
 }
 cash::ScenarioResult SimEnv::run_cash(int weeks) const {
   cash::ScenarioInput in; in.periods.resize(weeks);
@@ -952,6 +1031,7 @@ cash::ScenarioResult SimEnv::run_cash(int weeks) const {
     q.payrollGross += inst_.payrollFixedWeekly; q.repairPlanned += inst_.repairBudgetWeekly; q.otherFixed += inst_.otherFixedWeekly;
     if (!sc_.keyRate.empty()) q.keyRate = sc_.keyRate[std::min(t, (int)sc_.keyRate.size() - 1)];
     if (t < (int)drawPlan_.size()) { q.drawdown = drawPlan_[t]; q.repayment = repayPlan_[t]; }
+    if (t < (int)drawFloor_.size()) q.drawFloor = drawFloor_[t];   // A3: транши под CAPEX / буфер
   }
   in.defaultWeek = sc_.defaultWeek; in.lgd = sc_.lgd;
   return cash::run(inst_.fin, in);
@@ -1035,6 +1115,7 @@ void SimEnv::resolve_shocks() {
         const double t = j.releaseMin + j.durMean; tSupply = tSupply < 0 ? t : std::min(tSupply, t); }
     }
   }
+  supplyRevealT_ = tSupply;                 // A3: срыв поставки вскрывается, когда поставка «должна была» прийти
   // Момент шока = первое из событий (для метрик восстановления).
   for (double t : { outA_, rushRelease_, tSupply, sc_.regimeShockWeek >= 0 ? sc_.regimeShockWeek * kWeekMin : -1.0 })
     if (t >= 0) shockT_ = shockT_ < 0 ? t : std::min(shockT_, t);
@@ -1089,6 +1170,9 @@ json SimEnv::summary() const {
   double revenue = 0, taxPaid = 0; int nFin = 0;
   if (cashValid_) for (auto& ps : cashRes_.periods) { revenue += ps.revenue; taxPaid += ps.tax; }
   for (auto& o : ord_) if (o.finishMin >= 0) ++nFin;
+  // A3: запас ликвидности min_t (C_t − просрочка + невыбранный лимит) — непрерывная мера кассового риска.
+  double min_liq = 0; bool first = true;
+  if (cashValid_) for (auto& ps : cashRes_.periods) { const double l = ps.netCash + ps.undrawn; min_liq = first ? l : std::min(min_liq, l); first = false; }
   return {
     {"scenario", sc_.idx}, {"seed", seed_}, {"n_jobs", (int)jobs_.size()}, {"n_orders", K},
     {"revenue", revenue}, {"tax", taxPaid}, {"n_orders_finished", nFin},
@@ -1098,11 +1182,17 @@ json SimEnv::summary() const {
     {"breakdown_h", st_.out.breakdownMinutes / 60.0}, {"maint_h", st_.out.maintMinutes / 60.0},
     {"n_decisions", nDecisions_}, {"n_wait", nWait_}, {"lb_cmax_h", lbCmax_ / 60.0},
     {"profit", cashValid_ ? cashRes_.profit : 0.0}, {"min_cash", cashValid_ ? cashRes_.minCash : 0.0},
+    {"min_liquidity", min_liq}, {"npv_owner", cashValid_ ? cashRes_.npvOwner : 0.0},
+    {"cash_residual", cashValid_ ? cashRes_.residuals.max() : 0.0},          // тождества водопада §4.6 (тест A3)
+    {"end_cash", cashValid_ && !cashRes_.periods.empty() ? cashRes_.periods.back().netCash : 0.0},   // касса − просрочка платежей
+    {"end_debt", cashValid_ && !cashRes_.periods.empty() ? cashRes_.periods.back().debt : 0.0},
     {"breach", cashValid_ && cashRes_.breach}, {"t_breach", cashValid_ ? cashRes_.tBreach : -1},
     {"covenant_breach", cashValid_ && cashRes_.covenantBreach}, {"interest", cashValid_ ? cashRes_.totalInterest : 0.0},
     {"max_debt", cashValid_ ? cashRes_.maxDebt : 0.0}, {"dscr", cashValid_ ? cashRes_.dscr : 0.0},
     {"moves", mv}, {"n_moves", (int)moves_.size()}, {"done", done_},
     {"shock", shock_metrics()},
+    {"a3", { {"overtime_weeks", otWeeks_}, {"fee_overtime", feeOvertime_}, {"fee_outsource", feeOutsource_},
+             {"capex", capexTotal_}, {"invest_week", investWeek_} }},
   };
 }
 json SimEnv::gantt() const {

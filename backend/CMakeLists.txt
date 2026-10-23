@@ -56,12 +56,15 @@ add_library(maos_core STATIC
   src/Database.cpp
   src/ExactCvar.cpp
   src/GaImprover.cpp
+  src/InvestApi.cpp
+  src/InvestEval.cpp
   src/MacroSampler.cpp
   src/Optimizer.cpp
   src/Passport.cpp
   src/RlRule.cpp
   src/Scheduler.cpp
   src/SimEnv.cpp
+  src/SimEnvStruct.cpp
 )
 target_include_directories(maos_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Волна M: MacroSampler обязан воспроизводить rl/macro/sample.py побитово — без слияния
@@ -136,6 +139,7 @@ if(MAOS_BUILD_TESTS)
     tests/test_cpsat.cpp
     tests/test_access.cpp
     tests/test_finance.cpp
+    tests/test_invest.cpp
     tests/test_ga.cpp
     tests/test_macrosampler.cpp
     tests/test_optimizer.cpp

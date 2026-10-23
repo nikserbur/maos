@@ -104,3 +104,22 @@ rl/.venv/bin/python -m rl.eval.headroom --n-val 32 --n 100  # запас: руч
 rl/.venv/bin/python -m rl.train.train_l0_rule --seeds 1 2 3 # L0 «выбор правила»: BC → PPO (CVaR, RU)
 rl/.venv/bin/python -m rl.eval.v5_a2 --n 200 --seeds 1 2 3  # V5 + стресс «шок» + экстренное реагирование + гейт
 ```
+
+---
+
+# Волна A3 — структурный RL (L2/L3) и инвестиционный агент
+
+Отчёт: [docs/research/A3-structural-rl-invest.md](../docs/research/A3-structural-rl-invest.md); предрегистрация —
+[rl/eval/prereg_a3.md](eval/prereg_a3.md) (записана до обучения; поправки П1–П4 с датами).
+
+```bash
+rl/.venv/bin/python -m rl.bench.instances_a3                  # 30 экземпляров семейства A3 → rl/bench/data/instances_a3
+rl/.venv/bin/python -m rl.eval.headroom_a3 --n 100            # H0: лучшее правило / IIP / сетка эвристик / ex-post оракул
+rl/.venv/bin/python -m rl.bench.keys_a3 --sec 60 --ga-sec 30  # ключи CP-SAT и ГА с тёплым стартом
+rl/.venv/bin/python -m rl.train.train_l3 --seeds 1 2 3 --steps 500000                     # вариант A (учитель H*)
+rl/.venv/bin/python -m rl.train.train_l3 --variant sweep --seeds 1 2 3 --steps 1000000    # вариант B (H* + погашение)
+rl/.venv/bin/python -m rl.eval.v5_a3 --n 200 --seeds 1 2 3    # V5-A3, гейты → rl/results/a3/v5_a3.json, champion_a3.json
+```
+
+Структурный режим SimEnv: `EnvConfig.struct_mode` (эпохи — неделя и экстренные события; 13 ходов; `run_l0()` — L0 в C++),
+`schedule_invest(c, week)` — статическая покупка; `invest_eval(...)` — CRN-оценка кандидата L3 (ЧДД/CVaR/окупаемость/P(разрыва)).
