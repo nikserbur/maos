@@ -21,3 +21,8 @@
 .adm__perm { font-size: var(--fs-11); padding: 1px 6px; border-radius: var(--radius-sm); background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-secondary); }
 .adm__perm--more { color: var(--text-muted); }
 .adm__empty { color: var(--text-muted); font-size: var(--fs-12); padding: var(--space-2); }
+
+/* Роль и цех пользователя — правка прямо в строке */
+.adm__select { height: 28px; min-width: 0; max-width: 220px; font-size: var(--fs-12); }
+.adm__muted { color: var(--text-muted); }
+.adm__error { margin: 0 var(--space-4) var(--space-2); }

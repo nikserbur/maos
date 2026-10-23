@@ -7,7 +7,8 @@ import { KIND_META } from '../plant-scene/graph/sceneModel'
 import { useHashRoute } from '../../shell/router'
 import { dateTime, fmtValue } from '../../explain/format'
 import { Icon } from '../../shell/icons'
-import { DataTable, ScreenHeader, type DataColumn } from '../../ui/kit'
+import { Chip, DataTable, ScreenHeader, Segmented, type DataColumn } from '../../ui/kit'
+import { currentSession, workerAccess } from '../../shell/session'
 import './nsi.css'
 
 type AnyRow = Record<string, unknown>
@@ -71,6 +72,10 @@ export function NsiScreen() {
   const [rows, setRows]             = useState<AnyRow[]>([])
   const [loading, setLoading]       = useState(false)
   const [search, setSearch]         = useState('')
+  // Права: full — правит весь НСИ; shop — начальник цеха нанимает только в свой цех; read — просмотр.
+  const session = useMemo(() => currentSession(), [])
+  const access = workerAccess(session)
+  const [shopView, setShopView] = useState<'mine' | 'all'>('mine')
 
   // Справочные данные для резолвинга FK в таблице
   const [wcTypes,  setWcTypes]  = useState<WorkCenterType[]>([])
@@ -96,13 +101,16 @@ export function NsiScreen() {
 
   useEffect(() => { fetchRows() }, [activeId, routingId])
 
+  const scopeRows = activeId === 'worker' && access === 'shop' && shopView === 'mine'
+    ? rows.filter((r) => String(r.org_unit_id ?? '') === session.orgUnitId)
+    : rows
   const filtered = search.trim()
-    ? rows.filter((r) =>
+    ? scopeRows.filter((r) =>
         Object.values(r).some((v) =>
           String(v ?? '').toLowerCase().includes(search.toLowerCase()),
         ),
       )
-    : rows
+    : scopeRows
 
   const columns = useMemo<DataColumn<AnyRow>[]>(() => active.columns.map((col, i) => ({
     key: col.key,
@@ -126,9 +134,24 @@ export function NsiScreen() {
 
   if (activeId === 'routing' && routingId) return <RoutingScreen key={routingId} id={routingId} />
 
+  const isWorkers = activeId === 'worker'
+  const canCreate = access === 'full' || (isWorkers && access === 'shop' && Boolean(session.orgUnitId))
+  const canEditRow = (row: AnyRow) =>
+    access === 'full' || (isWorkers && access === 'shop' && String(row.org_unit_id ?? '') === session.orgUnitId)
   const openCreate = () => (activeId === 'routing' ? navigate('nsi', 'routing/new') : setCreateOpen(true))
-  const openRow = (row: AnyRow) => (activeId === 'routing' ? navigate('nsi', `routing/${String(row.id ?? '')}`) : setEditRow(row))
-  const rowHint = activeId === 'routing' ? 'Открыть конструктор техкарты' : 'Открыть для редактирования'
+  const openRow = (row: AnyRow) => {
+    if (activeId === 'routing') { navigate('nsi', `routing/${String(row.id ?? '')}`); return }
+    if (canEditRow(row)) setEditRow(row)
+  }
+  const rowHint = (row: AnyRow) => {
+    if (activeId === 'routing') return 'Открыть конструктор техкарты'
+    if (canEditRow(row)) return 'Открыть для редактирования'
+    return isWorkers && access === 'shop' ? 'Сотрудник другого цеха — только просмотр' : 'Только просмотр'
+  }
+  const createLabel = isWorkers && access === 'shop' ? 'Нанять сотрудника' : 'Создать'
+  const readOnlyNote = !canCreate && (isWorkers && access === 'shop'
+    ? 'вы не привязаны к цеху — обратитесь к администратору'
+    : 'только просмотр')
 
   return (
     <div className="nsi">
@@ -164,10 +187,12 @@ export function NsiScreen() {
           title={active.title}
           subtitle={active.description}
           blocks={['internal']}
-          actions={(
+          actions={canCreate ? (
             <button type="button" className="btn btn--primary" onClick={openCreate}>
-              <Icon name="plus" size={14} />Создать
+              <Icon name="plus" size={14} />{createLabel}
             </button>
+          ) : (
+            <Chip tone="idle" size="sm">{readOnlyNote}</Chip>
           )}
         />
 
@@ -182,6 +207,14 @@ export function NsiScreen() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
+          {isWorkers && access === 'shop' && (
+            <Segmented
+              label="Чьи сотрудники"
+              value={shopView}
+              onChange={setShopView}
+              options={[{ id: 'mine', label: 'Мой цех' }, { id: 'all', label: 'Все цеха' }]}
+            />
+          )}
           <span className="nsi__count num" aria-live="polite">
             {loading ? 'Загрузка…' : `${filtered.length} записей`}
           </span>
@@ -196,9 +229,11 @@ export function NsiScreen() {
           groupBy={groupFn}
           loading={loading}
           onRowClick={openRow}
-          rowTitle={() => rowHint}
+          rowTitle={rowHint}
           caption={`Реестр: ${active.title}`}
-          empty={rows.length === 0 ? 'Записей нет — нажмите «Создать», чтобы добавить первую.' : 'Ничего не найдено.'}
+          empty={scopeRows.length === 0
+            ? (canCreate ? `Записей нет — нажмите «${createLabel}», чтобы добавить первую.` : 'Записей нет.')
+            : 'Ничего не найдено.'}
         />
       </section>
     </div>

@@ -7,6 +7,7 @@
  *   cmake --build . -j$(nproc)
  *   ./maos_server [path/to/maos.db]
  */
+#include "AccessScope.h"
 #include "Database.h"
 #include "Finance.h"
 #include "MacroSampler.h"
@@ -73,11 +74,16 @@ static void err(httplib::Response& res, int status, const std::string& msg) {
 /* ── Сессии (RBAC): токен → пользователь + права; истекают через 12 часов ── */
 struct AuthSession {
   std::string login;
+  std::string orgUnitId;                 // цех пользователя (область права HIRE_WORKERS)
   std::unordered_set<std::string> perms;
   std::chrono::steady_clock::time_point expires;
 };
 static std::mutex g_sess_mtx;
 static std::unordered_map<std::string, AuthSession> g_sessions;
+// Область права найма на время запроса: pre-routing и обработчик httplib идут в одном потоке.
+// t_scoped=true — мутация разрешена ТОЛЬКО в пределах цеха t_scope (см. AccessScope.h).
+static thread_local bool t_scoped = false;
+static thread_local std::string t_scope;
 // Актор текущего запроса (устанавливается pre-routing фильтром) — попадает в аудит.
 static thread_local std::string g_actor;
 // Волна M: обученный макро-генератор (MacroSampler) — загружается при старте; nullptr → /api/macro/* 503,
@@ -106,13 +112,28 @@ struct CrudConfig {
   std::string table;
   std::string entity;                    // for audit log
   std::vector<std::string> columns;      // writable columns (no id, no created_at)
+  std::string scopeColumn;               // колонка цеха для права HIRE_WORKERS (пусто — без области)
 };
+
 
 // Extract string from JSON safely
 static std::string jstr(const json& j, const std::string& key) {
   if (!j.contains(key)) return "";
   if (j[key].is_string()) return j[key].get<std::string>();
   return j[key].dump();  // arrays / numbers → their JSON string
+}
+
+// Проверка области для мутации записи; пустая строка — можно. Только при t_scoped.
+static std::string crud_scope_error(Database& db, const CrudConfig& cfg, maos::access::Op op,
+                                    const std::string& id, const json* body) {
+  if (!t_scoped || cfg.scopeColumn.empty()) return "";
+  std::string rowUnit;
+  if (op != maos::access::Op::Create) {
+    try { rowUnit = jstr(db.query_one("SELECT " + cfg.scopeColumn + " AS u FROM " + cfg.table +
+                                      " WHERE id=?", { id }), "u"); } catch (...) {}
+  }
+  const bool has = body && body->contains(cfg.scopeColumn);
+  return maos::access::scope_error(t_scope, op, rowUnit, has, has ? jstr(*body, cfg.scopeColumn) : "");
 }
 
 // Заполнить operation_inputs из JSON-массива входов техкарты [{productId|product_id, qty}, …]
@@ -232,6 +253,11 @@ static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& 
   svr.Post(base, [&db, cfg](const httplib::Request& req, httplib::Response& res) {
     try {
       auto body = json::parse(req.body);
+      if (auto e = crud_scope_error(db, cfg, maos::access::Op::Create, "", &body); !e.empty()) {
+        err(res, 403, e); return;
+      }
+      if (t_scoped && !cfg.scopeColumn.empty() && jstr(body, cfg.scopeColumn).empty())
+        body[cfg.scopeColumn] = t_scope;              // найм — в цех начальника
       std::string id = gen_uuid();
 
       // Build INSERT. Для FK-колонок (…_id) пустую строку превращаем в NULL —
@@ -258,6 +284,9 @@ static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& 
     try {
       const std::string id = req.matches[1];
       auto body = json::parse(req.body);
+      if (auto e = crud_scope_error(db, cfg, maos::access::Op::Update, id, &body); !e.empty()) {
+        err(res, 403, e); return;
+      }
 
       std::string set_clause;
       std::vector<std::string> vals;
@@ -282,6 +311,9 @@ static void register_crud(httplib::Server& svr, Database& db, const CrudConfig& 
   svr.Delete(base + "/([^/]+)", [&db, cfg](const httplib::Request& req, httplib::Response& res) {
     try {
       const std::string id = req.matches[1];
+      if (auto e = crud_scope_error(db, cfg, maos::access::Op::Delete, id, nullptr); !e.empty()) {
+        err(res, 403, e); return;
+      }
       db.exec("DELETE FROM " + cfg.table + " WHERE id=?", { id });
       audit(db, cfg.entity, id, "DELETE");
       ok(res, json::object());
@@ -366,7 +398,7 @@ static void register_auth(httplib::Server& svr, Database& db) {
       // его на каждом запросе (deny-by-default вместо декоративного RBAC).
       std::string token = gen_uuid() + gen_uuid();
       {
-        AuthSession s; s.login = login;
+        AuthSession s; s.login = login; s.orgUnitId = jstr(user, "org_unit_id");
         s.expires = std::chrono::steady_clock::now() + std::chrono::hours(12);
         try { for (auto& pm : json::parse(perms.empty() ? "[]" : perms))
                 if (pm.is_string()) s.perms.insert(pm.get<std::string>()); } catch (...) {}
@@ -376,7 +408,8 @@ static void register_auth(httplib::Server& svr, Database& db) {
       g_actor = login;
       audit(db, "auth", jstr(user, "id"), "LOGIN");
       ok(res, { {"token", token}, {"login", login}, {"role", roleName},
-                {"permissions", json::parse(perms.empty() ? "[]" : perms)} });
+                {"permissions", json::parse(perms.empty() ? "[]" : perms)},
+                {"org_unit_id", jstr(user, "org_unit_id")} });
     } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 }
@@ -1936,6 +1969,14 @@ static void migrate_v19(Database& db) {
 // (ряды cbr.ru с происхождением: URL, дата выгрузки, SHA256, synthetic=0) — заполняется из
 // параметров генератора при старте (sync_macro_series). Старые ползунки сценария остаются
 // в схеме, но не участвуют в расчёте (паспорт r1.50–r1.53).
+/* Роль «Начальник цеха» (найм в свой цех + план) и users.org_unit_id. Идемпотентно,
+   без номера user_version (номера миграций ведёт другая ветка работ). */
+static void ensure_shop_manager_role(Database& db) {
+  db.exec_safe("ALTER TABLE users ADD COLUMN org_unit_id TEXT");
+  db.exec("INSERT OR IGNORE INTO roles(id,name,permissions) VALUES('role-shop-manager','Начальник цеха',?)",
+          { R"(["READ","WRITE_PLAN","HIRE_WORKERS"])" });
+}
+
 static void migrate_v21(Database& db) {
   if (db.user_version() >= 21) return;
   std::cout << "Migrating schema → v21 (волна M: synthetic, macro_mode, macro_series)…\n";
@@ -3207,7 +3248,7 @@ static void register_admin(httplib::Server& svr, Database& db) {
   svr.Get("/api/users", [&db](const httplib::Request&, httplib::Response& res) {
     try {
       auto rows = db.query_json(
-        "SELECT u.id, u.login, u.status, u.failed_attempts, u.role_id, "
+        "SELECT u.id, u.login, u.status, u.failed_attempts, u.role_id, u.org_unit_id, "
         "       r.name AS role_name, r.permissions AS permissions, u.created_at "
         "FROM users u LEFT JOIN roles r ON r.id=u.role_id ORDER BY u.created_at");
       ok(res, rows);
@@ -3217,6 +3258,48 @@ static void register_admin(httplib::Server& svr, Database& db) {
   svr.Get("/api/roles", [&db](const httplib::Request&, httplib::Response& res) {
     try { ok(res, db.query_json("SELECT * FROM roles ORDER BY id")); }
     catch (std::exception& e) { err(res, 500, e.what()); }
+  });
+  // Создать пользователя: логин, пароль (≥ 8 символов), роль, цех (для начальника цеха).
+  svr.Post("/api/users", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto b = json::parse(req.body);
+      const std::string login = jstr(b, "login"), pass = jstr(b, "password");
+      if (login.empty()) { err(res, 400, "Укажите логин"); return; }
+      if (pass.size() < 8) { err(res, 400, "Пароль — не короче 8 символов"); return; }
+      const std::string id = gen_uuid();
+      db.exec("INSERT INTO users(id,login,password_hash,role_id,status,org_unit_id) "
+              "VALUES(?,?,?,NULLIF(?,''),'active',NULLIF(?,''))",
+              { id, login, hash_password(pass), jstr(b, "role_id"), jstr(b, "org_unit_id") });
+      audit(db, "user", id, "CREATE", { {"login", login}, {"role_id", jstr(b, "role_id")},
+                                        {"org_unit_id", jstr(b, "org_unit_id")} });
+      res.status = 201;
+      ok(res, { {"id", id}, {"login", login} });
+    } catch (std::exception& e) { err(res, 400, e.what()); }
+  });
+  // Изменить роль / цех / статус / пароль пользователя.
+  svr.Put("/api/users/([^/]+)", [&db](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const std::string id = req.matches[1];
+      auto b = json::parse(req.body);
+      std::string set; std::vector<std::string> vals;
+      auto add = [&](const char* col, const std::string& expr, const std::string& v) {
+        if (!set.empty()) set += ", ";
+        set += std::string(col) + "=" + expr; vals.push_back(v);
+      };
+      if (b.contains("role_id"))     add("role_id", "NULLIF(?,'')", jstr(b, "role_id"));
+      if (b.contains("org_unit_id")) add("org_unit_id", "NULLIF(?,'')", jstr(b, "org_unit_id"));
+      if (b.contains("status"))      add("status", "?", jstr(b, "status"));
+      if (b.contains("password")) {
+        if (jstr(b, "password").size() < 8) { err(res, 400, "Пароль — не короче 8 символов"); return; }
+        add("password_hash", "?", hash_password(jstr(b, "password")));
+      }
+      if (set.empty()) { err(res, 400, "Нет полей для изменения"); return; }
+      vals.push_back(id);
+      db.exec("UPDATE users SET " + set + " WHERE id=?", vals);
+      json a = b; a.erase("password");
+      audit(db, "user", id, "UPDATE", a);
+      ok(res, json::object());
+    } catch (std::exception& e) { err(res, 400, e.what()); }
   });
 }
 
@@ -3950,6 +4033,7 @@ static bool setup_database(Database& db) {
     migrate_v19(db);
     maos::passport::migrate(db);        // v20 (волна F): fin_params, param_passport, plan_fact_ops
     migrate_v21(db);                    // v21 (волна M): synthetic, macro_mode, macro_series
+    ensure_shop_manager_role(db);       // роль «Начальник цеха», users.org_unit_id
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -4000,6 +4084,7 @@ int main(int argc, char* argv[]) {
                                 -> httplib::Server::HandlerResponse {
     using HR = httplib::Server::HandlerResponse;
     g_actor.clear();                                  // не наследовать актора прошлого запроса
+    t_scoped = false; t_scope.clear();                // и область права найма
     const std::string& path = req.path;
     if (req.method == "OPTIONS" || path.rfind("/api/", 0) != 0) return HR::Unhandled;
     if (path == "/api/auth/login" || path == "/api/health") return HR::Unhandled;
@@ -4029,6 +4114,12 @@ int main(int argc, char* argv[]) {
       else if (starts("/api/demand_orders") || starts("/api/production_plans") ||
                starts("/api/scenarios") || starts("/api/calendar")) need = "WRITE_PLAN";
       else need = "EDIT_NSI";                          // НСИ и прочие мутации
+    }
+    // Начальник цеха: найм/перевод/увольнение без EDIT_NSI — только в своём цехе
+    // (область проверяет register_crud по workers.org_unit_id).
+    if (need == "EDIT_NSI" && !s.perms.count("EDIT_NSI") && s.perms.count("HIRE_WORKERS") &&
+        path.rfind("/api/workers", 0) == 0) {
+      t_scoped = true; t_scope = s.orgUnitId; need.clear();
     }
     if (!need.empty() && !s.perms.count(need)) {
       audit(db, "auth", s.login, "REJECTED", { {"path", path}, {"need", need} });
@@ -4098,7 +4189,8 @@ int main(int argc, char* argv[]) {
   register_crud(svr, db, {
     "workers", "worker",
     { "tab_no", "last_name", "first_name", "middle_name",
-      "org_unit", "org_unit_id", "position", "grade", "cost_per_hour", "skills" }
+      "org_unit", "org_unit_id", "position", "grade", "cost_per_hour", "skills" },
+    "org_unit_id"                                    // начальник цеха нанимает только в свой цех
   });
 
   // Производственная программа (заказы) — вход Стадии 1

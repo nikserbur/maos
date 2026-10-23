@@ -50,7 +50,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
       try {
         sessionStorage.setItem('maos.token', res.token)   // Bearer для всех запросов
         sessionStorage.setItem('maos.session',
-          JSON.stringify({ login: res.login, role: res.role, permissions: res.permissions }))
+          JSON.stringify({ login: res.login, role: res.role, permissions: res.permissions, org_unit_id: res.org_unit_id ?? '' }))
       } catch { /* ignore storage errors */ }
       onLogin()
     } catch (err) {
@@ -152,7 +152,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
 
           <p className="login__footer">
-            PESCADITO v0.70.0 · дипломная работа · {new Date().getFullYear()}
+            PESCADITO v0.71.0 · дипломная работа · {new Date().getFullYear()}
           </p>
         </div>
       </div>

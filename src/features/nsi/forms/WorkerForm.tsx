@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../lib/api'
 import { useOrgUnits, useWorkCenterTypes } from '../useNsi'
 import type { EditCtx } from '../CreateDialog'
+import { currentSession, workerAccess } from '../../../shell/session'
+import { ConfirmDialog } from '../../../ui/ConfirmDialog'
 
 interface Props {
   onSuccess: () => void
@@ -17,7 +19,13 @@ export function WorkerForm({ onSuccess, edit }: Props) {
   const [last, setLast]       = useState(sv('last_name'))
   const [first, setFirst]     = useState(sv('first_name'))
   const [middle, setMiddle]   = useState(sv('middle_name'))
-  const [orgUnit, setOrgUnit] = useState(sv('org_unit'))
+  // Цех хранится по id (org_unit_id) — по нему сервер ограничивает найм начальником цеха;
+  // org_unit (название) пишется рядом для совместимости со старыми записями.
+  const session = currentSession()
+  const access = workerAccess(session)
+  const lockedUnit = access === 'shop' ? session.orgUnitId : ''
+  const [orgUnitId, setOrgUnitId] = useState(lockedUnit || sv('org_unit_id'))
+  const [confirmDismiss, setConfirmDismiss] = useState(false)
   const [position, setPos]    = useState(sv('position'))
   const [grade, setGrade]     = useState(sv('grade', '3'))
   // Допуски — множество ID типов РЦ. Раньше был текстовый ввод; теперь галочки.
@@ -34,6 +42,14 @@ export function WorkerForm({ onSuccess, edit }: Props) {
   const [universal, setUniversal] = useState(() => !initialSkills.trim())
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+
+  // Старые записи без org_unit_id: подбираем цех по названию, когда справочник подгрузился.
+  useEffect(() => {
+    if (orgUnitId || !sv('org_unit') || orgUnits.length === 0) return
+    const byName = orgUnits.find((o) => o.name === sv('org_unit'))
+    if (byName) setOrgUnitId(byName.id)
+  }, [orgUnits])  // eslint-disable-line react-hooks/exhaustive-deps
+  const unitName = orgUnits.find((o) => o.id === orgUnitId)?.name ?? sv('org_unit')
 
   // Гидратация допусков, когда типы РЦ подгрузились асинхронно (режим правки):
   // useState-инициализатор мог сработать при пустом wcTypes.
@@ -81,7 +97,7 @@ export function WorkerForm({ onSuccess, edit }: Props) {
     try {
       const payload = {
         tab_no: tabNo, last_name: last, first_name: first,
-        middle_name: middle, org_unit: orgUnit, position,
+        middle_name: middle, org_unit: unitName, org_unit_id: orgUnitId, position,
         grade, skills,
       }
       if (edit) await api.workers.update(edit.id, payload)
@@ -89,6 +105,21 @@ export function WorkerForm({ onSuccess, edit }: Props) {
       onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const dismiss = async () => {
+    if (!edit) return
+    setLoading(true)
+    setError(null)
+    try {
+      await api.workers.delete(edit.id)
+      onSuccess()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось уволить')
+      setConfirmDismiss(false)
     } finally {
       setLoading(false)
     }
@@ -130,10 +161,12 @@ export function WorkerForm({ onSuccess, edit }: Props) {
       <div className="form__row">
         <div className="form__field">
           <label className="form__label">Подразделение / Цех</label>
-          <select className="form__select" value={orgUnit} onChange={(e) => setOrgUnit(e.target.value)}>
+          <select className="form__select" value={orgUnitId} disabled={Boolean(lockedUnit)}
+                  onChange={(e) => setOrgUnitId(e.target.value)}>
             <option value="">— выберите подразделение —</option>
-            {orgUnits.map((o) => <option key={o.id} value={o.name}>{o.name}</option>)}
+            {orgUnits.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
+          {lockedUnit && <span className="form__hint">Начальник цеха нанимает и переводит сотрудников только в свой цех.</span>}
         </div>
         <div className="form__field">
           <label className="form__label">Должность</label>
@@ -190,10 +223,29 @@ export function WorkerForm({ onSuccess, edit }: Props) {
       )}
 
       <div className="form__actions">
+        {edit && (
+          <button type="button" className="btn btn--danger" onClick={() => setConfirmDismiss(true)} disabled={loading}>
+            Уволить
+          </button>
+        )}
         <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>
-          {loading ? 'Сохраняем…' : 'Создать'}
+          {loading ? 'Сохраняем…' : edit ? 'Сохранить' : access === 'shop' ? 'Нанять' : 'Создать'}
         </button>
       </div>
+
+      {confirmDismiss && edit && (
+        <ConfirmDialog
+          title="Уволить сотрудника?"
+          confirmLabel="Уволить"
+          danger
+          busy={loading}
+          onCancel={() => setConfirmDismiss(false)}
+          onConfirm={dismiss}
+        >
+          {`${last} ${first}, таб. № ${tabNo}`} будет удалён из реестра рабочих; планы, построенные
+          с его участием, сохранятся. Действие попадёт в журнал.
+        </ConfirmDialog>
+      )}
     </div>
   )
 }

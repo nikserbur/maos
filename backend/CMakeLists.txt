@@ -130,6 +130,7 @@ if(MAOS_BUILD_TESTS)
   add_executable(maos_tests
     tests/test_cashlp.cpp
     tests/test_cashwaterfall.cpp
+    tests/test_access.cpp
     tests/test_finance.cpp
     tests/test_ga.cpp
     tests/test_macrosampler.cpp

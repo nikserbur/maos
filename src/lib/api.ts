@@ -93,6 +93,9 @@ export interface Worker {
   id: string; tab_no: string; last_name: string; first_name: string
   middle_name: string; org_unit: string; position: string
   grade: string; skills: string; created_at: string
+  /** Цех (FK org_units) — по нему сервер ограничивает найм начальником цеха. */
+  org_unit_id?: string | null
+  cost_per_hour?: string
 }
 export interface RoutingCreatePayload {
   name: string
@@ -110,7 +113,11 @@ export interface AuditAction {
 export interface User {
   id: string; login: string; status: string; failed_attempts: string
   role_id: string; role_name: string; permissions: string; created_at: string
+  /** Цех пользователя — область права HIRE_WORKERS (начальник цеха). */
+  org_unit_id?: string | null
 }
+export interface UserCreate { login: string; password: string; role_id: string; org_unit_id?: string }
+export interface UserPatch { role_id?: string; org_unit_id?: string; status?: string; password?: string }
 export interface Role { id: string; name: string; permissions: string }
 export interface OrgUnit { id: string; name: string; parent_id: string; unit_type?: string; kind?: string; pos_x?: string; pos_z?: string; lat?: string; lng?: string; created_at: string }
 
@@ -610,7 +617,7 @@ export const api = {
 
   auth: {
     login: (login: string, password: string, db?: string) =>
-      post<{ token: string; login: string; role: string; permissions: string[] }>(
+      post<{ token: string; login: string; role: string; permissions: string[]; org_unit_id?: string }>(
         '/auth/login', { login, password, db }),
   },
 
@@ -712,6 +719,8 @@ export const api = {
   admin: {
     users: () => get<User[]>('/users'),
     roles: () => get<Role[]>('/roles'),
+    createUser: (u: UserCreate) => post<{ id: string; login: string }>('/users', u),
+    updateUser: (id: string, patch: UserPatch) => put<Record<string, never>>(`/users/${id}`, patch),
   },
 
   orgUnits: {
