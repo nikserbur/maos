@@ -17,7 +17,7 @@ import { columnPath } from './Cartesian'
 import type { LegendItem } from './palette'
 import { axisNum, niceTicks, svgId, yTicks } from './scale'
 import { TICK_CHAR_W } from './axisLayout'
-import { pct } from '../../explain/format'
+import { joinRange, pct } from '../../explain/format'
 
 export interface Bin { x0: number; x1: number; count: number }
 
@@ -217,7 +217,7 @@ export function Histogram({
             </g>
           )}
           {hover != null && (
-            <ChartTooltip x={centerX(hoverApi.hover ?? 0)} y={PT} width={width} height={plotH} title={`${fmtX(bins[hover].x0)} – ${fmtX(bins[hover].x1)}`}
+            <ChartTooltip x={centerX(hoverApi.hover ?? 0)} y={PT} width={width} height={plotH} title={joinRange(fmtX(bins[hover].x0), fmtX(bins[hover].x1))}
               rows={[
                 { key: 's', label: seriesLabel, value: pct(shares[hover], 1), color: highlight?.(bins[hover]) ? 'var(--chart-4)' : 'var(--chart-1)' },
                 { key: 'n', label: 'прогонов', value: String(bins[hover].count) },

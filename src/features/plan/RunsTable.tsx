@@ -1,38 +1,44 @@
 /**
- * История прогонов Стадии 1 (UX-V2 §4.5 `RunsTable`): бэкенд хранит планы (`GET /api/simulation/plans`)
- * и их KPI (`GET /api/analytics/kpi_series`) — таблица собирается из них: дата, заказы, E[Cmax],
- * CVaR, OTD, узкое место. Выбор двух строк → сравнение бок о бок (`DiffTable`); клик по строке —
- * открыть прогон (полный результат есть для прогонов из кэша этой машины — X1 §5 п. 2).
+ * История прогонов Стадии 1 (UX-V2 §4.5, X2 «таблицы, а не стены карточек»): одна строка — один прогон
+ * с номером №N и временем сервера (runIndex), правилом и источником (паспорт прогона runMeta),
+ * E[Cmax] · CVaR · OTD · узкое место. Строка открывает `#/plan/run/<id>`: полный результат есть для
+ * прогонов из кэша этой машины, остальные — «только KPI». «Повторить» — в каждой строке; две отметки
+ * или «сравнить с текущим» — сравнение бок о бок с Δ к базе (DiffTable).
  */
-import { useEffect, useMemo, useState } from 'react'
-import { api, type KpiBundle, type SimPlanSummary } from '../../lib/api'
-import { dateTime, hours, money, num, pct } from '../../explain/format'
+import { useMemo, useRef, useState } from 'react'
+import { dateTimeShort, hours, money, num, pct } from '../../explain/format'
+import { ruleLabel } from '../../explain/labels'
 import { DiffTable, type DiffTableRow } from '../../ui/DiffList'
-import { Chip, DataTable, SkeletonRows, type DataColumn } from '../../ui/kit'
+import { Chip, DataTable, ErrorBanner, SkeletonRows, useDelayedFlag, type DataColumn } from '../../ui/kit'
+import { openRun, repeatRun } from './planNav'
+import { kpiOf, refreshRunIndex, useRunIndex, type RunRow } from './runIndex'
+import { browserStorage, runMetaMap, type RunMeta } from './runMeta'
+import type { ProgramSource } from './wizard/wizardStore'
 import './plan-screen.css'
 import './runs.css'
 
-export interface RunRow {
-  id: string
-  createdAt: string
-  nTasks: number
-  makespan: number
-  kpi: KpiBundle | null
+const OTD_FULL = 0.99
+
+export const SOURCE_LABEL: Readonly<Record<ProgramSource, string>> = { portfolio: 'портфель', orders: 'реестр заказов', manual: 'вручную' }
+
+/** «План №28» без хэшей; без номера — «прогон» (номер появится после индексации KPI). */
+export const runNo = (r: Pick<RunRow, 'seq'>): string => (r.seq !== null ? `№${num(r.seq, 0)}` : '—')
+
+export function ruleText(meta: RunMeta | undefined): string {
+  if (!meta) return '—'
+  return `${ruleLabel(meta.rule)}${meta.adopted ? ' + ГА' : ''}`
 }
 
-const fmtDate = (s: string) => dateTime(s)
-const kpiOf = (b: KpiBundle | null, f: string): number => (b && typeof b.kpi?.[f] === 'number' ? b.kpi[f] : Number.NaN)
-
-export function mergeRuns(plans: readonly SimPlanSummary[], series: readonly KpiBundle[]): RunRow[] {
-  const byId = new Map(series.filter((b) => b.plan_id).map((b) => [b.plan_id as string, b]))
-  return plans.map((p) => ({ id: p.id, createdAt: p.created_at, nTasks: Number(p.n_tasks) || 0, makespan: Number(p.makespan) || 0, kpi: byId.get(p.id) ?? null }))
+export function sourceText(meta: RunMeta | undefined): string {
+  if (!meta) return '—'
+  return [SOURCE_LABEL[meta.source], meta.scenarioName ? `«${meta.scenarioName}»` : ''].filter(Boolean).join(' · ')
 }
 
 const COMPARE_ROWS: ReadonlyArray<DiffTableRow<RunRow>> = [
-  { key: 'mk', label: 'E[Cmax]', get: (r) => kpiOf(r.kpi, 'makespan_mean'), fmt: (v) => hours(v, 0), better: 'low', always: true },
-  { key: 'cvar', label: 'CVaR длины', get: (r) => kpiOf(r.kpi, 'makespan_cvar'), fmt: (v) => hours(v, 0), better: 'low', always: true },
+  { key: 'mk', label: 'E[Cmax]', get: (r) => kpiOf(r.kpi, 'makespan_mean'), fmt: (v) => hours(v, 1), better: 'low', always: true },
+  { key: 'cvar', label: 'CVaR длины', get: (r) => kpiOf(r.kpi, 'makespan_cvar'), fmt: (v) => hours(v, 1), better: 'low', always: true },
   { key: 'otd', label: 'OTD', get: (r) => kpiOf(r.kpi, 'otd'), fmt: (v) => pct(v, 0), better: 'high', always: true },
-  { key: 'tard', label: 'Просрочка', get: (r) => kpiOf(r.kpi, 'tardiness'), fmt: (v) => hours(v, 0), better: 'low' },
+  { key: 'tard', label: 'Просрочка', get: (r) => kpiOf(r.kpi, 'tardiness'), fmt: (v) => hours(v, 1), better: 'low' },
   { key: 'util', label: 'Загрузка', get: (r) => kpiOf(r.kpi, 'utilization'), fmt: (v) => pct(v, 0), better: 'high', always: true },
   { key: 'wait', label: 'Доля ожидания', get: (r) => kpiOf(r.kpi, 'wait_share'), fmt: (v) => pct(v, 0), better: 'low' },
   { key: 'cost', label: 'Себестоимость работ', get: (r) => kpiOf(r.kpi, 'cost'), fmt: (v) => money(v), better: 'low' },
@@ -42,80 +48,92 @@ const COMPARE_ROWS: ReadonlyArray<DiffTableRow<RunRow>> = [
 ]
 
 interface RunsTableProps {
-  /** Выделить строку текущего результата. */
+  /** Прогон, открытый сейчас (адрес результата) — «текущий», база сравнения. */
   currentId?: string | null
-  /** Открыть прогон; строки, для которых `canOpen` ложно, показывают подсказку. */
-  onOpen?: (row: RunRow) => void
+  /** Какие прогоны открываются целиком (есть в кэше этой машины). */
   canOpen?: (id: string) => boolean
   limit?: number
 }
 
-const NO_FULL_RESULT = 'Полный результат (Гант, касса) есть только для прогонов, построенных на этой машине; KPI — в строке и в сравнении.'
-
-export function RunsTable({ currentId, onOpen, canOpen, limit = 12 }: RunsTableProps) {
-  const [rows, setRows] = useState<RunRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+export function RunsTable({ currentId = null, canOpen, limit = 12 }: RunsTableProps) {
+  const idx = useRunIndex()
   const [sel, setSel] = useState<string[]>([])
-  const [showAll, setShowAll] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    Promise.all([api.simulation.plans(), api.analytics.kpiSeries().catch(() => [] as KpiBundle[])])
-      .then(([plans, series]) => { if (alive) setRows(mergeRuns(plans, series)) })
-      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'нет связи') })
-    return () => { alive = false }
-  }, [currentId])
+  const cmpRef = useRef<HTMLElement>(null)
+  const meta = useMemo(() => runMetaMap(browserStorage()), [idx.rows])
+  const showSkeleton = useDelayedFlag(idx.rows === null && idx.loading)
+  const rows = idx.rows
 
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length < 2 ? [...s, id] : [s[1], id]))
-  const visible = useMemo(() => (rows ? (showAll ? rows : rows.slice(0, limit)) : []), [rows, showAll, limit])
-  const columns = sel.map((id) => rows?.find((r) => r.id === id)).filter((r): r is RunRow => Boolean(r)).map((r) => ({ id: r.id, title: fmtDate(r.createdAt), item: r }))
+  const compareWithCurrent = (id: string) => {
+    if (!currentId) return
+    setSel([currentId, id])
+    window.setTimeout(() => cmpRef.current?.scrollIntoView({ block: 'nearest' }), 0)
+  }
 
-  if (error) return <p className="pl-note">История прогонов недоступна: {error}</p>
-  if (!rows) return <SkeletonRows rows={4} label="Загрузка прогонов" />
-  if (rows.length === 0) return <p className="pl-note">Прогонов ещё нет — постройте первый план через «Новый план».</p>
-  const otdOf = (r: RunRow) => kpiOf(r.kpi, 'otd')
-  const openable = (r: RunRow) => Boolean(onOpen) && (canOpen ? canOpen(r.id) : true)
+  if (idx.error && !rows) {
+    return <ErrorBanner error={idx.error} title="История прогонов недоступна" message="Сервер не ответил — повторите или откройте последний прогон из кэша этой машины." onRetry={() => void refreshRunIndex()} />
+  }
+  if (!rows) return showSkeleton ? <SkeletonRows rows={4} label="Загрузка прогонов" /> : null
+
+  const openable = (r: RunRow) => r.id === currentId || (canOpen ? canOpen(r.id) : false)
+  const columns = sel.map((id) => rows.find((r) => r.id === id)).filter((r): r is RunRow => Boolean(r))
+    .map((r) => ({ id: r.id, title: `${runNo(r)} · ${dateTimeShort(r.createdAt)}`, item: r }))
   const cols: DataColumn<RunRow>[] = [
     { key: 'cmp', title: <span className="dk-vh">Сравнить</span>, sortable: false, hint: 'Отметьте два прогона для сравнения', className: 'pl-runs__pick',
       render: (r) => (
         // Вся ячейка — метка чекбокса; клик по ней не открывает прогон
         <label className="pl-runs__pick-label" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" aria-label={`сравнить прогон ${fmtDate(r.createdAt)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} />
+          <input type="checkbox" aria-label={`сравнить прогон ${runNo(r)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} />
         </label>
       ) },
-    { key: 'when', title: 'Когда', num: true, get: (r) => r.createdAt, className: 'dk-td-name',
-      render: (r) => <>{fmtDate(r.createdAt)}{r.id === currentId && <Chip tone="accent">текущий</Chip>}</> },
-    { key: 'ops', title: 'Операций', num: true, get: (r) => r.nTasks, render: (r) => num(r.nTasks, 0) },
-    { key: 'mk', title: 'E[Cmax]', num: true, get: (r) => kpiOf(r.kpi, 'makespan_mean') || r.makespan, render: (r) => hours(kpiOf(r.kpi, 'makespan_mean') || r.makespan, 0) },
-    { key: 'cvar', title: 'CVaR', num: true, get: (r) => kpiOf(r.kpi, 'makespan_cvar'), render: (r) => hours(kpiOf(r.kpi, 'makespan_cvar'), 0) },
-    { key: 'otd', title: 'OTD', num: true, get: otdOf,
-      render: (r) => { const otd = otdOf(r); return Number.isFinite(otd) ? <Chip tone={otd >= 0.99 ? 'good' : otd >= 0.9 ? 'warn' : 'bad'}>{pct(otd, 0)}</Chip> : '—' } },
-    { key: 'util', title: 'Загрузка', num: true, get: (r) => kpiOf(r.kpi, 'utilization'), render: (r) => pct(kpiOf(r.kpi, 'utilization'), 0) },
-    { key: 'bn', title: 'Узкое место', get: (r) => r.kpi?.bottleneck?.wc_name ?? '' , render: (r) => r.kpi?.bottleneck?.wc_name ?? '—' },
-    { key: 'open', title: <span className="dk-vh">Открыть</span>, sortable: false, className: 'pl-runs__open',
-      render: (r) => (openable(r) && r.id !== currentId ? <span className="pf-link dk-table__hover">открыть →</span> : null) },
+    { key: 'no', title: 'Прогон', rowHeader: true, get: (r) => r.seq ?? -1, className: 'dk-td-name',
+      render: (r) => <>{runNo(r)}{r.id === currentId && <Chip size="sm">открыт</Chip>}</> },
+    { key: 'when', title: 'Когда', get: (r) => r.createdAt, render: (r) => dateTimeShort(r.createdAt) },
+    { key: 'rule', title: 'Правило', get: (r) => ruleText(meta.get(r.id)), render: (r) => ruleText(meta.get(r.id)) },
+    { key: 'src', title: 'Источник · сценарий', get: (r) => sourceText(meta.get(r.id)), clip: true, render: (r) => sourceText(meta.get(r.id)) },
+    { key: 'mk', title: 'E[Cmax], ч', num: true, get: (r) => kpiOf(r.kpi, 'makespan_mean'), render: (r) => num(kpiOf(r.kpi, 'makespan_mean'), 1) },
+    { key: 'cvar', title: 'CVaR, ч', num: true, get: (r) => kpiOf(r.kpi, 'makespan_cvar'), render: (r) => num(kpiOf(r.kpi, 'makespan_cvar'), 1) },
+    { key: 'otd', title: 'OTD', num: true, get: (r) => kpiOf(r.kpi, 'otd'),
+      render: (r) => { const otd = kpiOf(r.kpi, 'otd'); return Number.isFinite(otd) && otd < OTD_FULL ? <span className="glyph-setup" title="есть опоздания">{pct(otd, 0)}</span> : pct(otd, 0) } },
+    { key: 'bn', title: 'Узкое место', get: (r) => r.kpi?.bottleneck?.wc_name ?? '', clip: true, render: (r) => r.kpi?.bottleneck?.wc_name ?? '—' },
+    { key: 'act', title: <span className="dk-vh">Действия</span>, sortable: false, className: 'pl-runs__act',
+      render: (r) => (
+        <span className="pl-runs__acts" onClick={(e) => e.stopPropagation()}>
+          {openable(r)
+            ? (r.id !== currentId && <button type="button" className="pf-link" onClick={() => openRun(r.id)}>открыть</button>)
+            : (
+              <>
+                <Chip size="sm" title="Полный результат (Гант, касса) построен на другой машине или вытеснен из кэша — доступны KPI">только KPI</Chip>
+                {currentId && <button type="button" className="pf-link" onClick={() => compareWithCurrent(r.id)}>сравнить с текущим</button>}
+              </>
+            )}
+          <button type="button" className="pf-link" onClick={() => repeatRun(r.id)}
+            title={meta.has(r.id) ? 'Те же параметры — на шаге «Запуск»' : 'Параметры этого прогона не сохранены — откроется мастер с текущими значениями'}>
+            повторить
+          </button>
+        </span>
+      ) },
   ]
   return (
     <div className="pl-runs">
       <DataTable
         className="pl-runs__table"
         columns={cols}
-        rows={visible}
+        rows={rows}
         rowKey={(r) => r.id}
         tight
         caption="История прогонов"
-        onRowClick={onOpen ? (r) => { if (openable(r)) onOpen(r) } : undefined}
+        loading={idx.loading}
+        empty="Прогонов ещё нет"
+        emptyKind="first-use"
+        limit={limit}
+        onRowClick={(r) => openRun(r.id)}
         rowClassName={(r) => (r.id === currentId ? 'is-chosen' : undefined)}
-        rowTitle={(r) => (openable(r) ? 'Открыть прогон' : onOpen ? NO_FULL_RESULT : undefined)}
+        rowTitle={(r) => (openable(r) ? 'Открыть прогон' : 'Открыть KPI прогона')}
       />
-      {rows.length > limit && (
-        <button type="button" className="pf-link" onClick={() => setShowAll((v) => !v)}>
-          {showAll ? 'свернуть' : `показать все ${num(rows.length, 0)}`}
-        </button>
-      )}
       {columns.length === 2 && (
-        <section className="pl-runs__cmp" aria-label="Сравнение прогонов">
-          <DiffTable columns={columns} rows={COMPARE_ROWS} caption="Сравнение A / B — только отличающиеся KPI; лучше — зелёным" />
+        <section ref={cmpRef} className="pl-runs__cmp" aria-label="Сравнение прогонов">
+          <DiffTable columns={columns} rows={COMPARE_ROWS} caption="Сравнение A / B — отличающиеся KPI и Δ к первому" />
         </section>
       )}
     </div>

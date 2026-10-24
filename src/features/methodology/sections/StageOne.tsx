@@ -5,6 +5,7 @@ export function Idef0Section() {
   return (
     <Section
       id="idef0"
+      blocks={['internal']}
       stages={[
         ['done', 'редактор маршрута в нотации IDEF0 (линейная цепочка)'],
         ['w1', 'граф процесса: сырьё → операция → полуфабрикат → изделие (DAG)'],
@@ -37,6 +38,7 @@ export function HeavyTailSection() {
   return (
     <Section
       id="heavy-tail"
+      blocks={['distributions']}
       stages={[
         ['done', 'логнормаль + Парето-примесь + переделка (sample_dur), Монте-Карло с CRN'],
         ['w2', 'подгонка к факту (MLE/AIC), разделение эпистемического и пакетного шума'],
@@ -79,6 +81,7 @@ export function LotStreamingSection() {
   return (
     <Section
       id="lot-streaming"
+      blocks={['decisions']}
       stages={[
         ['done', 'равные согласованные подпартии, N = min(16, q / размер партии)'],
         ['w1', 'стыковка по последней нужной подпартии входа (B1)'],
@@ -111,10 +114,12 @@ export function DispatchSection() {
   return (
     <Section
       id="dispatch-rules"
+      blocks={['decisions']}
       stages={[
         ['done', '7 статических правил, конструктор CUSTOM, ГА поверх правил с проверкой вне выборки'],
-        ['w2', 'ATC/COVERT, эталон CP-SAT, бенчмарки Taillard и Brandimarte'],
-        ['w3', 'обучаемый диспетчер (RL)'],
+        ['cpsat'],
+        ['rl', 'обучаемый диспетчер RL проверен: гейт не пройден, чемпион — правило'],
+        ['w2', 'правила ATC/COVERT'],
       ]}
       lead={<>Правило задаёт приоритет операций, а списочный алгоритм ставит каждую на самый ранний допустимый момент.
         Правила дёшевы и объяснимы, но оптимальны лишь в частных случаях.</>}
@@ -159,6 +164,7 @@ export function MrpSection() {
   return (
     <Section
       id="mrp"
+      blocks={['internal']}
       stages={[
         ['done', 'нетто-расчёт по кодам нижнего уровня, кратность партии, страховой запас'],
         ['w1', 'смещение на срок изготовления партии (B14)'],

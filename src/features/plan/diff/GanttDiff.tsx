@@ -56,6 +56,11 @@ export function GanttDiff({ diff, mode, palette, start, showUnchanged, currentKe
   const ticks = makeTicks(diff.makespan, step)
   const both = mode === 'diff'
 
+  // Пустой вид — одна строка без оси дат (X2: пустое не выглядит результатом).
+  if (lanes.length === 0) {
+    return <div ref={wrapRef} className="gd"><p className="pl-note gd-empty">Изменённых дорожек нет: принятые ходы не меняют расписание (например, транш) или решения ещё не приняты.</p></div>
+  }
+
   return (
     <div ref={wrapRef} className="gd" onMouseLeave={() => setHover(null)}>
       <div className="gd-axis">
@@ -69,7 +74,6 @@ export function GanttDiff({ diff, mode, palette, start, showUnchanged, currentKe
           ))}
         </svg>
       </div>
-      {lanes.length === 0 && <p className="pl-note gd-empty">Изменённых дорожек нет: принятые ходы не меняют расписание (например, транш) или решения ещё не приняты.</p>}
       {lanes.map((lane) => (
         <LaneRow key={lane.machineId} lane={lane} both={both} mode={mode} trackW={trackW} px={px} ticks={ticks} step={step}
           palette={palette} currentKey={currentKey} selectedMove={selectedMove} onPick={onPick}

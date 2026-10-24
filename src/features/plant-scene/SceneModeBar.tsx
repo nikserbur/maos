@@ -1,44 +1,70 @@
 /**
- * Единая панель режимов над канвасом схемы (X1 §1 п. 6): «Просмотр · Редактирование ·
- * Симуляция» одним Segmented, справа — «Вписать» (F) и подсказка уровня. Заменяет угловую
- * кнопку «Симуляция» и селект режима в инспекторе.
+ * Полоса над канвасом схемы (X2 P-27, P-29, P-33, P-39). Ряд 1: режимы «Просмотр · Редактирование ·
+ * Симуляция» (по уровню: на мировом уровне правка и симуляция объясняют, где они работают),
+ * крошки уровней кита («Мир › Предприятие › Цех №3 · 36 станков» — имя уровня один раз),
+ * инструменты: «Вписать» (F), пауза анимации, «?» управление. Ряд 2: вердикт плана и легенда.
  */
-import { IconButton, Segmented, type SegOption } from '../../ui/kit'
+import type { ReactNode } from 'react'
+import { Breadcrumbs, Segmented, type Crumb, type SegOption } from '../../ui/kit'
+import { AnimationToggle } from '../../ui/motion'
+import { Icon } from '../../shell/icons'
+import { SceneHelp } from './SceneHelp'
+import type { SceneLevel } from './InspectorEmpty'
 
 export type SceneUiMode = 'view' | 'edit' | 'sim'
 
-const MODES: ReadonlyArray<SegOption<SceneUiMode>> = [
-  { id: 'view', label: 'Просмотр', icon: 'scheme', title: 'Навигация по схеме без правок' },
-  { id: 'edit', label: 'Редактирование', icon: 'gear', title: 'Перемещение, связи, регистрация оборудования' },
-  { id: 'sim', label: 'Симуляция', icon: 'play', title: 'Проиграть построенный план на 3D-схеме' },
-]
+export interface ModeAvailability {
+  /** Причина, по которой «Редактирование» недоступно на уровне (иначе null). */
+  edit: string | null
+  /** Причина, по которой «Симуляция» недоступна на уровне (иначе null). */
+  sim: string | null
+}
 
-const LEVEL_LABEL: Record<'world' | 'site' | 'shop', string> = {
-  world: 'Мир — заводы и склад',
-  site: 'Площадка — цеха',
-  shop: 'Цех — станки',
+function modeOptions(av: ModeAvailability): ReadonlyArray<SegOption<SceneUiMode>> {
+  return [
+    { id: 'view', label: 'Просмотр', icon: 'scheme', title: 'Навигация по схеме без правок' },
+    { id: 'edit', label: 'Редактирование', icon: 'gear', disabled: av.edit !== null,
+      title: av.edit ?? 'Имена, расположение, связи, добавление цехов и станков — с «Отменить»' },
+    { id: 'sim', label: 'Симуляция', icon: 'play', disabled: av.sim !== null,
+      title: av.sim ?? 'Проиграть построенный план на 3D-схеме' },
+  ]
 }
 
 interface SceneModeBarProps {
   mode: SceneUiMode
   onMode: (mode: SceneUiMode) => void
-  level: 'world' | 'site' | 'shop'
-  /** Кол-во узлов текущего уровня — мета справа от названия уровня. */
-  count: number
+  availability: ModeAvailability
+  level: SceneLevel
+  crumbs: ReadonlyArray<Crumb>
+  /** Счётчик уровня после крошек: «36 станков», «Предприятия (3) · склады (1)». */
+  countText: string
+  verdict: ReactNode
+  legend: ReactNode
   onFit: () => void
 }
 
-export function SceneModeBar({ mode, onMode, level, count, onFit }: SceneModeBarProps) {
-  const canFit = level !== 'world'
+export function SceneModeBar({ mode, onMode, availability, level, crumbs, countText, verdict, legend, onFit }: SceneModeBarProps) {
   return (
-    <div className="scene__bar" role="toolbar" aria-label="Режим схемы">
-      <Segmented options={MODES} value={mode} onChange={onMode} label="Режим схемы" fit size="md" />
-      <div className="scene__bar-level">
-        <span className="scene__bar-level-name">{LEVEL_LABEL[level]}</span>
-        <span className="scene__bar-level-count num">{count}</span>
+    <div className="scene__bar">
+      <div className="scene__bar-row">
+        <Segmented options={modeOptions(availability)} value={mode} onChange={onMode} label="Режим схемы" fit size="md" />
+        <div className="scene__bar-level">
+          <Breadcrumbs items={crumbs} label="Уровни схемы" className="scene__crumbs" />
+          {countText && <span className="scene__bar-count">· {countText}</span>}
+        </div>
+        <div className="scene__bar-tools">
+          {level !== 'world' && (
+            <button type="button" className="btn btn--sm" onClick={onFit} aria-keyshortcuts="F" title="Вписать уровень в кадр (F)">
+              <Icon name="expand" size={14} />Вписать
+            </button>
+          )}
+          <AnimationToggle />
+          <SceneHelp level={level} />
+        </div>
       </div>
-      <div className="scene__bar-tools">
-        {canFit && <IconButton icon="expand" onClick={onFit} title="Вписать (F)">Вписать</IconButton>}
+      <div className="scene__bar-row scene__bar-row--meta">
+        <p className="scene__verdict">{verdict}</p>
+        {legend}
       </div>
     </div>
   )

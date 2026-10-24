@@ -1,8 +1,10 @@
 /**
- * Узлы петель карты: [6] Агенты (RL — среда, стенд и правило «RL» реализованы в волне A, политика
- * гейт не прошла; игры — волна 3), [7] Прогноз и мониторинг, [8] LLM (MENTAT).
- * Честная граница: что реализовано — `done`, остальное `w1…w3`.
+ * Узлы петель карты: [6] Агенты (RL исследован в волнах A1–A4: гейт не пройден, найденное правило —
+ * в продукте; игры — волна 3), [7] Прогноз и мониторинг, [8] LLM (MENTAT, v0.74).
+ * Честная граница: стадия — из единого реестра src/explain/stages.ts (поле `feature`), иначе `stage`.
  */
+import { countText } from '../../explain/format'
+import { METRIC_LIST } from '../../explain/metrics'
 import type { MapNode } from './types'
 
 function formulas(parent: string, block: MapNode['block'], ids: readonly string[]): MapNode[] {
@@ -16,7 +18,7 @@ export const LOOP_NODES: readonly MapNode[] = [
   /* ── [6] Агенты ───────────────────────────────────────────────────────── */
   { id: 'ag.rl', kind: 'subblock', block: 'agents', parent: 'agents', shape: 'disc',
     title: 'Агент RL L0/L2 со структурными ходами', short: 'Перестраивает план: маршрут, станок, партии, цех, аутсорсинг, сдвиг, отказ; каждый ход — Монте-Карло по CVaR прибыли и кассы.',
-    screen: { id: 'agents' }, diagram: 'agent-layers', learnMore: 'rl', stage: 'done' },
+    screen: { id: 'agents' }, diagram: 'agent-layers', learnMore: 'rl', feature: 'rl' },
   { id: 'ag.rl.policy', kind: 'parameter', block: 'agents', parent: 'ag.rl', paramId: 'agent.policy_version',
     title: 'agent.policy_version', shape: 'square' },
   { id: 'ag.rl.screen', kind: 'screen', block: 'agents', parent: 'ag.rl', title: 'План · правило «RL»',
@@ -30,7 +32,7 @@ export const LOOP_NODES: readonly MapNode[] = [
 
   { id: 'ag.games', kind: 'subblock', block: 'agents', parent: 'agents', shape: 'disc',
     title: 'Игры: цена анархии, Штакельберг', short: 'Игра цехов против кооператива; «банк/поставщик → предприятие»; выученные цены планировщика против двойственных LP.',
-    screen: { id: 'agents' }, learnMore: 'agent-layers', stage: 'w3' },
+    screen: { id: 'agents' }, learnMore: 'agent-layers', feature: 'games' },
 
   /* ── [7] Прогноз и мониторинг ─────────────────────────────────────────── */
   { id: 'mon.forecast', kind: 'subblock', block: 'monitoring', parent: 'monitoring', shape: 'disc',
@@ -53,16 +55,16 @@ export const LOOP_NODES: readonly MapNode[] = [
 
   { id: 'mon.early', kind: 'subblock', block: 'monitoring', parent: 'monitoring', shape: 'disc',
     title: 'Раннее предупреждение', short: 'Мониторинг кассы и срывов: сигналы, когда факт выходит за веер плана.',
-    screen: { id: 'monitoring' }, learnMore: 'overview', stage: 'w2' },
+    screen: { id: 'monitoring' }, learnMore: 'overview', feature: 'early-warning' },
 
   /* ── [8] LLM ──────────────────────────────────────────────────────────── */
   { id: 'llm.explain', kind: 'subblock', block: 'llm', parent: 'llm', shape: 'point',
-    title: 'Реестр «i»: как считается число', short: '56 формул с живой подстановкой, обозначениями, методом и оговорками; якоря в «Методику».',
+    title: 'Реестр «i»: как считается число', short: `${countText(METRIC_LIST.length, ['формула', 'формулы', 'формул'])} с живой подстановкой, обозначениями, методом и оговорками; якоря в «Методику».`,
     screen: { id: 'methodology' }, learnMore: 'overview', stage: 'done' },
   { id: 'llm.explain.screen', kind: 'screen', block: 'llm', parent: 'llm.explain', title: 'Методика (лонгрид)',
     screen: { id: 'methodology' } },
 
   { id: 'llm.mentat', kind: 'subblock', block: 'llm', parent: 'llm', shape: 'point',
-    title: 'MENTAT: объяснение по графу расчёта', short: 'Панель «почему так» (Cmd/Ctrl+J): контекст графа расчёта → промпт → локальная LLM владельца → проверка верности каждого числа по узлу. Модель подключается позже — до этого «Показать промпт».',
-    screen: { id: 'aiflow' }, learnMore: 'overview', stage: 'w2' },
+    title: 'MENTAT: объяснение по графу расчёта', short: 'Панель «почему так» (Cmd/Ctrl+J): контекст графа расчёта → промпт → локальная модель владельца → проверка верности каждого числа по узлу. Пока модель не подключена — «Показать промпт».',
+    learnMore: 'overview', feature: 'mentat', action: 'mentat' },
 ]

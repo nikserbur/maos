@@ -1,124 +1,84 @@
 /**
- * Вкладка «Прогон»: выбор плана строками истории (дата · операций · горизонт · OTD),
- * плеер (старт/пауза, в начало, скорость, ползунок времени), живые показатели, легенда
- * обозначений 3D-сцены и итог прогона.
+ * Вкладка «Прогон» (X2 P-36, P-37, P-40): прогоны — 3 строки + «все N» (Когда · Операций · В срок;
+ * ▲ «под риском» только ниже 90 %), живые показатели, выбранный в сцене объект, одна строка о
+ * нехватке операторов, свёрнутые «Обозначения (N)», итог прогона с единственной заливной кнопкой —
+ * следующим шагом «Результаты». Плеер — в полосе времени внизу канваса.
  */
-import type { MutableRefObject } from 'react'
-import { Chip, DataTable, IconButton, type DataColumn } from '../../ui/kit'
-import { Legend } from '../../ui/charts'
-import { hours, num, pct } from '../../explain/format'
-import { LaborWarning } from '../nsi/LaborWarning'
-import type { SimState } from './SimulationLayer'
-import { SimKpi } from './SimKpi'
-import { fmtClock, fmtHorizon, fmtRunDate, type SimRun } from './simModel'
+import type { ReactNode } from 'react'
+import { Chip, DataTable, ErrorBanner, IconButton, type DataColumn } from '../../ui/kit'
+import { Legend, type LegendItem } from '../../ui/charts'
+import { countText, num, pct } from '../../explain/format'
+import { fmtRunDate, type SimRun } from './simModel'
+import type { SimSession } from './useSimSession'
 
-export const SPEEDS = [1, 6, 24, 120, 720]   // модельных часов за секунду
-
-export interface SimMeta { planId: string | null; n: number; makespan: number; workers: number }
-export interface SimLive { t: number; busy: number; done: number; playing: boolean; speed: number; peakBusy: number }
-
-/* Обозначения SimulationLayer: кольцо занятости — chart-3, очередь — chart-2, рабочие — chart-5,
-   партии — слоты палитры по изделию (здесь — первый). */
-const LEGEND = [
-  { key: 'busy', label: 'кольцо — узел занят (ярче при большей загрузке)', color: 'var(--chart-3)', shape: 'line' as const },
-  { key: 'queue', label: 'ящики — очередь партий', color: 'var(--chart-2)', shape: 'rect' as const },
-  { key: 'worker', label: 'фигурки — рабочие у станков и на переходах', color: 'var(--chart-5)', shape: 'dot' as const },
-  { key: 'batch', label: 'партии летят между станками по маршрутам', color: 'var(--chart-1)', shape: 'dot' as const },
-]
-
-const otdTone = (v: number) => (v >= 0.99 ? 'running' : v >= 0.9 ? 'setup' : 'down')
+/** Порог «под риском»: доля заказов в срок ниже 90 %. */
+const OTD_RISK = 0.9
+const RUN_ROWS = 3
+const TYPE_FORMS = ['тип', 'типа', 'типов'] as const
+const OP_FORMS = ['операция', 'операции', 'операций'] as const
 
 const COLUMNS: ReadonlyArray<DataColumn<SimRun>> = [
   { key: 'createdAt', title: 'Когда', rowHeader: true, get: (r) => r.createdAt, render: (r) => fmtRunDate(r.createdAt) },
-  { key: 'nTasks', title: 'Оп.', num: true, get: (r) => r.nTasks, render: (r) => num(r.nTasks, 0) },
-  { key: 'makespan', title: 'Горизонт', num: true, get: (r) => r.makespan, render: (r) => hours(r.makespan, 0) },
-  { key: 'otd', title: 'OTD', num: true, get: (r) => r.otd,
-    render: (r) => (Number.isFinite(r.otd) ? <Chip size="sm" tone={otdTone(r.otd)}>{pct(r.otd, 0)}</Chip> : '—') },
+  { key: 'nTasks', title: 'Операций', num: true, get: (r) => r.nTasks, render: (r) => num(r.nTasks, 0) },
+  { key: 'otd', title: 'В срок', num: true, get: (r) => (Number.isFinite(r.otd) ? r.otd : null), hint: 'Доля заказов в срок (OTD)',
+    render: (r) => (!Number.isFinite(r.otd) ? <span className="sim__muted" title="KPI прогона не сохранены">—</span>
+      : r.otd < OTD_RISK ? <Chip size="sm" tone="setup">{pct(r.otd, 0)} под риском</Chip> : pct(r.otd, 0)) },
 ]
 
 interface SimulationRunsProps {
-  sim: MutableRefObject<SimState>
-  runs: SimRun[]
-  planId: string
-  meta: SimMeta | null
-  live: SimLive
-  onPickPlan: (id: string) => void
+  session: SimSession
+  /** Объект, выбранный в сцене (занятость, очередь, текущая операция). */
+  nodeInfo: ReactNode
+  legend: ReadonlyArray<LegendItem>
   onResults: () => void
-  onCalib: () => void
 }
 
-export function SimulationRuns({ sim, runs, planId, meta, live, onPickPlan, onResults, onCalib }: SimulationRunsProps) {
-  const clock = fmtClock(live.t)
+export function SimulationRuns({ session, nodeInfo, legend, onResults }: SimulationRunsProps) {
+  const { runs, runsError, planId, meta, live, labor } = session
   const finished = !!meta && meta.n > 0 && live.done >= meta.n
-  const togglePlay = () => { const s = sim.current; if (s.t >= s.makespan) s.t = 0; s.playing = !s.playing }
-  const rewind = () => { sim.current.t = 0; sim.current.playing = false }
-
   return (
     <div className="dk-stack sim__stack">
-      {runs.length > 0 && (
+      {runsError ? (
+        <ErrorBanner title="История прогонов не загрузилась" error={runsError} onRetry={session.reloadRuns} />
+      ) : runs && runs.length > 0 && (
         <div className="sim__runs">
-          <DataTable columns={COLUMNS} rows={runs} rowKey={(r) => r.id} tight framed caption="Прогоны: выберите план"
-                     onRowClick={(r) => onPickPlan(r.id)} rowClassName={(r) => (r.id === planId ? 'is-chosen' : undefined)}
+          <DataTable columns={COLUMNS} rows={runs} rowKey={(r) => r.id} tight caption="Прогоны: выберите план" limit={RUN_ROWS}
+                     onRowClick={(r) => session.loadPlan(r.id)} rowClassName={(r) => (r.id === planId ? 'is-chosen' : undefined)}
                      rowTitle={() => 'Проиграть этот план'} />
         </div>
       )}
 
+      {session.planError !== null && session.planError !== undefined && (
+        <ErrorBanner title="План для симуляции не загрузился" error={session.planError} onRetry={() => session.loadPlan(planId || undefined)} />
+      )}
+
       {meta?.planId && (
-        <>
-          <div className="sim__player">
-            <div className="sim__transport">
-              <button type="button" className="sim__play" aria-label={live.playing ? 'Пауза' : 'Запустить'}
-                      aria-pressed={live.playing} onClick={togglePlay}>
-                <IconGlyph playing={live.playing} />
-              </button>
-              <IconButton icon="rewind" size="sm" onClick={rewind} title="В начало" />
-              <select className="sim__select" value={live.speed} aria-label="Скорость"
-                      onChange={(e) => { sim.current.speed = Number(e.target.value) }}>
-                {SPEEDS.map((sp) => <option key={sp} value={sp}>×{num(sp, 0)} ч/с</option>)}
-              </select>
-              <div className="sim__clock num">
-                день {clock.day} · {clock.time}
-                <small>горизонт {fmtHorizon(meta.makespan)}</small>
-              </div>
-            </div>
-            <input className="sim__range" type="range" min={0} max={Math.max(1, meta.makespan)} aria-label="Модельное время"
-                   step={meta.makespan / 500 || 1} value={live.t}
-                   onChange={(e) => { sim.current.t = Number(e.target.value); sim.current.playing = false }} />
-          </div>
+        <dl className="sim__live" aria-live="off">
+          <div><dt>Занято станков</dt><dd className="num">{num(live.busy, 0)} <small>пик {num(live.peakBusy, 0)}</small></dd></div>
+          <div title={`${num(live.done, 0)} из ${countText(meta.n, OP_FORMS)}`}><dt>Выполнено</dt><dd className="num">{pct(meta.n ? live.done / meta.n : 0, 0)}</dd></div>
+        </dl>
+      )}
 
-          <div className="sim__kpis">
-            <SimKpi k="Занято станков" v={num(live.busy, 0)} sub={`пик ${num(live.peakBusy, 0)}`} />
-            <SimKpi k="Выполнено" v={pct(meta.n ? live.done / meta.n : 0, 0)} sub={`${num(live.done, 0)}/${num(meta.n, 0)}`} />
-            <SimKpi k="Рабочих" v={num(meta.workers, 0)} />
-          </div>
+      {nodeInfo}
 
-          <Legend items={LEGEND} className="sim__legend" />
-          <LaborWarning compact />
+      {labor && labor.length > 0 && (
+        <ErrorBanner tone="setup"
+                     title={`Операторов с допуском не хватает на ${countText(labor.length, TYPE_FORMS)} оборудования`}
+                     message={<a className="ep-link" href="#/nsi/worker">подробнее → Справочники › Рабочие</a>} />
+      )}
 
-          {/* Итог прогона: появляется, когда время дошло до конца горизонта. */}
-          {finished && (
-            <div className="sim__done dk-rise" role="status">
-              <div className="sim__done-title glyph-running">Прогон завершён</div>
-              <div className="sim__done-meta num">
-                операций {num(meta.n, 0)} · горизонт {fmtHorizon(meta.makespan)} · пик занятости {num(live.peakBusy, 0)} станков
-              </div>
-              <div className="sim__row">
-                <IconButton icon="chart" variant="primary" size="sm" onClick={onResults}>Результаты</IconButton>
-                <IconButton icon="gear" size="sm" onClick={onCalib}>Калибровка НСИ</IconButton>
-              </div>
-            </div>
-          )}
-        </>
+      <details className="sim__legend">
+        <summary>Обозначения ({num(legend.length, 0)})</summary>
+        <Legend items={legend} className="sim__legend-list" />
+      </details>
+
+      {finished && meta && (
+        <div className="sim__done" role="status">
+          <div className="sim__done-title">Прогон завершён</div>
+          <div className="sim__done-meta">пик занятости — {countText(live.peakBusy, ['станок', 'станка', 'станков'])}</div>
+          <IconButton icon="chart" variant="primary" size="sm" onClick={onResults}>Результаты</IconButton>
+        </div>
       )}
     </div>
-  )
-}
-
-/** Иконка плеера (play/pause) — тем же штрихом, что и Icon кита. */
-function IconGlyph({ playing }: { playing: boolean }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
-      {playing ? <path d="M7 5h4v14H7zM13 5h4v14h-4z" /> : <path d="M8 4.5v15l12-7.5z" />}
-    </svg>
   )
 }

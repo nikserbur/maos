@@ -6,13 +6,14 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
-import { useDecisionContext } from '../../shell/context'
+import { markInputsChanged, useDecisionContext } from '../../shell/context'
 import { useOptStore } from '../optimization/optStore'
 import { ensureRefs, invalidateScenario, resolveScenarioId, useRefs } from '../method-map/useMethodMapState'
 import { payloadOf } from './scenarioPayload'
+import { SCENARIO_DEFAULTS } from './scenarioDefaults'
 
 const SAVE_DEBOUNCE_MS = 400
-export const ALPHA_FALLBACK = 0.1
+export const ALPHA_FALLBACK = SCENARIO_DEFAULTS.alpha
 
 export type AlphaSave = 'idle' | 'pending' | 'saved' | 'error'
 
@@ -53,7 +54,7 @@ export function useScenarioAlpha(): ScenarioAlpha {
     timer.current = window.setTimeout(() => {
       api.scenarios.get(scenarioId)
         .then((full) => api.scenarios.update(scenarioId, payloadOf(full, { alpha: next })))
-        .then(() => { invalidateScenario(scenarioId); return ensureRefs(true) })
+        .then(() => { invalidateScenario(scenarioId); markInputsChanged('scenario'); return ensureRefs(true) })
         .then(() => { setSave('saved'); setLocal(null) })
         .catch(() => setSave('error'))
     }, SAVE_DEBOUNCE_MS)

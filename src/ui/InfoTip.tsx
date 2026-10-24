@@ -29,7 +29,7 @@ import { bindFormulaParts, fmtValue, type FormatInput } from '../explain/format'
 import { getMetric } from '../explain/metrics'
 import { nodeForMetric } from '../features/method-map/registry'
 import type { MetricExplain } from '../explain/types'
-import { overlayActions } from '../shell/overlays'
+import { overlayActions, useEscapeLayer } from '../shell/overlays'
 import './infotip.css'
 
 export type InfoTipValues = Readonly<Record<string, FormatInput>>
@@ -157,6 +157,9 @@ export function InfoTipPopover({ anchor, placement, popId, titleId, onClose, chi
       panelRef.current?.focus({ preventScroll: true })
     }
   }, [isPositioned])
+
+  // Слой стека Esc (самый внутренний); сам Esc перехватывается ещё раньше — в фазе захвата ниже.
+  useEscapeLayer('tip', () => onClose(true))
 
   // Esc и клик снаружи. Esc перехватывается в фазе захвата, чтобы не закрыть заодно модальное окно.
   useEffect(() => {

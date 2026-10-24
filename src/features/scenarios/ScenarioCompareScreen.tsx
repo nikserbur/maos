@@ -1,169 +1,143 @@
 /**
- * Экран «Сценарии» V2 (UX-V2 §5.1): слева реестр (открыть сценарий → ScenarioTabs; «Сравнить» —
- * режим списка с N отметками → ScenarioCompare), создание из шаблона (ScenarioCreateDialog),
- * удаление с подтверждением. Ползунки и поля сохраняются с задержкой 400 мс (один PUT на серию
- * движений), уход с экрана досылает несохранённое; открытый сценарий — контекст решения.
+ * Экран «Сценарии» (UX-V2 §5.1, X2): слева реестр, справа открытый сценарий или сравнение.
+ * Всё, к чему стоит вернуться, — в адресе: `#/scenarios/<id>/<вкладка>`, `#/scenarios/compare/<id>,<id>`
+ * (F5 восстанавливает вид). Открытый сценарий: адрес → рабочий → первый; просмотр рабочий НЕ меняет —
+ * только явное «Сделать рабочим» или переход к следующему шагу («Найти робастный портфель →»).
+ * Удаление — в «⋯» с подтверждением, называющим объект и последствие, и с «Отменить» в тосте.
  */
 import { useEffect, useRef, useState } from 'react'
-import { api, type MacroRegimes, type PriceScenario, type Product, type PriceDistribution } from '../../lib/api'
-import { setDecisionContext } from '../../shell/context'
-import { BlockChips } from '../../ui/BlockChip'
-import { IconButton } from '../../ui/kit'
-import { Icon } from '../../shell/icons'
-import { num, pct } from '../../explain/format'
+import { setDecisionContext, useDecisionContext } from '../../shell/context'
+import { setCrumbTitle } from '../../shell/crumbs'
+import { navigateTo, replaceRoute, useHashRoute } from '../../shell/router'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { invalidateScenario, useRefs, ensureRefs } from '../method-map/useMethodMapState'
+import { EmptyState, ErrorBanner, Skeleton, errorDetail, showUndo } from '../../ui/kit'
+import { useRefs } from '../method-map/useMethodMapState'
 import { ScenarioCompare } from './ScenarioCompare'
 import { ScenarioCreateDialog } from './ScenarioCreateDialog'
-import { ScenarioTabs, type SaveStatus } from './ScenarioTabs'
-import { fromMacroMode, regimeLabel } from './regimeMenu'
+import { ScenarioList } from './ScenarioList'
+import { ScenarioTabs } from './ScenarioTabs'
+import {
+  compareAnchor, initialCompare, parseScenarioAnchor, resolveOpenId, scenarioAnchor, toggleCompare, workingIdOf, type ScenarioTab,
+} from './scenarioRoute'
 import type { ScenarioTemplate } from './scenarioTemplates'
-import { payloadOf } from './scenarioPayload'
+import { useScenarioData } from './useScenarioData'
 import './scenario-compare.css'
 import './scenarios-v2.css'
 
-/** Ползунки сохраняются с задержкой: один PUT на серию движений, а не на каждый тик (UX-V2 §5.1). */
-const SAVE_DEBOUNCE_MS = 400
+const SCREEN = 'scenarios'
 
-const OBJECTIVES: Record<string, string> = { cvar: 'CVaR', worstcase: 'maximin', meanvariance: 'E − λσ', minregret: 'Сэвидж' }
+/** Заменить адрес без записи истории и оповестить подписчиков (отметки сравнения, нормализация). */
+function replaceAnchor(anchor: string): void {
+  replaceRoute(SCREEN, anchor)
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
+}
 
 export function ScenarioCompareScreen() {
-  const [scenarios, setScenarios] = useState<PriceScenario[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [regimes, setRegimes] = useState<MacroRegimes | null>(null)
-  const [sel, setSel] = useState<string[]>([])
-  const [openId, setOpenId] = useState('')
-  const [compareMode, setCompareMode] = useState(false)
+  const data = useScenarioData()
+  const refs = useRefs()
+  const ctx = useDecisionContext()
+  const { anchor } = useHashRoute()
+  const route = parseScenarioAnchor(anchor)
+  const ids = data.scenarios.map((s) => s.id)
+  const workingId = workingIdOf(ctx.scenarioId, ids)
+  const openId = resolveOpenId(route.id, ctx.scenarioId, ids)
+  const open = data.scenarios.find((s) => s.id === openId) ?? null
+  const lastOpen = useRef('')
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [removeId, setRemoveId] = useState<string | null>(null)
-  const [saveStatus, setSaveStatus] = useState<Record<string, SaveStatus>>({})
-  const saveTimers = useRef(new Map<string, number>())
-  const pending = useRef(new Map<string, PriceScenario>())
-  const refs = useRefs()
+  const [collapsed, setCollapsed] = useState(false)
 
-  const openScenario = (id: string) => { setOpenId(id); setDecisionContext({ scenarioId: id }) }
-  useEffect(() => { if (!openId && scenarios.length) openScenario(scenarios[0].id) }, [scenarios, openId]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!route.compare && openId) lastOpen.current = openId
 
-  const load = async () => {
-    const list = await api.scenarios.list().catch(() => [] as PriceScenario[])
-    const full = await Promise.all(list.map((s) => api.scenarios.get(s.id).catch(() => s)))
-    setScenarios(full)
-  }
+  // Имя открытого сценария — в крошки оболочки; адрес без id дополняется id (F5 вернёт тот же вид).
+  useEffect(() => { if (open) setCrumbTitle(SCREEN, open.id, open.name || 'Без названия') }, [open?.id, open?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    load()
-    void ensureRefs()
-    api.products.list().then((ps) => setProducts(ps.filter((p) => p.sellable === '1' || p.purchased === '1'))).catch(() => {})
-    api.macro.regimes().then(setRegimes).catch(() => setRegimes(null))
-  }, [])
+    if (route.compare || !openId || route.id === openId) return
+    replaceAnchor(scenarioAnchor(openId, route.tab))
+  }, [route.compare, route.id, route.tab, openId])
 
-  const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
-
-  const flushSave = (id: string) => {
-    const next = pending.current.get(id)
-    saveTimers.current.delete(id)
-    if (!next) return
-    pending.current.delete(id)
-    api.scenarios.update(id, payloadOf(next, {}))
-      .then(() => { setSaveStatus((st) => ({ ...st, [id]: 'saved' })); invalidateScenario(id) })
-      .catch(() => setSaveStatus((st) => ({ ...st, [id]: 'error' })))
+  const openScenario = (id: string) => navigateTo(SCREEN, scenarioAnchor(id, route.tab))
+  const onTab = (tab: ScenarioTab) => navigateTo(SCREEN, scenarioAnchor(openId, tab))
+  const setCompareMode = (on: boolean) => {
+    if (on) navigateTo(SCREEN, compareAnchor(initialCompare(workingId, openId)))
+    else navigateTo(SCREEN, scenarioAnchor(lastOpen.current || workingId))
   }
-  const patch = (sc: PriceScenario, p: Partial<PriceScenario>) => {
-    const next = { ...(pending.current.get(sc.id) ?? sc), ...p }
-    setScenarios((list) => list.map((x) => (x.id === sc.id ? next : x)))
-    pending.current.set(sc.id, next)
-    setSaveStatus((st) => ({ ...st, [sc.id]: 'pending' }))
-    const prev = saveTimers.current.get(sc.id)
-    if (prev) window.clearTimeout(prev)
-    saveTimers.current.set(sc.id, window.setTimeout(() => flushSave(sc.id), SAVE_DEBOUNCE_MS))
-  }
-  useEffect(() => () => {
-    for (const id of [...saveTimers.current.keys()]) { window.clearTimeout(saveTimers.current.get(id)); flushSave(id) }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const distDefault = (productId: string): PriceDistribution => {
-    const p = products.find((x) => x.id === productId)
-    const base = Number((p?.purchased === '1' ? p?.base_cost : p?.base_price) || 0)
-    return { product_id: productId, dist_type: 'normal', mean: base, stddev: Math.round(base * 0.12), beta: 0.7 }
-  }
-  const setDists = async (sc: PriceScenario, rows: PriceDistribution[]) => {
-    const ids = new Set(rows.map((r) => r.product_id))
-    const distributions = [...(sc.distributions ?? []).filter((d) => !ids.has(d.product_id)), ...rows]
-    const next = { ...sc, distributions }
-    setScenarios((list) => list.map((x) => (x.id === sc.id ? next : x)))
-    pending.current.set(sc.id, next)
-    await api.scenarios.update(sc.id, payloadOf(next, { distributions })).then(() => invalidateScenario(sc.id)).catch(() => {})
-  }
-  const setDist = (sc: PriceScenario, productId: string, p: Partial<PriceDistribution>) => {
-    const cur = (sc.distributions ?? []).find((d) => d.product_id === productId) ?? distDefault(productId)
-    return setDists(sc, [{ ...cur, ...p }])
+  const makeWorking = (id: string) => setDecisionContext({ scenarioId: id })
+  const goNext = (screen: 'optimization' | 'plan', anchorPart?: string) => {
+    if (!open) return
+    setDecisionContext({ scenarioId: open.id })
+    navigateTo(screen, anchorPart)
   }
 
-  const clone = async (id: string) => { await api.scenarios.clone(id).catch(() => {}); load() }
+  const clone = async () => {
+    if (!open) return
+    const id = await data.clone(open.id)
+    if (id) openScenario(id)
+  }
   const remove = async (id: string) => {
-    await api.scenarios.delete(id).catch(() => {})
-    setRemoveId(null); setSel((s) => s.filter((x) => x !== id)); if (openId === id) setOpenId(''); load()
+    const sc = data.scenarios.find((s) => s.id === id)
+    setRemoveId(null)
+    if (!sc || !(await data.remove(id))) return
+    if (ctx.scenarioId === id) setDecisionContext({ scenarioId: undefined })
+    if (route.compare) replaceAnchor(compareAnchor(route.ids.filter((x) => x !== id)))
+    else if (openId === id) navigateTo(SCREEN)
+    showUndo({
+      message: `Сценарий «${sc.name || 'Без названия'}» удалён`,
+      onUndo: () => { void data.restore(sc).then((nid) => { if (nid) openScenario(nid) }) },
+    })
   }
   const createScenario = async (name: string, description: string, tpl: ScenarioTemplate | null) => {
     setCreating(true)
-    const sc = await api.scenarios.create({
-      name, description: description || undefined, ...(tpl?.values ?? {}),
-      distributions: products.map((p) => distDefault(p.id)),
-    }).catch(() => null)
-    setCreating(false); setCreateOpen(false)
-    await load()
-    if (sc?.id) { openScenario(sc.id); setCompareMode(false) }
+    const id = await data.create(name, description, tpl)
+    setCreating(false)
+    setCreateOpen(false)
+    if (id) openScenario(id)
   }
 
-  const selected = scenarios.find((s) => s.id === openId) ?? null
+  const removing = data.scenarios.find((s) => s.id === removeId) ?? null
   return (
     <div className="scn">
-      <aside className="scn__side">
-        <div className="scn__side-top">
-          <span className="scn__side-title">Сценарии</span>
-          <IconButton icon="plus" variant="primary" title="Создать сценарий из шаблона" onClick={() => setCreateOpen(true)} />
-        </div>
-        <div className="scn__side-blocks"><BlockChips blocks={['external', 'distributions', 'criteria']} /></div>
-        <div className="scn__cmpwrap">
-          <IconButton icon="shuffle" pressed={compareMode} title="Сравнить два и более сценариев" onClick={() => { setCompareMode((m) => !m); setSel([]) }}>
-            Сравнить сценарии{compareMode && sel.length ? ` (${num(sel.length, 0)})` : ''}
-          </IconButton>
-        </div>
-        <div className="scn__list">
-          {scenarios.map((sc) => {
-            const active = compareMode ? sel.includes(sc.id) : sc.id === openId
-            const regime = regimeLabel(fromMacroMode(sc.macro_mode), regimes?.regimes.map((r) => r.label))
-            return (
-              <button key={sc.id} className={`scn__item${active ? ' scn__item--active' : ''}`} onClick={() => (compareMode ? toggle(sc.id) : openScenario(sc.id))}>
-                {compareMode && <span className={`scn__check${sel.includes(sc.id) ? ' scn__check--on' : ''}`}>{sel.includes(sc.id) && <Icon name="check" size={12} />}</span>}
-                <span className="scn__item-main">
-                  <span className="scn__item-name">{sc.name}</span>
-                  <span className="scn__item-sub">{OBJECTIVES[sc.objective || 'cvar'] ?? 'CVaR'} · α {pct(Number(sc.alpha) || 0.1, 0)} · {regime.isForecast ? 'прогноз' : 'стресс'}</span>
-                </span>
-              </button>
-            )
-          })}
-          {!scenarios.length && <p className="scn__empty">Нет сценариев.<br />«+» — создать из шаблона.</p>}
-        </div>
-      </aside>
+      <ScenarioList scenarios={data.scenarios} regimes={data.regimes} status={data.status} loadError={data.loadError}
+        openId={openId} workingId={workingId} compareMode={route.compare} compareIds={route.ids} collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((v) => !v)} onOpen={openScenario}
+        onToggleCompare={(id) => replaceAnchor(compareAnchor(toggleCompare(route.ids, id)))}
+        onCompareMode={setCompareMode} onCreate={() => setCreateOpen(true)} onRetry={() => { void data.reload() }} />
 
-      <main className="scn__main">
-        {compareMode ? (
-          <ScenarioCompare scenarios={scenarios} selected={sel} />
-        ) : selected ? (
-          <ScenarioTabs key={selected.id} sc={selected} products={products} saveStatus={saveStatus[selected.id]} regimes={regimes} macro={refs.macro}
-            onPatch={patch} onSetDist={setDist} onSetDists={setDists} onClone={() => clone(selected.id)} onRemove={() => setRemoveId(selected.id)} />
-        ) : (
-          <div className="scn__placeholder">Выберите сценарий слева или создайте новый («+»).</div>
+      <main className="scn__main" aria-label={route.compare ? 'Сравнение сценариев' : 'Сценарий'}>
+        {data.actionError && (
+          <ErrorBanner title={data.actionError.title} error={data.actionError.error} detail={errorDetail(data.actionError.error)}
+            onRetry={data.actionError.retry} onDismiss={data.dismissError} />
         )}
+        {route.compare ? (
+          <ScenarioCompare scenarios={data.scenarios} ids={route.ids} workingId={workingId} products={data.products}
+            regimeNames={data.regimes?.regimes.map((r) => r.label) ?? []} onMakeWorking={makeWorking}
+            onDrop={(id) => replaceAnchor(compareAnchor(route.ids.filter((x) => x !== id)))} />
+        ) : open ? (
+          <ScenarioTabs key={open.id} sc={open} tab={route.tab} products={data.products} productsFailed={data.productsFailed}
+            saveStatus={data.saveStatus[open.id]} regimes={data.regimes} macro={refs.macro} isWorking={open.id === workingId}
+            onTab={onTab} onPatch={data.patch} onSetDist={data.setDist} onSetDists={data.setDists}
+            onMakeWorking={() => makeWorking(open.id)} onFindPortfolio={() => goNext('optimization')} onBuildPlan={() => goNext('plan', 'new')}
+            onClone={() => { void clone() }} onRemove={() => setRemoveId(open.id)} />
+        ) : data.status === 'loading' ? (
+          <div className="sc2" aria-busy="true" aria-label="Загружаем сценарий">
+            <Skeleton h={16} w="30%" /><Skeleton h={64} /><Skeleton h={48} /><Skeleton h={320} />
+          </div>
+        ) : data.status === 'ready' ? (
+          <EmptyState kind="first-use" title="Сценариев пока нет"
+            action={<button type="button" className="btn btn--primary" onClick={() => setCreateOpen(true)}>Создать сценарий</button>}>
+            Сценарий — внешние условия: инфляция, курс, спрос, режим генератора ставки и распределения цен. Создайте его из шаблона.
+          </EmptyState>
+        ) : null}
       </main>
 
-      {createOpen && <ScenarioCreateDialog busy={creating} onSubmit={createScenario} onCancel={() => setCreateOpen(false)} />}
-      {removeId && (
-        <ConfirmDialog title="Удалить сценарий?" confirmLabel="Удалить" danger onConfirm={() => remove(removeId)} onCancel={() => setRemoveId(null)}>
-          Сценарий <b>«{scenarios.find((s) => s.id === removeId)?.name ?? removeId}»</b> и его распределения цен будут удалены.
-          Портфели, посчитанные под него, останутся в истории прогонов.
-        </ConfirmDialog>
+      {createOpen && (
+        <ScenarioCreateDialog busy={creating} existing={data.scenarios.map((s) => s.name)} onSubmit={createScenario} onCancel={() => setCreateOpen(false)} />
+      )}
+      {removing && (
+        <ConfirmDialog title="Удалить сценарий?" objectName={removing.name || 'Без названия'} confirmLabel="Удалить" danger
+          consequence={<>Удалятся условия и распределения цен этого сценария. Портфели и планы, посчитанные под него, останутся в истории прогонов.{removing.id === workingId ? ' Это рабочий сценарий — Портфель и План переключатся на первый в списке.' : ''}</>}
+          onConfirm={() => { void remove(removing.id) }} onCancel={() => setRemoveId(null)} />
       )}
     </div>
   )

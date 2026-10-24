@@ -156,9 +156,15 @@ export function segments(values: ReadonlyArray<number>, xAt: (i: number) => numb
   return out
 }
 
+/** Координата пути SVG с одним знаком («12.0», «7.5»): геометрия, не число для чтения — без ru-форматтера. */
+export function svgCoord(v: number): string {
+  const r = Math.round(v * 10) / 10
+  return Number.isInteger(r) ? `${r === 0 ? 0 : r}.0` : String(r)
+}
+
 /** Путь SVG линии по точкам: «M x,y L x,y …»; пустой список → ''. */
 export function linePath(points: ReadonlyArray<XY>): string {
-  return points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('')
+  return points.map((p, i) => `${i ? 'L' : 'M'}${svgCoord(p.x)},${svgCoord(p.y)}`).join('')
 }
 
 /** Путь замкнутой области под линией до базовой линии `y0`. */
@@ -166,13 +172,13 @@ export function areaPath(points: ReadonlyArray<XY>, y0: number): string {
   if (!points.length) return ''
   const first = points[0]
   const last = points[points.length - 1]
-  return `${linePath(points)}L${last.x.toFixed(1)},${y0.toFixed(1)}L${first.x.toFixed(1)},${y0.toFixed(1)}Z`
+  return `${linePath(points)}L${svgCoord(last.x)},${svgCoord(y0)}L${svgCoord(first.x)},${svgCoord(y0)}Z`
 }
 
 /** Путь полосы между верхней и нижней кривыми (веер P10–P90). */
 export function bandPath(upper: ReadonlyArray<XY>, lower: ReadonlyArray<XY>): string {
   if (!upper.length || !lower.length) return ''
-  const back = [...lower].reverse().map((p) => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('')
+  const back = [...lower].reverse().map((p) => `L${svgCoord(p.x)},${svgCoord(p.y)}`).join('')
   return `${linePath(upper)}${back}Z`
 }
 

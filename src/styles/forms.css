@@ -1,0 +1,85 @@
+/* Примитивы форм (поле, подпись, подсказка, ошибка, действия) — подключаются из global.css. */
+/* ── Form primitives ─────────────────────────────────────────────────────── */
+.form { display: flex; flex-direction: column; gap: var(--space-4); }
+.form__row   { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.form__row--3 { grid-template-columns: 1fr 1fr 1fr; }
+.form__row--4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.form__field { display: flex; flex-direction: column; gap: var(--space-1); }
+.form__label {
+  font-size: var(--fs-11);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-feature-settings: 'case';
+  color: var(--text-muted);
+}
+.form__input, .form__select, .form__textarea {
+  width: 100%;
+  height: var(--control-compact);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.form__textarea { height: auto; min-height: 72px; padding: var(--space-2) 10px; resize: vertical; line-height: var(--lh-body); }
+.form__input::placeholder, .form__textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+.form__input:hover:not(:disabled), .form__select:hover:not(:disabled), .form__textarea:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+.form__input:focus, .form__select:focus, .form__textarea:focus,
+.form__input:focus-visible, .form__select:focus-visible, .form__textarea:focus-visible {
+  outline: 2px solid transparent;
+  border-color: var(--focus);
+  box-shadow: var(--halo);
+}
+.form__input:disabled, .form__select:disabled, .form__textarea:disabled {
+  color: var(--text-disabled);
+  background: transparent;
+  border-color: var(--border);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+.form__input[aria-invalid='true'], .form__select[aria-invalid='true'], .form__textarea[aria-invalid='true'] {
+  border-color: var(--intent-danger);
+}
+.form__input[aria-invalid='true']:focus, .form__select[aria-invalid='true']:focus, .form__textarea[aria-invalid='true']:focus {
+  box-shadow: var(--halo-danger);
+}
+.form__hint  { font-size: var(--fs-11); color: var(--text-muted); }
+.form__section {
+  padding-bottom: 6px;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.form__check { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-13); color: var(--text-secondary); }
+.form__error {
+  margin-bottom: var(--space-2);
+  padding: 6px 10px;
+  font-size: var(--fs-12);
+  color: var(--intent-danger);
+  background: color-mix(in oklch, var(--intent-danger) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--intent-danger) 40%, transparent);
+  border-radius: var(--radius);
+}
+.form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+

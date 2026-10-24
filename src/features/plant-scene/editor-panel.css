@@ -1,10 +1,11 @@
 /*
- * Инспектор схемы (правая панель): секции добавления, карточка объекта, оборудование НСИ,
- * форма регистрации, пустое состояние с мини-легендой уровней. Только токены, обе темы.
+ * Правая колонка схемы (360 px): добавление, карточка объекта, загрузка по плану, оборудование из
+ * Справочников, таблица-двойник уровня. Только токены, обе темы; без декоративных полос и заливок —
+ * акцент только у выбора, фокуса и primary (X2 P-40).
  */
 .editor-panel {
-  width: 272px;
-  flex: 0 0 272px;
+  width: 360px;
+  flex: 0 0 360px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -17,6 +18,7 @@
   border-bottom: 1px solid var(--border);
 }
 .ep-stack { display: flex; flex-direction: column; gap: var(--space-2); }
+.ep-block { margin-top: var(--space-4); }
 
 .editor-panel__connecting {
   display: flex;
@@ -24,16 +26,17 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   font-size: var(--fs-12);
-  color: var(--accent-text);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
-  border-bottom: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  color: var(--text);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
 }
 .editor-panel__label {
   margin-bottom: var(--space-2);
   color: var(--text-muted);
 }
+.ep-label-row { display: flex; align-items: center; gap: var(--space-1); }
 .editor-panel__tip {
-  margin: 0;
+  margin: var(--space-2) 0 0;
   font-size: var(--fs-12);
   line-height: var(--lh-body);
   color: var(--text-muted);
@@ -45,72 +48,42 @@
   align-items: flex-start;
   color: var(--text-secondary);
 }
+.editor-panel__value { margin: 0; font-size: var(--fs-13); color: var(--text); }
+.ep-field-error { margin: 0; font-size: var(--fs-12); color: var(--text); }
 
-/* ── Пустое состояние инспектора (X1 §1 п. 2) ───────────────────────────── */
-.ep-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-}
+/* Ссылки на соседние экраны («Открыть в Плане →») — цвет ссылки, не заливка. */
+.ep-link { color: var(--accent-text); text-decoration: none; border-radius: var(--radius-sm); }
+.ep-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ep-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ── Пустое состояние и объекты уровня (X2 P-32) ───────────────────────── */
+.ep-empty { flex: 1; display: flex; flex-direction: column; padding: var(--space-4); }
 .ep-empty .dk-empty { min-height: 0; padding: var(--space-4) var(--space-2); }
-.ep-empty__levels {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-4);
-  margin: 0;
-  padding: var(--space-2) 0;
-  list-style: none;
-  font-size: var(--fs-12);
-  color: var(--text-muted);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+.ep-objects { flex: 1; }
+.ep-objects__title { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
+.ep-objects__n { font-weight: 400; color: var(--text-muted); }
+.ep-objects .editor-panel__tip { margin: var(--space-1) 0 var(--space-3); }
+.sot .dk-table { width: 100%; }
+.sot .dk-table th[scope='row'] { max-width: 150px; }
+.sot .dk-table tr.is-selected td, .sot .dk-table tr.is-selected th[scope='row'] {
+  background: color-mix(in oklch, var(--accent) 9%, transparent);
+  color: var(--text);
 }
-.ep-empty__level {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.ep-empty__level.is-current { color: var(--text); font-weight: 500; }
-/* Мини-легенда уровней: ▣ завод · ■ цех · · станок — формы, не цвета. */
-.ep-mark { display: inline-block; flex: none; background: var(--text-muted); }
-.ep-empty__level.is-current .ep-mark { background: var(--accent-text); }
-.ep-mark--factory { width: 11px; height: 11px; box-shadow: inset 0 0 0 2px var(--bg-panel), inset 0 0 0 3px currentColor; }
-.ep-mark--shop { width: 9px; height: 9px; }
-.ep-mark--machine { width: 5px; height: 5px; border-radius: 50%; }
-.ep-empty__keys {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2) var(--space-4);
-  margin: 0;
-  font-size: var(--fs-12);
-  color: var(--text-muted);
-}
-.ep-empty__keys > div { display: inline-flex; align-items: center; gap: 6px; }
-.ep-empty__keys dt, .ep-empty__keys dd { margin: 0; }
-.ep-empty__keys kbd {
-  padding: 1px 6px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-11);
-  color: var(--text-secondary);
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
-  border-bottom-width: 2px;
-  border-radius: var(--radius-sm);
-}
+.sot-status { display: inline-flex; align-items: center; white-space: nowrap; font-size: var(--fs-12); color: var(--text-secondary); }
+.sot-status.glyph-running::before { background: var(--text-muted); }
+.sot-muted { color: var(--text-muted); }
+.sot-hot { display: inline-flex; align-items: center; gap: 4px; }
 
-/* ── Карточка выбранного узла ───────────────────────────────────────────── */
+/* ── Карточка выбранного объекта ───────────────────────────────────────── */
 .editor-panel__inspector { flex: 1; }
 .editor-panel__inspector-head {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-bottom: var(--space-3);
 }
 .editor-panel__heading { flex: 1; min-width: 0; }
-.editor-panel__eyebrow { color: var(--accent-text); }
+.editor-panel__eyebrow { color: var(--text-muted); }
 .editor-panel__title {
   margin: 2px 0 0;
   font-size: var(--fs-16);
@@ -131,7 +104,7 @@
   border: 1px solid var(--border-control);
   border-radius: var(--radius);
 }
-.editor-panel__title-input:focus-visible { outline: none; border-color: var(--focus); box-shadow: var(--halo); }
+.editor-panel__title-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--focus); }
 .editor-panel__subtitle {
   margin: 2px 0 0;
   font-size: var(--fs-12);
@@ -142,28 +115,41 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) 0;
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
-.editor-panel__kpis { margin: 0 0 var(--space-3); padding: 0; }
+.editor-panel__count { margin-left: auto; font-size: var(--fs-12); color: var(--text-secondary); }
+.editor-panel__kpis { margin: 0; padding: 0; }
 .editor-panel__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   padding-top: var(--space-3);
-  margin-top: var(--space-3);
+  margin-top: var(--space-4);
   border-top: 1px solid var(--border);
 }
 
-/* ── Оборудование НСИ ───────────────────────────────────────────────────── */
+/* ── Загрузка по плану (X2 P-27) ───────────────────────────────────────── */
+.ep-load { display: flex; flex-direction: column; gap: 6px; }
+.ep-load__head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.ep-load__k { color: var(--text-muted); }
+.ep-load__src { font-size: var(--fs-12); color: var(--text-secondary); }
+.ep-load__meter { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px var(--space-2); }
+.ep-load__meter .ch-meter { width: 100%; height: 8px; }
+.ep-load__v { font-size: var(--fs-16); font-weight: 600; color: var(--text); }
+.ep-load__flag { grid-column: 1 / -1; display: inline-flex; align-items: center; font-size: var(--fs-12); color: var(--text); }
+.ep-load__none, .ep-load__note { margin: 0; font-size: var(--fs-12); color: var(--text-muted); }
+.ep-load__facts { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: var(--fs-13); color: var(--text); }
+.ep-links { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin-top: var(--space-1); font-size: var(--fs-13); }
+
+/* ── Оборудование из Справочников ──────────────────────────────────────── */
 .ep-machine-card {
   padding: var(--space-3);
-  margin-bottom: var(--space-2);
+  margin-top: var(--space-4);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: inset 2px 0 0 var(--ultramarine);
 }
 .ep-machine-card__head {
   display: flex;
@@ -181,21 +167,8 @@
 .ep-machine-card__type {
   margin-bottom: var(--space-2);
   font-size: var(--fs-12);
-  color: var(--accent-text);
+  color: var(--text-secondary);
 }
-.ep-machine-card__unlink {
-  margin-top: var(--space-2);
-  padding: 0;
-  font: inherit;
-  font-size: var(--fs-12);
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.ep-machine-card__unlink:hover { color: var(--intent-danger); }
 
 /* Атрибуты: метка над значением, длинные значения переносятся */
 .ep-fields { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); }
@@ -268,24 +241,15 @@
   padding: 1px 6px;
   font-size: var(--fs-11);
   font-weight: 600;
-  color: var(--accent-text);
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--text-secondary);
+  background: var(--bg-card);
   border-radius: var(--radius-pill);
 }
 .ep-op__time { font-size: var(--fs-11); color: var(--text-muted); }
 
-/* ── Форма регистрации в НСИ ────────────────────────────────────────────── */
-.ep-register { display: flex; flex-direction: column; gap: 5px; margin-bottom: var(--space-2); }
-.ep-register__hint {
-  margin: 0 0 var(--space-1);
-  font-size: var(--fs-12);
-  line-height: var(--lh-body);
-  color: var(--text-muted);
-}
-.ep-register__label { margin-top: var(--space-1); color: var(--text-muted); }
+/* ── Поля ввода колонки ────────────────────────────────────────────────── */
 .ep-register__input,
-.ep-register__select,
-.ep-register__static {
+.ep-register__select {
   width: 100%;
   height: 28px;
   padding: 0 var(--space-2);
@@ -296,17 +260,14 @@
   border: 1px solid var(--border-control);
   border-radius: var(--radius);
 }
-.ep-register__static {
-  display: flex;
-  align-items: center;
-  color: var(--text-secondary);
-  border-style: dashed;
-  border-color: var(--border-strong);
-}
+.ep-register__input::placeholder { color: var(--text-muted); }
+.ep-register__input[aria-invalid='true'], .ep-register__select[aria-invalid='true'] { border-color: var(--status-setup); }
 .ep-register__input:focus-visible,
 .ep-register__select:focus-visible {
-  outline: none;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
   border-color: var(--focus);
-  box-shadow: var(--halo);
 }
-.ep-register__submit { margin-top: 6px; width: 100%; }
+@media (forced-colors: active) {
+  .ep-register__input:focus-visible, .ep-register__select:focus-visible, .editor-panel__title-input:focus-visible { outline-color: Highlight; }
+}

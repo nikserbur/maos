@@ -6,6 +6,7 @@
  */
 import type { DiagramId } from '../../diagrams'
 import type { Unit } from '../../explain/format'
+import type { FeatureId, Stage } from '../../explain/stages'
 import type { MethodologyAnchor } from '../../explain/types'
 
 export type BlockId =
@@ -35,13 +36,15 @@ export type ParamUnit = Unit | '×' | '%/год' | '%/мес' | 'п.п.' | 'дн
 
 export type ParamOwner = 'project' | 'scenario' | 'run'
 
-/** Честная граница реализации — та же шкала, что чипы «Методики». */
-export type Stage = 'done' | 'w1' | 'w2' | 'w3'
+/** Честная граница реализации — та же шкала, что чипы «Методики» (единый реестр src/explain/stages.ts). */
+export type { Stage }
 
 export interface ScreenLink {
   id: string
   anchor?: string
   field?: string
+  /** Раздел результата плана (`#/plan/run/<planId>/<раздел>`): нужен план в контексте решения, иначе — история планов. */
+  runSection?: string
 }
 
 /** Статическая часть паспорта: что это за величина, где живёт, чем ограничена. */
@@ -114,8 +117,10 @@ export interface MapNode {
   diagram?: DiagramId
   learnMore?: MethodologyAnchor
   stage?: Stage
-  /** Запускаемое действие подблока. */
-  action?: 'optimize' | 'schedule' | 'forecast' | 'estimate' | 'cash' | 'train'
+  /** Возможность в едином реестре стадий: стадия узла берётся оттуда (как у чипа раздела «Методики»). */
+  feature?: FeatureId
+  /** Запускаемое действие подблока; `mentat` — открыть панель MENTAT вместо экрана. */
+  action?: 'optimize' | 'schedule' | 'forecast' | 'estimate' | 'cash' | 'train' | 'mentat'
   /** Грамматика A6 §6: ● система / ▲ решение / ■ ресурс / · событие. */
   shape?: NodeShape
   /** Фиксированные координаты L0 (единицы сетки 8 px). */
@@ -157,8 +162,12 @@ export interface NodeLive {
   value?: number | string
   unit?: ParamUnit
   updatedAt?: string
-  /** Ошибки валидации / причина stale. */
+  /** Ошибки валидации / причина stale — простыми словами. */
   reason?: string
+  /** Сырой текст сервера/решателя — только в «Подробнее» панели. */
+  raw?: string
+  /** Статус серверного паспорта (датасеты): Н / О / К / НОРМ / UI / синтетика. */
+  status?: string
 }
 
 /** Живое состояние для контекста (контракт будущего GET /api/method-map/state). */

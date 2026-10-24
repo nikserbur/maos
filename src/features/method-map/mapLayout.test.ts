@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { L0_EDGES } from './edges'
+import { BACKBONE_EDGES, L0_EDGES } from './edges'
 import { GRID, LABEL_H, SUB_LIST_PAD, SUB_ROW_H, blockRects, dataNeighbours, labelWidth, layoutL0, placeLabels, routeEdges } from './mapLayout'
 import { subblocksOf } from './registry'
 import { BLOCK_IDS } from './types'
@@ -44,7 +44,7 @@ describe('method-map L0 layout', () => {
     expect(loop.loop).toBe(true)
     const dec = rects.find((r) => r.id === 'decisions')!
     expect(loop.from.y).toBe(dec.y)
-    expect(loop.label.y).toBeLessThan(dec.y)
+    expect(loop.label!.y).toBeLessThan(dec.y)
     // [1] [2] [3] входят в [6] сверху — три разных порта на верхней стороне.
     const intoAgents = paths.filter((p) => p.edge.to === 'agents' && p.edge.kind === 'data')
     const xs = new Set(intoAgents.map((p) => Math.round(p.to.x)))
@@ -68,9 +68,11 @@ describe('method-map L0 layout', () => {
     const paths = routeEdges(rects)
     const box = (p: (typeof paths)[number]) => {
       const w = labelWidth(p.edge.label ?? '')
-      return { x: p.label.x - w / 2, y: p.label.y - LABEL_H / 2, w, h: LABEL_H }
+      return { x: p.label!.x - w / 2, y: p.label!.y - LABEL_H / 2, w, h: LABEL_H }
     }
-    const labelled = paths.filter((p) => p.edge.label)
+    const labelled = paths.filter((p) => p.edge.label && p.label)
+    // Основной ход [1] → … → [5] подписан всегда; остальным подпись — только при свободном месте.
+    for (const id of BACKBONE_EDGES) expect(paths.find((p) => p.edge.id === id)?.label, id).not.toBeNull()
     for (let i = 0; i < labelled.length; i++) {
       for (let j = i + 1; j < labelled.length; j++) {
         expect(overlap(box(labelled[i]), box(labelled[j])), `${labelled[i].edge.id} × ${labelled[j].edge.id}`).toBe(false)
@@ -86,11 +88,24 @@ describe('method-map L0 layout', () => {
     for (const p of labelled.filter((x) => !x.loop)) {
       const onCurve = [0.15, 0.22, 0.3, 0.4, 0.5, 0.6, 0.7, 0.78, 0.85].some((t) => {
         const q = p.at(t)
-        return Math.abs(q.x - p.label.x) < 1e-6 && Math.abs(q.y - p.label.y) < 1e-6
+        return Math.abs(q.x - p.label!.x) < 1e-6 && Math.abs(q.y - p.label!.y) < 1e-6
       })
       expect(onCurve, p.edge.id).toBe(true)
     }
     // Идемпотентно: повторное размещение уже свободных подписей ничего не двигает.
     expect(placeLabels(paths, rects).map((p) => p.label)).toEqual(paths.map((p) => p.label))
+  })
+
+  it('routes [4] ↔ [5] on opposite sides: data on the sides, the criterion as a control arc from above', () => {
+    const rects = blockRects(new Set(), SUB_COUNTS)
+    const paths = routeEdges(rects)
+    const data = paths.find((p) => p.edge.id === 'e.4-5')!
+    const control = paths.find((p) => p.edge.id === 'e.5-4')!
+    const crit = rects.find((r) => r.id === 'criteria')!
+    const dec = rects.find((r) => r.id === 'decisions')!
+    expect(data.from.x).toBe(dec.x + dec.w)
+    expect(control.from.y).toBe(crit.y)
+    expect(control.to.y).toBe(dec.y)
+    expect(Math.min(...[0.25, 0.5, 0.75].map((t) => control.at(t).y))).toBeLessThan(Math.min(crit.y, dec.y))
   })
 })

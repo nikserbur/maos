@@ -109,6 +109,13 @@ export const PARAM_LIST: readonly ParamDef[] = [
     screen: FIN('tau_p'), provenance: 'normative', defaultValue: 0.25, passportCode: 'fin.tau_p' },
   { id: 'fin.dscr_covenant', label: 'Ковенант DSCR', unit: '—', owner: 'project', range: [1, 2], step: 0.1,
     editable: true, screen: FIN('dscr_covenant'), provenance: 'normative', defaultValue: 1.2, passportCode: 'fin.dscr_covenant' },
+  /* v0.74.1: казначейское правило, выведенное RL (A3), и налог нарастающим итогом (A4) — поведение продукта по умолчанию. */
+  { id: 'fin.auto_repay', label: 'Гасить кредит излишком кассы', unit: '—', owner: 'project', editable: false,
+    provenance: 'normative', defaultValue: 'включено', passportCode: 'fin.auto_repay',
+    note: 'Выведено RL · прошло проверку A3: излишек кассы сверх буфера еженедельно гасит кредитную линию. Весь выигрыш RL в A3 давало это правило; в A4 эвристика C* с ним лучше RL в 49 из 60 экземпляров.' },
+  { id: 'fin.tax_cumulative', label: 'Налог на прибыль нарастающим итогом', unit: '—', owner: 'project', editable: false,
+    provenance: 'normative', defaultValue: 'включено', passportCode: 'fin.tax_cumulative',
+    note: 'Ст. 285–286 НК РФ: авансы по базе с начала года, переплата засчитывается вперёд (поправка A4; прежний помесячный режим штрафовал раннее завершение заказов).' },
 
   /* ── [4]/[5] Решения и критерии ───────────────────────────────────────── */
   { id: 'scenario.objective', label: 'Критерий', unit: '—', owner: 'scenario', editable: true,

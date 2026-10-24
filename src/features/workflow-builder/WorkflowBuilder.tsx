@@ -1,395 +1,197 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  NODE_H,
-  NODE_META,
-  NODE_TYPES,
-  NODE_W,
-  makeId,
-  type NodeType,
-  type WorkflowEdge,
-  type WorkflowGraph,
-  type WorkflowNode,
-} from './types'
-import { loadGraph, saveGraph } from './storage'
-import { GraphCanvas, type GraphCanvasHandle, type Point } from '../../ui/graph-canvas'
+/*
+ * «AI-воркфлоу» (X2 P-135…P-138, P-144, P-145): схема диалога MENTAT (блок [8]) — шаги-узлы и
+ * связи с подписями веток. Шапка — анатомия верхней полосы канваса («Система · [8] LLM», «Открыть
+ * MENTAT ⌘J», «Экспорт .json», ⋯); палитра типов · канвас · инспектор. Опасное — в ⋯ с подтверждением
+ * и отменой (⌘Z / ⇧⌘Z, тост «Отменить»); черновик хранится только в этом браузере.
+ */
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { countText } from '../../explain/format'
+import { shortcutText } from '../../shell/commandIndex'
+import { ErrorBoundary } from '../../shell/ErrorBoundary'
+import { overlayActions } from '../../shell/overlays'
+import { screenTitle } from '../../shell/screens'
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import type { GraphCanvasHandle } from '../../ui/graph-canvas'
+import { Menu, ScreenHeader, showUndo, type MenuItem } from '../../ui/kit'
+import { connect, freeSpot, mergeGraph, patchEdge, patchNode, removeEdge, removeNode, restoreNode } from './graphOps'
+import { edgeRoute } from './geometry'
+import { seedGraph } from './seed'
+import { downloadJson } from './storage'
+import { NODE_META, NODE_TYPES, makeId, type NodeType, type WorkflowGraph } from './types'
+import { useWorkflow } from './useWorkflow'
+import { WorkflowCanvas } from './WorkflowCanvas'
+import { WorkflowInspector } from './WorkflowInspector'
 import './workflow-builder.css'
 
-/*
- * Конструктор AI-воркфлоу. Пан/зум/«вписать» — общий движок `GraphCanvas` (src/ui/graph-canvas,
- * UX-V2 §6.1); здесь остаются только предметные жесты: перетаскивание узлов и протяжка связей.
- */
+const STEP_FORMS = ['шаг', 'шага', 'шагов'] as const
+const LINK_FORMS = ['связь', 'связи', 'связей'] as const
+const EMPTY: WorkflowGraph = { nodes: [], edges: [] }
 
-const AUTOSAVE_MS = 400
+const isEditable = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
 
-/** Центр входного порта узла в координатах мира. */
-const inPort = (n: WorkflowNode): Point => ({ x: n.x + NODE_W / 2, y: n.y })
-/** Центр выходного порта узла в координатах мира. */
-const outPort = (n: WorkflowNode): Point => ({ x: n.x + NODE_W / 2, y: n.y + NODE_H })
-
-/** Кубическая безье между двумя точками с вертикальным «провисанием». */
-function edgePath(from: Point, to: Point): string {
-  const dy = Math.max(40, Math.abs(to.y - from.y) * 0.5)
-  return `M ${from.x} ${from.y} C ${from.x} ${from.y + dy}, ${to.x} ${to.y - dy}, ${to.x} ${to.y}`
-}
-
-/** Границы графа в мире — для «вписать». */
-function graphBounds(nodes: ReadonlyArray<WorkflowNode>) {
-  if (nodes.length === 0) return { x: 0, y: 0, w: 800, h: 600 }
-  const xs = nodes.map((n) => n.x)
-  const ys = nodes.map((n) => n.y)
-  const x = Math.min(...xs)
-  const y = Math.min(...ys)
-  return { x, y, w: Math.max(...xs) + NODE_W - x, h: Math.max(...ys) + NODE_H - y }
-}
-
-type Drag =
-  | { kind: 'none' }
-  | { kind: 'node'; id: string; offsetX: number; offsetY: number }
-  | { kind: 'connect'; from: string; pointer: Point }
+type Ask = null | 'clear' | 'seed'
 
 export function WorkflowBuilder() {
-  const [graph, setGraph] = useState<WorkflowGraph>(() => loadGraph())
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
-
+  const wf = useWorkflow()
+  const { graph, update, select, selection } = wf
+  const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<GraphCanvasHandle>(null)
-  const dragRef = useRef<Drag>({ kind: 'none' })
-  const [dragKind, setDragKind] = useState<Drag['kind']>('none')
-  const [connectPointer, setConnectPointer] = useState<Point | null>(null)
+  const [ask, setAsk] = useState<Ask>(null)
+  const steps = countText(graph.nodes.length, STEP_FORMS)
+  const links = countText(graph.edges.length, LINK_FORMS)
+  const hasBack = graph.edges.some((e) => {
+    const from = graph.nodes.find((n) => n.id === e.from)
+    const to = graph.nodes.find((n) => n.id === e.to)
+    return Boolean(from && to && edgeRoute(from, to).back)
+  })
 
-  // ── Автосохранение (дебаунс) ──────────────────────────────────────────
-  useEffect(() => {
-    const id = setTimeout(() => saveGraph(graph), AUTOSAVE_MS)
-    return () => clearTimeout(id)
-  }, [graph])
-
-  const selectedNode = useMemo(
-    () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
-    [graph.nodes, selectedNodeId],
-  )
-
-  const nodeById = useMemo(() => {
-    const map = new Map<string, WorkflowNode>()
-    for (const n of graph.nodes) map.set(n.id, n)
-    return map
-  }, [graph.nodes])
-
-  const bounds = useMemo(() => graphBounds(graph.nodes), [graph.nodes])
-
-  /** Экранные координаты события → координаты мира (через движок канваса). */
-  const toWorld = useCallback((clientX: number, clientY: number): Point => {
-    return canvasRef.current?.toWorld(clientX, clientY) ?? { x: clientX, y: clientY }
-  }, [])
-
-  // ── Добавление узла из палитры (около центра видимой области) ─────────
-  const addNode = useCallback(
-    (type: NodeType) => {
-      const view = canvasRef.current?.getView() ?? { x: 0, y: 0, k: 1 }
-      const cx = (400 - view.x) / view.k - NODE_W / 2
-      const cy = (300 - view.y) / view.k - NODE_H / 2
-      const jitter = graph.nodes.length * 12
-      const node: WorkflowNode = {
-        id: makeId(),
-        type,
-        x: Math.round(cx + jitter),
-        y: Math.round(cy + jitter),
-        title: NODE_META[type].label,
-        notes: '',
-      }
-      setGraph((g) => ({ ...g, nodes: [...g.nodes, node] }))
-      setSelectedNodeId(node.id)
-      setSelectedEdgeId(null)
-    },
-    [graph.nodes.length],
-  )
-
-  // ── Обновление узла (иммутабельно) ────────────────────────────────────
-  const patchNode = useCallback((id: string, patch: Partial<WorkflowNode>) => {
-    setGraph((g) => ({
-      ...g,
-      nodes: g.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
-    }))
-  }, [])
+  const addNode = (type: NodeType) => {
+    const center = canvasRef.current?.getViewportCenterWorld()
+    const spot = freeSpot(graph, center ?? { x: 0, y: 0 })
+    const node = { id: makeId(), type, ...spot, title: NODE_META[type].label, notes: '' }
+    update((g) => ({ ...g, nodes: [...g.nodes, node] }))
+    select({ kind: 'node', id: node.id })
+  }
 
   const deleteNode = useCallback((id: string) => {
-    setGraph((g) => ({
-      nodes: g.nodes.filter((n) => n.id !== id),
-      edges: g.edges.filter((e) => e.from !== id && e.to !== id),
-    }))
-    setSelectedNodeId((cur) => (cur === id ? null : cur))
-  }, [])
+    const { removed } = removeNode(graph, id)
+    if (!removed) return
+    update((g) => removeNode(g, id).graph)
+    showUndo({ message: `Удалён шаг «${removed.node.title || 'без названия'}»`, onUndo: () => update((g) => restoreNode(g, removed)) })
+  }, [graph, update])
 
   const deleteEdge = useCallback((id: string) => {
-    setGraph((g) => ({ ...g, edges: g.edges.filter((e) => e.id !== id) }))
-    setSelectedEdgeId((cur) => (cur === id ? null : cur))
-  }, [])
+    const edge = graph.edges.find((e) => e.id === id)
+    if (!edge) return
+    update((g) => removeEdge(g, id))
+    showUndo({ message: 'Связь удалена', onUndo: () => update((g) => mergeGraph(g, { nodes: [], edges: [edge] })) })
+  }, [graph, update])
 
-  const clearAll = useCallback(() => {
-    setGraph({ nodes: [], edges: [] })
-    setSelectedNodeId(null)
-    setSelectedEdgeId(null)
-  }, [])
+  const replaceAll = (next: WorkflowGraph, message: string) => {
+    const snapshot = graph
+    update(() => next)
+    select(null)
+    setAsk(null)
+    showUndo({ message, onUndo: () => update((g) => (g.nodes.length === 0 ? snapshot : mergeGraph(g, snapshot))) })
+  }
 
-  // ── Начало перетаскивания узла ────────────────────────────────────────
-  const onNodePointerDown = useCallback(
-    (e: React.PointerEvent, node: WorkflowNode) => {
-      if (e.button !== 0) return
-      e.stopPropagation()
-      const world = toWorld(e.clientX, e.clientY)
-      dragRef.current = { kind: 'node', id: node.id, offsetX: world.x - node.x, offsetY: world.y - node.y }
-      setDragKind('node')
-      setSelectedNodeId(node.id)
-      setSelectedEdgeId(null)
-    },
-    [toWorld],
-  )
-
-  // ── Начало соединения из выходного порта ──────────────────────────────
-  const onPortPointerDown = useCallback(
-    (e: React.PointerEvent, node: WorkflowNode) => {
-      if (e.button !== 0) return
-      e.stopPropagation()
-      const world = toWorld(e.clientX, e.clientY)
-      dragRef.current = { kind: 'connect', from: node.id, pointer: world }
-      setDragKind('connect')
-      setConnectPointer(world)
-    },
-    [toWorld],
-  )
-
-  // ── Глобальные move/up на время перетаскивания узла или связи ─────────
+  // ⌘Z / Ctrl+Z — отменить, ⇧⌘Z / Ctrl+Y — повторить: фокус внутри конструктора или нигде; в полях — родная отмена текста.
+  const { undo, redo } = wf
   useEffect(() => {
-    if (dragKind === 'none') return
-
-    const onMove = (e: PointerEvent) => {
-      const drag = dragRef.current
-      if (drag.kind === 'node') {
-        const world = toWorld(e.clientX, e.clientY)
-        patchNode(drag.id, { x: Math.round(world.x - drag.offsetX), y: Math.round(world.y - drag.offsetY) })
-      } else if (drag.kind === 'connect') {
-        setConnectPointer(toWorld(e.clientX, e.clientY))
-      }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || isEditable(e.target)) return
+      const inside = e.target === document.body || (e.target instanceof Node && rootRef.current?.contains(e.target))
+      if (!inside) return
+      const k = e.key.toLowerCase()
+      if (k === 'z' || k === 'я') { e.preventDefault(); if (e.shiftKey) redo(); else undo() }
+      else if (k === 'y' || k === 'н') { e.preventDefault(); redo() }
     }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo])
 
-    const onUp = (e: PointerEvent) => {
-      const drag = dragRef.current
-      if (drag.kind === 'connect') {
-        // Ищем узел под курсором для замыкания связи.
-        const world = toWorld(e.clientX, e.clientY)
-        const target = graph.nodes.find(
-          (n) => world.x >= n.x && world.x <= n.x + NODE_W && world.y >= n.y && world.y <= n.y + NODE_H,
-        )
-        if (target && target.id !== drag.from) {
-          setGraph((g) => {
-            const exists = g.edges.some((ed) => ed.from === drag.from && ed.to === target.id)
-            if (exists) return g
-            const edge: WorkflowEdge = { id: makeId(), from: drag.from, to: target.id }
-            return { ...g, edges: [...g.edges, edge] }
-          })
-        }
-        setConnectPointer(null)
-      }
-      dragRef.current = { kind: 'none' }
-      setDragKind('none')
-    }
+  // Del / Backspace на канвасе — удалить выбранное (в полях ввода — обычное редактирование).
+  const onRootKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if ((e.key !== 'Delete' && e.key !== 'Backspace') || isEditable(e.target) || !selection) return
+    if (!(e.target instanceof Element && e.target.closest('.wfb__canvas'))) return
+    e.preventDefault()
+    if (selection.kind === 'node') deleteNode(selection.id)
+    else deleteEdge(selection.id)
+  }
 
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-    }
-  }, [dragKind, toWorld, patchNode, graph.nodes])
-
-  const rubber =
-    dragKind === 'connect' && connectPointer
-      ? (() => {
-          const source = nodeById.get((dragRef.current as { from: string }).from)
-          return source ? edgePath(outPort(source), connectPointer) : null
-        })()
-      : null
-
-  const edgesSvg = (
-    <>
-      <defs>
-        <marker id="wfb-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--border-strong)" />
-        </marker>
-      </defs>
-      {graph.edges.map((edge) => {
-        const from = nodeById.get(edge.from)
-        const to = nodeById.get(edge.to)
-        if (!from || !to) return null
-        const d = edgePath(outPort(from), inPort(to))
-        const isSel = edge.id === selectedEdgeId
-        return (
-          <g key={edge.id} data-gc-node="true">
-            <path
-              className="wfb__edge-hit"
-              d={d}
-              onPointerDown={(e) => {
-                e.stopPropagation()
-                setSelectedEdgeId(edge.id)
-                setSelectedNodeId(null)
-              }}
-            />
-            <path className={isSel ? 'wfb__edge wfb__edge--selected' : 'wfb__edge'} d={d} markerEnd="url(#wfb-arrow)" />
-          </g>
-        )
-      })}
-      {rubber && <path className="wfb__rubber" d={rubber} />}
-    </>
-  )
+  const mod = shortcutText('mod+z')
+  const menu: MenuItem[] = [
+    { id: 'undo', label: `Отменить · ${mod}`, onSelect: undo, disabled: !wf.canUndo },
+    { id: 'redo', label: `Повторить · ${shortcutText('mod+shift+z')}`, onSelect: redo, disabled: !wf.canRedo },
+    { id: 'seed', label: 'Вернуть схему MENTAT…', onSelect: () => setAsk('seed') },
+    { id: 'clear', label: 'Очистить канвас…', danger: true, onSelect: () => setAsk('clear'), disabled: graph.nodes.length === 0 },
+  ]
 
   return (
-    <div className="wfb">
-      {/* ── Палитра ─────────────────────────────────────────────────── */}
-      <aside className="wfb__palette">
-        <div className="wfb__palette-title">Типы шагов</div>
-        <p className="wfb__palette-hint">
-          Кликните тип, чтобы добавить узел на канвас. Тяните от нижнего порта к другому узлу, чтобы связать шаги.
-        </p>
-        {NODE_TYPES.map((type) => (
-          <button key={type} className="wfb__palette-btn" onClick={() => addNode(type)}>
-            <span className="wfb__swatch" style={{ background: NODE_META[type].color }} />
-            {NODE_META[type].label}
-          </button>
-        ))}
-      </aside>
-
-      {/* ── Центр: шапка + канвас ───────────────────────────────────── */}
-      <section className="wfb__center">
-        <header className="wfb__head">
-          <div>
-            <h1 className="wfb__title">Конструктор AI-воркфлоу</h1>
-            <p className="wfb__desc">
-              Черновик требований к будущей «мини-ChatGPT»: диалоги с пользователем и построение воркфлоу.
-              Разложите шаги AI-агента узлами и опишите требования/промпт для каждого.
-            </p>
-          </div>
-          <div className="wfb__toolbar">
-            <span className="wfb__count mono">
-              {graph.nodes.length} узлов · {graph.edges.length} связей
-            </span>
-            <button
-              className="btn btn--danger"
-              onClick={() => {
-                if (selectedNodeId) deleteNode(selectedNodeId)
-                else if (selectedEdgeId) deleteEdge(selectedEdgeId)
-              }}
-              disabled={!selectedNodeId && !selectedEdgeId}
-            >
-              Удалить выбранное
-            </button>
-            <button className="btn" onClick={clearAll}>
-              Очистить
-            </button>
-          </div>
-        </header>
-
-        <GraphCanvas
-          ref={canvasRef}
-          bounds={bounds}
-          autoFit={false}
-          minZoom={0.35}
-          maxZoom={2}
-          ariaLabel="Канвас воркфлоу: колесо — масштаб, перетаскивание фона — сдвиг, F — вписать"
-          className="wfb__canvas"
-          svg={edgesSvg}
-          onBackgroundPointerDown={() => {
-            setSelectedNodeId(null)
-            setSelectedEdgeId(null)
-          }}
-        >
-          {graph.nodes.map((node) => {
-            const meta = NODE_META[node.type]
-            const cls =
-              node.id === selectedNodeId
-                ? 'wfb__node wfb__node--selected'
-                : dragKind === 'node' && (dragRef.current as { id?: string }).id === node.id
-                  ? 'wfb__node wfb__node--dragging'
-                  : 'wfb__node'
-            return (
-              <div
-                key={node.id}
-                className={cls}
-                data-gc-node="true"
-                style={{ left: node.x, top: node.y }}
-                onPointerDown={(e) => onNodePointerDown(e, node)}
-              >
-                <div className="wfb__node-head" style={{ background: meta.color }}>
-                  {meta.label}
-                </div>
-                <div className="wfb__node-title">{node.title || '—'}</div>
-                <span className="wfb__port wfb__port--in" title="Вход" />
-                <span
-                  className={
-                    dragKind === 'connect' && (dragRef.current as { from?: string }).from === node.id
-                      ? 'wfb__port wfb__port--out wfb__port--active'
-                      : 'wfb__port wfb__port--out'
-                  }
-                  title="Выход — тяните к другому узлу"
-                  onPointerDown={(e) => onPortPointerDown(e, node)}
-                />
-              </div>
-            )
-          })}
-        </GraphCanvas>
-      </section>
-
-      {/* ── Инспектор ───────────────────────────────────────────────── */}
-      <aside className="wfb__inspector">
-        <div className="wfb__inspector-title">Инспектор</div>
-        {selectedNode ? (
-          <>
-            <span className="wfb__type-chip" style={{ background: NODE_META[selectedNode.type].color }}>
-              {NODE_META[selectedNode.type].label}
-            </span>
-            <div className="wfb__field">
-              <label className="wfb__label" htmlFor="wfb-title">
-                Заголовок
-              </label>
-              <input
-                id="wfb-title"
-                className="wfb__input"
-                value={selectedNode.title}
-                onChange={(e) => patchNode(selectedNode.id, { title: e.target.value })}
-              />
-            </div>
-            <div className="wfb__field">
-              <label className="wfb__label" htmlFor="wfb-notes">
-                Требования / промпт
-              </label>
-              <textarea
-                id="wfb-notes"
-                className="wfb__textarea"
-                placeholder="Что должен делать этот шаг: инструкции для LLM, условия ветвления, ожидаемый результат…"
-                value={selectedNode.notes}
-                onChange={(e) => patchNode(selectedNode.id, { notes: e.target.value })}
-              />
-            </div>
-            <div className="wfb__inspector-actions">
-              <button className="btn btn--danger" onClick={() => deleteNode(selectedNode.id)}>
-                Удалить узел
+    <div className="wfb" ref={rootRef} onKeyDown={onRootKey}>
+      <div className="wfb__bar">
+        <ScreenHeader
+          eyebrow="Система · [8] LLM"
+          blocks={['llm']}
+          title={screenTitle('aiflow')}
+          subtitle="Схема диалога MENTAT · черновик хранится в этом браузере"
+          actions={
+            <>
+              <button type="button" className="btn" onClick={overlayActions.openMentat}>
+                Открыть MENTAT <kbd className="wfb__kbd">{shortcutText('mod+j')}</kbd>
               </button>
-            </div>
-          </>
-        ) : selectedEdgeId ? (
-          <>
-            <p className="wfb__inspector-empty">Выбрана связь между шагами.</p>
-            <div className="wfb__inspector-actions">
-              <button className="btn btn--danger" onClick={() => deleteEdge(selectedEdgeId)}>
-                Удалить связь
-              </button>
-            </div>
-          </>
-        ) : (
-          <p className="wfb__inspector-empty">
-            Выберите узел, чтобы задать его заголовок и требования/промпт. Кликните на связь, чтобы удалить её.
-            Пустой клик по канвасу снимает выделение.
-          </p>
-        )}
-      </aside>
+              <button type="button" className="btn" onClick={() => downloadJson(graph)}>Экспорт .json</button>
+              <Menu items={menu} label="Ещё действия со схемой" />
+            </>
+          }
+        />
+      </div>
+
+      <div className="wfb__body">
+        <aside className="wfb__palette" aria-labelledby="wfb-palette-t">
+          <h2 className="wfb__side-title" id="wfb-palette-t">Типы шагов</h2>
+          {NODE_TYPES.map((type) => (
+            <button key={type} type="button" className={`wfb__palette-btn wfb__palette-btn--${NODE_META[type].tone}`} onClick={() => addNode(type)}>
+              <span className="wfb__glyph" aria-hidden="true">{NODE_META[type].glyph}</span>
+              {NODE_META[type].label}
+            </button>
+          ))}
+        </aside>
+
+        <section className="wfb__center" aria-label="Схема">
+          <div className="wfb__tools">
+            <span>Клик по типу — добавить · тяните от нижнего порта — связать · Del — удалить · F — вписать · {mod} — отменить</span>
+            <span className="wfb__tools-right">
+              {hasBack && <span className="wfb__legend"><span className="wfb__legend-line" aria-hidden="true" />возврат — связь назад по схеме</span>}
+              <span className="wfb__count">{steps} · {links}</span>
+              {!wf.saved && <span className="wfb__unsaved glyph-setup">черновик не сохраняется — браузер не дал записать</span>}
+            </span>
+          </div>
+          <WorkflowCanvas
+            ref={canvasRef}
+            graph={graph}
+            selection={selection}
+            onSelect={select}
+            onMove={(id, x, y, key) => update((g) => patchNode(g, id, { x, y }), key)}
+            onConnect={(from, to) => update((g) => connect(g, from, to).graph)}
+            onDeleteNode={deleteNode}
+          />
+        </section>
+
+        <ErrorBoundary variant="inline" label="Инспектор">
+          <WorkflowInspector
+            graph={graph}
+            selection={selection}
+            onSelect={select}
+            onPatchNode={(id, patch, key) => update((g) => patchNode(g, id, patch), key)}
+            onPatchEdge={(id, label, key) => update((g) => patchEdge(g, id, { label }), key)}
+            onConnect={(from, to) => update((g) => connect(g, from, to).graph)}
+            onDeleteNode={deleteNode}
+            onDeleteEdge={deleteEdge}
+          />
+        </ErrorBoundary>
+      </div>
+
+      {ask === 'clear' && (
+        <ConfirmDialog
+          title="Очистить канвас?"
+          consequence={`Удалить ${steps} и ${links}? Черновик в браузере будет перезаписан — вернуть можно ${mod} или «Отменить».`}
+          confirmLabel="Очистить"
+          danger
+          onConfirm={() => replaceAll(EMPTY, 'Канвас очищен')}
+          onCancel={() => setAsk(null)}
+        />
+      )}
+      {ask === 'seed' && (
+        <ConfirmDialog
+          title="Вернуть схему MENTAT?"
+          consequence={`Текущая схема (${steps}, ${links}) заменится стартовой схемой MENTAT — вернуть можно ${mod} или «Отменить».`}
+          confirmLabel="Вернуть схему"
+          onConfirm={() => replaceAll(seedGraph(), 'Возвращена схема MENTAT')}
+          onCancel={() => setAsk(null)}
+        />
+      )}
     </div>
   )
 }

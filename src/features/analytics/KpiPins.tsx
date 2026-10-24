@@ -1,64 +1,122 @@
 /**
- * Закреплённые показатели «Аналитики» (X1 §6.3 п. 3): число всегда `--text`, статус — глиф у
- * подписи + полоса снизу (`::after`), без hover-подъёма; герой (первая плитка) — 44 px и спарклайн
- * по построениям плана. Редактор набора — чипы по категориям, отдельно от плиток.
+ * Закреплённые показатели «Аналитики» — плитки кита (KpiTile), как на «Плане»: та же подпись
+ * («Заказы в срок · OTD»), «i» из реестра, число текстовым цветом, Δ к названной базе («−18 ч к №27»).
+ * Отклонение — глиф и слово; норма не подписывается и не красится. Герой — длина расписания с
+ * полосой хвоста (дет. · E · CVaR · худший) и спарклайном по построениям; ряд спарклайна держит
+ * место скелетом, пока ряд грузится. Редактор набора — чипы по категориям, отдельно от плиток.
  */
 import type { KpiBundle } from '../../lib/api'
 import { Icon } from '../../shell/icons'
 import { Sparkline } from '../../ui/charts'
-import { ChoiceChip } from '../../ui/kit'
-import { num } from '../../explain/format'
-import { KPI_CATALOG, KPI_CATEGORIES, kpiDef, readKpi, type KpiContext } from './kpiCatalog'
-import { DIR_ARROW, DIR_TITLE, STATUS_GLYPH, STATUS_LABEL, kpiParts, kpiStatus } from './kpiFormat'
+import { ChoiceChip, IconButton, KpiTile, Skeleton, TailStrip } from '../../ui/kit'
+import { countText } from '../../explain/format'
+import { KPI_CATALOG, KPI_CATEGORIES, kpiDef, kpiField, kpiLabel, readKpi, type KpiContext, type KpiDef } from './kpiCatalog'
+import { STATUS_LABEL, deltaBetter, kpiDeltaText, kpiDeviation, kpiText } from './kpiFormat'
 import { kpiTrack } from './chartData'
+import { planNo, type PlanRef } from './planRuns'
+
+const DEV_GLYPH = { warn: 'glyph-setup', bad: 'glyph-down' } as const
+const BUILDS = ['построению', 'построениям', 'построениям'] as const
 
 interface KpiPinsProps {
   pinned: ReadonlyArray<string>
-  /** KPI-блок, из которого берутся значения плиток (выбранный план или последний в ряду). */
+  /** KPI-блок выбранного построения (с полями кассы); null — нет данных. */
   bundle: KpiBundle | null
-  /** Ряд KPI по построениям — для спарклайна героя. */
+  loading: boolean
+  /** Ряд KPI по построениям до выбранного включительно, в окне периода — для спарклайна героя. */
   series: ReadonlyArray<KpiBundle>
+  seriesLoading: boolean
   ctx: KpiContext
+  /** База Δ: предыдущее построение (или выбранное в сравнении). */
+  base: { ref: PlanRef; bundle: KpiBundle } | null
+  onOpen: (code: string) => void
+  editing: boolean
+  onToggleEdit: () => void
+}
+
+export function KpiPins({ pinned, bundle, loading, series, seriesLoading, ctx, base, onOpen, editing, onToggleEdit }: KpiPinsProps) {
+  const defs = pinned.map(kpiDef).filter((d): d is KpiDef => Boolean(d))
+  return (
+    <div className="an-pins" aria-label="Закреплённые показатели" role="group">
+      {defs.map((def, i) => (
+        loading || !bundle
+          ? <PinSkeleton key={def.code} hero={i === 0} label={kpiLabel(def)} />
+          : <Pin key={def.code} def={def} hero={i === 0} bundle={bundle} series={series} seriesLoading={seriesLoading} ctx={ctx} base={base} onOpen={onOpen} />
+      ))}
+      <button type="button" className="an-pin-add" aria-pressed={editing} onClick={onToggleEdit}>
+        <Icon name={editing ? 'check' : 'pin'} size={14} />
+        {editing ? 'Готово' : defs.length ? 'Настроить набор' : 'Закрепить показатели'}
+      </button>
+    </div>
+  )
+}
+
+interface PinProps {
+  def: KpiDef
+  hero: boolean
+  bundle: KpiBundle
+  series: ReadonlyArray<KpiBundle>
+  seriesLoading: boolean
+  ctx: KpiContext
+  base: KpiPinsProps['base']
   onOpen: (code: string) => void
 }
 
-export function KpiPins({ pinned, bundle, series, ctx, onOpen }: KpiPinsProps) {
-  if (pinned.length === 0) {
-    return <p className="an-muted">Нет закреплённых показателей — нажмите «Настроить набор».</p>
-  }
-  const currentIdx = bundle ? series.findIndex((b) => b.plan_id === bundle.plan_id) : -1
+function Pin({ def, hero, bundle, series, seriesLoading, ctx, base, onOpen }: PinProps) {
+  const label = kpiLabel(def)
+  const { value, estimate } = readKpi(def, bundle, ctx)
+  const dev = kpiDeviation(def, value, bundle)
+  const baseValue = base ? def.value(base.bundle, ctx) : Number.NaN
+  const d = value - baseValue
+  const showDelta = base && Number.isFinite(d) && (hero || Math.abs(d) > 1e-12)
+  const tools = (
+    <span className="an-pin__tools">
+      {estimate && <span className="an-pin__est" title="оценка по старому набору полей плана">≈ оценка</span>}
+      <IconButton icon="chart" size="sm" variant="ghost" title={`«${label}» по построениям — в первом графике`} onClick={() => onOpen(def.code)} />
+    </span>
+  )
   return (
-    <div className="an-pins">
-      {pinned.map((code, i) => {
-        const def = kpiDef(code)
-        if (!def) return null
-        const { value, estimate } = bundle ? readKpi(def, bundle, ctx) : { value: Number.NaN, estimate: false }
-        const st = bundle ? kpiStatus(def, value, bundle) : ''
-        const parts = kpiParts(value, def.unit)
-        const hero = i === 0
-        const track = hero ? kpiTrack(code, series) : []
-        const cls = ['an-pin', hero ? 'an-pin--hero' : '', st ? `an-pin--${st}` : ''].filter(Boolean).join(' ')
-        return (
-          <button key={code} type="button" className={cls} onClick={() => onOpen(code)} title={`${def.nameEn} — показать по построениям`}>
-            <span className="an-pin__k text-caps">
-              {st && <span className={STATUS_GLYPH[st]} title={STATUS_LABEL[st]} aria-label={STATUS_LABEL[st]} />}
-              {def.name}
-              <span className="an-pin__dir" title={DIR_TITLE[def.dir]} aria-label={DIR_TITLE[def.dir]}>{DIR_ARROW[def.dir]}</span>
-            </span>
-            <span className="an-pin__v">
-              {estimate && <span className="an-pin__est" title="оценка по старому набору полей плана">≈</span>}
-              {parts.value}
-              {parts.unit && <small>{parts.unit}</small>}
-            </span>
-            {hero && track.filter(Number.isFinite).length >= 2 && (
-              <span className="an-pin__trend">
-                <Sparkline points={track} width={220} height={36} mark={currentIdx >= 0 ? currentIdx : undefined} />
-                <span className="an-pin__trend-k">по {num(track.length, 0)} построениям</span>
-              </span>
-            )}
-          </button>
-        )
-      })}
+    <KpiTile metric={def.info} values={def.infoValues?.(bundle, ctx)} label={label} value={kpiText(value, def.unit)}
+      size={hero ? 'hero' : 'md'} className={`an-pin${hero ? ' an-pin--hero' : ''}`} status={tools}
+      state={dev ? { glyph: DEV_GLYPH[dev], word: STATUS_LABEL[dev] } : undefined}
+      delta={showDelta && base ? { value: d, better: deltaBetter(def.dir), base: planNo(base.ref.seq), fmt: (x) => kpiDeltaText(x, def.unit) } : undefined}>
+      {hero && <HeroExtras def={def} bundle={bundle} series={series} seriesLoading={seriesLoading} />}
+    </KpiTile>
+  )
+}
+
+/** Герой: полоса хвоста (для длины расписания) и спарклайн; место под спарклайн держится всегда. */
+function HeroExtras({ def, bundle, series, seriesLoading }: { def: KpiDef; bundle: KpiBundle; series: ReadonlyArray<KpiBundle>; seriesLoading: boolean }) {
+  const det = kpiField(bundle, 'makespan')
+  const mean = kpiField(bundle, 'makespan_mean')
+  const cvar = kpiField(bundle, 'makespan_cvar')
+  const worst = kpiField(bundle, 'makespan_worst')
+  const tail = def.code === 'MAKESPAN' && [det, mean, cvar, worst].every(Number.isFinite)
+  const track = kpiTrack(def.code, series)
+  const points = track.filter(Number.isFinite).length
+  return (
+    <>
+      {tail && <TailStrip det={det} mean={mean} cvar={cvar} worst={worst} />}
+      <div className="an-pin__trend">
+        {seriesLoading ? <Skeleton h={36} w={220} /> : points >= 2 ? (
+          <>
+            <Sparkline points={track} width={220} height={36} mark={track.length - 1} />
+            <span className="an-pin__trend-k">по {countText(points, BUILDS)}</span>
+          </>
+        ) : (
+          <span className="an-pin__trend-k">тренд появится со второго построения</span>
+        )}
+      </div>
+    </>
+  )
+}
+
+function PinSkeleton({ hero, label }: { hero: boolean; label: string }) {
+  return (
+    <div className={`dk-kpitile an-pin${hero ? ' an-pin--hero' : ''}`} aria-busy="true" aria-label={`${label}: загрузка`}>
+      <Skeleton h={11} w="60%" />
+      <Skeleton h={hero ? 32 : 24} w="45%" />
+      {hero && <Skeleton h={36} w={220} />}
     </div>
   )
 }
@@ -79,7 +137,7 @@ export function PinEditor({ pinned, onToggle }: { pinned: ReadonlyArray<string>;
                 return (
                   <ChoiceChip key={k.code} pressed={on} onToggle={() => onToggle(k.code)}>
                     <Icon name={on ? 'check' : 'plus'} size={12} />
-                    {k.name}
+                    {kpiLabel(k)}
                   </ChoiceChip>
                 )
               })}

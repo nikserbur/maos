@@ -1,5 +1,7 @@
 /**
  * Переключатель над Гантом (UX-V2 §4.8): «План» · «Диф» · «До» · «После» · «Маршрут» · «Таблица ходов».
+ * Появляется, только когда есть настоящий пакет агента и решён хотя бы один ход (X2: пример и пустой
+ * диф не выглядят результатом); пустые виды — одна строка, без оси дат и подсказок клавиш.
  * «После» строится на фронтенде из принятых/замороженных ходов (applyMoves), диф — diffSchedules.
  * Клавиатура на дифе (по физическим клавишам — работает и в русской раскладке): j/k — следующее /
  * предыдущее изменение, a — принять, x — отклонить, f — заморозить ход текущего изменения, Esc — снять.
@@ -9,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import type { ScheduleResult } from '../../../lib/api'
 import { num } from '../../../explain/format'
 import { Legend, type LegendItem } from '../../../ui/charts'
-import { Chip, Segmented, Switch } from '../../../ui/kit'
+import { Segmented, Switch } from '../../../ui/kit'
 import { buildPalette } from '../ganttModel'
 import { parseIsoDate } from '../wizard/dates'
 import { movesActions, useMovesSession } from '../moves/decisionsStore'
@@ -71,7 +73,8 @@ export function PlanDiffView({ result, source, startDate, plan }: Props) {
     boxRef.current?.querySelector('.gd-bar.is-current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [current, view])
 
-  if (!source.moves || moves.length === 0) return <>{plan}</>
+  const decided = moves.some((m) => statusOf(m, session.decisions) !== 'proposed')
+  if (!source.moves || moves.length === 0 || source.kind !== 'agent' || !decided) return <>{plan}</>
 
   const decideCurrent = (d: 'accept' | 'reject' | 'freeze') => {
     const c = diff.changes.find((x) => x.key === current)
@@ -105,7 +108,6 @@ export function PlanDiffView({ result, source, startDate, plan }: Props) {
     <div className="pdv">
       <div className="pdv-bar">
         <Segmented label="Вид Ганта" size="sm" fit value={view} onChange={setView} options={VIEWS} />
-        {source.kind === 'demo' && <Chip tone="setup" size="sm">пример ходов</Chip>}
         {view !== 'plan' && view !== 'table' && (
           <>
             <span className="pdv-bar__sum num">
@@ -119,15 +121,17 @@ export function PlanDiffView({ result, source, startDate, plan }: Props) {
       {view !== 'plan' && (
         <div ref={boxRef} className="pdv-box" tabIndex={0} role="group" onKeyDown={onKey}
           aria-label="Диф плана: j/k — следующее/предыдущее изменение, a — принять, x — отклонить, f — заморозить, Esc — снять выбор">
-          {isGantt && <Legend items={DIFF_LEGEND} className="pdv-legend" />}
+          {isGantt && diff.changes.length > 0 && <Legend items={DIFF_LEGEND} className="pdv-legend" />}
           {isGantt && <GanttDiff diff={diff} mode={view as DiffMode} palette={palette} start={start} showUnchanged={showUnchanged}
             currentKey={current} selectedMove={session.selectedId} moveName={name}
             onPick={(key, moveId) => { setCurrent(key); movesActions.select(source.runKey, moveId ?? null); boxRef.current?.focus({ preventScroll: true }) }} />}
           {view === 'route' && <RouteDiff rows={routes} showUnchanged={showUnchanged} />}
-          {view === 'table' && <MovesTable moves={moves} decisions={session.decisions} gantt={result.gantt} rule={result.rule} demo={source.kind === 'demo'} />}
-          <p className="pdv-keys mono" aria-hidden="true">
-            <kbd>j</kbd>/<kbd>k</kbd> изменение {cur >= 0 ? `${cur + 1} из ${diff.changes.length}` : `· ${diff.changes.length}`} · <kbd>a</kbd> принять · <kbd>x</kbd> отклонить · <kbd>f</kbd> заморозить · <kbd>Esc</kbd>
-          </p>
+          {view === 'table' && <MovesTable moves={moves} decisions={session.decisions} gantt={result.gantt} rule={result.rule} demo={false} />}
+          {view !== 'table' && diff.changes.length > 0 && (
+            <p className="pdv-keys mono" aria-hidden="true">
+              <kbd>j</kbd>/<kbd>k</kbd> изменение {cur >= 0 ? `${cur + 1} из ${diff.changes.length}` : `· ${diff.changes.length}`} · <kbd>a</kbd> принять · <kbd>x</kbd> отклонить · <kbd>f</kbd> заморозить · <kbd>Esc</kbd>
+            </p>
+          )}
         </div>
       )}
     </div>

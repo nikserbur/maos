@@ -38,7 +38,7 @@
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .dk-menu__item:hover:not(:disabled) { background: var(--bg-hover); }
-.dk-menu__item:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-menu__item:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 .dk-menu__item:disabled { color: var(--text-disabled); cursor: not-allowed; }
 .dk-menu__item--danger { color: var(--status-down); }
 .dk-menu__item--danger:not(:first-child) { margin-top: var(--space-1); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }

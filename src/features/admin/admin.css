@@ -1,28 +1,93 @@
-/* Экран «Администрирование» — журнал действий (DataTable по дням), пользователи, роли. Только токены. */
-.adm { height: 100%; overflow-y: auto; padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
-.adm__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-/* Две колонки только на широком экране: журнал слева, «Пользователи» и «Роли» стопкой справа. */
-@media (min-width: 1180px) {
-  .adm__grid { grid-template-columns: minmax(0, 1fr) 340px; }
-  .adm__panel--wide { grid-row: span 2; }
+/*
+ * «Администрирование» (X2 P-133…P-145): колонка во всю высоту — шапка, журнал с одной прокруткой
+ * внутри рамки таблицы, справа стопкой «Пользователи» и «Роли и права»; боковая панель — справа от
+ * всего. Цвет — только у исключений (чипы ■/▲) и у взаимодействия. Только токены.
+ */
+.adm-shell { height: 100%; display: flex; min-height: 0; min-width: 0; }
+.adm {
+  container: adm / inline-size;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  overflow-y: auto;
 }
-.adm__panel-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
-.adm__panel-title { margin: 0 auto 0 0; color: var(--text-muted); }
-.adm__panel-title .num { margin-left: var(--space-1); color: var(--text-secondary); }
-.adm__panel:not(.dk-card--flush) .adm__panel-title { margin-bottom: var(--space-3); }
-.adm__filter { height: var(--control-compact); background: var(--bg-input); color: var(--text); border: 1px solid var(--border-control); border-radius: var(--radius); padding: 0 var(--space-2); font: inherit; font-size: var(--fs-12); }
-.adm__filter:focus-visible { outline: none; border-color: var(--focus); box-shadow: var(--halo); }
-.adm__log { max-height: 64vh; }
-.adm__ts { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-muted); }
-.adm__role { padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
-.adm__role:last-child { border-bottom: 0; }
-.adm__role-name { font-size: var(--fs-13); font-weight: 600; margin-bottom: var(--space-1); }
-.adm__perms { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.adm__perm { font-size: var(--fs-11); padding: 1px 6px; border-radius: var(--radius-sm); background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-secondary); }
-.adm__perm--more { color: var(--text-muted); }
-.adm__empty { color: var(--text-muted); font-size: var(--fs-12); padding: var(--space-2); }
+.adm__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.adm__side { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; min-height: 0; }
+.adm__side > .adm__panel { flex: none; }
+/* Узкий контейнер: страница прокручивается целиком, журнал — ограниченной высоты. */
+.adm__log-table { max-height: 70vh; }
 
-/* Роль и цех пользователя — правка прямо в строке */
-.adm__select { height: 28px; min-width: 0; max-width: 220px; font-size: var(--fs-12); }
+/* Широкий контейнер: сетка заполняет остаток высоты, журнал — рамка таблицы во всю высоту (одна
+   прокрутка), справа — стопка «Пользователи» и «Роли и права» без зазора. */
+@container adm (min-width: 860px) {
+  .adm__grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 34%, 440px);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .adm__log { min-height: 0; }
+  .adm__log-table { flex: 1 1 auto; min-height: 0; max-height: none; }
+  .adm__side { overflow-y: auto; }
+}
+
+/* ── Панели ───────────────────────────────────────────────────────────── */
+.adm__panel { display: flex; flex-direction: column; min-width: 0; }
+.adm__panel-head { display: flex; align-items: center; gap: var(--space-2) var(--space-3); flex-wrap: wrap; padding: var(--space-2) var(--space-4) 6px; min-height: 40px; }
+.adm__panel-title { margin: 0 auto 0 0; font-size: var(--fs-14); font-weight: 600; color: var(--text); }
+.adm__panel-meta { font-weight: 400; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.adm__panel-tools { display: flex; align-items: center; gap: var(--space-2) var(--space-3); flex-wrap: wrap; padding: 0 var(--space-4) var(--space-2); }
+.adm__panel > .dk-table-wrap { border-radius: 0; }
+.adm__panel > .dk-table-wrap--framed { border-width: 1px 0 0; }
+.adm__panel > .dk-table-wrap:not(.dk-table-wrap--framed) { border-top: 1px solid var(--border); }
+.adm__banner { padding: 0 var(--space-4) var(--space-2); }
+.adm__banner--panel { padding: 0 0 var(--space-3); }
+.adm__more { display: flex; justify-content: center; padding: var(--space-2); border-top: 1px solid var(--border); }
+.adm__search { min-width: 200px; width: 260px; max-width: 100%; }
+.adm__active { display: inline-flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.adm__flag { margin-left: var(--space-1); font-size: var(--fs-11); }
+
+/* ── Журнал ───────────────────────────────────────────────────────────── */
+.dk-table td.adm__ts { width: 1%; white-space: nowrap; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dk-table td.adm__who { white-space: nowrap; }
+.adm__act { color: var(--text-secondary); white-space: nowrap; }
+.adm__obj { display: inline-flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
+.adm__obj-type { color: var(--text); font-weight: 500; }
+.adm__obj-name { color: var(--text-secondary); font-weight: 400; }
+.adm__obj-link { color: var(--accent-text); font-weight: 400; text-decoration: none; border-radius: var(--radius-sm); }
+.adm__obj-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.adm__obj-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ── Пользователи и права ─────────────────────────────────────────────── */
+.adm__role-cell { display: inline-flex; flex-direction: column; gap: 1px; }
+.adm__sub { font-size: var(--fs-11); font-weight: 400; color: var(--text-muted); }
+.dk-table th.adm__wrap-th { white-space: normal; line-height: 1.2; }
+.dk-table th.adm__wrap-th .dk-table__sort { text-align: right; }
 .adm__muted { color: var(--text-muted); }
-.adm__error { margin: 0 var(--space-4) var(--space-2); }
+.adm__matrix thead th { text-transform: none; letter-spacing: 0; font-feature-settings: normal; white-space: normal; vertical-align: bottom; }
+.adm__matrix thead th:not(:first-child) { text-align: center; }
+.adm__role-head { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); hyphens: manual; }
+.dk-table td.adm__cell-mark { text-align: center; width: 1%; }
+.adm__perm { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: 400; }
+.adm__yes { color: var(--text); font-weight: 600; }
+.adm__no { color: var(--text-muted); }
+
+/* ── Боковая панель: «ключ — значение», форма, опасная зона ───────────── */
+.adm__kv { display: flex; flex-direction: column; margin: 0 0 var(--space-4); }
+.adm__kv-row { display: grid; grid-template-columns: minmax(96px, 38%) minmax(0, 1fr); gap: var(--space-3); padding: 6px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-13); }
+.adm__kv-row:last-child { border-bottom: 0; }
+.adm__kv dt { color: var(--text-muted); }
+.adm__kv dd { margin: 0; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.adm__kv-num { font-variant-numeric: tabular-nums; }
+.adm__kv-title { margin: 0 0 var(--space-2); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.adm__form { gap: var(--space-3); }
+.adm__static { margin: 0; font-size: var(--fs-13); color: var(--text); }
+.adm__saved { margin: 0 0 var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.adm__danger-zone { margin-top: var(--space-5); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.adm__danger-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.adm__field-err { font-size: var(--fs-12); color: var(--text); }

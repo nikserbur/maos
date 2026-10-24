@@ -1,14 +1,16 @@
 /**
- * Инспектор операции (правая панель конструктора): название · тип РЦ (бейдж НСИ) · время ·
- * входы (I) из реестра изделий · выход (O) · управление (C) · механизм (M) · порядок · удалить;
- * ниже — «Добавить операцию»: из реестра одним действием или «создать новую» (раскрывается).
- * Ни одной primary-кнопки — единственная primary экрана «Сохранить» в шапке.
+ * Инспектор операции (правая панель конструктора, 360 px; P-54): название (две строки, без обрезки) ·
+ * тип станка (чип ▲ — только если его нет в Справочниках) · время PERT и наладка · связи IDEF0 под
+ * «Связи IDEF0 (n) ▸» (раскрыты, если что-то задано) · внизу за разделителем — «Удалить операцию».
+ * Нет выбранной операции — «Добавить операцию» (туда же ведёт «+ Операция» над канвасом).
  */
 import { useState, type Dispatch, type KeyboardEvent } from 'react'
-import { api, type Operation, type Product, type WorkCenterType } from '../../../lib/api'
+import type { Operation, Product, WorkCenterType } from '../../../lib/api'
 import { Icon } from '../../../shell/icons'
-import { fmtValue } from '../../../explain/format'
-import type { InputMaterial, RoutingAction, RoutingOp } from './routingModel'
+import { fmtValue, num } from '../../../explain/format'
+import { Chip } from '../../../ui/kit'
+import { AddOperation } from './AddOperation'
+import type { InputMaterial, OpPatch, RoutingAction, RoutingOp } from './routingModel'
 
 interface InspectorProps {
   selected: RoutingOp | null
@@ -18,31 +20,48 @@ interface InspectorProps {
   products: Product[]
   registryOps: Operation[]
   wcTypes: WorkCenterType[]
+  addFocus: number
 }
 
-export function RoutingInspector({ selected, selectedIndex, count, dispatch, products, registryOps, wcTypes }: InspectorProps) {
+export function RoutingInspector({ selected, selectedIndex, count, dispatch, products, registryOps, wcTypes, addFocus }: InspectorProps) {
   return (
     <aside className="rt-inspector" aria-label="Инспектор операции">
       {selected ? (
-        <OpEditor op={selected} index={selectedIndex} count={count} dispatch={dispatch} products={products} wcTypes={wcTypes} />
+        <OpEditor key={selected.id} op={selected} index={selectedIndex} count={count} dispatch={dispatch} products={products} wcTypes={wcTypes} />
       ) : (
-        <div className="rt-inspector__empty">
-          <p className="text-caps rt-inspector__t">Инспектор операции</p>
-          <p className="rt-muted">Выберите операцию на канвасе или в полосе маршрута внизу — здесь редактируются её тип РЦ, время и связи IDEF0.</p>
-        </div>
+        <>
+          <div className="rt-inspector__empty">
+            <p className="text-caps rt-inspector__t">Инспектор операции</p>
+            <p className="rt-muted">Выберите операцию на канвасе или в полосе маршрута — здесь правятся её тип станка, время и связи IDEF0.</p>
+          </div>
+          <AddOperation dispatch={dispatch} registryOps={registryOps} wcTypes={wcTypes} focusToken={addFocus} />
+        </>
       )}
-      <AddOperation dispatch={dispatch} registryOps={registryOps} wcTypes={wcTypes} />
     </aside>
   )
 }
 
+const idefCount = (op: RoutingOp) => op.inputs.length + op.outputs.length + op.controls.length + op.mechanisms.length
+
 function OpEditor({ op, index, count, dispatch, products, wcTypes }: {
   op: RoutingOp; index: number; count: number; dispatch: Dispatch<RoutingAction>; products: Product[]; wcTypes: WorkCenterType[]
 }) {
-  const known = wcTypes.some((t) => t.name === op.wcType)
-  const patch = (p: Partial<Pick<RoutingOp, 'title' | 'opType' | 'wcType' | 'timeMin'>>) => dispatch({ type: 'UPDATE_OP', id: op.id, patch: p })
+  const known = !op.wcType || wcTypes.length === 0 || wcTypes.some((t) => t.name === op.wcType)
+  const patch = (p: OpPatch) => dispatch({ type: 'UPDATE_OP', id: op.id, patch: p })
+  const deterministic = op.tOpt === op.timeMin && op.tPess === op.timeMin
+  const setNorm = (v: number) => patch(deterministic ? { timeMin: v, tOpt: v, tPess: v } : { timeMin: v })
+  const leadId = wcTypes.find((t) => t.name === op.wcType)?.id
+  const others = op.wcTypeIds.filter((id) => id !== leadId).map((id) => wcTypes.find((t) => t.id === id)?.name).filter(Boolean)
+  const setLead = (name: string) => {
+    const nextId = wcTypes.find((t) => t.name === name)?.id
+    const rest = op.wcTypeIds.filter((id) => id !== leadId && id !== nextId)
+    patch({ wcType: name, wcTypeIds: nextId ? [nextId, ...rest] : rest })
+  }
+  const n = idefCount(op)
+  const pert = deterministic ? '' : ` · ${num(op.tOpt, 0)}–${num(op.tPess, 0)} (PERT)`
+
   return (
-    <section className="rt-section">
+    <section className="rt-section rt-section--edit">
       <header className="rt-section__head">
         <span className="text-caps rt-inspector__t">Операция A{index + 1}</span>
         <span className="rt-section__tools">
@@ -55,111 +74,67 @@ function OpEditor({ op, index, count, dispatch, products, wcTypes }: {
 
       <label className="form__field">
         <span className="form__label">Название</span>
-        <input className="form__input" value={op.title} onChange={(e) => patch({ title: e.target.value })} />
+        <textarea className="form__textarea rt-name" rows={2} value={op.title} onChange={(e) => patch({ title: e.target.value })} />
       </label>
 
       <label className="form__field">
-        <span className="form__label">Тип рабочего центра {known ? <span className="rt-badge" title="Тип из реестра НСИ">● НСИ</span> : op.wcType ? <span className="rt-badge is-warn" title="Такого типа нет в реестре">▲ нет в НСИ</span> : null}</span>
-        <select className="form__select" value={op.wcType} aria-invalid={!op.wcType || undefined} onChange={(e) => patch({ wcType: e.target.value })}>
-          <option value="">— не задано —</option>
-          {!known && op.wcType && <option value={op.wcType}>{op.wcType}</option>}
+        <span className="form__label">Тип станка</span>
+        <select className="form__select" value={op.wcType} aria-invalid={!op.wcType || undefined} onChange={(e) => setLead(e.target.value)}>
+          <option value="">— не задан —</option>
+          {!known && <option value={op.wcType}>{op.wcType}</option>}
           {wcTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
         </select>
-        {!op.wcType && <span className="form__hint">Без типа РЦ планировщику не на чем выполнять операцию.</span>}
+        {!known && <Chip tone="setup" size="sm">тип не найден в Справочниках</Chip>}
+        {!op.wcType && <span className="form__hint">Без типа станка планировщику не на чем выполнять операцию.</span>}
+        {others.length > 0 && <span className="form__hint">Также допустимы: {others.join(', ')}</span>}
       </label>
 
-      <label className="form__field rt-field--time">
+      <div className="form__field">
         <span className="form__label">Время, мин</span>
-        <input className="form__input" type="number" min="1" value={op.timeMin} onChange={(e) => patch({ timeMin: Number(e.target.value) })} />
-      </label>
-
-      <InputMaterialPicker items={op.inputs} products={products}
-        onAdd={(m) => dispatch({ type: 'ADD_INPUT', id: op.id, input: m })}
-        onRemove={(i) => dispatch({ type: 'DEL_INPUT', id: op.id, index: i })} />
-      <TagList label="O — Выход операции" hint="Полуфабрикат, изделие…" items={op.outputs}
-        onAdd={(v) => dispatch({ type: 'ADD_TAG', id: op.id, field: 'outputs', value: v })}
-        onRemove={(i) => dispatch({ type: 'DEL_TAG', id: op.id, field: 'outputs', index: i })} />
-      <TagList label="C — Управление" hint="ГОСТ, НТД, регламент…" items={op.controls}
-        onAdd={(v) => dispatch({ type: 'ADD_TAG', id: op.id, field: 'controls', value: v })}
-        onRemove={(i) => dispatch({ type: 'DEL_TAG', id: op.id, field: 'controls', index: i })} />
-      <TagList label="M — Механизм" hint="Станок, разряд рабочего…" items={op.mechanisms}
-        onAdd={(v) => dispatch({ type: 'ADD_TAG', id: op.id, field: 'mechanisms', value: v })}
-        onRemove={(i) => dispatch({ type: 'DEL_TAG', id: op.id, field: 'mechanisms', index: i })} />
-
-      <button type="button" className="btn btn--danger rt-delete" onClick={() => dispatch({ type: 'DELETE_OP', id: op.id })}>
-        Удалить операцию
-      </button>
-    </section>
-  )
-}
-
-/** Добавление операции: из реестра — одним «+»; новая — раскрывающаяся форма с опцией сохранения в НСИ. */
-function AddOperation({ dispatch, registryOps, wcTypes }: { dispatch: Dispatch<RoutingAction>; registryOps: Operation[]; wcTypes: WorkCenterType[] }) {
-  const [pickedOpId, setPickedOpId] = useState('')
-  const [showCustom, setShowCustom] = useState(registryOps.length === 0)
-  const [title, setTitle] = useState('')
-  const [wc, setWc] = useState('')
-  const [time, setTime] = useState('30')
-  const [saveToNsi, setSaveToNsi] = useState(false)
-  const [saving, setSaving] = useState(false)
-
-  const addFromRegistry = () => {
-    const op = registryOps.find((o) => o.id === pickedOpId)
-    if (!op) return
-    dispatch({ type: 'ADD_OP', title: op.name, opType: op.op_type, wcType: op.wc_types, timeMin: Number(op.t_norm) || 30 })
-    setPickedOpId('')
-  }
-
-  const addCustom = async () => {
-    if (!title.trim()) return
-    const wcName = wcTypes.find((t) => t.id === wc)?.name ?? ''
-    if (saveToNsi) {
-      setSaving(true)
-      try {
-        await api.operations.create({ name: title.trim(), wc_types: wcName, t_norm: time, t_opt: time, t_pess: time })
-      } catch { /* не фатально — операция всё равно попадает в маршрут */ } finally { setSaving(false) }
-    }
-    dispatch({ type: 'ADD_OP', title: title.trim(), opType: '', wcType: wcName, timeMin: Number(time) || 30 })
-    setTitle(''); setTime('30'); setWc('')
-  }
-
-  return (
-    <section className="rt-section rt-section--add">
-      <p className="text-caps rt-inspector__t">Добавить операцию</p>
-      {registryOps.length > 0 && (
-        <div className="rt-row">
-          <select className="form__select" value={pickedOpId} aria-label="Операция из реестра" onChange={(e) => setPickedOpId(e.target.value)}>
-            <option value="">— из реестра —</option>
-            {registryOps.map((op) => <option key={op.id} value={op.id}>{op.name}</option>)}
-          </select>
-          <button type="button" className="btn btn--icon" aria-label="Добавить из реестра" disabled={!pickedOpId} onClick={addFromRegistry}><Icon name="plus" size={14} /></button>
+        <div className="rt-times">
+          <label><span className="rt-times__l">норма</span>
+            <input className="form__input" type="number" min="0" value={op.timeMin} onChange={(e) => setNorm(Number(e.target.value))} /></label>
+          <label><span className="rt-times__l">оптим.</span>
+            <input className="form__input" type="number" min="0" value={op.tOpt} onChange={(e) => patch({ tOpt: Number(e.target.value) })} /></label>
+          <label><span className="rt-times__l">пессим.</span>
+            <input className="form__input" type="number" min="0" value={op.tPess} onChange={(e) => patch({ tPess: Number(e.target.value) })} /></label>
         </div>
-      )}
-      {registryOps.length > 0 && (
-        <button type="button" className="rt-link" aria-expanded={showCustom} onClick={() => setShowCustom((v) => !v)}>
-          {showCustom ? '▾' : '▸'} или создать новую
+        <span className="form__hint num">
+          {fmtValue(op.timeMin, 'мин')}{pert}{op.setupMin > 0 ? ` · наладка ${fmtValue(op.setupMin, 'мин')}` : ''}
+        </span>
+      </div>
+
+      <details className="rt-idef-box" open={n > 0 || !op.inputsKnown}>
+        <summary className="rt-idef-box__sum">Связи IDEF0 ({num(n, 0)})</summary>
+        <div className="rt-idef-box__body">
+          {op.inputsKnown ? (
+            <InputMaterialPicker items={op.inputs} products={products}
+              onAdd={(m) => dispatch({ type: 'ADD_INPUT', id: op.id, input: m })}
+              onRemove={(i) => dispatch({ type: 'DEL_INPUT', id: op.id, index: i })} />
+          ) : (
+            <div className="rt-tags">
+              <span className="form__label">I — Входные материалы</span>
+              <p className="rt-muted">входы заданы в Справочниках — здесь не редактируются</p>
+            </div>
+          )}
+          <TagList label="O — Выход операции" hint="Полуфабрикат, изделие…" items={op.outputs}
+            onAdd={(v) => dispatch({ type: 'ADD_TAG', id: op.id, field: 'outputs', value: v })}
+            onRemove={(i) => dispatch({ type: 'DEL_TAG', id: op.id, field: 'outputs', index: i })} />
+          <TagList label="C — Управление" hint="ГОСТ, НТД, регламент…" items={op.controls}
+            onAdd={(v) => dispatch({ type: 'ADD_TAG', id: op.id, field: 'controls', value: v })}
+            onRemove={(i) => dispatch({ type: 'DEL_TAG', id: op.id, field: 'controls', index: i })} />
+          <TagList label="M — Механизм" hint="Оснастка, разряд рабочего…" items={op.mechanisms}
+            onAdd={(v) => dispatch({ type: 'ADD_TAG', id: op.id, field: 'mechanisms', value: v })}
+            onRemove={(i) => dispatch({ type: 'DEL_TAG', id: op.id, field: 'mechanisms', index: i })} />
+        </div>
+      </details>
+
+      <footer className="rt-inspector__foot">
+        <button type="button" className="btn btn--danger btn--sm" onClick={() => dispatch({ type: 'DELETE_OP', id: op.id })}>
+          Удалить операцию
         </button>
-      )}
-      {showCustom && (
-        <div className="rt-custom">
-          <input className="form__input" value={title} placeholder="Название операции" aria-label="Название новой операции"
-            onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addCustom() }} />
-          <div className="rt-row">
-            <select className="form__select" value={wc} aria-label="Тип оборудования" onChange={(e) => setWc(e.target.value)}>
-              <option value="">— тип оборудования —</option>
-              {wcTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <input className="form__input rt-custom__time" type="number" min="1" value={time} aria-label="Время, мин" onChange={(e) => setTime(e.target.value)} />
-          </div>
-          <label className="rt-check">
-            <input type="checkbox" checked={saveToNsi} onChange={(e) => setSaveToNsi(e.target.checked)} />
-            сохранить и в реестре операций НСИ
-          </label>
-          <button type="button" className="btn" disabled={saving || !title.trim()} onClick={() => void addCustom()}>
-            {saving ? 'Сохраняем…' : 'Добавить в маршрут'}
-          </button>
-        </div>
-      )}
+        <span className="rt-muted">удаление — до «Сохранить»; «Отмена» вернёт</span>
+      </footer>
     </section>
   )
 }
@@ -182,7 +157,7 @@ function InputMaterialPicker({ items, products, onAdd, onRemove }: {
       <ul className="rt-tags__list">
         {items.map((m, i) => (
           <li key={i} className="rt-tag">
-            <span className="rt-tag__t">{m.name}</span>
+            <span className="rt-tag__t" title={m.name}>{m.name}</span>
             <span className="rt-tag__q num">{fmtValue(m.qty)} {m.unit}</span>
             <button type="button" className="rt-tag__x" aria-label={`Убрать ${m.name}`} onClick={() => onRemove(i)}><Icon name="close" size={12} /></button>
           </li>
@@ -195,9 +170,8 @@ function InputMaterialPicker({ items, products, onAdd, onRemove }: {
           {products.map((p) => <option key={p.id} value={p.id}>{p.code ? `${p.code} ` : ''}{p.name}</option>)}
         </select>
         <input className="form__input rt-custom__time" type="number" min="0.001" step="any" value={qty} aria-label="Количество" onChange={(e) => setQty(e.target.value)} />
-        <button type="button" className="btn btn--icon" aria-label="Добавить материал" disabled={!selId} onClick={add}><Icon name="plus" size={14} /></button>
+        <button type="button" className="btn btn--icon" aria-label="Добавить материал" onClick={add}><Icon name="plus" size={14} /></button>
       </div>
-      {products.length === 0 && <span className="form__hint">Нет изделий в реестре — создайте их в НСИ.</span>}
     </div>
   )
 }
@@ -212,7 +186,7 @@ function TagList({ label, hint, items, onAdd, onRemove }: { label: string; hint:
       <ul className="rt-tags__list">
         {items.map((t, i) => (
           <li key={i} className="rt-tag">
-            <span className="rt-tag__t">{t}</span>
+            <span className="rt-tag__t" title={t}>{t}</span>
             <button type="button" className="rt-tag__x" aria-label={`Убрать ${t}`} onClick={() => onRemove(i)}><Icon name="close" size={12} /></button>
           </li>
         ))}
@@ -220,7 +194,7 @@ function TagList({ label, hint, items, onAdd, onRemove }: { label: string; hint:
       </ul>
       <div className="rt-row">
         <input className="form__input" value={val} placeholder="Добавить…" aria-label={label} onChange={(e) => setVal(e.target.value)} onKeyDown={onKey} />
-        <button type="button" className="btn btn--icon" aria-label="Добавить" disabled={!val.trim()} onClick={add}><Icon name="plus" size={14} /></button>
+        <button type="button" className="btn btn--icon" aria-label="Добавить" onClick={add}><Icon name="plus" size={14} /></button>
       </div>
     </div>
   )

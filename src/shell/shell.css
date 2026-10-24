@@ -1,4 +1,8 @@
+@import './shell-chrome.css';
+
 .shell {
+  /* Ширина панели MENTAT: пристыкована от 1600 px, уже — поверх контента (X2). */
+  --mt-w: clamp(360px, 30vw, 480px);
   height: 100%;
   display: grid;
   grid-template-rows: var(--topbar-h) 1fr var(--statusbar-h);
@@ -62,7 +66,7 @@
   background: var(--bg-hover);
 }
 .topbar__brand:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   box-shadow: var(--halo);
 }
 .topbar__divider {
@@ -70,15 +74,18 @@
   height: 18px;
   background: var(--border-strong);
 }
-.topbar__screen {
+/* Крошки маршрута — одна строка, сжимаются раньше кнопок справа */
+.topbar__crumbs {
+  flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--fs-14);
-  font-weight: 500;
-  color: var(--text);
 }
+.account { display: inline-flex; min-width: 0; }
+.account .btn { max-width: 220px; color: var(--text-secondary); }
+.account__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account--topbar .btn { height: 28px; }
+.account--statusbar .btn { height: 22px; padding: 0 var(--space-1); font-size: var(--fs-12); color: var(--text-muted); background: transparent; border-color: transparent; }
+.account--statusbar .btn:hover:not(:disabled) { color: var(--text); }
 .topbar__spacer {
   flex: 1 1 auto;
 }
@@ -90,7 +97,7 @@
   color: var(--text-secondary);
   font-size: var(--fs-12);
 }
-.topbar__cmd { min-width: 180px; justify-content: flex-start; border: 1px solid var(--border); }
+.topbar__cmd { min-width: 180px; justify-content: flex-start; border: 1px solid var(--border-control); }
 .topbar__cmd .topbar__kbd { margin-left: auto; }
 .topbar__mentat[aria-pressed='true'] { color: var(--accent-text); box-shadow: inset 0 -2px 0 var(--accent); }
 .topbar__kbd {
@@ -146,7 +153,7 @@
   background: var(--bg-hover);
 }
 .rail__item:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   box-shadow: var(--halo);
 }
 .rail__item:active {
@@ -177,11 +184,14 @@
 .rail__item--active .rail__icon {
   color: var(--accent-text);
 }
+/* Подпись пункта: без многоточия — длинное сокращение («AI-воркфлоу») переносится по дефису, максимум 2 строки. */
 .rail__label {
   max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
   font-size: var(--fs-11);
   font-weight: 500;
   line-height: 1.2;
@@ -203,32 +213,27 @@
   border-radius: var(--radius-pill);
   box-shadow: 0 0 0 2px var(--bg-panel);
 }
+/* Слот бейджа — только для настоящих нейтральных счётчиков (стадия ①/② — в eyebrow шапки, не плашкой). */
 .rail__item:hover .rail__badge { box-shadow: 0 0 0 2px var(--bg-hover); }
 .rail__item--active .rail__badge { box-shadow: 0 0 0 2px var(--bg-card); }
-.rail__badge--s2 {
-  color: var(--ink);
-  background: var(--ochre-fill);
-}
-.rail__badge--s1 {
-  color: var(--on-accent);
-  background: var(--ultramarine);
-}
+.rail__grp { display: flex; flex-direction: column; gap: 2px; flex: none; }
 .rail__sep {
   flex: none;
   height: 1px;
   margin: 5px 14px 2px;
   background: var(--border);
 }
-/* Подпись группы рельсы (UX-V2 §2.3): 9 px caps, приглушённо. */
+/* Подпись группы рельсы (UX-V2 §2.3): 11 px, --text-muted (≥ 4,5:1), строчными — «Наблюдение» и
+   «Объяснение» помещаются в 80 px рельсы целиком; диктор читает её как имя группы. */
 .rail__group {
   flex: none;
   padding: 2px 0 1px;
-  font-size: var(--fs-9);
+  font-size: var(--fs-11);
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   text-align: center;
-  color: var(--text-disabled);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 /* Зарезервированный пункт («Агенты», волна 3): приглушён, точка-маркер «в плане». */
 .rail__item--soon { color: var(--text-disabled); }
@@ -242,75 +247,6 @@
   padding: 0;
   background: transparent;
   border: 1.5px dotted var(--text-muted);
-}
-
-/* ── Status bar ──────────────────────────────────────────────────────────── */
-.statusbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: 0 var(--space-4);
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: var(--fs-12);
-  color: var(--text-muted);
-  background: var(--bg-panel);
-  border-top: 1px solid var(--border);
-}
-.statusbar__version {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-.statusbar__sep {
-  width: 1px;
-  height: 12px;
-  background: var(--border-strong);
-}
-.statusbar__conn--online { color: var(--text-secondary); }
-.statusbar__conn--offline { color: var(--intent-danger); }
-.statusbar__value {
-  color: var(--text-secondary);
-}
-.statusbar__item {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.statusbar__spacer {
-  flex: 1 1 auto;
-}
-
-/* ── Screen error (ErrorBoundary) ────────────────────────────────────────── */
-.screen-error {
-  max-width: 720px;
-  padding: var(--space-8);
-}
-.screen-error__card {
-  padding: 18px var(--space-5);
-  color: var(--text);
-  background: color-mix(in oklch, var(--intent-danger) 8%, var(--bg-card));
-  border: 1px solid color-mix(in oklch, var(--intent-danger) 40%, transparent);
-  border-radius: var(--radius-lg);
-}
-.screen-error__title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-16);
-  font-weight: 600;
-}
-.screen-error__text {
-  margin: 0 0 var(--space-3);
-  font-size: var(--fs-13);
-  color: var(--text-muted);
-}
-.screen-error__msg {
-  margin: 0 0 var(--space-3);
-  padding: 10px;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  font-size: var(--fs-12);
-  color: var(--intent-danger);
-  background: var(--bg-app);
-  border-radius: var(--radius);
 }
 
 /* ── Placeholder screen ──────────────────────────────────────────────────── */
@@ -357,8 +293,25 @@
   font-size: var(--fs-13);
 }
 
-/* Панель MENTAT на широком экране — пристыкована: контент сужается, а не перекрывается (ссылки ответа
-   открывают узел карты рядом с панелью). Уже — панель поверх контента. */
-@media (min-width: 1280px) {
-  .shell--mentat .shell__content { margin-right: min(480px, 100vw); }
+/* Заставка проверки сессии (App, пока проверяется сохранённый токен) */
+.app-splash {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: var(--fs-13);
+  background: var(--bg-app);
+}
+
+/* ── MENTAT: смонтирован после первого открытия, скрыт и inert, когда закрыт ── */
+.shell__mentat:not([hidden]) { display: contents; }
+.shell__mentat .mt { width: min(var(--mt-w), 100vw); }
+/* От 1600 px панель пристыкована: контент сужается на её ширину. 1280–1599 px — поверх контента,
+   а прокручиваемые области получают поле справа, чтобы прокрутка к элементу не уводила его под панель. */
+@media (min-width: 1600px) {
+  .shell--mentat .shell__content { margin-right: var(--mt-w); }
+}
+@media (min-width: 1280px) and (max-width: 1599px) {
+  :where(.shell--mentat .shell__screen),
+  :where(.shell--mentat .shell__screen) :where(*) { scroll-padding-right: var(--mt-w); }
 }

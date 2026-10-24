@@ -58,6 +58,19 @@ export function kpiStatus(def: KpiDef, v: number, b: Parameters<NonNullable<KpiD
   return def.status && Number.isFinite(v) ? def.status(v, b) : ''
 }
 
+/** Отклонение для показа (X2: норма не подписывается и не красится) — только «внимание» и «критично». */
+export type KpiDeviation = Exclude<KpiStatus, 'good' | ''>
+
+export function kpiDeviation(def: KpiDef, v: number, b: Parameters<NonNullable<KpiDef['status']>>[1]): KpiDeviation | null {
+  const st = kpiStatus(def, v, b)
+  return st === 'warn' || st === 'bad' ? st : null
+}
+
+/** Направление «лучше» для DeltaChip кита: up → рост лучше, down → снижение лучше, neutral — без оценки. */
+export function deltaBetter(dir: KpiDir): 'high' | 'low' | undefined {
+  return dir === 'up' ? 'high' : dir === 'down' ? 'low' : undefined
+}
+
 export const DIR_ARROW: Record<KpiDir, string> = { up: '↑', down: '↓', neutral: '·' }
 export const DIR_TITLE: Record<KpiDir, string> = {
   up: 'больше — лучше',

@@ -1,14 +1,16 @@
 /**
- * Чистая логика диаграммы Ганта: ЕДИНАЯ раскраска (изделие → --chart-n по индексу
- * в программе, ≤ 7 цветов + «прочее»), шаг и подписи оси времени (часы или даты от начала
- * горизонта), группировка полос по типу РЦ или по цеху, доли наладки/ТО.
+ * Чистая логика диаграммы Ганта: ЕДИНАЯ раскраска (изделие → слот chart-системы slotForEntity:
+ * детерминированно по id, 6 именованных + «прочее» со штриховкой, никогда не по модулю), шаг и
+ * подписи оси времени (часы или даты от начала горизонта), двухуровневая ось (ganttAxis.ts),
+ * группировка полос по типу РЦ, цеху или заказу, отличительные подписи дорожек, доли наладки/ТО.
  */
 import type { ScheduleResult } from '../../lib/api'
 import { num } from '../../explain/format'
+import { ENTITY_SLOTS, slotForEntity } from '../../ui/charts/palette'
 import type { PlanBar } from './types'
 
-/** Цветовых слотов на изделия: --chart-1…7; восьмой (серый) зарезервирован под «прочее». */
-export const COLOR_SLOTS = 7
+/** Цветовых слотов на изделия: --chart-1…6 (slotForEntity); дальше — «прочее» (--chart-8, штриховка). */
+export const COLOR_SLOTS = ENTITY_SLOTS
 
 export interface ProductSwatch {
   productId: string
@@ -28,16 +30,20 @@ export interface Palette {
 
 type Program = ScheduleResult['program']
 
-/** Одна раскраска для полос и легенды: порядок первого появления изделия в программе. */
+/**
+ * Одна раскраска для полос, легенды и дифа: слот изделия — slotForEntity по id изделий программы
+ * (одно изделие — один цвет при любой сортировке); легенда — в порядке программы.
+ */
 export function buildPalette(program: Program, bars: readonly PlanBar[]): Palette {
+  const universe = [...new Set(program.map((o) => o.product_id))]
   const byId = new Map<string, ProductSwatch>()
   for (const o of program) {
     const prev = byId.get(o.product_id)
     if (prev) {
       byId.set(o.product_id, { ...prev, qty: prev.qty + (o.qty || 0) })
     } else {
-      const slot = byId.size < COLOR_SLOTS ? byId.size : null
-      byId.set(o.product_id, { productId: o.product_id, name: o.product_name || o.product_id, qty: o.qty || 0, slot })
+      const e = slotForEntity('product', o.product_id, universe)
+      byId.set(o.product_id, { productId: o.product_id, name: o.product_name || o.product_id, qty: o.qty || 0, slot: e.other ? null : e.slot })
     }
   }
   const swatches = [...byId.values()]
@@ -171,3 +177,73 @@ export function barSegments(g: PlanBar): BarSegments {
   if (work <= 0) return { setupFrac: 0, downFrac: 0 }
   return { setupFrac: setup / work, downFrac: down / work }
 }
+
+/* ── Подписи дорожек: только отличающая часть, многоточие в середине ─────── */
+
+/** «Ленточнопильный станок №1» при типе «Ленточнопильный станок» → «№1»; без общего начала — имя целиком. */
+export function distinctPart(name: string, wcName: string): string {
+  const n = name.trim()
+  const w = wcName.trim()
+  if (w && n.length > w.length && n.toLowerCase().startsWith(w.toLowerCase())) {
+    const tail = n.slice(w.length).replace(/^[\s·,—-]+/, '').trim()
+    if (tail) return tail
+  }
+  return n
+}
+
+/** Многоточие в середине: «№1 · Ленточноп…рный станок» — начало и конец видны. */
+export function middleEllipsis(s: string, max: number): string {
+  if (max < 3 || s.length <= max) return s
+  const keep = max - 1
+  const head = Math.ceil(keep / 2)
+  return `${s.slice(0, head)}…${s.slice(s.length - (keep - head))}`
+}
+
+export interface LaneSource { id: string; name: string; wcName: string }
+
+/**
+ * Подписи дорожек станков: в группировке по типам РЦ (тип — в заголовке группы) — «№1»; по цехам —
+ * «№1 · Ленточнопильный станок» с многоточием в середине. Повторы получают «(2)», «(3)» — две
+ * одинаковые видимые подписи невозможны.
+ */
+export function laneLabels(lanes: readonly LaneSource[], mode: 'wc' | 'shop', maxChars: number): Map<string, string> {
+  const out = new Map<string, string>()
+  const seen = new Map<string, number>()
+  for (const l of lanes) {
+    const tail = distinctPart(l.name, l.wcName)
+    const full = mode === 'wc' ? tail : tail === l.name.trim() ? tail : `${tail} · ${l.wcName}`
+    let label = middleEllipsis(full, maxChars)
+    const k = (seen.get(label) ?? 0) + 1
+    seen.set(label, k)
+    if (k > 1) label = `${middleEllipsis(full, Math.max(3, maxChars - 4))} (${k})`
+    out.set(l.id, label)
+  }
+  return out
+}
+
+/* ── Режим «по заказам»: дорожка — заказ, группа — изделие ───────────────── */
+
+export function groupBarsByOrder(bars: readonly PlanBar[]): GanttGroup[] {
+  const byProduct = new Map<string, { name: string; orders: Map<number, GanttMachine> }>()
+  for (const g of bars) {
+    const pid = g.product_id || 'other'
+    let grp = byProduct.get(pid)
+    if (!grp) {
+      grp = { name: g.product_name || pid, orders: new Map() }
+      byProduct.set(pid, grp)
+    }
+    let lane = grp.orders.get(g.order_idx)
+    if (!lane) {
+      lane = { id: `o${g.order_idx}`, name: `Заказ №${g.order_idx + 1} · ${g.product_name || pid}`, bars: [] }
+      grp.orders.set(g.order_idx, lane)
+    }
+    lane.bars.push(g)
+  }
+  return [...byProduct.entries()].map(([pid, grp]) => {
+    const machines = [...grp.orders.values()].sort((a, b) => a.bars[0].order_idx - b.bars[0].order_idx)
+    return { wc: `p:${pid}`, name: grp.name, machines, nOps: machines.reduce((a, m) => a + m.bars.length, 0) }
+  })
+}
+
+/** Срок заказа дорожки (◆) — один на заказ. */
+export const laneDue = (lane: GanttMachine): number | null => (lane.bars.length ? Math.max(...lane.bars.map((b) => b.due)) : null)

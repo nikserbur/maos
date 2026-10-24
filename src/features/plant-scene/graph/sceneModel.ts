@@ -4,9 +4,11 @@
  * `src/domain/graph.ts`; на следующих фазах она будет синхронизироваться с
  * C++-ядром через Action layer.
  */
-import type { ObjectKind, StageKpi, StageStatus } from '../types'
+import { statusFromNsi, type ObjectKind, type StageKpi, type StageStatus } from '../types'
 import type { Machine, WorkCenterType, Flow, OrgUnit } from '../../../lib/api'
 import { inferMachineArch, type MachineArch } from '../objects/machines'
+import { aggregateStatus, rollupStatus } from './status'
+import { DEFAULT_FACTORY_ID, SHOP_PREFIX, SYNTHETIC_SHOP, factoryNodeId, shopNodeId } from './ids'
 
 /**
  * Тип узла схемы:
@@ -45,15 +47,7 @@ export interface SceneNode {
   lng?: number
 }
 
-/** Префикс id узла-цеха (чтобы не пересекался с id машины). */
-export const SHOP_PREFIX = 'shop:'
-export const shopNodeId = (orgUnitId: string): string => SHOP_PREFIX + orgUnitId
-
-/** Префикс id узла-завода/склада (мировая карта). */
-export const FACTORY_PREFIX = 'factory:'
-export const factoryNodeId = (orgUnitId: string): string => FACTORY_PREFIX + orgUnitId
-/** Виртуальный завод для legacy-БД (плоские цеха без заводов) — «одно предприятие». */
-export const DEFAULT_FACTORY_ID = FACTORY_PREFIX + '__default__'
+export { SHOP_PREFIX, shopNodeId, FACTORY_PREFIX, factoryNodeId, DEFAULT_FACTORY_ID, SYNTHETIC_SHOP } from './ids'
 
 /** Физическая связь между узлами (конвейер, трубопровод, кабель). */
 export interface SceneEdge {
@@ -107,15 +101,6 @@ export const PALETTE: ObjectKind[] = [
 /** Пустой граф — схема всегда строится из БД (источник истины — НСИ). */
 export const INITIAL_GRAPH: SceneGraph = { nodes: [], edges: [] }
 
-/** Операционный статус машины (НСИ) → статус узла на схеме. */
-function mapStatus(machineStatus: string): StageStatus {
-  switch (machineStatus) {
-    case 'maintenance':    return 'down'
-    case 'decommissioned': return 'idle'
-    default:               return 'running'
-  }
-}
-
 /** Безопасный парс JSON-характеристик типа в массив KPI. */
 function parseCharacteristics(raw: string): StageKpi[] {
   if (!raw) return []
@@ -134,7 +119,6 @@ function parseCharacteristics(raw: string): StageKpi[] {
  * Сборка сцены-графа из реестров НСИ. Узел сцены = единица оборудования;
  * 3D-вид, масштаб и характеристики наследуются от типа оборудования.
  */
-const SYNTHETIC_SHOP = SHOP_PREFIX + '__none__'   // «Без цеха» — для станков без подразделения
 
 /** Является ли org_unit заводом/складом (живёт на мировой карте). */
 const isFactoryUnit = (o: OrgUnit): boolean =>
@@ -237,7 +221,8 @@ export function buildGraphFromDb(
       id, parentId: factoryParent, refType: 'shop', kind,
       title: o.name, subtitle: SHOP_SUB[kind] ?? 'Цех / подразделение',
       position: [cx, cz], rotationY: (meta.rotationY ?? 0) + (h % 4) * (Math.PI / 2),
-      scale: meta.scale * 1.15, status: 'running', kpis: [], orgUnitId: o.id,
+      // Статус контейнера — сводка станков (rollupStatus в конце сборки), не зашитое значение.
+      scale: meta.scale * 1.15, status: aggregateStatus([]), kpis: [], orgUnitId: o.id,
     }
   })
 
@@ -259,7 +244,7 @@ export function buildGraphFromDb(
       subtitle: type?.name ? `Тип: ${type.name}` : (m.subtitle || ''),
       position: [Number(m.pos_x) || 0, Number(m.pos_z) || 0],
       rotationY: Number(m.rotation_y) || meta.rotationY || 0,
-      scale: meta.scale, status: mapStatus(m.status),
+      scale: meta.scale, status: statusFromNsi(m.status),
       kpis: parseCharacteristics(type?.characteristics ?? ''),
       linkedMachineId: m.id,
     }
@@ -275,7 +260,7 @@ export function buildGraphFromDb(
       id: SYNTHETIC_SHOP, parentId: DEFAULT_FACTORY_ID, refType: 'shop', kind: 'marketing',
       title: 'Без цеха', subtitle: 'Станки без подразделения — назначьте цех',
       position: [0, (Math.ceil((defTotal || 1) / defCols)) * 34], rotationY: 0,
-      scale: KIND_META.marketing.scale, status: 'idle', kpis: [],
+      scale: KIND_META.marketing.scale, status: aggregateStatus([]), kpis: [],
     })
   }
 
@@ -309,7 +294,7 @@ export function buildGraphFromDb(
       id: factoryNodeId(o.id), parentId: null, refType: 'factory',
       kind: warehouse ? 'wirehouse' : 'marketing',
       title: o.name, subtitle: warehouse ? 'Склад / логистика' : 'Завод / производственная площадка',
-      position: [cx, cz], rotationY: 0, scale: 1, status: 'running', kpis: [], orgUnitId: o.id,
+      position: [cx, cz], rotationY: 0, scale: 1, status: aggregateStatus([]), kpis: [], orgUnitId: o.id,
       lat: hasLat ? Number(o.lat) : undefined,
       lng: hasLng ? Number(o.lng) : undefined,
     }
@@ -320,7 +305,7 @@ export function buildGraphFromDb(
     factoryNodes.push({
       id: DEFAULT_FACTORY_ID, parentId: null, refType: 'factory', kind: 'marketing',
       title: 'Предприятие', subtitle: 'Производственная площадка',
-      position: [0, 0], rotationY: 0, scale: 1, status: 'running', kpis: [],
+      position: [0, 0], rotationY: 0, scale: 1, status: aggregateStatus([]), kpis: [],
       // orgUnitId НЕ задаём — виртуальный завод не персистится в НСИ.
     })
   }
@@ -384,7 +369,8 @@ export function buildGraphFromDb(
     }
   }
 
-  return { nodes: [...factoryNodes, ...shopNodes, ...machineNodes], edges }
+  // Статус цеха/завода — худший статус вложенных станков (X2 P-27).
+  return { nodes: rollupStatus([...factoryNodes, ...shopNodes, ...machineNodes]), edges }
 }
 
 /** Есть ли у узла вложенная подсхема (для drill-down). */

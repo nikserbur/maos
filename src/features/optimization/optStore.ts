@@ -33,6 +33,9 @@ export interface OptInherited {
   maxShare: string
 }
 
+/** Откуда результат: только что рассчитан или восстановлен из истории прогонов (F5, X2 «конвейер переживает перезагрузку»). */
+export type OptOrigin = 'run' | 'history'
+
 export interface OptState {
   form: OptForm
   /** Значения критерия из открытого сценария; null — сценарий не загружен. */
@@ -40,8 +43,9 @@ export interface OptState {
   result: OptResultExt | null
   running: boolean
   error: OptError | null
-  /** Момент получения результата (мс), для подписи «рассчитано в …». */
+  /** Момент расчёта результата (мс), для подписи «рассчитано в …». */
   ranAt: number | null
+  origin: OptOrigin | null
 }
 
 const INITIAL: OptState = {
@@ -59,6 +63,7 @@ const INITIAL: OptState = {
   running: false,
   error: null,
   ranAt: null,
+  origin: null,
 }
 
 let state: OptState = INITIAL
@@ -112,8 +117,12 @@ export function startOptRun(): void {
   emit({ ...state, running: true, error: null })
 }
 
-export function finishOptRun(result: OptResultExt): void {
-  emit({ ...state, running: false, error: null, result, ranAt: Date.now() })
+/** Результат получен: новый прогон (время — сейчас) или прогон из истории (время — из журнала прогонов). */
+export function finishOptRun(result: OptResultExt, opts: { origin?: OptOrigin; ranAt?: number | null } = {}): void {
+  const origin = opts.origin ?? 'run'
+  // Время прогона из истории неизвестно — «не сейчас», а пусто (честно: без выдуманной отметки).
+  const ranAt = opts.ranAt ?? (origin === 'run' ? Date.now() : null)
+  emit({ ...state, running: false, error: null, result, ranAt, origin })
 }
 
 export function failOptRun(error: OptError): void {

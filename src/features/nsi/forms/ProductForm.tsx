@@ -1,18 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { num } from '../../../explain/format'
 import { api } from '../../../lib/api'
 import { useProducts } from '../useNsi'
-import type { EditCtx } from '../CreateDialog'
+import { changedFields, fieldOf, useFormBridge, type NsiFormProps } from './formBridge'
+import { FormError, FormNote, NO_CHANGES } from './FormError'
 
-interface Props {
-  onSuccess: () => void
-  edit?: EditCtx
-}
-
-export function ProductForm({ onSuccess, edit }: Props) {
+/** Изделие/материал: состав, склад, цены, спрос и рынок. Правка — только изменённые поля. */
+export function ProductForm({ onSuccess, edit, bridge }: NsiFormProps) {
   const products = useProducts()
-  const r = edit?.row ?? {}
-  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
+  const r = useMemo(() => edit?.row ?? {}, [edit])
+  const sv = fieldOf(r)
 
   const [code, setCode]           = useState(sv('code'))
   const [name, setName]           = useState(sv('name'))
@@ -32,7 +29,8 @@ export function ProductForm({ onSuccess, edit }: Props) {
   const [elast, setElast]         = useState(sv('price_elasticity'))
   const [compSup, setCompSup]     = useState(sv('competitor_supply'))
   const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState<string | null>(null)
+  const [error, setError]         = useState<unknown>(null)
+  const [note, setNote]           = useState<string | null>(null)
 
   // Живая модель рынка: доступный объём = ёмкость − конкуренты (нельзя продать больше).
   const nMkt = Number(mktCap) || 0
@@ -42,8 +40,7 @@ export function ProductForm({ onSuccess, edit }: Props) {
   const compTooBig = nMkt > 0 && nComp > nMkt
   const demandClamped = availMarket !== null && nDem > availMarket
 
-  /** Включение «Товарная позиция»: заполняем разумные значения, чтобы оптимизация
-   *  не получила молчаливый нулевой спрос (портфель из нулей без объяснений). */
+  /** Включение «Товарная позиция»: разумные значения, чтобы оптимизация не получила молчаливый нулевой спрос. */
   const toggleSellable = (on: boolean) => {
     setSellable(on)
     if (on && !demandMax && !mktCap) {
@@ -51,180 +48,151 @@ export function ProductForm({ onSuccess, edit }: Props) {
     }
   }
 
+  const payload = {
+    code, name, unit, parent_id: parentId, qty_in_parent: qty, batch_size: batch,
+    purchased: purchased ? '1' : '0', stock, sellable: sellable ? '1' : '0',
+    base_price: basePrice || '0', base_cost: baseCost || '0', demand_max: demandMax || '0',
+    market_capacity: mktCap || '0', price_elasticity: elast || '0.5', competitor_supply: compSup || '0',
+  }
+  const [initial] = useState(() => ({ ...payload }))
+  const dirty = Object.keys(changedFields(payload, initial)).length > 0
+
+  const validate = (): string | null => {
+    if (!name.trim()) return 'Укажите наименование'
+    if (sellable && (Number(basePrice) || 0) <= 0) return 'Для товарной позиции укажите ориентир цены (> 0) — иначе оптимизация посчитает нулевую выручку'
+    if (sellable && nDem <= 0) return 'Для товарной позиции задайте годовой спрос (> 0) — при нуле оптимизация не включит изделие в портфель'
+    if (compTooBig) return 'Предложение конкурентов не может превышать ёмкость рынка'
+    return null
+  }
+
   const handleSubmit = async () => {
-    if (!name.trim()) { setError('Укажите наименование'); return }
-    if (sellable && (Number(basePrice) || 0) <= 0) {
-      setError('Для товарной позиции укажите ориентир цены (> 0) — иначе оптимизация посчитает нулевую выручку'); return
-    }
-    if (sellable && nDem <= 0) {
-      setError('Для товарной позиции задайте годовой спрос (> 0) — при нуле оптимизация не включит изделие в портфель'); return
-    }
-    if (compTooBig) {
-      setError('Предложение конкурентов не может превышать ёмкость рынка'); return
-    }
+    setNote(null)
+    const problem = validate()
+    if (problem) { setError(problem); return }
+    const body = edit ? changedFields(payload, initial) : payload
+    if (edit && Object.keys(body).length === 0) { setNote(NO_CHANGES); return }
     setLoading(true)
     setError(null)
     try {
-      const payload = {
-        code, name, unit,
-        parent_id: parentId,
-        qty_in_parent: qty,
-        batch_size: batch,
-        purchased: purchased ? '1' : '0',
-        stock,
-        sellable: sellable ? '1' : '0',
-        base_price: basePrice || '0',
-        base_cost: baseCost || '0',
-        demand_max: demandMax || '0',
-        market_capacity: mktCap || '0',
-        price_elasticity: elast || '0.5',
-        competitor_supply: compSup || '0',
-      }
-      if (edit) await api.products.update(edit.id, payload)
+      if (edit) await api.products.update(edit.id, body)
       else await api.products.create(payload)
-      onSuccess()
+      onSuccess(edit ? `Сохранено: ${name}` : `Создано: ${name}`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сохранения')
+      setError(e)
     } finally {
       setLoading(false)
     }
   }
+  useFormBridge(bridge, () => void handleSubmit(), dirty, loading)
 
   return (
     <div className="form">
-      {error && <div className="form__error">{error}</div>}
+      <FormError error={error} />
+      <FormNote text={note} />
 
       <div className="form__section">Идентификация</div>
       <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Артикул / Код *</label>
-          <input className="form__input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="STL-001" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Ед. измерения</label>
+        <label className="form__field">
+          <span className="form__label">Код *</span>
+          <input className="form__input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="СМ-012" />
+        </label>
+        <label className="form__field">
+          <span className="form__label">Ед. измерения</span>
           <select className="form__select" value={unit} onChange={(e) => setUnit(e.target.value)}>
-            <option value="шт">шт</option>
-            <option value="т">т</option>
-            <option value="кг">кг</option>
-            <option value="м">м</option>
-            <option value="м²">м²</option>
-            <option value="м³">м³</option>
+            {['шт', 'т', 'кг', 'м', 'м²', 'м³'].map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
-        </div>
+        </label>
       </div>
-      <div className="form__field">
-        <label className="form__label">Наименование *</label>
-        <input className="form__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Сталь листовая 3мм" />
-      </div>
+      <label className="form__field">
+        <span className="form__label">Наименование *</span>
+        <input className="form__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Сталь листовая 3 мм" />
+      </label>
+      <label className="form__check">
+        <input type="checkbox" checked={purchased} onChange={(e) => setPurchased(e.target.checked)} />
+        Покупается у поставщика (сырьё)
+      </label>
 
-      <div className="form__section">Состав (BOM)</div>
-      <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Входит в изделие</label>
-          <select className="form__select" value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">— верхний уровень —</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="form__field">
-          <label className="form__label">Кол-во в составе</label>
-          <input className="form__input" type="number" min="0" step="0.001" value={qty} onChange={(e) => setQty(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="form__section">Производство и склад</div>
+      <div className="form__section">Состав и склад</div>
+      <label className="form__field">
+        <span className="form__label">Входит в изделие</span>
+        <select className="form__select" value={parentId} onChange={(e) => setParentId(e.target.value)}>
+          <option value="">— верхний уровень —</option>
+          {products.filter((p) => p.id !== edit?.id).map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+        </select>
+      </label>
       <div className="form__row form__row--3">
-        <div className="form__field">
-          <label className="form__label">Размер партии</label>
+        <label className="form__field">
+          <span className="form__label">Кол-во в составе</span>
+          <input className="form__input" type="number" min="0" step="0.001" value={qty} onChange={(e) => setQty(e.target.value)} />
+        </label>
+        <label className="form__field">
+          <span className="form__label">Партия</span>
           <input className="form__input" type="number" min="1" value={batch} onChange={(e) => setBatch(e.target.value)} />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Остаток на складе</label>
+        </label>
+        <label className="form__field">
+          <span className="form__label">Остаток, {unit}</span>
           <input className="form__input" type="number" min="0" step="0.001" value={stock} onChange={(e) => setStock(e.target.value)} />
-        </div>
-        <div className="form__field form__field--end">
-          <label className="form__check">
-            <input type="checkbox" checked={purchased} onChange={(e) => setPurchased(e.target.checked)} />
-            Покупное
-          </label>
-        </div>
+        </label>
       </div>
 
-      <div className="form__section">Ценообразование</div>
+      <div className="form__section">Цены</div>
       <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">{purchased ? 'Цена закупки, ₽' : 'Себестоимость, ₽'}</label>
-          <input className="form__input" type="number" min="0" value={baseCost}
-                 onChange={(e) => setBaseCost(e.target.value)} placeholder="0" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Ориентир цены сбыта, ₽ {sellable ? '*' : ''}</label>
-          <input className="form__input" type="number" min="0" value={basePrice}
-                 disabled={!sellable}
-                 onChange={(e) => setBasePrice(e.target.value)}
-                 placeholder={sellable ? '90000' : 'только для товарных позиций'} />
-        </div>
+        <label className="form__field">
+          <span className="form__label">{purchased ? 'Цена закупки, ₽' : 'Себестоимость, ₽'}</span>
+          <input className="form__input" type="number" min="0" value={baseCost} onChange={(e) => setBaseCost(e.target.value)} placeholder="не задана" />
+        </label>
+        <label className="form__field">
+          <span className="form__label">Цена продажи, ₽ {sellable ? '*' : ''}</span>
+          <input className="form__input" type="number" min="0" value={basePrice} disabled={!sellable}
+                 onChange={(e) => setBasePrice(e.target.value)} placeholder={sellable ? '90000' : 'только для товаров'} />
+        </label>
       </div>
 
       <div className="form__section">Спрос и рынок</div>
       <label className="form__check">
         <input type="checkbox" checked={sellable} onChange={(e) => toggleSellable(e.target.checked)} />
-        Товарная позиция — продаётся на рынке и участвует в оптимизации портфеля
+        Товар — продаётся и участвует в оптимизации портфеля
       </label>
       {sellable && (
         <span className="form__hint form__hint--tight">
-          Спрос задаётся <b>годовым</b> объёмом — планирование само пересчитывает его на
-          горизонт (горизонт 6 мес → половина годового), а разброс спроса добавляют
-          сценарии (Монте-Карло). Рынок в целом поглотит не более <b>ёмкость − конкуренты</b>;
-          чем ближе выпуск к насыщению, тем ниже цена сбыта (эластичность). Конкретные заказы
-          для расписания (Стадия 1) задаются отдельно: экран «План» → «Производственная программа».
+          Спрос — <b>годовой</b> объём; планирование пересчитывает его на горизонт, разброс добавляют сценарии.
+          Рынок поглотит не более <b>ёмкость − конкуренты</b>.
         </span>
       )}
       <div className="form__row form__row--3">
-        <div className="form__field">
-          <label className="form__label">Спрос в год, {unit} {sellable ? '*' : ''}</label>
-          <input className="form__input" type="number" min="0" value={demandMax}
-                 disabled={!sellable}
+        <label className="form__field">
+          <span className="form__label">Спрос в год, {unit} {sellable ? '*' : ''}</span>
+          <input className="form__input" type="number" min="0" value={demandMax} disabled={!sellable}
                  onChange={(e) => setDemandMax(e.target.value)} placeholder={sellable ? '1000' : '—'} />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Ёмкость рынка в год, {unit}</label>
+        </label>
+        <label className="form__field">
+          <span className="form__label">Ёмкость рынка, {unit}</span>
           <input className="form__input" type="number" min="0" value={mktCap} disabled={!sellable}
                  onChange={(e) => setMktCap(e.target.value)} placeholder={sellable ? '1500' : '—'} />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Конкуренты в год, {unit}</label>
-          <input className="form__input" type="number" min="0" value={compSup} disabled={!sellable}
-                 onChange={(e) => setCompSup(e.target.value)} placeholder="0"
-                 style={compTooBig ? { borderColor: 'var(--intent-danger)' } : undefined} />
-        </div>
+        </label>
+        <label className="form__field">
+          <span className="form__label">Конкуренты, {unit}</span>
+          <input className="form__input" type="number" min="0" value={compSup} disabled={!sellable} aria-invalid={compTooBig || undefined}
+                 aria-describedby={compTooBig ? 'pf-comp-err' : undefined} onChange={(e) => setCompSup(e.target.value)} placeholder="0" />
+        </label>
       </div>
-      <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Эластичность цены (0 — спрос не зависит от цены; 0.5 — типично; 1+ — очень чувствителен)</label>
-          <input className="form__input" type="number" min="0" max="2" step="0.1" value={elast} disabled={!sellable}
-                 onChange={(e) => setElast(e.target.value)} placeholder="0.5" />
-        </div>
-      </div>
+      <label className="form__field">
+        <span className="form__label">Эластичность цены</span>
+        <input className="form__input" type="number" min="0" max="2" step="0.1" value={elast} disabled={!sellable}
+               onChange={(e) => setElast(e.target.value)} placeholder="0.5" />
+        <span className="form__hint">0 — спрос не зависит от цены; 0,5 — типично; 1 и выше — очень чувствителен.</span>
+      </label>
       {sellable && compTooBig && (
-        <span className="form__hint form__hint--danger">
-          Конкуренты ({nComp}) продают больше ёмкости рынка ({nMkt}) — так не бывает, поправьте значения.
+        <span className="form__hint form__hint--danger" id="pf-comp-err">
+          Конкуренты ({num(nComp, 0)}) продают больше ёмкости рынка ({num(nMkt, 0)}) — так не бывает, поправьте значения.
         </span>
       )}
       {sellable && !compTooBig && availMarket !== null && (
-        <span className="form__hint" style={demandClamped ? { color: 'var(--intent-warning)' } : undefined}>
+        <span className={demandClamped ? 'form__hint form__hint--warn' : 'form__hint'}>
           Доступный вам рынок: <b>{num(availMarket, 0)} {unit}/год</b> (ёмкость {num(nMkt, 0)} − конкуренты {num(nComp, 0)}).
-          {demandClamped && <> Спрос {num(nDem, 0)} выше — фактически продастся не более {num(availMarket, 0)}.</>}
+          {demandClamped && <> Спрос {num(nDem, 0)} выше — продастся не более {num(availMarket, 0)}.</>}
         </span>
       )}
-
-      <div className="form__actions">
-        <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>
-          {loading ? 'Сохраняем…' : 'Создать'}
-        </button>
-      </div>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { FlowLinks } from './FlowLinks'
 import { StageObject } from './StageObject'
 import { hasChildren } from './graph/sceneModel'
 import type { SceneEdge, SceneGraph, SceneNode } from './graph/sceneModel'
+import type { NodeOps } from './sceneOps'
 
 interface PlantLayoutProps {
   graph: SceneGraph
@@ -13,6 +14,12 @@ interface PlantLayoutProps {
   editing: boolean
   /** Текущий уровень внутри здания (а не открытая территория). */
   indoor: boolean
+  /** Загрузка узлов по последнему плану (подписи и маркеры ▲). */
+  ops: ReadonlyMap<string, NodeOps>
+  /** Режим симуляции: кольца статуса уступают кольцам загрузки. */
+  simActive: boolean
+  /** Анимация на паузе: транспорт стоит. */
+  still: boolean
   onSelect: (id: string) => void
   onEnter: (id: string) => void
   onMove: (id: string, position: [number, number]) => void
@@ -37,6 +44,9 @@ export function PlantLayout({
   connecting,
   editing,
   indoor,
+  ops,
+  simActive,
+  still,
   onSelect,
   onEnter,
   onMove,
@@ -44,7 +54,7 @@ export function PlantLayout({
 }: PlantLayoutProps) {
   return (
     <group>
-      <FlowLinks nodes={nodes} edges={edges} indoor={indoor} />
+      <FlowLinks nodes={nodes} edges={edges} indoor={indoor} still={still} />
       {nodes.map((node) => {
         // Цех — ВСЕГДА здание (даже пустой, без станков); контейнерность отдельно.
         const isContainer = node.refType === 'shop' || hasChildren(graph, node.id)
@@ -58,6 +68,8 @@ export function PlantLayout({
             editing={editing}
             asBuilding={isContainer}
             childCount={isContainer ? childCount(graph, node.id) : 0}
+            ops={ops.get(node.id)}
+            simActive={simActive}
             onSelect={onSelect}
             onEnter={onEnter}
             onMove={onMove}

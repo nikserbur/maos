@@ -1,0 +1,70 @@
+/*
+ * Навигация и панели кита: крошки, неблокирующая боковая панель редактирования, тост «Отменить».
+ * Только токены; обе темы.
+ */
+/* ── Крошки: одна строка, средние сжимаются ─────────────────────────────── */
+.dk-crumbs { min-width: 0; overflow: hidden; }
+.dk-crumbs__list { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0; list-style: none; white-space: nowrap; }
+.dk-crumbs__item { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.dk-crumbs__item.is-root { flex: none; }
+.dk-crumbs__item.is-current { flex: 0 1 auto; }
+.dk-crumbs__item:not(.is-root):not(.is-current) { flex: 0 3 auto; max-width: 24ch; }
+.dk-crumbs__link, .dk-crumbs__cur { display: block; overflow: hidden; text-overflow: ellipsis; }
+.dk-crumbs__link { color: var(--text-secondary); text-decoration: none; border-radius: var(--radius-sm); }
+.dk-crumbs__link:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.dk-crumbs__link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dk-crumbs__cur { color: var(--text); font-weight: 500; }
+.dk-crumbs__sep { flex: none; color: var(--text-muted); }
+
+/* ── Боковая панель редактирования (неблокирующая: список виден) ─────────── */
+.dk-side {
+  display: flex;
+  flex-direction: column;
+  width: clamp(360px, 28vw, 400px);
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-2);
+}
+.dk-side__hd { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.dk-side__title { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
+.dk-side__bd { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); }
+.dk-side__ft {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+}
+.dk-side__danger { margin-right: auto; padding-right: var(--space-3); border-right: 1px solid var(--border); }
+.dk-side__spacer { flex: 1; }
+.dk-side__dirty { font-size: var(--fs-12); color: var(--text-muted); }
+
+/* ── Тост «Отменить» ─────────────────────────────────────────────────────── */
+.dk-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--statusbar-h) + var(--space-4));
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(560px, calc(100vw - 32px));
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  transform: translateX(-50%);
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  animation: maos-fade-in var(--dur) var(--ease-out);
+}
+.dk-toast__msg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .dk-toast { animation: none; } }
+.dk-toast-host { position: fixed; left: 0; right: 0; bottom: 0; height: 0; z-index: var(--z-toast); }
+.dk-side__title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

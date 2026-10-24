@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StructuralMove } from '../../lib/api'
 import { ZERO_IMPACT } from '../plan/moves/movesStore'
-import { addFrozen, addRejectedMask, clearFrozen, defaultGuardrails, disabledKinds, guardrailRows, parseGuardrails, setLimit, toggleKind, withAlpha } from './guardrails'
+import { AVAILABILITY, addFrozen, addRejectedMask, clearFrozen, defaultGuardrails, disabledKinds, guardrailRows, parseGuardrails, setLimit, toggleKind, withAlpha } from './guardrails'
 
 const move: StructuralMove = {
   id: 'm1', kind: 'drop', status: 'proposed', targets: { order_idx: [9] }, before: {}, after: {}, impact: ZERO_IMPACT,
@@ -23,9 +23,18 @@ describe('guardrails mapping', () => {
   it('rows follow the §4.7.1 order and lock planned kinds, NSI availability comes from the backend', () => {
     const rows = guardrailRows(defaultGuardrails(0.1), { reroute: false })
     expect(rows.map((r) => r.meta.kind)).toEqual(['reorder', 'reassign', 'reroute', 'split', 'merge', 'transfer', 'outsource', 'shift', 'drop', 'finance'])
-    expect(rows.find((r) => r.meta.kind === 'transfer')).toMatchObject({ locked: true, on: false, state: 'в плане' })
-    expect(rows.find((r) => r.meta.kind === 'reroute')!.state).toBe('нет данных НСИ')
-    expect(rows.find((r) => r.meta.kind === 'reassign')!.state).toBe('разрешено')
+    expect(rows.find((r) => r.meta.kind === 'transfer')).toMatchObject({ locked: true, on: false, availability: 'planned' })
+    expect(rows.find((r) => r.meta.kind === 'reroute')).toMatchObject({ locked: true, on: false, availability: 'nsi' })
+    expect(rows.find((r) => r.meta.kind === 'reroute')!.reason).toBeTruthy()
+    expect(rows.find((r) => r.meta.kind === 'reassign')).toMatchObject({ locked: false, on: true, availability: 'available' })
+  })
+
+  it('without backend data NSI-dependent kinds are locked with a reason; one state map, normal state has no glyph', () => {
+    const rows = guardrailRows(defaultGuardrails(0.1))
+    expect(rows.find((r) => r.meta.kind === 'outsource')).toMatchObject({ locked: true, availability: 'nsi' })
+    expect(AVAILABILITY.available.glyph).toBeNull()
+    expect(AVAILABILITY.nsi.glyph).toBe('glyph-setup')
+    expect(AVAILABILITY.planned.word).toBe('запланировано')
   })
 
   it('toggles immutably and reports disabled kinds (synonyms collapse to shift)', () => {

@@ -1,5 +1,6 @@
 /* Мировая карта (MapLibre GL). Оверлеи — только токены дизайн-системы; без backdrop-filter
-   (размытие поверх WebGL перекомпоновывается каждый кадр). Пины: цвет статуса + глиф. */
+   (размытие поверх WebGL перекомпоновывается каждый кадр). Пины (X2 P-40): штатный статус —
+   нейтральная обводка, цвет и глиф — только у отклонений, акцент — только у выбранного. */
 
 .wm2d {
   position: absolute;
@@ -18,11 +19,14 @@
    инлайновое позиционирование MapLibre и пины «стекаются» в поток. Всё оформление —
    во внутреннем .wm2d-pin__body. */
 .wm2d-pin {
-  --pin: var(--status-running);
+  --pin: var(--border-strong);
   cursor: pointer;
+  border-radius: var(--radius-lg);
+  outline: 2px solid transparent;
+  outline-offset: 3px;
 }
+.wm2d-pin:focus-visible { outline-color: var(--focus); }
 .wm2d-pin--setup { --pin: var(--status-setup); }
-.wm2d-pin--idle { --pin: var(--status-idle); }
 .wm2d-pin--down { --pin: var(--status-down); }
 .wm2d-pin.is-selected { --pin: var(--accent); z-index: 3; }
 
@@ -53,7 +57,7 @@
 }
 .wm2d-pin__badge svg { width: 16px; height: 16px; fill: currentColor; }
 
-/* Глиф статуса (● ▲ ○ ■) — чип в углу бейджа: цвет никогда не единственный сигнал. */
+/* Глиф статуса — чип в углу бейджа, только у отклонений (▲ ТО / ремонт, ■ авария). */
 .wm2d-pin__glyph {
   position: absolute;
   top: -6px;
@@ -69,6 +73,7 @@
   box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--bone) 22%, transparent);
 }
 .wm2d-pin__glyph::before { vertical-align: 0; }
+.wm2d-pin--running .wm2d-pin__glyph, .wm2d-pin--idle .wm2d-pin__glyph { display: none; }
 
 /* Остриё-указатель под бейджем. */
 .wm2d-pin__tip {
@@ -116,7 +121,6 @@
 
 .wm2d-card__head {
   padding: var(--space-3) var(--space-3) var(--space-2);
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in oklch, var(--ultramarine) 16%, transparent), transparent 62%);
   border-bottom: 1px solid var(--border);
 }
 .wm2d-card__kind {
@@ -142,7 +146,10 @@
 }
 .wm2d-card__row span { color: var(--text-muted); }
 .wm2d-card__row b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.wm2d-card__status { display: inline-flex; align-items: center; }
+.wm2d-card__status { display: inline-flex; align-items: center; margin-top: 4px; font-size: var(--fs-12); color: var(--text-secondary); }
+.wm2d-card__status.is-calm.glyph-running::before { background: var(--text-muted); }
+.wm2d-card__none { font-weight: 400; color: var(--text-muted); }
+.wm2d-card__flag { margin-left: 4px; }
 .wm2d-card__foot {
   padding: 6px var(--space-3) var(--space-2);
   font-size: var(--fs-11);
@@ -162,7 +169,7 @@
 .wm2d .maplibregl-ctrl-group button { width: 30px; height: 30px; }
 .wm2d .maplibregl-ctrl-group button + button { border-top: 1px solid var(--border); }
 .wm2d .maplibregl-ctrl-group button:not(:disabled):hover { background: var(--bg-hover); }
-.wm2d .maplibregl-ctrl-group button:focus-visible { box-shadow: var(--halo); }
+.wm2d .maplibregl-ctrl-group button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 /* Иконки MapLibre — тёмные растры: в тёмной теме инвертируем. */
 :root:not([data-theme='light']) .wm2d .maplibregl-ctrl button .maplibregl-ctrl-icon { filter: invert(0.9); }
 .wm2d .maplibregl-ctrl-attrib {
@@ -175,3 +182,11 @@
 
 /* Контейнер React-портала карточки (MapCard) внутри popup — без собственного оформления. */
 .wm2d-card { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wm2d-pin__body, .wm2d-pin__badge { transition: none; }
+  .wm2d-pin:hover .wm2d-pin__body { transform: none; }
+}
+@media (forced-colors: active) {
+  .wm2d-pin:focus-visible { outline-color: Highlight; }
+}

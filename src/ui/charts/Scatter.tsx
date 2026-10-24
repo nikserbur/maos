@@ -11,7 +11,7 @@ import { Grid, XAxis, YAxis } from './Axis'
 import { ChartTooltip, type TipRow } from './Tooltip'
 import { useMeasuredWidth } from './hooks'
 import type { LegendItem } from './palette'
-import { axisNum, extent, linear, niceTicks, yDomain, yTicks } from './scale'
+import { axisNum, extent, linear, niceTicks, svgCoord, yDomain, yTicks } from './scale'
 
 export type Emphasis = 'primary' | 'muted' | 'selected' | 'alt'
 export type PointShape = 'dot' | 'square' | 'triangle'
@@ -71,7 +71,7 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
   const xT = niceTicks(xl, xh, 5)
   const yT = yTicks(yl, yh, 4)
   const front = points.filter((p) => p.onFront).sort((a, b) => a.x - b.x)
-  const frontLine = front.map((p, i) => `${i ? 'L' : 'M'}${xAt(p.x).toFixed(1)},${yAt(p.y).toFixed(1)}`).join('')
+  const frontLine = front.map((p, i) => `${i ? 'L' : 'M'}${svgCoord(xAt(p.x))},${svgCoord(yAt(p.y))}`).join('')
   const table: ChartTable = { columns: ['', xLabel ?? 'X', yLabel ?? 'Y'], rows: points.map((p) => [p.label ?? p.key, fmtX(p.x), fmtY(p.y)]) }
   const hp = points.find((p) => p.key === hover) ?? null
 
@@ -85,7 +85,7 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
           <XAxis labels={xT.map(fmtX)} xAt={(i) => xAt(xT[i])} y={PT + plotH} x0={PL} x1={width - PR} />
           {xLabel && <text className="ch-tick ch-tick--unit" x={width - PR} y={height - 4} textAnchor="end">{xLabel}</text>}
           {frontArea && front.length > 1 && (
-            <path className="ch-area ch-front__area" d={`${frontLine}L${xAt(front[front.length - 1].x).toFixed(1)},${PT + plotH}L${xAt(front[0].x).toFixed(1)},${PT + plotH}Z`} />
+            <path className="ch-area ch-front__area" d={`${frontLine}L${svgCoord(xAt(front[front.length - 1].x))},${PT + plotH}L${svgCoord(xAt(front[0].x))},${PT + plotH}Z`} />
           )}
           {front.length > 1 && <path className="ch-front" d={frontLine} />}
           {points.map((p) => {

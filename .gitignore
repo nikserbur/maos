@@ -22,3 +22,6 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Скриншоты аудитов UI/UX (до/после) — локально, не в git (крупные)
+docs/research/img/ux2/

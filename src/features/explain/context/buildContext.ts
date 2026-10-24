@@ -84,8 +84,8 @@ function mapCtxNode(node: MapNode, distance: number, state: MethodMapState): Ctx
     return { ...withNote, formula: node.metricId, status: values.length ? 'расчёт' : 'нет прогона', ...(values.length ? { values } : {}) }
   }
   if (node.kind === 'dataset') {
-    const badge = live?.badge ?? ''
-    const status = badge === 'синтетика' ? 'синтетика' : badge.startsWith('паспорт ') ? badge.slice('паспорт '.length) : undefined
+    // Статус серверного паспорта датасета — поле `status` живого состояния (бейджа «паспорт …» больше нет).
+    const status = live?.status ?? (live?.badge === 'синтетика' ? 'синтетика' : undefined)
     return status ? { ...withNote, status } : withNote
   }
   // Подблок/блок: состояние расчёта, а не статус паспорта (иначе «оценено» читается как [О]).
@@ -131,11 +131,21 @@ function buildEdges(kept: readonly CtxNode[], budget: number): { edges: CtxEdge[
   return { edges: t.kept, tokens: t.usedTokens }
 }
 
+function safeDiff(input: BuildContextInput): FactNode[] {
+  try {
+    return diffRuns(input.opt, input.compare)
+  } catch (e) {
+    console.warn('MENTAT: разности прогонов пропущены —', e)
+    return []
+  }
+}
+
 /** Контекст для вопроса об узле `asked`. Неизвестный узел → пустой контекст (модель ответит «нет данных»). */
 export function buildContext(input: BuildContextInput): MentatContext {
   const budget = input.budgetTokens ?? DEFAULT_BUDGET_TOKENS
   const depth = input.depth ?? DEFAULT_DEPTH
-  const facts = [...buildFacts(input), ...diffRuns(input.opt, input.compare)]
+  // Факты и разности — под предохранителем (buildFacts — по каждому построителю): неполный ответ API не роняет панель.
+  const facts = [...buildFacts(input), ...safeDiff(input)]
   const askedFact = facts.find((f) => f.id === input.asked)
   const askedNode = getNode(askedFact ? askedFact.mapNode : input.asked)
   const scope = {

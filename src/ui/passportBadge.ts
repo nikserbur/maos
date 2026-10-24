@@ -1,8 +1,8 @@
 /**
  * Бейдж происхождения (UX-V2 §5.2, METHODOLOGY-V2 §3.2): один словарь для серверного статуса
  * паспорта (Н/О/К/НОРМ/UI/техн./синтетика) и происхождения карты (`Provenance`).
- * Глифы — те же, что у состояний узлов карты (stateMeta): ● оценено · ■ вручную · ◆ норматив ·
- * ○ по умолчанию · ▲ устарело/синтетика · ◌ в плане. Буквенный код паспорта (`code`) показывается
+ * Глифы и слова — из единого словаря src/ui/stateVocabulary.ts: ● по данным · ◆ норматив · ■ вручную ·
+ * ○ по умолчанию (поглощает «для UI» и «код») · ▲ устарело/синтетика; «в плане» — пунктирная рамка без глифа. Буквенный код паспорта (`code`) показывается
  * только в таблице паспорта; в интерфейсе бейдж — глиф + короткое человеческое слово (`short`).
  * Правило: [К] и [НОРМ] никогда не подписываются «оценено»; «UI» с пометкой deprecated —
  * «не в расчёте»; синтетика — предупреждающий тон, чтобы демо-данные не читались как факт.
@@ -10,6 +10,7 @@
  */
 import type { Provenance, Stage } from '../features/method-map/types'
 import type { PassportStatus } from '../lib/api'
+import { VOCABULARY } from './stateVocabulary'
 
 export type BadgeKey =
   | 'observed' | 'estimated' | 'calibrated' | 'normative' | 'ui' | 'deprecated' | 'synthetic'
@@ -27,22 +28,25 @@ export interface BadgeSpec {
   /** Полная подпись для подсказки и панели. */
   label: string
   tone: BadgeTone
-  /** Глиф состояния (как на карте): ● ■ ◆ ○ ▲ ◌. */
+  /** Глиф словаря состояний: ● ◆ ■ ○ ▲; у «в плане» — пусто (пунктирная рамка). */
   glyph: string
 }
 
+const V = VOCABULARY
+
+/** Производные от единого словаря (stateVocabulary.ts): глиф и слово — оттуда, подробность — в label. */
 const SPECS: Readonly<Record<BadgeKey, BadgeSpec>> = {
-  observed:   { key: 'observed',   short: 'наблюдение', code: 'Н',    label: 'наблюдение',           tone: 'good',    glyph: '●' },
-  estimated:  { key: 'estimated',  short: 'оценено',    code: 'О',    label: 'оценено по данным',    tone: 'good',    glyph: '●' },
-  calibrated: { key: 'calibrated', short: 'калибровка', code: 'К',    label: 'калибровка',           tone: 'neutral', glyph: '●' },
-  normative:  { key: 'normative',  short: 'норматив',   code: 'НОРМ', label: 'норматив',             tone: 'neutral', glyph: '◆' },
-  ui:         { key: 'ui',         short: 'для UI',     code: 'UI',   label: 'подобрано для UI',     tone: 'muted',   glyph: '○' },
-  deprecated: { key: 'deprecated', short: 'не в расчёте', code: 'UI', label: 'принимается API, в расчёте не используется', tone: 'warn', glyph: '▲' },
-  synthetic:  { key: 'synthetic',  short: 'синтетика',  code: 'СИНТ', label: 'синтетические данные', tone: 'warn',    glyph: '▲' },
-  technical:  { key: 'technical',  short: 'код',        code: 'ТЕХН', label: 'константа кода',       tone: 'muted',   glyph: '○' },
-  manual:     { key: 'manual',     short: 'вручную',    code: 'В',    label: 'задано вручную',       tone: 'neutral', glyph: '■' },
-  default:    { key: 'default',    short: 'по умолч.',  code: '—',    label: 'по умолчанию кода/НСИ', tone: 'muted', glyph: '○' },
-  planned:    { key: 'planned',    short: 'в плане',    code: '…',    label: 'ещё не реализовано',   tone: 'muted',   glyph: '◌' },
+  observed:   { key: 'observed',   short: V.data.word, code: 'Н',    label: 'по данным: наблюдение',                 tone: 'good',    glyph: V.data.glyph },
+  estimated:  { key: 'estimated',  short: V.data.word, code: 'О',    label: V.data.label,                            tone: 'good',    glyph: V.data.glyph },
+  calibrated: { key: 'calibrated', short: V.data.word, code: 'К',    label: 'по данным: калибровка по план-факту',   tone: 'good',    glyph: V.data.glyph },
+  normative:  { key: 'normative',  short: V.normative.word, code: 'НОРМ', label: V.normative.label,                tone: 'neutral', glyph: V.normative.glyph },
+  ui:         { key: 'ui',         short: V.default.word, code: 'UI', label: 'по умолчанию: подобрано для интерфейса', tone: 'muted', glyph: V.default.glyph },
+  deprecated: { key: 'deprecated', short: 'не в расчёте', code: 'UI', label: 'принимается API, в расчёте не используется', tone: 'warn', glyph: V.stale.glyph },
+  synthetic:  { key: 'synthetic',  short: 'синтетика',  code: 'СИНТ', label: 'синтетические данные — демонстрация, не факт', tone: 'warn', glyph: V.stale.glyph },
+  technical:  { key: 'technical',  short: V.default.word, code: 'ТЕХН', label: 'по умолчанию: константа кода',   tone: 'muted',   glyph: V.default.glyph },
+  manual:     { key: 'manual',     short: V.manual.word, code: 'В',  label: V.manual.label,                          tone: 'neutral', glyph: V.manual.glyph },
+  default:    { key: 'default',    short: V.default.word, code: '—', label: 'по умолчанию кода/НСИ',                tone: 'muted',   glyph: V.default.glyph },
+  planned:    { key: 'planned',    short: V.planned.word, code: '…', label: V.planned.label,                        tone: 'muted',   glyph: V.planned.glyph },
 }
 
 export function badgeSpec(key: BadgeKey): BadgeSpec {
@@ -77,6 +81,19 @@ export function badgeForProvenance(p: Provenance, opts: { deprecated?: boolean; 
     case 'manual': return SPECS.manual
     default: return SPECS.default
   }
+}
+
+/**
+ * Бейдж поля: серверный статус паспорта или происхождение карты. «Вручную» побеждает статус
+ * (поле, которое пользователь изменил, никогда не подписывается «норматив»); волна «в плане» — всё.
+ */
+export function badgeForField({ provenance, status, deprecated, stage }: {
+  provenance?: Provenance; status?: PassportStatus | string; deprecated?: boolean; stage?: Stage
+}): BadgeSpec {
+  if (stage && stage !== 'done') return SPECS.planned
+  if (provenance === 'manual') return SPECS.manual
+  if (status !== undefined) return badgeForStatus(status, { deprecated })
+  return badgeForProvenance(provenance ?? 'default', { deprecated, stage })
 }
 
 /** Подпись владельца значения (UX-V2 §4.3). */

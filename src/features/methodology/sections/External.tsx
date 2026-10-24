@@ -5,6 +5,7 @@ export function ForecastSection() {
   return (
     <Section
       id="forecast-decomposition"
+      blocks={['external', 'monitoring']}
       stages={[
         ['done', 'тренд EMD, ≤ 3 гармоники, остаток по AIC, веер P10/P50/P90, backtest против наивного'],
         ['w2', 'rolling-origin оценка, исправление B11–B13, траектории прогноза в Стадию 2'],
@@ -50,6 +51,7 @@ export function CorrelationSection() {
   return (
     <Section
       id="correlation-diversification"
+      blocks={['distributions']}
       stages={[
         ['done', 'однофакторная гауссова копула, β = √ρ, вклад в риск, HHI, ограничение maxShare'],
         ['w2', 'полная матрица + разложение Холецкого, t-копула для хвостовой зависимости'],

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { verifyAnswer } from '../verify'
 import { FEW_SHOTS } from '../prompts'
-import { HISTORY_MAX, appendHistory, exportMarkdown, historyKey, parseHistory, type HistoryEntry } from './history'
+import { EMPTY_REPORT, HISTORY_MAX, appendHistory, exportMarkdown, historyKey, parseHistory, type HistoryEntry } from './history'
 import { DEFAULT_SETTINGS, chatEndpoint, checkBaseUrl, isLoopbackHost, normalizeSettings } from './settings'
-import { MentatHttpError, isNotConnected } from './mentatApi'
+import { MentatHttpError, isAborted, isNotConnected } from './mentatApi'
 
 describe('settings', () => {
   it('normalizes anything into bounded settings with defaults', () => {
@@ -68,5 +68,13 @@ describe('mentatApi errors', () => {
     expect(isNotConnected(new MentatHttpError(503, 'LLM не подключена'))).toBe(true)
     expect(isNotConnected(new MentatHttpError(502, 'нет ответа'))).toBe(false)
     expect(isNotConnected(new Error('x'))).toBe(false)
+  })
+
+  it('treats a user «Остановить» (AbortError) as a cancel, and records it in history as stopped', () => {
+    expect(isAborted(new DOMException('aborted', 'AbortError'))).toBe(true)
+    expect(isAborted(new MentatHttpError(500, 'x'))).toBe(false)
+    const stopped: HistoryEntry = { ...entry('s'), answer: '', report: EMPTY_REPORT, outcome: 'stopped' }
+    expect(parseHistory(JSON.stringify([stopped]))).toHaveLength(1)
+    expect(exportMarkdown([stopped])).toContain('остановлен пользователем')
   })
 })

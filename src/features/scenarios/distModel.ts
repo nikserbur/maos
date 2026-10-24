@@ -4,7 +4,7 @@
  * текстовая сводка «нормальное · σ 12 %» для остальных. Без DOM — vitest.
  */
 import type { DistType, PriceDistribution, PriceScenario, Product } from '../../lib/api'
-import { pct } from '../../explain/format'
+import { num, pct } from '../../explain/format'
 import { DIST_TYPE_LABEL } from '../../ui/DensityMini'
 
 export const SIGMA_DEFAULT = 0.12
@@ -63,8 +63,35 @@ export function distSummary(type: DistType, rel: number): string {
 
 /** Подпись хвостов: явные границы, параметры семейства или «—». */
 export function tailsLabel(r: Pick<DistRow, 'd' | 'type'>): string {
-  if (r.d?.min_val || r.d?.max_val) return `${r.d.min_val ?? '−∞'} … ${r.d.max_val ?? '+∞'}`
+  if (r.d?.min_val || r.d?.max_val) {
+    const end = (v: number | string | undefined, inf: string) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? inf : num(Number(v)))
+    return `${end(r.d.min_val, '−∞')} … ${end(r.d.max_val, '+∞')}`
+  }
   if (r.type === 't') return 'ν = 5 · норматив'
-  if (r.type === 'pareto') return 'α = 2,3 · для UI'
+  if (r.type === 'pareto') return 'α = 2,3'
   return '—'
+}
+
+/** Первая часть имени изделия — до запятой или скобки («Вал приводной, сталь 40Х» → «Вал приводной»). */
+export function firstPart(name: string): string {
+  const head = name.split(/,|\s\(/)[0]?.trim()
+  return head || name
+}
+
+/** Подпись группы таблицы: «Изделия (сбыт) · 64», «Сырьё · 12». */
+export function distGroupLabel(key: string, count: number): string {
+  return `${key === 'raw' ? 'Сырьё' : 'Изделия (сбыт)'} · ${num(count, 0)}`
+}
+
+/** β одинаковы у всех строк → корреляция одна на все пары: ρ = β². */
+export function betaSpread(rows: ReadonlyArray<Pick<DistRow, 'beta'>>): { uniform: boolean; beta: number; rho: number } {
+  if (rows.length === 0) return { uniform: true, beta: BETA_DEFAULT, rho: BETA_DEFAULT * BETA_DEFAULT }
+  const lo = Math.min(...rows.map((r) => r.beta))
+  const hi = Math.max(...rows.map((r) => r.beta))
+  return { uniform: hi - lo < 1e-9, beta: lo, rho: Math.min(1, lo * lo) }
+}
+
+/** Матрица ρ_st ≈ β_s·β_t (1 на диагонали) для тепловой карты. */
+export function corrMatrix(rows: ReadonlyArray<Pick<DistRow, 'beta'>>): number[][] {
+  return rows.map((a, i) => rows.map((b, j) => (i === j ? 1 : Math.min(1, a.beta * b.beta))))
 }

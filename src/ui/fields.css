@@ -13,11 +13,14 @@
   color: var(--text-muted); white-space: nowrap; line-height: 1;
 }
 .pf-badge__glyph { font-size: var(--fs-11); line-height: 1; }
-.pf-badge--good { color: var(--verdigris); border-color: color-mix(in oklch, var(--verdigris) 55%, var(--border)); }
+/* Нормальное состояние нейтрально: цвет — только на глифе (● по данным), текст — текстовым токеном. */
+.pf-badge--good { color: var(--text-secondary); }
+.pf-badge--good .pf-badge__glyph { color: var(--verdigris); }
 .pf-badge--neutral { color: var(--text-secondary); }
 .pf-badge--warn { color: var(--status-setup); border-color: color-mix(in oklch, var(--status-setup) 55%, var(--border)); }
 .pf-badge--bad { color: var(--cinnabar); border-color: color-mix(in oklch, var(--cinnabar) 55%, var(--border)); }
 .pf-badge--muted { color: var(--text-muted); border-style: dashed; }
+.pf-badge--planned { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .pf-badge--manual { color: var(--text); border-color: var(--border-control); }
 [data-theme='light'] .pf-badge--warn { color: var(--status-setup); }
 
@@ -47,7 +50,7 @@
   border: 1px solid var(--border-control); border-radius: var(--radius-sm);
   font: 300 var(--fs-20) var(--font-sans); font-variant-numeric: tabular-nums;
 }
-.pf-field__input:focus-visible { outline: none; box-shadow: var(--halo); border-color: var(--focus); }
+.pf-field__input:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-color: var(--focus); }
 .pf-field__slider { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
 /* Свёрнутый ползунок (X1 §3.1): лежит в нижнем поле карточки и проявляется по фокусу
    или намерению навести; высота карточки не меняется, Tab на ползунок тоже его открывает. */
@@ -85,7 +88,7 @@
 .pf-pass__value-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .pf-pass__value { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; word-break: break-word; }
 .pf-pass--compact .pf-pass__value { font-size: var(--fs-20); }
-.pf-pass__value.is-warn { color: var(--status-setup); }
+.pf-pass__warn { font-size: var(--fs-12); color: var(--text-secondary); } /* отклонение: глиф ▲ + слово, число остаётся цветом текста */
 .pf-pass__unit { font-size: var(--fs-13); color: var(--text-muted); }
 .pf-pass__meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: var(--fs-12); }
 .pf-pass__meta div { display: contents; }
@@ -98,7 +101,7 @@
 .pf-stepper { position: sticky; top: calc(var(--topbar-h) + var(--pipeline-h) + 8px); align-self: start; min-width: 212px; }
 .pf-stepper__title { margin: 0 0 8px 12px; color: var(--text-muted); }
 .pf-stepper__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.pf-step { --step-color: var(--accent); }
+.pf-step { --step-color: var(--text-muted); }
 .pf-step__btn {
   display: grid; grid-template-columns: 22px 1fr auto 14px; align-items: center; gap: 8px; width: 100%; height: 34px;
   padding: 0 10px 0 12px; background: none; border: 0; border-left: 2px solid transparent; border-radius: 0 var(--radius) var(--radius) 0;
@@ -106,13 +109,14 @@
   transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
 }
 .pf-step__btn:hover { background: var(--bg-hover); color: var(--text); }
-.pf-step__btn:focus-visible { outline: none; box-shadow: var(--halo); }
-.pf-step.is-current .pf-step__btn { background: var(--bg-card); color: var(--text); border-left-color: var(--step-color); }
+.pf-step__btn:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
+/* Текущий шаг — маркер акцента (выбор); цвет блока — только на чипе [n]. */
+.pf-step.is-current .pf-step__btn { background: var(--bg-card); color: var(--text); border-left-color: var(--accent); }
 .pf-step.is-disabled .pf-step__btn { color: var(--text-disabled); cursor: not-allowed; }
 .pf-step__n { font-size: var(--fs-12); color: var(--text-muted); }
-.pf-step.is-current .pf-step__n { color: var(--step-color); }
+.pf-step.is-current .pf-step__n { color: var(--text); }
 .pf-step__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pf-step__block { font-size: var(--fs-11); color: var(--text-muted); }
+.pf-step__block { font-size: var(--fs-11); font-weight: 600; color: var(--step-color); }
 .pf-step__glyph { font-size: var(--fs-11); text-align: center; }
 .pf-step__glyph--done { color: var(--verdigris); }
 .pf-step__glyph--warn { color: var(--status-setup); }
@@ -124,13 +128,13 @@
 .pf-diff { display: flex; flex-direction: column; gap: 12px; }
 .pf-diff__summary { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-13); color: var(--text-secondary); }
 .pf-diff__count b { margin-left: 2px; }
-.pf-diff__count--changed { color: var(--accent-text); }
-.pf-diff__count--inherited { color: var(--verdigris); }
-.pf-diff__count--unset { color: var(--status-setup); }
+/* Счётчики нейтральны; состояние несёт глиф (■ изменено · ● наследовано · ◌ не задано). */
+.pf-diff__count--inherited > [aria-hidden] { color: var(--verdigris); }
+.pf-diff__count--unset > [aria-hidden] { color: var(--text-muted); }
 .pf-diff__group { border-left: 2px solid var(--border-strong); padding-left: 12px; }
-.pf-diff__group--changed { border-left-color: var(--accent); }
-.pf-diff__group--inherited { border-left-color: var(--verdigris); }
-.pf-diff__group--unset { border-left-color: var(--status-setup); }
+.pf-diff__group--changed { border-left-color: var(--text-secondary); }
+.pf-diff__group--inherited { border-left-color: color-mix(in oklch, var(--verdigris) 60%, var(--border)); }
+.pf-diff__group--unset { border-left-style: dashed; }
 .pf-diff__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .pf-diff__row { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) auto; gap: 10px; align-items: baseline; font-size: var(--fs-13); }
 .pf-diff__label { color: var(--text-secondary); }
@@ -146,8 +150,7 @@
 .pf-dtable th:not(:first-child), .pf-dtable td:not(:first-child) { text-align: right; }
 .pf-dtable td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .pf-dtable__label { color: var(--text-secondary); }
-.pf-dtable td.is-best { color: var(--verdigris); font-weight: 600; }
-.pf-dtable td.is-worst { color: var(--cinnabar); }
+.pf-dtable__cell { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
 
 /* ── Дата + часы ─────────────────────────────────────────────────────────── */
 .pf-datehours { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -155,7 +158,7 @@
   height: var(--control-compact); padding: 0 6px; background: var(--bg-input); color: var(--text);
   border: 1px solid var(--border-control); border-radius: var(--radius-sm); font: 500 var(--fs-13) var(--font-sans);
 }
-.pf-datehours__date:focus-visible { outline: none; box-shadow: var(--halo); }
+.pf-datehours__date:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 .pf-datehours__hours { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
 .pf-datehours--compact .pf-datehours__hours { display: block; }
 
@@ -199,8 +202,8 @@
 
 /* ── Плотность ───────────────────────────────────────────────────────────── */
 .pf-density { display: block; }
-.pf-density__area { fill: var(--accent); opacity: 0.14; }
-.pf-density__line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.pf-density__area { fill: var(--chart-1); opacity: 0.14; }
+.pf-density__line { fill: none; stroke: var(--chart-1); stroke-width: 1.5; }
 .pf-density__center { stroke: var(--border-strong); stroke-width: 0.8; stroke-dasharray: 2 2; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -212,3 +215,4 @@
 .pf-legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-12); color: var(--text-muted); }
 .pf-legend--compact { gap: 2px 10px; font-size: var(--fs-11); }
 .pf-legend__item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pf-legend__item--planned { padding: 0 6px; border: 1px dashed var(--border-strong); border-radius: var(--radius-pill); }

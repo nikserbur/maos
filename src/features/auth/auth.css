@@ -88,7 +88,7 @@
   width: 10px;
   height: 10px;
 }
-.login__g--sys { border-radius: 50%; background: var(--ultramarine); }
+.login__g--sys { border-radius: 50%; background: var(--text-secondary); } /* не интерактивное: нейтрально, ультрамарин — только у действий */
 .login__g--res { background: var(--cinnabar); }
 .login__g--obj {
   width: 0;
@@ -192,8 +192,9 @@
 .login__footer {
   font-size: var(--fs-11);
   text-align: center;
-  color: var(--text-disabled);
+  color: var(--text-muted);
 }
+.login__card > .dk-err { margin-top: calc(-1 * var(--space-2)); }
 
 @keyframes maos-login-rise {
   from { opacity: 0; transform: translateY(10px); }

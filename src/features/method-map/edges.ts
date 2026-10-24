@@ -3,14 +3,25 @@
  * feedback — обратная связь против потока; control — управляющее воздействие
  * (сверху, как C в IDEF0); explain — объяснение. `payload` — имя поля API.
  */
-import type { MapEdge } from './types'
+import type { MapEdge, MapEdgeKind } from './types'
+
+/**
+ * Узор штриха по виду ребра (X2 P-125: смысл несёт узор, не цвет) — один источник для SVG карты и
+ * образцов легенды. Пусто — сплошная линия.
+ */
+export const EDGE_DASH: Readonly<Record<MapEdgeKind, string>> = {
+  data: '', param: '1 4', feedback: '7 5', control: '9 4 2 4', explain: '2 5',
+}
+
+/** Основной ход [1] → [2] → [3] → [4] ↔ [5]: только эти рёбра подписаны по умолчанию. */
+export const BACKBONE_EDGES: ReadonlySet<string> = new Set(['e.1-2', 'e.2-3', 'e.3-4', 'e.4-5', 'e.5-4'])
 
 /** Рёбра уровня L0 — между блоками. Петля RL: [6] потребляет [1]–[3], пишет обратно в [4]. */
 export const L0_EDGES: readonly MapEdge[] = [
   { id: 'e.1-2', from: 'external', to: 'distributions', kind: 'data', label: 'макро-факторы', payload: 'inflation, fx, key_rate, demand, volatility' },
   { id: 'e.2-3', from: 'distributions', to: 'internal', kind: 'data', label: 'хвосты и сроки', payload: 'tail_weight, tail_index, lead_time' },
-  { id: 'e.3-4', from: 'internal', to: 'decisions', kind: 'data', label: 'мощности · MRP · маски', payload: 'capacity_hours, feasible, operation_wc_types' },
-  { id: 'e.4-5', from: 'decisions', to: 'criteria', kind: 'data', label: 'распределения прибыли и Cmax', payload: 'histogram, kpi' },
+  { id: 'e.3-4', from: 'internal', to: 'decisions', kind: 'data', label: 'мощности и MRP', payload: 'мощности, MRP, маски допустимости (capacity_hours, feasible, operation_wc_types)' },
+  { id: 'e.4-5', from: 'decisions', to: 'criteria', kind: 'data', label: 'прибыль и Cmax', payload: 'распределения прибыли и длительности (histogram, kpi)' },
   { id: 'e.2-4', from: 'distributions', to: 'decisions', kind: 'data', label: 'N сценариев цен', payload: 'price_distributions → samples' },
   { id: 'e.5-4', from: 'criteria', to: 'decisions', kind: 'control', label: 'критерий поиска', payload: 'objective, alpha, w_risk' },
   /* Петля агента */

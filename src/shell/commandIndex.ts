@@ -4,7 +4,7 @@
  * подстрокам с ранжированием (точное начало → слово → подстрока), без зависимостей от React.
  */
 
-export type CommandGroup = 'screen' | 'node' | 'run' | 'action'
+export type CommandGroup = 'recent' | 'screen' | 'scenario' | 'registry' | 'node' | 'run' | 'action'
 
 export interface CommandItem {
   id: string
@@ -17,10 +17,12 @@ export interface CommandItem {
   /** Hash-адрес перехода или действие. */
   href?: string
   run?: () => void
+  /** Сочетание клавиш: 'mod+j' → «⌘J» на macOS, «Ctrl+J» иначе. */
+  shortcut?: string
 }
 
 export const GROUP_LABEL: Readonly<Record<CommandGroup, string>> = {
-  screen: 'Экраны', node: 'Узлы карты', run: 'Прогоны плана', action: 'Действия',
+  recent: 'Недавние', screen: 'Экраны', scenario: 'Сценарии', registry: 'Справочники', node: 'Узлы карты', run: 'Прогоны плана', action: 'Действия',
 }
 
 const norm = (s: string): string => s.toLowerCase().replace(/ё/g, 'е').trim()
@@ -37,7 +39,10 @@ export function scoreItem(item: CommandItem, q: string): number {
   return hay.includes(query) ? 1 : 0
 }
 
-const GROUP_ORDER: readonly CommandGroup[] = ['action', 'screen', 'run', 'node']
+const GROUP_ORDER: readonly CommandGroup[] = ['recent', 'action', 'screen', 'scenario', 'registry', 'run', 'node']
+
+/** Лимиты по группам: на пустом запросе видны все экраны (12) — ни одна группа не вытесняет другие. */
+export const GROUP_LIMIT: Readonly<Record<CommandGroup, number>> = { recent: 5, action: 6, screen: 16, scenario: 6, registry: 8, run: 6, node: 8 }
 
 /** Поиск: отфильтрованные и упорядоченные (оценка ↓, группа, исходный порядок) элементы, не больше `limit`. */
 export function searchCommands(items: readonly CommandItem[], q: string, limit = 12): CommandItem[] {
@@ -46,6 +51,27 @@ export function searchCommands(items: readonly CommandItem[], q: string, limit =
     .filter((x) => x.score > 0)
   scored.sort((a, b) => b.score - a.score || GROUP_ORDER.indexOf(a.item.group) - GROUP_ORDER.indexOf(b.item.group) || a.i - b.i)
   return scored.slice(0, limit).map((x) => x.item)
+}
+
+/**
+ * Поиск с лимитом на группу (палитра): результаты в порядке групп, внутри — по оценке и исходному
+ * порядку. На пустом запросе «Недавние» идут первыми, узлы карты не показываются (их сотни).
+ */
+export function searchCommandsGrouped(items: readonly CommandItem[], q: string, limits: Readonly<Record<CommandGroup, number>> = GROUP_LIMIT): CommandItem[] {
+  const empty = !norm(q)
+  const scored = items
+    .map((item, i) => ({ item, i, score: scoreItem(item, q) }))
+    .filter((x) => x.score > 0 && !(empty && x.item.group === 'node'))
+  scored.sort((a, b) => GROUP_ORDER.indexOf(a.item.group) - GROUP_ORDER.indexOf(b.item.group) || b.score - a.score || a.i - b.i)
+  const used = new Map<CommandGroup, number>()
+  const out: CommandItem[] = []
+  for (const x of scored) {
+    const n = used.get(x.item.group) ?? 0
+    if (n >= limits[x.item.group]) continue
+    used.set(x.item.group, n + 1)
+    out.push(x.item)
+  }
+  return out
 }
 
 /** Группировка результата для отрисовки с заголовками групп в порядке появления. */
@@ -67,4 +93,18 @@ export function isPaletteShortcut(e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ct
 /** Сочетание клавиш панели MENTAT: Cmd/Ctrl+J (в русской раскладке — «о»). */
 export function isMentatShortcut(e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>): boolean {
   return (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'j' || e.key === 'J' || e.key === 'о' || e.key === 'О')
+}
+
+/** macOS / iOS — по платформе браузера (общая проверка верхней панели и палитры). */
+export function isMacPlatform(nav: { platform?: string; userAgent?: string } | undefined = typeof navigator !== 'undefined' ? navigator : undefined): boolean {
+  if (!nav) return false
+  return /Mac|iPhone|iPad/i.test(nav.platform || nav.userAgent || '')
+}
+
+/** 'mod+k' → «⌘K» (macOS) / «Ctrl K» (иначе); 'mod+j' → «⌘J» / «Ctrl J». */
+export function shortcutText(spec: string, mac: boolean = isMacPlatform()): string {
+  const parts = spec.split('+').map((p) => p.trim().toLowerCase())
+  const key = (parts.pop() ?? '').toUpperCase()
+  const mods = parts.map((m) => (m === 'mod' ? (mac ? '⌘' : 'Ctrl') : m === 'shift' ? (mac ? '⇧' : 'Shift') : m === 'alt' ? (mac ? '⌥' : 'Alt') : m))
+  return mac ? `${mods.join('')}${key}` : [...mods, key].join(' ')
 }

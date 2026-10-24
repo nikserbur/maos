@@ -36,7 +36,8 @@
   --focus: var(--accent-text); /* focus ring colour */
 
   /* ── Brand (Kandinsky set). Dark values are text-safe except oxblood ──── */
-  --ultramarine: oklch(0.56 0.200 268); /* #4366e8 ● system / model */
+  /* Не равен --accent (X2 «у цвета одна работа»): бренд/блок [2] — спокойнее интерактивного акцента. */
+  --ultramarine: oklch(0.58 0.140 268); /* #5774cd ● system / model — не интерактивный */
   --ochre: oklch(0.79 0.140 80); /* #e9af41 ▲ objective, highlight 9.8/9.2/8.5/7.6 */
   --ochre-fill: oklch(0.79 0.140 80); /* #e9af41 large ochre fills (marks, badges) */
   --cinnabar: oklch(0.66 0.180 33); /* #eb5e43 ■ brand red, risk 5.7/5.4/5.0/4.4 */
@@ -54,13 +55,14 @@
   --status-running-solid: oklch(0.48 0.120 152); /* #10703a badge fill + white 6.2 */
   --status-down-solid: oklch(0.52 0.190 27); /* #be2323 badge fill + white 6.1 */
 
-  /* ── Charts (slots 1–6 first; validator dataviz: 6 слотов PASS обе темы, 8-й — нейтральный «прочее») */
-  --chart-1: oklch(0.62 0.17 262); /* #4a81eb ultramarine */
+  /* ── Charts (slots 1–7; validator dataviz на --bg-card: 7 слотов PASS обе темы, 8-й — нейтральный «прочее»).
+   *    Данные отделены от акцента: --chart-1 отстоит от --accent на |Δh| ≥ 30° (tokens.test.ts). */
+  --chart-1: oklch(0.64 0.12 236); /* #3096cb cerulean — не ультрамарин кнопок */
   --chart-2: oklch(0.66 0.15 75); /* #c78200 ochre — полоса светлоты 0.48–0.67 (G3b §3, валидатор dataviz) */
   --chart-3: oklch(0.64 0.11 172); /* #2ea186 verdigris (G3b §3) */
   --chart-4: oklch(0.62 0.18 38); /* #dc5426 cinnabar */
-  --chart-5: oklch(0.66 0.12 232); /* #2f9ecf sky — порог хроматичности и полоса светлоты (G3b §3) */
-  --chart-6: oklch(0.54 0.15 318); /* #924da6 violet */
+  --chart-5: oklch(0.54 0.16 292); /* #7358c2 indigo */
+  --chart-6: oklch(0.66 0.15 0); /* #d9668e rose */
   --chart-7: oklch(0.64 0.18 104); /* #9f9000 lemon → olive, отделён от серого «прочее» (G3b §3) */
   --chart-8: oklch(0.60 0.01 85); /* #83807a grey «прочее» */
   --chart-other: var(--chart-8);
@@ -137,9 +139,9 @@
   --block-3: var(--cinnabar); /* [3] внутренние условия — ■ ресурс */
   --block-4: var(--ochre); /* [4] решения — ▲ цель */
   --block-5: color-mix(in oklch, var(--cinnabar) 55%, var(--ochre)); /* [5] критерии */
-  --block-6: var(--chart-6); /* [6] агенты — фиолет */
+  --block-6: oklch(0.54 0.15 318); /* #924da6 [6] агенты — фиолет (идентичность блока, не слот графика) */
   --block-7: var(--verdigris); /* [7] мониторинг */
-  --block-8: var(--chart-5); /* [8] LLM — sky */
+  --block-8: oklch(0.66 0.12 232); /* #2f9ecf [8] LLM — sky (идентичность блока, не слот графика) */
   /* Node states → existing status tokens + glyphs (no new arbitrary colours) */
   --state-unconfigured: var(--border-control);
   --state-default: var(--status-idle);
@@ -222,7 +224,7 @@
   --focus: var(--accent);
 
   /* Brand — text-safe on paper (≥4.6) */
-  --ultramarine: oklch(0.50 0.21 268); /* #3250d8 */
+  --ultramarine: oklch(0.50 0.14 268); /* #415cb2 не интерактивный */
   --ochre: oklch(0.53 0.115 70); /* #955e00 5.0/4.6/5.3/5.4 */
   --ochre-fill: oklch(0.64 0.140 66); /* #c4780b fills only (3.2 vs paper) */
   --cinnabar: oklch(0.54 0.18 32); /* #c1351e 5.1/4.7/5.5/5.5 */
@@ -239,13 +241,15 @@
   --status-down-solid: oklch(0.52 0.190 27); /* #be2323 */
 
   /* Charts — core 6 ≥3:1 vs white, min CVD ΔE 8.9; slot 8 «прочее» draw hatched */
-  --chart-1: oklch(0.48 0.20 268); /* #304ccc */
+  --chart-1: oklch(0.56 0.13 236); /* #007eb6 cerulean — отделён от акцента */
   --chart-2: oklch(0.67 0.14 68); /* #cd821a */
   --chart-3: oklch(0.56 0.10 170); /* #22876b */
   --chart-4: oklch(0.57 0.19 34); /* #cf3b18 */
-  --chart-5: oklch(0.58 0.13 232); /* #1c87b8 sky — контраст ≥ 3:1 (G3b §3) */
-  --chart-6: oklch(0.48 0.15 318); /* #8139a0 violet (G3b §3) */
-  --chart-7: oklch(0.46 0.14 30); /* #973023 oxblood, ΔE к фиолету ≥ 15 (G3b §3) */
+  --chart-5: oklch(0.48 0.16 300); /* #6d41a9 indigo */
+  --chart-6: oklch(0.54 0.17 355); /* #b53874 rose */
+  --chart-7: oklch(0.62 0.13 120); /* olive — как в тёмной теме; ΔE к розовому ≥ 15 */
+  --block-6: oklch(0.48 0.15 318); /* #8139a0 [6] агенты */
+  --block-8: oklch(0.58 0.13 232); /* #1c87b8 [8] LLM */
   --chart-8: oklch(0.62 0.008 85); /* #888681 grey «прочее» */
   --chart-grid: oklch(0.91 0.008 85); /* #e4e1db */
   --chart-axis: oklch(0.66 0.014 268); /* #8e929b */

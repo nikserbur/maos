@@ -1,7 +1,7 @@
 /**
  * Статус политики RL (`GET /api/rl/status`, волна A): один модульный кэш на экран «Агенты», шаг
- * «Цель и риск» мастера, узел [6] карты и полосу методологии. Честная граница: `available=false`
- * означает «правило RL недоступно — чемпион по гейту §7.4 — лучшее правило» (A1 §5–6).
+ * «Цель и риск» мастера, узел [6] карты, MENTAT (gate_a3) и полосу методологии. Честная граница:
+ * `available=false` означает «правило RL недоступно — чемпион: эвристика C*» (A1 §5–6, A4).
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import { api, type RlStatus } from '../../lib/api'
@@ -58,13 +58,25 @@ export function rlAvailable(s: RlStatus | null): boolean {
   return Boolean(s && s.available && s.onnxruntime && s.l0.ok)
 }
 
-/** Короткая честная причина недоступности для подписей (мастер, карта). */
+/** Короткая честная причина недоступности для подписей (мастер, карта, панель ходов) — простыми словами. */
 export function rlReason(s: RlStatusState): string {
-  if (s.load === 'error') return s.error ? `статус политики недоступен: ${s.error}` : 'статус политики недоступен'
+  if (s.load === 'error') return 'сервер не ответил на запрос о политике — повторите позже'
   if (!s.status) return 'статус политики ещё не получен'
-  if (!s.status.onnxruntime) return 'сервер собран без onnxruntime (MAOS_WITH_ONNX=OFF)'
-  if (!s.status.l0.ok) return 'политика не прошла гейт §7.4 — чемпион: лучшее правило; файл l0_policy.onnx не опубликован'
+  if (!s.status.onnxruntime) return 'сервер собран без среды исполнения политик'
+  if (!s.status.l0.ok) return 'политика не прошла строгий гейт на отложенных сценариях — чемпион: эвристика C*'
   return 'политика L0 опубликована'
+}
+
+/** Строки «Подробнее» о сервере: среда исполнения, файлы политик, каталог, ответ сервера. */
+export function serverDetails(st: RlStatus): Array<{ k: string; v: string; mono?: boolean }> {
+  const policy = (p: RlStatus['l0']) => (p.ok ? `опубликована · ${shortSha(p.sha256)}` : 'не опубликована')
+  return [
+    { k: 'Среда исполнения (onnxruntime)', v: st.onnxruntime ? 'собрана' : 'не собрана' },
+    { k: 'Политика L0 · диспетчер', v: policy(st.l0) },
+    { k: 'Политика L2 · планировщик', v: policy(st.l2) },
+    ...(st.dir ? [{ k: 'Каталог политик', v: st.dir, mono: true }] : []),
+    ...(st.error ? [{ k: 'Ответ сервера', v: st.error, mono: true }] : []),
+  ]
 }
 
 export const shortSha = (sha: string): string => (sha ? sha.slice(0, 10) : '—')

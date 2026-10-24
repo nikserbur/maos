@@ -30,10 +30,13 @@ export interface GraphState {
   connectFrom: string | null
 }
 
+/** Корневая крошка схемы (мировой уровень) — «Мир» даже когда экран открывается на площадке. */
+export const ROOT_CRUMB: Crumb = { id: null, title: 'Мир' }
+
 export const initialGraphState: GraphState = {
   graph: INITIAL_GRAPH,
   currentParentId: null,
-  path: [{ id: null, title: 'Схема предприятия' }],
+  path: [ROOT_CRUMB],
   selectedId: null,
   mode: 'view',
   connecting: false,
@@ -45,6 +48,8 @@ export type GraphAction =
   | { type: 'NODE_CLICK'; id: string }
   | { type: 'ENTER_NODE'; id: string }
   | { type: 'GO_TO_LEVEL'; index: number }
+  /** Восстановить уровень и выбор (адрес `#/scheme/<завод>/<цех>?sel=`): ids — путь от корня. */
+  | { type: 'SET_PATH'; ids: ReadonlyArray<string>; selectedId: string | null }
   | { type: 'ADD_NODE'; kind: ObjectKind; position?: [number, number] }
   | { type: 'MOVE_NODE'; id: string; position: [number, number] }
   | { type: 'RENAME_NODE'; id: string; title: string }
@@ -134,6 +139,19 @@ export function graphReducer(state: GraphState, action: GraphAction): GraphState
       }
     }
 
+    case 'SET_PATH': {
+      const byId = new Map(state.graph.nodes.map((n) => [n.id, n]))
+      const crumbs: Crumb[] = [ROOT_CRUMB]
+      for (const id of action.ids) {
+        const node = byId.get(id)
+        if (!node) break
+        crumbs.push({ id, title: node.title })
+      }
+      const current = crumbs[crumbs.length - 1].id
+      const sel = action.selectedId && byId.get(action.selectedId)?.parentId === current ? action.selectedId : null
+      return { ...state, path: crumbs, currentParentId: current, selectedId: sel, connecting: false, connectFrom: null }
+    }
+
     case 'ADD_NODE': {
       const siblings = state.graph.nodes.filter((n) => n.parentId === state.currentParentId)
       const i = siblings.length
@@ -173,6 +191,7 @@ export function graphReducer(state: GraphState, action: GraphAction): GraphState
     case 'RENAME_NODE':
       return {
         ...state,
+        path: state.path.map((c) => (c.id === action.id ? { ...c, title: action.title } : c)),
         graph: {
           ...state.graph,
           nodes: state.graph.nodes.map((n) =>
@@ -193,8 +212,19 @@ export function graphReducer(state: GraphState, action: GraphAction): GraphState
       }
     }
 
-    case 'LOAD_GRAPH':
-      return { ...state, graph: action.graph }
+    case 'LOAD_GRAPH': {
+      // Крошки берут свежие имена (переименование), исчезнувший уровень обрезает путь.
+      const byId = new Map(action.graph.nodes.map((n) => [n.id, n]))
+      const path: Crumb[] = [ROOT_CRUMB]
+      for (const c of state.path.slice(1)) {
+        const node = c.id ? byId.get(c.id) : undefined
+        if (!node) break
+        path.push({ id: c.id, title: node.title })
+      }
+      const current = path[path.length - 1].id
+      const selectedId = state.selectedId && byId.get(state.selectedId)?.parentId === current ? state.selectedId : null
+      return { ...state, graph: action.graph, path, currentParentId: current, selectedId }
+    }
 
     case 'LINK_MACHINE':
       return {

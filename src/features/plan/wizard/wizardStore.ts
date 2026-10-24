@@ -1,15 +1,18 @@
 /**
- * Хранилище мастера плана (UX-V2 §4): 7 шагов, источник программы, унаследованные значения
- * («база» — из сценария / портфеля / НСИ с подписью владельца) и переопределения на прогон
- * (`owner: 'run'`). Ничего не пишется в НСИ/сценарий молча: правка на шаге — только override,
- * «Сохранить в проект» — отдельное явное действие экрана. Иммутабельно, useSyncExternalStore.
+ * Хранилище мастера плана (UX-V2 §4): 6 шагов (результат живёт по своему адресу `#/plan/run/<id>`),
+ * источник программы, унаследованные значения («база» — из сценария / портфеля / НСИ с подписью
+ * владельца) и переопределения на прогон (`owner: 'run'`). Ничего не пишется в НСИ/сценарий молча:
+ * правка на шаге — только override, «Сохранить в проект» — отдельное явное действие экрана.
+ * Черновик мастера (шаг, источник, переопределения) переживает F5 — localStorage, best-effort.
+ * Иммутабельно, useSyncExternalStore.
  */
 import { useSyncExternalStore } from 'react'
 import type { DiffRow } from '../../../ui/DiffList'
-import type { Crit } from '../types'
+import { CRITERIA, type Crit } from '../types'
+import type { RunParams } from '../runMeta'
 
-export type WizardStep = 'program' | 'conditions' | 'distributions' | 'constraints' | 'objective' | 'launch' | 'result'
-export const WIZARD_STEPS: readonly WizardStep[] = ['program', 'conditions', 'distributions', 'constraints', 'objective', 'launch', 'result']
+export type WizardStep = 'program' | 'conditions' | 'distributions' | 'constraints' | 'objective' | 'launch'
+export const WIZARD_STEPS: readonly WizardStep[] = ['program', 'conditions', 'distributions', 'constraints', 'objective', 'launch']
 
 export type ProgramSource = 'portfolio' | 'orders' | 'manual'
 export type RiskPreset = 'time' | 'money' | 'balance' | 'expert'
@@ -47,10 +50,10 @@ export interface WizardFields {
 export type FieldKey = keyof WizardFields
 
 export const FIELD_LABEL: Readonly<Record<FieldKey, string>> = {
-  rule: 'Диспетчерское правило', samples: 'Прогонов хвоста', wTime: 'Вес срока w_time', wRisk: 'Вес риска w_risk',
-  wCost: 'Вес стоимости w_cost', alpha: 'α хвоста', objective: 'Критерий', useCalendar: 'Календарь смен',
-  tailWeight: 'Вес хвоста Парето', lMin: 'Порог ликвидности L_min', beta: 'β хвоста кассы', cashCriterion: 'Критерий кассы',
-  financing: 'Финансирование',
+  rule: 'Метод поиска порядка', samples: 'Прогонов Монте-Карло', wTime: 'Вес срока', wRisk: 'Вес хвоста риска',
+  wCost: 'Вес переналадок', alpha: 'α хвоста', objective: 'Критерий портфеля', useCalendar: 'Календарь смен',
+  tailWeight: 'Доля операций с тяжёлым хвостом', lMin: 'Порог ликвидности L_min', beta: 'β хвоста кассы', cashCriterion: 'Критерий кассы',
+  financing: 'Финансирование кассы',
 }
 
 /** Шаг, на котором правится поле (для переходов из диффа). */
@@ -104,6 +107,7 @@ const listeners = new Set<() => void>()
 function commit(next: WizardState): void {
   if (next === state) return
   state = next
+  saveDraft(next)
   listeners.forEach((l) => l())
 }
 function subscribe(l: () => void): () => void {
@@ -147,7 +151,7 @@ export function diffFields(s: DiffInput): DiffRow[] {
     const unset = !changed && (value === null || value === undefined)
     return {
       key, label: FIELD_LABEL[key], step: FIELD_STEP[key],
-      owner: changed ? 'этот прогон' : s.owners[key] ?? 'умолчание кода',
+      owner: changed ? 'этот прогон' : s.owners[key] ?? 'умолчание',
       value: fmt(key, value), base: changed ? fmt(key, s.base[key]) : undefined,
       origin: changed ? 'changed' : unset ? 'unset' : 'inherited',
     }
@@ -159,7 +163,6 @@ export interface StepReadiness {
   scenarioOk: boolean
   finOk: boolean
   running: boolean
-  hasResult: boolean
 }
 
 /** Состояние шага для степпера (глифы как на карте). */
@@ -172,9 +175,89 @@ export function stepState(s: WizardState, step: WizardStep, r: StepReadiness): '
     case 'constraints': return !r.finOk ? 'warn' : changedOn('constraints') ? 'done' : 'default'
     case 'objective': return s.visited.has('objective') || changedOn('objective') ? 'done' : 'default'
     case 'launch': return r.running ? 'running' : r.programOk ? 'default' : 'empty'
-    case 'result': return r.hasResult ? 'done' : 'empty'
   }
 }
+
+/* ── Черновик мастера в localStorage (переживает F5; ошибки хранилища не мешают работе) ── */
+
+export const WIZARD_DRAFT_KEY = 'maos.plan.wizard'
+
+type Draft = Pick<WizardState, 'step' | 'source' | 'runId' | 'planId' | 'scenarioId' | 'manualOrders' | 'overrides' | 'preset' | 'crits' | 'startDate'>
+
+const SOURCES: readonly ProgramSource[] = ['portfolio', 'orders', 'manual']
+const PRESETS: readonly RiskPreset[] = ['time', 'money', 'balance', 'expert']
+const CRIT_KEYS = new Set(CRITERIA.map((c) => c.id))
+const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+
+/** Разбор черновика с проверкой формы: мусор → null (старт с нуля). */
+export function parseDraft(raw: string | null): Draft | null {
+  if (!raw) return null
+  try {
+    const d = JSON.parse(raw) as Partial<Record<keyof Draft, unknown>>
+    if (!d || typeof d !== 'object') return null
+    const step = WIZARD_STEPS.includes(d.step as WizardStep) ? (d.step as WizardStep) : 'program'
+    const source = SOURCES.includes(d.source as ProgramSource) ? (d.source as ProgramSource) : 'orders'
+    const preset = PRESETS.includes(d.preset as RiskPreset) ? (d.preset as RiskPreset) : 'time'
+    const orders = Array.isArray(d.manualOrders) ? (d.manualOrders as WizardOrder[]).filter((o) => o && typeof o.product_id === 'string' && Number.isFinite(o.qty)) : []
+    const crits = Array.isArray(d.crits) ? (d.crits as Crit[]).filter((c) => c && CRIT_KEYS.has(c.criterion) && Number.isFinite(c.weight)) : []
+    const overrides = d.overrides && typeof d.overrides === 'object' ? pickKnown(d.overrides as Record<string, unknown>) : {}
+    return {
+      step, source, preset, runId: str(d.runId), planId: str(d.planId), scenarioId: str(d.scenarioId), manualOrders: orders,
+      crits: crits.length ? crits : [{ criterion: 'duration', dir: -1, weight: 1 }], overrides,
+      startDate: typeof d.startDate === 'string' ? d.startDate : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Только известные поля прогона того же типа, что и умолчание. */
+function pickKnown(o: Record<string, unknown>): Partial<WizardFields> {
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(DEFAULT_FIELDS) as FieldKey[]) {
+    const v = o[k]
+    const def = DEFAULT_FIELDS[k]
+    if (v === undefined) continue
+    if (def === null ? typeof v === 'number' || v === null : typeof v === typeof def) out[k] = v
+  }
+  return out as Partial<WizardFields>
+}
+
+const draftOf = (s: WizardState): Draft => ({
+  step: s.step, source: s.source, runId: s.runId, planId: s.planId, scenarioId: s.scenarioId, manualOrders: s.manualOrders,
+  overrides: s.overrides, preset: s.preset, crits: s.crits, startDate: s.startDate,
+})
+
+function storage(): Storage | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null
+  } catch {
+    return null
+  }
+}
+
+function saveDraft(s: WizardState): void {
+  const st = storage()
+  if (!st) return
+  try {
+    st.setItem(WIZARD_DRAFT_KEY, JSON.stringify(draftOf(s)))
+  } catch {
+    // квота или приватный режим: черновик просто не переживёт F5
+  }
+}
+
+function loadDraft(): Partial<WizardState> {
+  const st = storage()
+  if (!st) return {}
+  try {
+    return parseDraft(st.getItem(WIZARD_DRAFT_KEY)) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+// Подъём черновика после объявления всех констант разбора (порядок модуля важен).
+state = { ...state, ...loadDraft() }
 
 /* ── Действия ──────────────────────────────────────────────────────────── */
 
@@ -245,6 +328,14 @@ export const wizardActions = {
   /** Новый поток из портфеля («Передать в План»): источник и прогон, остальное — заново. */
   startFromPortfolio(runId: string, scenarioId: string): void {
     commit({ ...initial(), source: 'portfolio', runId, scenarioId })
+  },
+  /** «Новый план» / «Повторить»: параметры прошлого прогона как черновик (база выводится заново). */
+  prefill(p: RunParams, step: WizardStep = 'program'): void {
+    commit({
+      ...state, step, source: p.source, runId: p.runId, planId: p.planId, scenarioId: p.scenarioId, manualOrders: [...p.manualOrders],
+      overrides: pickKnown(p.overrides as Record<string, unknown>), preset: p.preset, crits: p.crits.length ? [...p.crits] : state.crits,
+      startDate: p.startDate, visited: new Set([...state.visited, step]),
+    })
   },
   reset(): void {
     commit(initial())

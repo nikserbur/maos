@@ -4,6 +4,7 @@
  * эндпоинта компонент получает `{ phase, progress, eta }` теми же пропсами.
  */
 import { useEffect, useState } from 'react'
+import { num, pct } from '../explain/format'
 import './fields.css'
 
 export interface RunPhase {
@@ -62,10 +63,10 @@ export function RunProgress({ phases, running, etaSeconds, progress, phase, titl
   const current = phase ?? phases.find((p) => { acc += p.weight; return est < acc })?.id ?? phases[phases.length - 1].id
   const eta = Math.max(0, etaSeconds - elapsed)
   return (
-    <div className="pf-progress" role="status" aria-live="polite" aria-label={`${title}: ${Math.round(est * 100)} %`}>
+    <div className="pf-progress" role="status" aria-live="polite" aria-label={`${title}: ${pct(est, 0)}`}>
       <div className="pf-progress__head">
         <span className="pf-progress__title">{title}</span>
-        <span className="pf-progress__eta mono">{Math.round(est * 100)} % · прошло {elapsed.toFixed(0)} с{progress === undefined && ` · ≈ ещё ${eta.toFixed(0)} с (оценка)`}</span>
+        <span className="pf-progress__eta mono">{pct(est, 0)} · прошло {num(elapsed, 0)} с{progress === undefined && ` · ≈ ещё ${num(eta, 0)} с (оценка)`}</span>
       </div>
       <div className="pf-progress__bar" aria-hidden="true"><span style={{ transform: `scaleX(${est})` }} /></div>
       <ol className="pf-progress__phases">

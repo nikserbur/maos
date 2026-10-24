@@ -1,12 +1,15 @@
 /**
- * Детали KPI-плиток: плитка с подписью и «i», крупное значение с единицей, полоса хвоста
- * риска (дет. ○ · E ● · CVaR ▲ · худший ■) и разложение фонда станков — на примитивах
- * chart-системы (`RangeStrip`, `StackBar`), без inline-стилей.
+ * Детали KPI-плиток «Плана»: плитка (KpiTile кита + раскладка бенто), крупное значение с единицей,
+ * полоса хвоста риска (TailStrip кита) и разложение фонда станков (StackBar chart-системы).
  */
 import type { ReactNode } from 'react'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
-import { hours, num } from '../../explain/format'
-import { RangeStrip, StackBar, type RangeMark, type StackSegment } from '../../ui/charts'
+import { hours } from '../../explain/format'
+import { StackBar, type StackSegment } from '../../ui/charts'
+import { CapsLabel, KpiTile, splitUnit } from '../../ui/kit'
+
+/** Плитка и полоса хвоста переехали в кит (src/ui/kit/KpiTile.tsx); здесь — реэкспорт для прежних импортов. */
+export { TailStrip, splitUnit } from '../../ui/kit'
 
 /* ── Плитка ──────────────────────────────────────────────────────────────── */
 
@@ -14,34 +17,21 @@ interface TileProps {
   metric: string
   label: string
   values: InfoTipValues
-  span?: 's3' | 's4' | 's5' | 's7'
+  span?: 's3' | 's4' | 's5' | 's7' | 's12'
   hero?: boolean
   status?: ReactNode
   children: ReactNode
 }
 
+/** Плитка «Плана» = KpiTile кита с раскладкой бенто экрана (классы pl-tile*). */
 export function Tile({ metric, label, values, span = 's3', hero = false, status, children }: TileProps) {
   const cls = `pl-tile${span !== 's3' ? ` pl-tile--${span}` : ''}${hero ? ' pl-tile--hero' : ''}`
-  return (
-    <div className={cls} role="group" aria-label={label}>
-      <div className="pl-tile__k">
-        <span className="pl-tile__label text-caps">{label}<InfoTip id={metric} values={values} /></span>
-        {status}
-      </div>
-      {children}
-    </div>
-  )
+  return <KpiTile metric={metric} label={label} values={values} status={status} className={cls}>{children}</KpiTile>
 }
 
 /** Подпись показателя внутри составной плитки (своя «i»). */
 export function SubLabel({ metric, label, values }: { metric: string; label: string; values: InfoTipValues }) {
-  return <span className="pl-tile__label text-caps pl-tile__k">{label}<InfoTip id={metric} values={values} /></span>
-}
-
-/** «1,23 млн ₽» → ["1,23", "млн ₽"]; «93,4 %» → ["93,4", "%"]. */
-export function splitUnit(text: string): [string, string] {
-  const m = /^([−\d,\s]*\d)\s(.+)$/u.exec(text)
-  return m ? [m[1], m[2]] : [text, '']
+  return <span className="pl-tile__label text-caps pl-tile__k"><CapsLabel text={label} /><InfoTip id={metric} values={values} /></span>
 }
 
 export function Value({ text, unit, size = 'hero' }: { text: string; unit?: string; size?: 'hero' | 'md' }) {
@@ -56,32 +46,6 @@ export function Value({ text, unit, size = 'hero' }: { text: string; unit?: stri
 export function FmtValue({ text, size }: { text: string; size?: 'hero' | 'md' }) {
   const [n, u] = splitUnit(text)
   return <Value text={n} unit={u || undefined} size={size} />
-}
-
-/* ── Хвост риска длины расписания ────────────────────────────────────────── */
-
-interface TailProps { det: number; mean: number; cvar: number; worst: number }
-
-/** Подписи: E — герой выше; числом только CVaR и худший (X1: ≤ 14 чисел выше сгиба). */
-export function TailStrip({ det, mean, cvar, worst }: TailProps) {
-  const marks: RangeMark[] = [
-    { key: 'det', value: det, label: 'детерминированное (Гант)', glyph: 'ring', tone: 'idle' },
-    { key: 'mean', value: mean, label: 'E[Cmax]', glyph: 'dot', tone: 'accent' },
-    { key: 'cvar', value: cvar, label: 'CVaR', glyph: 'triangle', tone: 'warn', showValue: true },
-    { key: 'worst', value: worst, label: 'худший прогон', glyph: 'square', tone: 'danger', showValue: true },
-  ]
-  return (
-    <div>
-      <RangeStrip marks={marks} fmt={(v) => num(v, 1)} zone={worst > cvar ? [cvar, worst] : undefined} zoneLabel="хвост CVaR…худший"
-        ariaLabel={`Длина расписания: детерминированная ${hours(det)}, E ${hours(mean)}, CVaR ${hours(cvar)}, худший прогон ${hours(worst)}`} />
-      <div className="pl-fund-legend">
-        <span className="glyph-idle" title={`детерминированное (Гант): ${hours(det)}`}>дет.</span>
-        <span className="pl-tail__key">E[Cmax]</span>
-        <span className="glyph-setup">CVaR</span>
-        <span className="glyph-down">худший, ч</span>
-      </div>
-    </div>
-  )
 }
 
 /* ── Разложение фонда станков ────────────────────────────────────────────── */

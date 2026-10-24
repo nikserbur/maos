@@ -1,179 +1,161 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../../../lib/api'
+import { countText, num } from '../../../explain/format'
+import { InfoTip } from '../../../ui/InfoTip'
 import { KIND_META, PALETTE } from '../../plant-scene/graph/sceneModel'
-import { useOperations } from '../useNsi'
-import type { EditCtx } from '../CreateDialog'
+import { isDefaultRouting } from '../registries'
+import { typesFromNames } from '../routing/routingModel'
+import { useOperations, useRoutings, useWorkCenterTypes } from '../useNsi'
+import { changedFields, fieldOf, useFormBridge, type NsiFormProps } from './formBridge'
+import { FormError, FormNote, NO_CHANGES } from './FormError'
 
-interface Props {
-  onSuccess: () => void
-  edit?: EditCtx
+const OP_FORMS = ['операция', 'операции', 'операций'] as const
+const LIST_LIMIT = 8
+
+/** Операции действующих техкарт, которые можно выполнить на типе: различные имена и число вхождений. */
+function useLinkedOps(typeId: string | undefined) {
+  const operations = useOperations()
+  const routings = useRoutings()
+  const wcTypes = useWorkCenterTypes()
+  return useMemo(() => {
+    if (!typeId) return []
+    const active = new Set(routings.filter(isDefaultRouting).map((r) => r.id))
+    const byName = new Map<string, number>()
+    for (const op of operations) {
+      if (!op.routing_id || !active.has(op.routing_id)) continue
+      const ids = op.wc_type_ids?.length ? op.wc_type_ids : typesFromNames(op.wc_types, wcTypes).map((t) => t.id)
+      if (ids.includes(typeId)) byName.set(op.name, (byName.get(op.name) ?? 0) + 1)
+    }
+    return [...byName.entries()].sort((a, b) => b[1] - a[1])
+  }, [typeId, operations, routings, wcTypes])
 }
 
-export function WorkCenterTypeForm({ onSuccess, edit }: Props) {
-  const operations = useOperations()
-  // только шаблоны НСИ (без привязки к техкарте) — кандидаты для типа
-  const opTemplates = operations.filter((o) => !o.routing_id)
-  const r = edit?.row ?? {}
-  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
+/** Тип оборудования: имя, цех, 3D-вид, ставка, надёжность и ТО; связанные операции — только просмотр. */
+export function WorkCenterTypeForm({ onSuccess, edit, bridge }: NsiFormProps) {
+  const r = useMemo(() => edit?.row ?? {}, [edit])
+  const sv = fieldOf(r)
+  const linked = useLinkedOps(edit?.id)
 
   const [name,  setName]  = useState(sv('name'))
   const [group, setGroup] = useState(sv('group_name'))
   const [kind,  setKind]  = useState(sv('kind', 'feedstock'))
   const [desc,  setDesc]  = useState(sv('description'))
   const [inter, setInter] = useState(sv('interchangeable') === '1')
+  const [rate,  setRate]  = useState(sv('hour_rate'))
   // Надёжность/ТО — входы симуляции поломок и планового обслуживания.
   const [mtbf,   setMtbf]   = useState(sv('mtbf_hours'))
   const [repair, setRepair] = useState(sv('repair_hours'))
   const [mtbm,   setMtbm]   = useState(sv('mtbm_hours'))
   const [maint,  setMaint]  = useState(sv('maintenance_hours'))
-  const [opIds, setOpIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
+  const [error,   setError]   = useState<unknown>(null)
+  const [note,    setNote]    = useState<string | null>(null)
 
-  const toggleOp = (id: string) =>
-    setOpIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const payload = {
+    name, group_name: group, kind, description: desc, interchangeable: inter ? '1' : '0', hour_rate: rate,
+    mtbf_hours: mtbf, repair_hours: repair, mtbm_hours: mtbm, maintenance_hours: maint,
+  }
+  const [initial] = useState(() => ({ ...payload }))
+  const dirty = Object.keys(changedFields(payload, initial)).length > 0
 
   const handleSubmit = async () => {
+    setNote(null)
     if (!name.trim()) { setError('Укажите наименование'); return }
+    const body = edit ? changedFields(payload, initial) : payload
+    if (edit && Object.keys(body).length === 0) { setNote(NO_CHANGES); return }
     setLoading(true)
     setError(null)
     try {
-      const payload = {
-        name, group_name: group, kind,
-        description: desc,
-        interchangeable: inter ? '1' : '0',
-        mtbf_hours: mtbf, repair_hours: repair,
-        mtbm_hours: mtbm, maintenance_hours: maint,
-      }
-      if (edit) await api.workCenterTypes.update(edit.id, payload)
+      if (edit) await api.workCenterTypes.update(edit.id, body)
       else await api.workCenterTypes.create(payload)
-      // Связываем выбранные операции с этим типом: добавляем имя типа в op.wc_types.
-      await Promise.all(
-        opIds.map((id) => {
-          const op = opTemplates.find((o) => o.id === id)
-          if (!op) return Promise.resolve()
-          const names = op.wc_types.split(',').map((s) => s.trim()).filter(Boolean)
-          if (names.includes(name.trim())) return Promise.resolve()
-          return api.operations.update(id, { wc_types: [...names, name.trim()].join(', ') })
-        }),
-      )
-      onSuccess()
+      onSuccess(edit ? `Сохранено: ${name}` : `Создано: ${name}`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сохранения')
+      setError(e)
     } finally {
       setLoading(false)
     }
   }
+  useFormBridge(bridge, () => void handleSubmit(), dirty, loading)
+
+  const linkedTotal = linked.reduce((s, [, n]) => s + n, 0)
 
   return (
     <div className="form">
-      {error && <div className="form__error">{error}</div>}
+      <FormError error={error} />
+      <FormNote text={note} />
 
+      <label className="form__field">
+        <span className="form__label">Наименование *</span>
+        <input className="form__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Токарный станок с ЧПУ" />
+      </label>
+      <label className="form__field">
+        <span className="form__label">Цех / группа</span>
+        <input className="form__input" value={group} onChange={(e) => setGroup(e.target.value)} placeholder="Цех №2 — Механообрабатывающий" />
+      </label>
       <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Наименование *</label>
-          <input
-            className="form__input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Прокатный стан"
-          />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Группа</label>
-          <input
-            className="form__input"
-            value={group}
-            onChange={(e) => setGroup(e.target.value)}
-            placeholder="Прокат"
-          />
-        </div>
+        <label className="form__field">
+          <span className="form__label">3D-вид на схеме</span>
+          <select className="form__select" value={kind} onChange={(e) => setKind(e.target.value)}>
+            {PALETTE.map((k) => <option key={k} value={k}>{KIND_META[k].label}</option>)}
+          </select>
+        </label>
+        <label className="form__field">
+          <span className="form__label">Ставка, ₽/ч</span>
+          <input className="form__input" type="number" min="0" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="не задана" />
+        </label>
       </div>
-
-      <div className="form__field">
-        <label className="form__label">3D-вид на схеме</label>
-        <select className="form__select" value={kind} onChange={(e) => setKind(e.target.value)}>
-          {PALETTE.map((k) => (
-            <option key={k} value={k}>{KIND_META[k].label}</option>
-          ))}
-        </select>
-        <span className="form__hint">
-          Все единицы этого типа будут отображаться на 3D-схеме выбранной моделью.
-        </span>
-      </div>
-
-      <div className="form__field">
-        <label className="form__label">Описание</label>
-        <textarea
-          className="form__textarea"
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          placeholder="Назначение и особенности типа оборудования"
-        />
-      </div>
-
+      <label className="form__field">
+        <span className="form__label">Описание</span>
+        <textarea className="form__textarea" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Назначение и особенности типа" />
+      </label>
       <label className="form__check">
         <input type="checkbox" checked={inter} onChange={(e) => setInter(e.target.checked)} />
-        Взаимозаменяемость — единицы этого типа равнозначны при планировании
+        Единицы этого типа равнозначны при планировании
       </label>
 
-      <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Наработка на отказ (MTBF), ч</label>
-          <input className="form__input" type="number" min="0" value={mtbf}
-                 onChange={(e) => setMtbf(e.target.value)} placeholder="350" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Средний ремонт, ч</label>
-          <input className="form__input" type="number" min="0" value={repair}
-                 onChange={(e) => setRepair(e.target.value)} placeholder="6" />
-        </div>
+      <div className="form__section nsi-form-head">
+        Надёжность и ТО
+        <InfoTip id="plan.maintenance" label="Как надёжность и ТО влияют на план" />
       </div>
       <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">ТО каждые (наработка), ч</label>
-          <input className="form__input" type="number" min="0" value={mtbm}
-                 onChange={(e) => setMtbm(e.target.value)} placeholder="160" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Длительность ТО, ч</label>
-          <input className="form__input" type="number" min="0" value={maint}
-                 onChange={(e) => setMaint(e.target.value)} placeholder="4" />
-        </div>
+        <label className="form__field">
+          <span className="form__label">Наработка на отказ, ч</span>
+          <input className="form__input" type="number" min="0" value={mtbf} onChange={(e) => setMtbf(e.target.value)} placeholder="350" />
+        </label>
+        <label className="form__field">
+          <span className="form__label">Средний ремонт, ч</span>
+          <input className="form__input" type="number" min="0" value={repair} onChange={(e) => setRepair(e.target.value)} placeholder="6" />
+        </label>
       </div>
-      <span className="form__hint">
-        Симуляция плана учитывает плановое ТО по наработке; вероятность поломки растёт
-        с загрузкой станка (λ = (1/MTBF)·(0.5+1.5·загрузка)), ремонт — логнормальный.
-      </span>
-
-      <div className="form__field">
-        <label className="form__label">Доступные операции для этого типа</label>
-        {opTemplates.length > 0 ? (
-          <div className="form__checks">
-            {opTemplates.map((op) => (
-              <label key={op.id} className="form__check form__check--flat">
-                <input
-                  type="checkbox"
-                  checked={opIds.includes(op.id)}
-                  onChange={() => toggleOp(op.id)}
-                />
-                {op.name}
-              </label>
-            ))}
-          </div>
-        ) : (
-          <span className="form__hint">Нет операций-шаблонов в реестре — создайте операции.</span>
-        )}
-        <span className="form__hint">
-          Выбранные операции смогут выполняться на оборудовании этого типа.
-        </span>
+      <div className="form__row">
+        <label className="form__field">
+          <span className="form__label">ТО каждые, ч</span>
+          <input className="form__input" type="number" min="0" value={mtbm} onChange={(e) => setMtbm(e.target.value)} placeholder="160" />
+        </label>
+        <label className="form__field">
+          <span className="form__label">Длительность ТО, ч</span>
+          <input className="form__input" type="number" min="0" value={maint} onChange={(e) => setMaint(e.target.value)} placeholder="4" />
+        </label>
       </div>
 
-      <div className="form__actions">
-        <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>
-          {loading ? 'Сохраняем…' : 'Создать'}
-        </button>
-      </div>
+      {edit && (
+        <section className="nsi-linked" aria-labelledby="wct-linked">
+          <div className="form__section" id="wct-linked">Операции на этом типе</div>
+          {linked.length === 0 ? (
+            <p className="form__hint">Ни одна операция действующих техкарт не выполняется на этом типе — станки простаивают в плане.</p>
+          ) : (
+            <>
+              <p className="form__hint">{countText(linkedTotal, OP_FORMS)} в действующих техкартах · {num(linked.length, 0)} различных. Связи меняются в реестре «Операции».</p>
+              <ul className="nsi-linked__list">
+                {linked.slice(0, LIST_LIMIT).map(([opName, n]) => (
+                  <li key={opName}><span className="nsi-linked__name" title={opName}>{opName}</span><span className="nsi-linked__n num">×{num(n, 0)}</span></li>
+                ))}
+              </ul>
+              {linked.length > LIST_LIMIT && <p className="form__hint">и ещё {num(linked.length - LIST_LIMIT, 0)} — полный список в реестре «Операции».</p>}
+            </>
+          )}
+        </section>
+      )}
     </div>
   )
 }

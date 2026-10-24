@@ -1,9 +1,9 @@
 /**
- * Карточка «Финансовые ограничения» (UX-V2 §4.4 п. 1, решение владельца §8 п. 5 — видна уже в G2):
- * касса на старте, кредитная линия (лимит / спред), DSO-ядро, DPO, PD, бюджет ремонтов, НДС и
- * налог на прибыль — из `GET /api/fin_params` с бейджами серверного паспорта ([К] / [НОРМ]).
- * Правки — локальный черновик; «Сохранить в проект» = явный `PUT /api/fin_params`. Параметры
- * прогона (L_min, β) — переопределения мастера, в проект не пишутся.
+ * Карточка «Финансовые ограничения» (UX-V2 §4.4 п. 1): касса на старте, кредитная линия (лимит /
+ * спред), ядро инкассации, отсрочка поставщикам, вероятность дефолта, бюджет ремонтов, НДС и налог на
+ * прибыль — из финансовых параметров проекта с бейджами происхождения (ProvenanceBadge).
+ * Правки — локальный черновик; «Сохранить в проект» — явное действие. Параметры прогона
+ * (L_min, β) — переопределения мастера, в проект не пишутся. Свёрнута, пока не правилась.
  */
 import { useEffect, useState } from 'react'
 import type { FinParams } from '../../../../lib/api'
@@ -17,10 +17,10 @@ import { effectiveFields, isChanged, useWizard, wizardActions } from '../wizardS
 type Draft = Partial<Pick<FinParams, 'c0' | 'credit_limit' | 'spread' | 'dpo_weeks' | 'pd' | 'repair_budget_weekly' | 'tau_v' | 'tau_p' | 'dscr_covenant'>>
 
 const FIELDS: ReadonlyArray<{ key: keyof Draft; label: string; code: string; unit?: string; scale?: number; step?: number; range?: [number, number]; note?: string }> = [
-  { key: 'c0', label: 'Касса на старте C₀', code: 'fin.c0', unit: '₽', step: 100000, note: 'Единица денег = единица цен НСИ (в демо — ₽).' },
-  { key: 'credit_limit', label: 'Лимит кредитной линии', code: 'fin.credit_limit', unit: '₽', step: 1000000, note: 'Масштаб демо-инстанса; данных банка нет [К].' },
+  { key: 'c0', label: 'Касса на старте C₀', code: 'fin.c0', unit: '₽', step: 100000, note: 'Единица денег = единица цен справочников (в демо — ₽).' },
+  { key: 'credit_limit', label: 'Лимит кредитной линии', code: 'fin.credit_limit', unit: '₽', step: 1000000, note: 'Масштаб демо-инстанса; данных банка нет — калибровка.' },
   { key: 'spread', label: 'Спред линии над ключевой', code: 'fin.spread', unit: '%/год', scale: 100, step: 0.25, range: [0, 15] },
-  { key: 'dpo_weeks', label: 'Отсрочка поставщикам DPO', code: 'fin.dpo_weeks', unit: 'нед', step: 1, range: [0, 12] },
+  { key: 'dpo_weeks', label: 'Отсрочка поставщикам', code: 'fin.dpo_weeks', unit: 'нед', step: 1, range: [0, 12] },
   { key: 'pd', label: 'Вероятность дефолта покупателя', code: 'fin.pd', unit: '%', scale: 100, step: 0.5, range: [0, 30] },
   { key: 'repair_budget_weekly', label: 'Бюджет ремонтов в неделю', code: 'fin.repair_budget_weekly', unit: '₽', step: 10000 },
   { key: 'tau_v', label: 'НДС', code: 'fin.tau_v', unit: '%', scale: 100, step: 1, range: [0, 30] },
@@ -53,16 +53,16 @@ export function FinancialCard({ open }: { open: boolean }) {
         <p className="wz-card__t">
           Финансовые ограничения · слой F
           <span className="wz-badges wz-badges--inline">
-            {passport.finStatus === 'ready' ? <Chip tone="good">fin_params загружены</Chip> : passport.finStatus === 'error' ? <Chip tone="bad">fin_params недоступны</Chip> : <Chip>загрузка…</Chip>}
-            <ProvenanceBadge status="К" long title="Данных предприятия нет (Р8): все внутренние параметры денег — калибровка или норматив" />
+            {passport.finStatus === 'error' ? <Chip tone="bad">параметры недоступны</Chip> : passport.finStatus !== 'ready' ? <Chip>загрузка…</Chip> : null}
+            <ProvenanceBadge status="К" long title="Данных предприятия нет: внутренние параметры денег — калибровка или норматив" />
           </span>
         </p>
         <button type="button" className="btn btn--sm" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>{expanded ? 'Свернуть' : 'Раскрыть'}</button>
       </div>
       {fin && !expanded && (
         <p className="pl-note">
-          C₀ <b className="num">{money(fin.c0)}</b> · лимит <b className="num">{money(fin.credit_limit)}</b> · ставка линии <b className="num">{num((fin.key_rate + fin.spread) * 100, 1)} %</b> ·
-          DSO ≈ <b className="num">{dso !== null ? num(dso, 1) : '—'} нед</b> · DPO <b className="num">{fin.dpo_weeks} нед</b> · L_min <b className="num">{money(f.lMin)}</b> · β <b className="num">{pct(f.beta, 0)}</b>
+          касса на старте <b className="num">{money(fin.c0)}</b> · лимит линии <b className="num">{money(fin.credit_limit)}</b> · ставка <b className="num">{pct(fin.key_rate + fin.spread, 1)}</b> ·
+          порог ликвидности <b className="num">{money(f.lMin)}</b> · β <b className="num">{pct(f.beta, 0)}</b>
         </p>
       )}
       {expanded && (
@@ -72,33 +72,33 @@ export function FinancialCard({ open }: { open: boolean }) {
             <ParamField label="Порог ликвидности L_min" value={f.lMin} unit="₽" status={passport.byCode['fin.l_min']?.status ?? 'К'} provenance={isChanged(w, 'lMin') ? 'manual' : 'calibrated'}
               owner={isChanged(w, 'lMin') ? 'этот прогон' : w.owners.lMin ?? 'умолчание'} changed={isChanged(w, 'lMin')} onRevert={() => wizardActions.revert('lMin')}
               step={100000} onChange={(v) => wizardActions.setOverride('lMin', v)} info="cash.pol"
-              note="«Касса ≥ L_min в каждую неделю худших β сценариев» — ограничение CVaR-LP; цена — PoL на шаге «Результат»." />
+              hint="«Касса ≥ L_min в каждую неделю худших β сценариев» — ограничение расчёта кассы; его цена — в разделе «Касса» результата." />
             <ParamField label="β хвоста кассы (CFaR)" value={f.beta * 100} unit="%" status={passport.byCode['fin.beta']?.status ?? 'К'} provenance={isChanged(w, 'beta') ? 'manual' : 'calibrated'}
               owner={isChanged(w, 'beta') ? 'этот прогон' : w.owners.beta ?? 'умолчание'} changed={isChanged(w, 'beta')} onRevert={() => wizardActions.revert('beta')}
               range={[1, 25]} step={1} onChange={(v) => wizardActions.setOverride('beta', v / 100)} info="cash.cfar" />
           </div>
-          <p className="wz-sub text-caps">Параметры проекта (fin_params · паспорт)</p>
+          <p className="wz-sub text-caps">Параметры проекта</p>
           <div className="wz-fields">
             {FIELDS.map((fd) => {
               const sp = passport.byCode[fd.code]
               const raw = valueOf(fd.key)
               const shown = raw === null ? null : raw * (fd.scale ?? 1)
               return (
-                <ParamField key={fd.key} label={fd.label} value={shown} unit={fd.unit} status={sp?.status ?? 'К'} owner={sp?.source || 'fin_params'} range={fd.range} step={fd.step}
+                <ParamField key={fd.key} label={fd.label} value={shown} unit={fd.unit} status={sp?.status ?? 'К'} owner={sp?.source || 'параметры проекта'} range={fd.range} step={fd.step}
                   changed={draft[fd.key] !== undefined} onRevert={() => setDraft((d) => { const { [fd.key]: _x, ...rest } = d; return rest })}
                   onChange={fin ? (v) => setDraft((d) => ({ ...d, [fd.key]: v / (fd.scale ?? 1) })) : undefined} readOnly={!fin}
-                  note={[fd.note, sp?.note].filter(Boolean).join(' ') || undefined} />
+                  hint={[fd.note, sp?.note].filter(Boolean).join(' ') || undefined} />
               )
             })}
-            <ParamField label="Ядро инкассации DSO" value={fin ? fin.dso_kernel.map((x) => String(x).replace('.', ',')).join(' / ') : null} status={passport.byCode['fin.dso_kernel']?.status ?? 'К'}
-              owner={passport.byCode['fin.dso_kernel']?.source || 'fin_params'} readOnly effect={dso !== null ? <>DSO ≈ <b className="num">{num(dso, 1)} нед</b></> : undefined}
-              note="Доли выручки по неделям после отгрузки; правится как массив — через паспорт (PUT /api/fin_params), не в мастере." />
+            <ParamField label="Инкассация выручки по неделям" value={fin ? fin.dso_kernel.map((x) => num(x, 2)).join(' / ') : null} status={passport.byCode['fin.dso_kernel']?.status ?? 'К'}
+              owner={passport.byCode['fin.dso_kernel']?.source || 'параметры проекта'} readOnly effect={dso !== null ? <>в среднем через <b className="num">{num(dso, 1)} нед</b></> : undefined}
+              hint="Доли выручки по неделям после отгрузки; правятся в паспорте параметров, не в мастере." />
           </div>
           <div className="wz-row">
-            <button type="button" className="btn btn--primary" onClick={save} disabled={!dirty || saving === 'busy'}>{saving === 'busy' ? 'Сохраняем…' : 'Сохранить в проект'}</button>
-            {saving === 'saved' && !dirty && <Chip tone="good">Сохранено</Chip>}
-            {saving === 'error' && <Chip tone="bad">не сохранено — бэкенд отверг значения</Chip>}
-            <span className="pl-note">Запись в fin_params — явное действие; черновик до сохранения — только здесь.</span>
+            <button type="button" className="btn" onClick={save} disabled={!dirty || saving === 'busy'}>{saving === 'busy' ? 'Сохраняем…' : 'Сохранить в проект'}</button>
+            {saving === 'saved' && !dirty && <Chip>Сохранено</Chip>}
+            {saving === 'error' && <Chip tone="bad">не сохранено — сервер отклонил значения</Chip>}
+            <span className="pl-note">Запись в проект — только по этой кнопке; черновик до сохранения живёт здесь.</span>
           </div>
         </>
       )}

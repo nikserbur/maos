@@ -5,6 +5,7 @@
  * дата по умолчанию (создание плана / сегодня), и это честно подписывается в интерфейсе.
  * Чистые функции без DOM — проверяются тестом.
  */
+import { dateTime, plural } from '../../../explain/format'
 
 export const HOURS_PER_DAY = 24
 const MS_PER_HOUR = 3_600_000
@@ -18,7 +19,19 @@ export function parseIsoDate(s: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** Date → `YYYY-MM-DD` (UTC-компоненты, парные `parseIsoDate`). */
+/** Дата (UTC-полночь) для текста интерфейса: «18.11.2027» — по-русски, без ISO; toIsoDate — только для запросов. */
+export function fmtDay(d: Date | null | undefined): string {
+  if (!d || Number.isNaN(d.getTime())) return dateTime(null)
+  return dateTime(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()), { time: false })
+}
+
+/** Месяц ряда «2026-09» → «09.2026» для текста; не месяц — как есть. */
+export function fmtMonth(s: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})/.exec(String(s ?? '').trim())
+  return m ? `${m[2]}.${m[1]}` : String(s ?? '—')
+}
+
+/** Date → `YYYY-MM-DD` (UTC-компоненты, парные `parseIsoDate`) — для запросов и полей ввода, не для текста. */
 export function toIsoDate(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
@@ -52,12 +65,8 @@ export function dueRelativeText(dueHours: number): string {
   return `через ${months} ${plural(months, 'месяц', 'месяца', 'месяцев')}`
 }
 
-function plural(n: number, one: string, few: string, many: string): string {
-  const n10 = n % 10, n100 = n % 100
-  if (n10 === 1 && n100 !== 11) return one
-  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return few
-  return many
-}
+/** Склонение переехало в общий форматтер (src/explain/format.ts); реэкспорт — для прежних импортов. */
+export { plural }
 
 /** Горизонт программы: максимальный срок среди заказов, в часах и в датах. */
 export function programHorizon(orders: ReadonlyArray<{ due_hours: number }>, start: Date): { hours: number; end: Date } {

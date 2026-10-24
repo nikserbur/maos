@@ -1,19 +1,20 @@
 /**
- * «Что определило результат» (UX-V2 §4.2 шаг 7): 3–5 узлов карты с наибольшим вкладом —
+ * «Почему так» (UX-V2 §4.2 шаг 7; X2 — внутри секции «Узкое место»): 3–5 узлов карты с наибольшим вкладом —
  * хвост длительностей (CVaR − E), календарь (фонд против 24×7), труд (операторов меньше станков),
  * ГА (принят/отклонён), ручные пины, узкое место. Каждый — с переходом на узел карты.
- * Карточка ГА (кривая сходимости, формула ключа) свёрнута внутрь строки «ГА» — «детали» (X1 §5 п. 6).
  * Чистая функция `driversOf` — вклад оценивается по полям ответа /api/schedule, без догадок.
  */
 import { useState } from 'react'
 import type { ScheduleResult } from '../../lib/api'
-import { hours, num, pct } from '../../explain/format'
+import { hours, num, pct, plural } from '../../explain/format'
+import { ruleLabel } from '../../explain/labels'
 import { Meter, type MeterTone } from '../../ui/charts'
+import { DataTable, type DataColumn } from '../../ui/kit'
 import { GaImproverCard } from './GaImproverCard'
 import './plan-screen.css'
 
-/** Сила драйвера — метр: предупреждение / выигрыш / нейтрально. */
-const DRIVER_TONE: Record<Driver['tone'], MeterTone> = { warn: 'warn', good: 'good', neutral: 'neutral' }
+/** Сила драйвера — метр: отклонение — предупреждающий тон; выигрыш и норма — нейтрально (цвет — только у отклонений). */
+const DRIVER_TONE: Record<Driver['tone'], MeterTone> = { warn: 'warn', good: 'neutral', neutral: 'neutral' }
 
 export interface Driver {
   id: string
@@ -49,43 +50,49 @@ export function driversOf(r: ScheduleResult, pins: number): Driver[] {
   }
   out.push({
     id: 'bottleneck', title: `Узкое место: ${r.bottleneck.wc_name}`, weight: Math.min(1, r.bottleneck.utilization),
-    detail: `очередь — ${pct(k.wait_share ?? 0, 0)} времени потока`, mapNode: 'int.capacity', tone: r.bottleneck.utilization > 0.85 ? 'warn' : 'neutral',
+    detail: `очередь — ${pct(k.wait_share ?? 0, 0)} времени потока`, mapNode: 'int.capacity', tone: r.bottleneck.utilization >= 0.85 ? 'warn' : 'neutral',
   })
   if (r.improver) {
     const imp = r.improver.validation?.improvement_pct ?? r.improver.improvement_pct
     out.push({
       id: 'ga', title: r.improver.adopted ? 'ГА принят' : 'ГА отклонён (нет выигрыша вне выборки)', weight: Math.min(1, Math.abs(imp) / 10),
-      detail: `${imp >= 0 ? '+' : ''}${num(imp, 1)} % к F вне выборки · правило ${r.rule}`, mapNode: 'dec.schedule', tone: r.improver.adopted ? 'good' : 'neutral',
+      detail: `${imp >= 0 ? '+' : ''}${num(imp, 1)} % к цели F вне выборки · правило ${ruleLabel(r.rule)}`, mapNode: 'dec.schedule', tone: r.improver.adopted ? 'good' : 'neutral',
     })
   }
-  if (pins > 0) out.push({ id: 'pins', title: 'Ручные правки Ганта', weight: Math.min(1, pins / 10), detail: `${num(pins, 0)} пин(ов) «не раньше»`, mapNode: 'dec.schedule', tone: 'neutral' })
+  if (pins > 0) out.push({ id: 'pins', title: 'Ручные правки Ганта', weight: Math.min(1, pins / 10), detail: `${num(pins, 0)} ${plural(pins, 'правка', 'правки', 'правок')} «не раньше»`, mapNode: 'dec.schedule', tone: 'neutral' })
   return out.sort((a, b) => b.weight - a.weight).slice(0, 5)
 }
 
+/**
+ * «Почему так» внутри секции «Узкое место» (X2): причины результата таблицей — фактор (переход на узел
+ * карты) · сила · что это значит. Само узкое место — в баннере над таблицей, здесь не дублируется.
+ */
 export function WhatDrove({ result, pins }: { result: ScheduleResult; pins: number }) {
-  const drivers = driversOf(result, pins)
+  const drivers = driversOf(result, pins).filter((d) => d.id !== 'bottleneck')
   const [gaOpen, setGaOpen] = useState(false)
   const hasGa = Boolean(result.improver && result.improver.method === 'ga' && result.improver.validation)
+  const cols: DataColumn<Driver>[] = [
+    { key: 'title', title: 'Почему так', rowHeader: true, sortable: false,
+      render: (d) => <a className="pl-drove__title" href={`#/map/${d.mapNode}`} title="Узел на карте методологии">{d.title} ↗</a> },
+    { key: 'weight', title: 'Сила', sortable: false, className: 'pl-drove__bar',
+      render: (d) => <Meter value={Math.max(0.04, d.weight)} tone={DRIVER_TONE[d.tone]} label={`Относительная сила: ${pct(d.weight, 0)}`} /> },
+    { key: 'detail', title: 'Что это значит', sortable: false,
+      render: (d) => (
+        <span className="pl-drove__detail">
+          {d.tone === 'warn' && <span className="glyph-setup" aria-hidden="true" />}{d.detail}
+          {d.id === 'ga' && hasGa && (
+            <button type="button" className="pf-link pl-drove__more" aria-expanded={gaOpen} onClick={() => setGaOpen((v) => !v)}>
+              {gaOpen ? 'скрыть детали' : 'детали'}
+            </button>
+          )}
+        </span>
+      ) },
+  ]
+  if (drivers.length === 0) return null
   return (
-    <section className="pl-drove" aria-label="Что определило результат">
-      <p className="pl-drove__eyebrow text-caps">Что определило результат</p>
-      <ol className="pl-drove__list">
-        {drivers.map((d) => (
-          <li key={d.id} className={`pl-drove__row is-${d.tone}`}>
-            <a className="pl-drove__title" href={`#/map/${d.mapNode}`} title="Узел на карте методологии">{d.title} ↗</a>
-            <Meter value={Math.max(0.04, d.weight)} tone={DRIVER_TONE[d.tone]} className="pl-drove__bar" />
-            <span className="pl-drove__detail">
-              {d.detail}
-              {d.id === 'ga' && hasGa && (
-                <button type="button" className="pf-link pl-drove__more" aria-expanded={gaOpen} onClick={() => setGaOpen((v) => !v)}>
-                  {gaOpen ? 'скрыть детали' : 'детали'}
-                </button>
-              )}
-            </span>
-          </li>
-        ))}
-      </ol>
+    <div className="pl-drove">
+      <DataTable columns={cols} rows={drivers} rowKey={(d) => d.id} tight caption="Почему так: причины результата" />
       {gaOpen && result.improver && <GaImproverCard imp={result.improver} rule={result.rule} />}
-    </section>
+    </div>
   )
 }

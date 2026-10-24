@@ -61,29 +61,30 @@ interface XAxisProps {
   charW?: number
   /** Зазор между соседними подписями, px. */
   gap?: number
-  /** Повернуть подписи на −30° (якорь — конец строки); нужна полоса оси `X_AXIS_ROTATED_H`. */
+  /** @deprecated Повёрнутые подписи не используются (X2: подписи читаются горизонтально — разрежаются по месту). */
   rotate?: boolean
+  /** Подписывать только эти индексы (даты: начало месяца/квартала); прочие — без подписи. */
+  tickIndices?: ReadonlyArray<number>
 }
 
 /** Высота полосы оси X без поворота подписей, px. */
 export const X_AXIS_H = 28
-/** Высота полосы оси X при повёрнутых подписях (длина подписи ≈ 11 символов), px. */
+/** @deprecated Высота полосы оси X при повёрнутых подписях — подписи больше не поворачиваются. */
 export const X_AXIS_ROTATED_H = 52
 
 /**
  * Базовая линия + подписи оси X (категории/даты): по центру деления, у краёв прижаты к плоту,
  * наезжающие — пропускаются, при большом числе пропусков — равномерный шаг (placeXLabels).
  */
-export function XAxis({ labels, xAt, y, step = 1, x0, x1, charW = TICK_CHAR_W, gap = TICK_GAP, rotate = false }: XAxisProps) {
-  const xs = labels.map((_, i) => xAt(i))
-  // При повороте ширина проекции подписи на ось ≈ cos 30° от исходной — берём её для зазоров.
-  const placed = placeXLabels(labels, xs, x0, x1, rotate ? charW * 0.87 : charW, gap, step)
+export function XAxis({ labels, xAt, y, step = 1, x0, x1, charW = TICK_CHAR_W, gap = TICK_GAP, tickIndices }: XAxisProps) {
+  const idx = tickIndices ? tickIndices.filter((i) => Number.isInteger(i) && i >= 0 && i < labels.length) : labels.map((_, i) => i)
+  const xs = idx.map((i) => xAt(i))
+  const placed = placeXLabels(idx.map((i) => labels[i]), xs, x0, x1, charW, gap, tickIndices ? 1 : step)
+    .map((p) => ({ ...p, i: idx[p.i] }))
   return (
     <g className="ch-axis ch-axis--x" aria-hidden="true">
       <line className="ch-baseline" x1={x0} x2={x1} y1={y} y2={y} />
-      {placed.map(({ i, tx }) => rotate
-        ? <text key={i} x={tx} y={y + 14} textAnchor="end" transform={`rotate(-30 ${tx} ${y + 14})`} className="ch-tick">{labels[i]}</text>
-        : <text key={i} x={tx} y={y + 16} textAnchor="middle" className="ch-tick">{labels[i]}</text>)}
+      {placed.map(({ i, tx }) => <text key={i} x={tx} y={y + 16} textAnchor="middle" className="ch-tick">{labels[i]}</text>)}
     </g>
   )
 }

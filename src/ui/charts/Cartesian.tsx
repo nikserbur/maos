@@ -67,6 +67,8 @@ export interface CartesianProps {
   compact?: boolean
   /** Подпись таблицы-двойника для колонки X. */
   xHeader?: string
+  /** Подписывать на оси X только эти индексы (даты: начало месяца/квартала). */
+  tickIndices?: ReadonlyArray<number>
   className?: string
 }
 
@@ -83,7 +85,7 @@ function leftPad(ticks: ReadonlyArray<number>, fmt: (v: number) => string): numb
 
 export function Cartesian({
   kind, labels, series, height = 240, fmtY = axisNum, unit, title, subtitle, badges, actions, ariaLabel,
-  emptyTitle = 'Нет данных', emptyText, loading, endLabels = false, annotations = [], tipRows, compact, xHeader = '', className,
+  emptyTitle = 'Нет данных', emptyText, loading, endLabels = false, annotations = [], tipRows, compact, xHeader = '', tickIndices, className,
 }: CartesianProps & { kind: CartesianKind }) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
   const n = labels.length
@@ -126,7 +128,8 @@ export function Cartesian({
 
   return (
     <ChartFrame title={title} subtitle={subtitle} badges={badges} actions={actions} legend={legend} ariaLabel={label}
-      table={isEmpty ? null : table} loading={loading} empty={isEmpty ? emptyTitle : undefined} emptyText={emptyText} className={className} compact={compact}>
+      table={isEmpty ? null : table} loading={loading} empty={isEmpty ? emptyTitle : undefined} emptyText={emptyText} className={className} compact={compact}
+      skeletonHeight={height}>
       <div
         ref={ref}
         className="ch-plot"
@@ -139,7 +142,7 @@ export function Cartesian({
         <svg className="ch-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           <Grid ticks={ticks} yAt={yAt} x0={PL} x1={width - PR} />
           <YAxis ticks={ticks} yAt={yAt} x={PL - 8} fmt={fmtY} unit={unit} top={PT} />
-          <XAxis labels={labels} xAt={xAt} y={yBase} step={step} x0={PL} x1={width - PR} />
+          <XAxis labels={labels} xAt={xAt} y={yBase} step={step} x0={PL} x1={width - PR} tickIndices={tickIndices} />
 
           {series.map((s, si) => {
             const color = colorOf(si, s.color)

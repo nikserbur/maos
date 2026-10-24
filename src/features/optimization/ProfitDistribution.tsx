@@ -1,31 +1,24 @@
 /**
- * D2 «CVaR = среднее худших α» на живых данных (A6 §6) — `Histogram` chart-системы (X1 §4 п. 3):
- * гистограмма прибыли робастного портфеля, хвост худших α левее VaR — цвет ряда 4 + штриховка,
- * линия VaR с прямой подписью, маркеры E (●) и CVaR (●) на дорожке со скобкой E − CVaR,
- * квадрат «худший», пунктирный контур портфеля «макс. E» с подписью в легенде. Плашка
- * «худшие α» — подзаголовком вне плота; легенда — три пункта (хвост / E / CVaR).
- * Логика (optStore, расчёты) не тронута — только представление; числа те же (money/axisMoney/pct).
+ * D2 «CVaR = среднее худших α» на живых данных (A6 §6) — `Histogram` chart-системы:
+ * заголовок-утверждение («В 1 из 10 сценариев прибыль ниже −47 млн ₽»), гистограмма прибыли
+ * устойчивого портфеля на его собственных корзинах (`histogram_robust`, если сервер их прислал —
+ * иначе общие корзины с окном по массе), хвост худших α — цвет ряда 4 + штриховка. Не больше трёх
+ * аннотаций: линия VaR, скобка E − CVaR (её концы подписаны «E» и «CVaR» прямо на дорожке) и
+ * квадрат «худший». Портфель «макс. E» на общих корзинах — пунктирный контур нейтрального тона;
+ * на собственных корзинах — одна фраза о его разбросе в подзаголовке. Показатели не меняются.
  */
-import type { OptHistBin, OptMetrics } from '../../lib/api'
-import { money, num, pct } from '../../explain/format'
-import { Histogram, axisMoney, type HistMarker, type LegendItem } from '../../ui/charts'
-
-interface Props {
-  histogram: OptHistBin[]
-  /** Метрики робастного портфеля (E, VaR, CVaR, худший). */
-  metrics: OptMetrics
-  alpha: number
-  samples: number
-}
+import type { OptHistBin } from '../../lib/api'
+import { joinRange, money, num, pct } from '../../explain/format'
+import { Histogram, type HistMarker, type LegendItem } from '../../ui/charts'
+import { histogramTitle } from './optText'
+import type { OptResultExt } from './optTypes'
 
 /** Доля прогонов, отрезаемая с каждого края окна (≈ p0,5…p99,5 по корзинам). */
 const TAIL_CLIP = 0.005
 
 /**
- * Окно оси X — собственный размах робастного распределения (корзины бэкенда общие с «макс. E»,
- * чей широкий разброс иначе сжимает главное в «иглу», X1 §4 «не ломать»): по корзинам обрезаем
- * по 0,5 % массы с краёв, всегда включаем марки VaR/CVaR/E/худший и добавляем по половине
- * корзины отступа. Сам контур «макс. E» за окном показывается отметкой у края.
+ * Окно оси X — собственный размах устойчивого распределения: по корзинам обрезаем по 0,5 % массы
+ * с краёв, всегда включаем марки VaR/CVaR/E/худший и добавляем по половине корзины отступа.
  */
 export function robustDomain(bins: ReadonlyArray<OptHistBin>, keep: ReadonlyArray<number>): [number, number] {
   const total = bins.reduce((s, b) => s + b.count, 0) || 1
@@ -39,50 +32,61 @@ export function robustDomain(bins: ReadonlyArray<OptHistBin>, keep: ReadonlyArra
   return [lo, hi]
 }
 
-const LEGEND: ReadonlyArray<LegendItem> = [
-  { key: 'tail', label: 'хвост худших α', color: 'var(--chart-4)', shape: 'rect' },
-  { key: 'e', label: 'E — среднее всех', color: 'var(--chart-1)', shape: 'dot' },
-  { key: 'cvar', label: 'CVaR — среднее хвоста', color: 'var(--chart-4)', shape: 'dot' },
-]
+/** Корзины для показа: собственные корзины устойчивого портфеля, если есть, иначе общие. */
+export function displayBins(r: Pick<OptResultExt, 'histogram' | 'histogram_robust'>): { bins: OptHistBin[]; own: boolean } {
+  const own = r.histogram_robust?.length ? r.histogram_robust : null
+  return own ? { bins: own, own: true } : { bins: r.histogram, own: false }
+}
 
-export function ProfitDistribution({ histogram, metrics, alpha, samples }: Props) {
-  if (histogram.length === 0) return null
-  const totalExp = histogram.reduce((s, b) => s + (b.count_expected ?? 0), 0) || 1
-  const hasExp = histogram.some((b) => (b.count_expected ?? 0) > 0)
-  const outline = hasExp ? { shares: histogram.map((b) => (b.count_expected ?? 0) / totalExp), label: 'портфель «макс. E»' } : undefined
-  const gap = metrics.expected - metrics.cvar
+export function ProfitDistribution({ result }: { result: OptResultExt }) {
+  const { bins, own } = displayBins(result)
+  if (bins.length === 0) return null
+  const metrics = result.robust.metrics
+  const maxE = result.expected.metrics
+  const alpha = result.alpha
+  const tailLabel = `хвост худших ${pct(alpha, 0)}`
+  const totalExp = bins.reduce((s, b) => s + (b.count_expected ?? 0), 0) || 1
+  const hasOutline = !own && bins.some((b) => (b.count_expected ?? 0) > 0)
+  const outline = hasOutline ? { shares: bins.map((b) => (b.count_expected ?? 0) / totalExp), label: 'портфель «макс. E»' } : undefined
   const inTail = (b: OptHistBin) => (b.x0 + b.x1) / 2 <= metrics.var
 
   const markers: HistMarker[] = [
-    { key: 'var', x: metrics.var, label: `VaR = ${axisMoney(metrics.var)}`, kind: 'line' },
-    { key: 'worst', x: metrics.worst_case, label: 'худший', kind: 'square', color: 'var(--status-down)' },
+    { key: 'var', x: metrics.var, label: 'VaR', kind: 'line' },
+    { key: 'worst', x: metrics.worst_case, label: 'худший', kind: 'square', color: 'var(--chart-4)' },
     { key: 'cvar', x: metrics.cvar, label: 'CVaR', kind: 'dot', color: 'var(--chart-4)' },
     { key: 'e', x: metrics.expected, label: 'E', kind: 'dot', color: 'var(--chart-1)' },
   ]
-  const domain = robustDomain(histogram, [metrics.worst_case, metrics.cvar, metrics.var, metrics.expected])
-  const legend = hasExp ? [...LEGEND, { key: 'maxe', label: 'портфель «макс. E»', color: 'var(--chart-2)', shape: 'line' as const, dashed: true }] : LEGEND
+  const domain = robustDomain(bins, [metrics.worst_case, metrics.cvar, metrics.var, metrics.expected])
+  const legend: LegendItem[] = [
+    { key: 'tail', label: tailLabel, color: 'var(--chart-4)', shape: 'rect' },
+    ...(outline ? [{ key: 'maxe', label: 'портфель «макс. E»', color: 'var(--text-secondary)', shape: 'line' as const, dashed: true }] : []),
+  ]
+  const months = result.horizon_hours / 720
+  const maxESpread = own ? ` · у «макс. E» разброс ${joinRange(money(maxE.worst_case), money(maxE.best))}` : ''
+  const subtitle = `прибыль за ${num(months, 0)} мес · N = ${num(result.samples, 0)}${maxESpread}`
 
   const summary =
-    `Распределение прибыли робастного портфеля по ${num(samples, 0)} сценариям. ` +
+    `Распределение прибыли устойчивого портфеля по ${num(result.samples, 0)} сценариям. ` +
     `Ожидаемая прибыль ${money(metrics.expected)}, VaR ${money(metrics.var)}, CVaR худших ${pct(alpha, 0)} — ${money(metrics.cvar)}, ` +
     `худший сценарий ${money(metrics.worst_case)}.`
 
   return (
     <Histogram
       className="pd"
-      bins={histogram}
+      bins={bins}
       highlight={inTail}
-      highlightLabel="хвост худших α"
+      highlightLabel={tailLabel}
       outline={outline}
       markers={markers}
-      bracket={{ from: metrics.cvar, to: metrics.expected, label: `E − CVaR = ${axisMoney(gap)}` }}
+      bracket={{ from: metrics.cvar, to: metrics.expected, label: `E − CVaR = ${money(metrics.expected - metrics.cvar)}` }}
       domain={domain}
-      fmtX={axisMoney}
+      fmtX={money}
       height={300}
-      subtitle={`худшие α = ${pct(alpha, 0)} — левее VaR · прибыль за горизонт, ₽ · N = ${num(samples, 0)}`}
-      seriesLabel="устойчивый"
+      title={histogramTitle(alpha, metrics.var)}
+      subtitle={subtitle}
+      seriesLabel="доля сценариев"
       legend={legend}
-      tipRows={(i) => (inTail(histogram[i]) ? [{ key: 'tail', label: 'в хвосте худших α', value: '' }] : [])}
+      tipRows={(i) => (inTail(bins[i]) ? [{ key: 'tail', label: `в хвосте худших ${pct(alpha, 0)}`, value: '' }] : [])}
       ariaLabel={summary}
     />
   )

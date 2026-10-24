@@ -1,136 +1,134 @@
 /**
- * «Аналитика» (X1 §6.3, G3 2.4): KPI, узкие места, инвестпроекты и потоки по построенному плану.
- * Шапка и табы — единый кит; одна строка фильтров над содержимым (план · ось · период),
- * а не тулбары внутри карточек. Данные — те же вызовы API, что и прежде.
+ * «Аналитика» (X1 §6.3, X2): ответ сначала — строка-вердикт о выбранном построении под шапкой, затем
+ * вкладки KPI · Узкие места · Инвестпроекты · Потоки. Вкладка и построение живут в адресе
+ * `#/analytics/<вкладка>/<planId>` (F5 восстанавливает вид, «Назад» работает), тип РЦ инвестпроекта —
+ * `?wc=`, окно графиков — `?period=`, база сравнения — `?vs=`. Выбор построения — в шапке.
  */
-import { useEffect, useMemo, useState } from 'react'
-import {
-  api, type KpiBundle, type Machine, type SimPlan, type SimPlanSummary, type SimResults, type WorkCenterType, type Worker,
-} from '../../lib/api'
-import { EmptyState, ScreenHeader, Segmented, SkeletonRows, type SegOption } from '../../ui/kit'
-import { hours, num } from '../../explain/format'
+import { useEffect, useMemo } from 'react'
+import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, SkeletonRows, type SegOption } from '../../ui/kit'
+import type { BlockId } from '../method-map/types'
+import { navigateTo, setHashParams, useHashRoute } from '../../shell/router'
+import { setCrumbTitle } from '../../shell/crumbs'
 import { computeTypeLoads } from './analyticsModel'
-import { defaultPeriod, periodOptions, shortDate } from './chartData'
-import type { AxisMode } from './dashboardConfig'
+import { TAB_LABEL, analyticsAnchor, analyticsCrumb, parseAnalyticsAnchor, type AnalyticsTab } from './analyticsRoute'
+import { normalizePeriod } from './chartData'
+import { planOptionLabel, planRefs, planSeqMap, planTitle, previousPlan } from './planRuns'
+import { useAnalyticsData } from './useAnalyticsData'
 import { useDashboard } from './useDashboard'
+import { buildVerdict } from './verdict'
+import { AnalyticsVerdict } from './AnalyticsVerdict'
 import { KpiDashboard } from './KpiDashboard'
 import { Bottlenecks } from './Bottlenecks'
 import { InvestPanel } from './InvestPanel'
 import { FlowsSection } from './FlowsSection'
 import './analytics.css'
 
-type Tab = 'kpi' | 'bottleneck' | 'invest' | 'flow'
+const TABS: ReadonlyArray<SegOption<AnalyticsTab>> = [
+  { id: 'kpi', label: TAB_LABEL.kpi, icon: 'chart' },
+  { id: 'bottleneck', label: TAB_LABEL.bottleneck, icon: 'link' },
+  { id: 'invest', label: TAB_LABEL.invest, icon: 'money' },
+  { id: 'flow', label: TAB_LABEL.flow, icon: 'shuffle' },
+]
 
-const TABS: ReadonlyArray<SegOption<Tab>> = [
-  { id: 'kpi', label: 'KPI', icon: 'chart' },
-  { id: 'bottleneck', label: 'Узкие места', icon: 'link' },
-  { id: 'invest', label: 'Инвестпроекты', icon: 'money' },
-  { id: 'flow', label: 'Потоки', icon: 'shuffle' },
-]
-const AXES: ReadonlyArray<SegOption<AxisMode>> = [
-  { id: 'plans', label: 'По планам', title: 'показатели по каждому построению плана' },
-  { id: 'timeline', label: 'По часам', title: 'ряды симуляции внутри выбранного плана' },
-]
+const SUBTITLE = 'Показатели выбранного построения плана: сроки, загрузка, узкие места, окупаемость'
+
+/** Блоки карты, которые реально использует вкладка (чипы видны, только если нет полосы методологии). */
+const TAB_BLOCKS: Readonly<Record<AnalyticsTab, readonly BlockId[]>> = {
+  kpi: ['monitoring'], bottleneck: ['monitoring'], invest: ['decisions'], flow: ['monitoring'],
+}
 
 export function AnalyticsScreen() {
-  const [tab, setTab] = useState<Tab>('kpi')
-  const [machines, setMachines] = useState<Machine[]>([])
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [wcTypes, setWcTypes] = useState<WorkCenterType[]>([])
-  const [plans, setPlans] = useState<SimPlanSummary[]>([])
-  const [planId, setPlanId] = useState('')
-  const [res, setRes] = useState<SimResults | null>(null)
-  const [kpiB, setKpiB] = useState<KpiBundle | null>(null)
-  const [plan, setPlan] = useState<SimPlan | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [investType, setInvestType] = useState('')   // предвыбор из «узких мест»/рекомендаций
-  const [period, setPeriod] = useState(defaultPeriod('plans'))
-  const dash = useDashboard(planId || null)
+  const { anchor, params } = useHashRoute()
+  const route = parseAnalyticsAnchor(anchor)
+  const tab = route.tab
+  const data = useAnalyticsData(route.planId, tab === 'flow')
+  const dash = useDashboard(data.planId || null)
+  const { planId, plans } = data
 
-  useEffect(() => {
-    Promise.all([
-      api.machines.list().catch(() => [] as Machine[]),
-      api.workers.list().catch(() => [] as Worker[]),
-      api.workCenterTypes.list().catch(() => [] as WorkCenterType[]),
-      api.simulation.plans().catch(() => [] as SimPlanSummary[]),
-    ]).then(([m, w, t, pl]) => {
-      setMachines(m); setWorkers(w); setWcTypes(t); setPlans(pl)
-      if (pl.length) setPlanId(pl[0].id)
-      setLoading(false)
-    })
-  }, [])
-
-  useEffect(() => {
-    // Бэкенд без построенного плана отдаёт { plan_id: null } БЕЗ массива per_machine → null.
-    api.simulation.results(planId || undefined)
-      .then((r) => setRes(r && r.plan_id && Array.isArray(r.per_machine) ? r : null))
-      .catch(() => setRes(null))
-    api.analytics.kpi(planId || undefined).then(setKpiB).catch(() => setKpiB(null))
-    if (tab === 'flow') api.simulation.plan(planId || undefined).then(setPlan).catch(() => setPlan(null))
-  }, [planId, tab])
+  const seqOf = useMemo(() => planSeqMap(plans, dash.series), [plans, dash.series])
+  const refs = useMemo(() => planRefs(plans, dash.series), [plans, dash.series])
+  const current = refs.find((r) => r.id === planId) ?? null
+  const seq = current?.seq ?? seqOf.get(planId) ?? null
+  const baseRef = params.vs ? refs.find((r) => r.id === params.vs) ?? null : previousPlan(refs, planId)
 
   const nameOfType = useMemo(() => {
-    const map = new Map(wcTypes.map((t) => [t.id, t.name]))
+    const map = new Map(data.wcTypes.map((t) => [t.id, t.name]))
     return (id: string) => map.get(id) ?? id
-  }, [wcTypes])
-  const loads = useMemo(() => computeTypeLoads(res, machines, workers, wcTypes), [res, machines, workers, wcTypes])
-  const ctx = useMemo(() => ({ machines: machines.length }), [machines.length])
+  }, [data.wcTypes])
+  const loads = useMemo(() => computeTypeLoads(data.res, data.machines, data.workers, data.wcTypes),
+    [data.res, data.machines, data.workers, data.wcTypes])
+  const verdict = useMemo(() => buildVerdict({ seq, nTasks: current?.nTasks ?? 0, bundle: data.bundle, loads }),
+    [seq, current?.nTasks, data.bundle, loads])
+  const ctx = useMemo(() => ({ machines: data.machines.length }), [data.machines.length])
+  const period = normalizePeriod(dash.axis, params.period)
+  // Номера построений зависят от ряда KPI: до первой загрузки ряда номера не показываем (без «№12 → №52»);
+  // повторная загрузка при смене построения держит прежний ряд.
+  const numbersReady = dash.series.length > 0 || !dash.seriesLoading
 
-  const goInvest = (typeId: string) => { setInvestType(typeId); setTab('invest') }
-  const setAxis = (axis: AxisMode) => { dash.setAxis(axis); setPeriod(defaultPeriod(axis)) }
+  // Крошки и заголовок вкладки: «Аналитика › Узкие места · План №28».
+  useEffect(() => {
+    if (anchor && numbersReady) setCrumbTitle('analytics', anchor, analyticsCrumb(tab, seq ? planTitle(seq) : null))
+  }, [anchor, tab, seq, numbersReady])
+
+  const go = (nextTab: AnalyticsTab, nextPlan: string | null, patch: Record<string, string | null> = {}) =>
+    navigateTo('analytics', analyticsAnchor(nextTab, nextPlan), { ...params, ...patch })
+  const setTab = (t: AnalyticsTab) => go(t, route.planId)
+  const setPlan = (id: string) => go(tab, id, { vs: null })
+  const goInvest = (typeId: string) => go('invest', route.planId, { wc: typeId })
+
+  const planSelect = refs.length > 0 && (!numbersReady ? <Skeleton h={30} w={280} /> : (
+    <label className="an-plansel">
+      <span className="an-tool__k text-caps">Построение</span>
+      <select className="dk-select" value={planId} onChange={(e) => setPlan(e.target.value)} aria-label="Построение плана">
+        {refs.map((r) => <option key={r.id} value={r.id}>{planOptionLabel(r)}</option>)}
+      </select>
+    </label>
+  ))
 
   return (
     <div className="an">
-      <ScreenHeader
-        eyebrow="Наблюдение · по построенному плану"
-        title="Аналитика"
-        blocks={['monitoring']}
-        subtitle="Показатели — из результатов симуляции выбранного плана; инвестрасчёт — через рыночную модель и производительность (Стадия 2)."
-      />
+      <ScreenHeader eyebrow="Наблюдение" title="Аналитика" blocks={TAB_BLOCKS[tab]} subtitle={SUBTITLE} actions={planSelect || undefined} />
 
-      <Segmented<Tab> options={TABS} value={tab} onChange={setTab} label="Разделы аналитики" kind="tab" size="lg" fit idBase="an" />
-
-      {loading ? (
-        <SkeletonRows rows={4} cols={5} label="Загрузка аналитики…" />
-      ) : plans.length === 0 ? (
-        <EmptyState title="Планов ещё нет" variant="chart" action={<a className="btn btn--primary" href="#/plan">Построить план</a>}>
-          Аналитика читает сохранённые результаты построений: KPI, загрузку типов РЦ и ленту операций.
+      {data.plansError ? (
+        <ErrorBanner error={data.plansError} message="Список построений не прочитан — аналитику показать не по чему." onRetry={data.retry} />
+      ) : !data.loading && plans.length === 0 ? (
+        <EmptyState title="Постройте план — аналитика появится по его результатам" kind="first-use" variant="chart"
+          action={<a className="btn btn--primary" href="#/plan/new">Построить план</a>}>
+          Здесь будут KPI построения, ранжир узких мест, окупаемость докупки оборудования и потоки партий.
         </EmptyState>
       ) : (
         <>
-          <div className="an-filters dk-rise" role="group" aria-label="Фильтры">
-            <label className="an-tool">
-              <span className="an-tool__k text-caps">План</span>
-              <select className="dk-select an-filters__plan" value={planId} onChange={(e) => setPlanId(e.target.value)}>
-                {plans.map((p, i) => (
-                  <option key={p.id} value={p.id}>
-                    #{plans.length - i} · {hours(Number(p.makespan) || 0, 0)} · {num(Number(p.n_tasks) || 0, 0)} оп · {shortDate(p.created_at)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {tab === 'kpi' && (
+          <AnalyticsVerdict verdict={data.loading ? null : verdict} loading={data.loading || !numbersReady || data.planLoading} onInvest={goInvest} />
+          <Segmented<AnalyticsTab> options={TABS} value={tab} onChange={setTab} label="Разделы аналитики" kind="tab" size="lg" fit idBase="an" />
+          {data.refsError ? (
+            <ErrorBanner tone="setup" error={data.refsError} message="Справочники прочитаны не полностью — узкие места и потоки могут быть неполными." onRetry={data.retry} />
+          ) : null}
+          {data.planError ? <ErrorBanner error={data.planError} message="Результаты построения не прочитаны." onRetry={data.retry} /> : null}
+
+          {/* Смена построения: прежний кадр приглушён, пока не пришли новые KPI (не «нет данных»). */}
+          <div className={`an-body${data.planLoading && data.bundle ? ' is-refetching' : ''}`} id={`an-panel-${tab}`} role="tabpanel"
+               aria-labelledby={`an-tab-${tab}`} aria-busy={data.planLoading || undefined}>
+            {data.loading ? <SkeletonRows rows={4} cols={5} label="Загрузка аналитики…" /> : (
               <>
-                <div className="an-tool">
-                  <span className="an-tool__k text-caps">Ось графиков</span>
-                  <Segmented<AxisMode> options={AXES} value={dash.axis} onChange={setAxis} label="Ось графиков" size="sm" fit />
-                </div>
-                <div className="an-tool">
-                  <span className="an-tool__k text-caps">Период</span>
-                  <Segmented options={periodOptions(dash.axis).map((p) => ({ id: p.id, label: p.label, title: p.title }))}
-                             value={period} onChange={setPeriod} label="Период" size="sm" fit />
-                </div>
+                {tab === 'kpi' && (
+                  <KpiDashboard dash={dash} period={period} onPeriod={(p) => setHashParams({ period: p })}
+                    bundle={data.bundle} bundleLoading={data.planLoading} res={data.res} loads={loads} ctx={ctx}
+                    planId={planId} refs={refs} seqOf={seqOf} baseRef={baseRef}
+                    onBase={(id) => setHashParams({ vs: id })} onInvest={goInvest} />
+                )}
+                {tab === 'bottleneck' && (
+                  <Bottlenecks loads={loads} planId={planId} machines={data.machines} loading={data.planLoading && !data.res} onInvest={goInvest} />
+                )}
+                {tab === 'invest' && (
+                  <InvestPanel wcTypes={data.wcTypes} loads={loads} preselect={params.wc ?? ''} nameOfType={nameOfType}
+                    onType={(id) => setHashParams({ wc: id })} />
+                )}
+                {tab === 'flow' && (
+                  <FlowsSection plan={data.flowPlan} machines={data.machines} nameOfType={nameOfType}
+                    bottleneck={verdict.bottleneck} loading={data.flowLoading} />
+                )}
               </>
             )}
-          </div>
-
-          <div className="an-body" id={`an-panel-${tab}`} role="tabpanel" aria-labelledby={`an-tab-${tab}`}>
-            {tab === 'kpi' && (
-              <KpiDashboard dash={dash} period={period} bundle={kpiB} res={res} loads={loads} plans={plans} planId={planId} ctx={ctx} onInvest={goInvest} />
-            )}
-            {tab === 'bottleneck' && <Bottlenecks loads={loads} onInvest={goInvest} />}
-            {tab === 'invest' && <InvestPanel wcTypes={wcTypes} loads={loads} preselect={investType} nameOfType={nameOfType} />}
-            {tab === 'flow' && <FlowsSection plan={plan} machines={machines} nameOfType={nameOfType} />}
           </div>
         </>
       )}

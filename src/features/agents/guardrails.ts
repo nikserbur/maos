@@ -14,30 +14,46 @@ export const OBJECTIVE_LABEL: Readonly<Record<AgentGuardrails['objective'], stri
   cvar_cash: 'только касса',
 }
 
-/** Умолчания: разрешено всё реализованное, «перенос цеха» и «отказ» выключены (волна 2), α — из сценария. */
+/** Умолчания: разрешено всё реализованное, «перенос цеха» и «отказ» выключены (запланированы), α — из сценария. */
 export function defaultGuardrails(alpha: number): AgentGuardrails {
   const allowed: Record<string, boolean> = {}
   for (const m of MOVE_KINDS) allowed[m.kind] = m.readiness !== 'planned'
   return { alpha, objective: 'cvar_profit_cash', allowed, limits: DEFAULT_LIMITS, frozen: [], rejected_masks: [], owner: 'project' }
 }
 
-export interface GuardrailRow {
-  meta: MoveKindMeta
-  on: boolean
-  /** Переключатель заблокирован: ход в плане (волна 2) или не поддержан НСИ. */
-  locked: boolean
-  /** Подпись состояния: «выключено», «в плане», «нет данных НСИ». */
-  state: string
+/** Доступность вида хода: доступно · нужны данные Справочников · запланировано. */
+export type KindAvailability = 'available' | 'nsi' | 'planned'
+
+/**
+ * Единственная карта «состояние → глиф и слово» (X2 «цвет — одна работа»): нормальное «доступно» —
+ * простым текстом без глифа и чипа; отклонения — глиф + слово (▲ — нужны данные, ○ — запланировано).
+ */
+export const AVAILABILITY: Readonly<Record<KindAvailability, { word: string; glyph: 'glyph-setup' | 'glyph-idle' | null; href?: string }>> = {
+  available: { word: 'доступно', glyph: null },
+  nsi: { word: 'нужны данные Справочников', glyph: 'glyph-setup', href: '#/nsi' },
+  planned: { word: 'запланировано', glyph: 'glyph-idle' },
 }
 
-/** Строки карточки: все канонические виды в порядке §4.7.1 с текущим разрешением. */
+export interface GuardrailRow {
+  meta: MoveKindMeta
+  /** Разрешён и может применяться (выключен, если заблокирован). */
+  on: boolean
+  /** Переключатель заблокирован: ход запланирован или в Справочниках нет данных. */
+  locked: boolean
+  availability: KindAvailability
+  /** Почему заблокирован — простыми словами (подсказка переключателя). */
+  reason?: string
+}
+
+/** Строки таблицы видов ходов: все канонические виды в порядке §4.7.1 с текущим разрешением. */
 export function guardrailRows(g: AgentGuardrails, nsiAllowed?: Readonly<Record<string, boolean>>): GuardrailRow[] {
   return MOVE_KINDS.map((meta) => {
-    const nsi = nsiAllowed ? nsiAllowed[meta.kind] !== false : meta.readiness !== 'nsi'
     const planned = meta.readiness === 'planned'
-    const on = Boolean(g.allowed[meta.kind]) && !planned
-    const state = planned ? 'в плане' : !nsi ? 'нет данных НСИ' : on ? 'разрешено' : 'выключено'
-    return { meta, on, locked: planned, state }
+    const nsi = nsiAllowed ? nsiAllowed[meta.kind] !== false : meta.readiness !== 'nsi'
+    const availability: KindAvailability = planned ? 'planned' : nsi ? 'available' : 'nsi'
+    const locked = availability !== 'available'
+    const reason = planned ? 'запланировано — пока не реализовано' : !nsi ? (meta.note ?? 'в Справочниках нет нужных данных') : undefined
+    return { meta, on: Boolean(g.allowed[meta.kind]) && !locked, locked, availability, reason }
   })
 }
 

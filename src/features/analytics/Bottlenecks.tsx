@@ -1,32 +1,53 @@
 /**
- * Узкие места (X1 §6.3 п. 7): ранжир типов РЦ по загрузке таблицей; бар — `--chart-1`
- * (величина, не статус), статус — глиф у значения; «Инвестпроект» — только у верхней строки
- * и по hover/фокусу остальных (dk-table__hover). Теория ограничений — в мете секции и «i».
+ * Узкие места: ранжир типов РЦ по загрузке таблицей кита. Бар — величина (`--chart-1`) с отметкой
+ * порога «внимание»; глиф и слово — только от порога (LOAD_THRESHOLDS), норма — без цвета. Первая
+ * строка — нейтральный чип «узкое место». Каждая строка ведёт к объектам: «Инвестпроект» на виду,
+ * в ⋯ — «На Ганте», «В Схеме», «Ходы для узкого места». Теория ограничений — в «i».
  */
 import { useMemo } from 'react'
+import type { Machine } from '../../lib/api'
 import { InfoTip } from '../../ui/InfoTip'
 import { Meter } from '../../ui/charts'
-import { Chip, DataTable, EmptyState, IconButton, Section, type DataColumn } from '../../ui/kit'
+import { Chip, DataTable, EmptyState, IconButton, Menu, Section, SkeletonRows, type DataColumn, type MenuItem } from '../../ui/kit'
+import { navigateTo } from '../../shell/router'
 import { num, pct } from '../../explain/format'
-import type { TypeLoad } from './analyticsModel'
-
-const HOT = 0.9
-const WARM = 0.75
+import { LOAD_MARK, LOAD_THRESHOLDS, loadLevel, type TypeLoad } from './analyticsModel'
 
 interface BottlenecksProps {
   loads: ReadonlyArray<TypeLoad>
+  /** Построение, к Ганту и ходам которого ведут переходы. */
+  planId: string
+  machines: ReadonlyArray<Machine>
+  loading: boolean
   onInvest: (wcTypeId: string) => void
 }
 
-export function Bottlenecks({ loads, onInvest }: BottlenecksProps) {
+/** Переходы строки ранжира к объектам других экранов (адреса — router.buildHash). */
+function rowMenu(l: TypeLoad, planId: string, machines: ReadonlyArray<Machine>): MenuItem[] {
+  const firstMachine = machines.find((m) => m.wc_type_id === l.typeId)
+  const items: MenuItem[] = [
+    { id: 'gantt', label: 'На Ганте', icon: 'calendar', hint: 'операции этого типа в расписании',
+      onSelect: () => navigateTo('plan', `run/${planId}/gantt`, { wc: l.typeId }) },
+    { id: 'moves', label: 'Ходы для узкого места', icon: 'swap', hint: 'что поменять в расписании, чтобы разгрузить тип',
+      onSelect: () => navigateTo('plan', `run/${planId}/moves`, { wc: l.typeId }) },
+  ]
+  if (firstMachine) {
+    items.splice(1, 0, { id: 'scheme', label: 'В Схеме', icon: 'scheme', hint: `станок «${firstMachine.name}» на схеме предприятия`,
+      onSelect: () => navigateTo('scheme', null, { sel: firstMachine.id }) })
+  }
+  return items
+}
+
+export function Bottlenecks({ loads, planId, machines, loading, onInvest }: BottlenecksProps) {
   const top = loads[0]
   const columns = useMemo<DataColumn<TypeLoad>[]>(() => [
-    { key: 'rank', title: '#', num: true, sortable: false, className: 'an-td-rank',
-      render: (l) => <span className={`an-rank${l === top ? ' an-rank--top' : ''}`}>{num(loads.indexOf(l) + 1, 0)}</span> },
+    { key: 'rank', title: '№', num: true, sortable: false, className: 'an-td-rank',
+      render: (l) => <span className="an-rank">{num(loads.indexOf(l) + 1, 0)}</span> },
     { key: 'name', title: 'Тип РЦ', rowHeader: true, get: (l) => l.name,
       render: (l) => (
         <span className="an-bname">
           {l.name}
+          {l === top && <Chip size="sm" title="наибольшая загрузка — ограничение системы">узкое место</Chip>}
           {l.laborBound && (
             <Chip size="sm" tone="setup" title="операторов меньше станков — параллелизм ограничен трудом">
               упор в труд · {num(l.operators, 0)} опер. на {num(l.machines, 0)} станк.
@@ -35,32 +56,44 @@ export function Bottlenecks({ loads, onInvest }: BottlenecksProps) {
         </span>
       ) },
     { key: 'bar', title: 'Загрузка', sortable: false, className: 'an-td-bar',
-      render: (l) => <Meter value={l.utilization} tone="accent" label={`загрузка ${pct(l.utilization, 0)}`} /> },
+      render: (l) => <Meter value={l.utilization} tone="accent" mark={LOAD_THRESHOLDS.warn} label={`загрузка ${pct(l.utilization, 0)}, порог «внимание» ${pct(LOAD_THRESHOLDS.warn, 0)}`} /> },
     { key: 'util', title: 'Значение', num: true, get: (l) => l.utilization,
       render: (l) => {
-        const glyph = l.utilization >= HOT ? 'glyph-down' : l.utilization >= WARM ? 'glyph-setup' : 'glyph-running'
-        const label = l.utilization >= HOT ? 'узкое место' : l.utilization >= WARM ? 'близко к пределу' : 'есть запас'
-        return <><span className={glyph} title={label} aria-label={label} /> {pct(l.utilization, 0)}</>
+        const level = loadLevel(l.utilization)
+        if (level === 'ok') return pct(l.utilization, 0)
+        const m = LOAD_MARK[level]
+        return <span className="an-loadmark"><span className={m.glyph} aria-hidden="true" />{m.word} · {pct(l.utilization, 0)}</span>
       } },
     { key: 'machines', title: 'Станков', num: true, get: (l) => l.machines, render: (l) => num(l.machines, 0) },
     { key: 'operators', title: 'Операторов', num: true, get: (l) => l.operators, render: (l) => num(l.operators, 0) },
-    { key: 'act', title: <span className="dk-vh">Действие</span>, sortable: false, className: 'an-td-act',
+    { key: 'act', title: <span className="dk-vh">Действия</span>, sortable: false, className: 'an-td-act',
       render: (l) => (
-        <span className={l === top ? undefined : 'dk-table__hover'}>
-          <IconButton icon="money" size="sm" title="Оценить докупку оборудования этого типа" onClick={() => onInvest(l.typeId)}>Инвестпроект</IconButton>
+        <span className="an-rowacts">
+          <span className={l === top ? undefined : 'dk-table__hover'}>
+            <IconButton icon="money" size="sm" title={`Оценить докупку оборудования «${l.name}»`} onClick={() => onInvest(l.typeId)}>Инвестпроект</IconButton>
+          </span>
+          {planId && <Menu items={rowMenu(l, planId, machines)} label={`Ещё: ${l.name}`} size="sm" />}
         </span>
       ) },
-  ], [loads, top, onInvest])
+  ], [loads, top, onInvest, planId, machines])
 
+  if (loading) return <SkeletonRows rows={5} cols={6} label="Загрузка ранжира…" />
   if (!loads.length) {
-    return <EmptyState title="Нет загрузки по типам" variant="chart" size="sm">Постройте план — ранжир появится по результатам симуляции.</EmptyState>
+    return (
+      <EmptyState title="Загрузки по типам нет" kind="unavailable" variant="chart" size="sm">
+        У этого построения нет сохранённых результатов симуляции по станкам — перестройте план, и ранжир появится.
+      </EmptyState>
+    )
   }
+  const info = (
+    <InfoTip id="analytics.bottleneck_rank" values={{ name: top.name, util: top.utilization, machines: top.machines }}
+      note={`Наращивать выпуск имеет смысл только на узком месте. Пороги: от ${pct(LOAD_THRESHOLDS.warn, 0)} — близко к пределу, от ${pct(LOAD_THRESHOLDS.bad, 0)} — перегрузка.`} />
+  )
   return (
-    <Section id="an-bottleneck" title={<>Ранжир по загрузке <InfoTip id="analytics.bottleneck_rank" values={{ name: top.name, util: top.utilization }} /></>}
-      meta={<>наращивать выпуск имеет смысл только на узком месте; параллелизм = min(станки, операторы) <InfoTip id="analytics.labor_constraint" values={{ machines: top.machines, operators: top.operators, parallel: Math.min(top.machines, top.operators) }} /></>}>
-      <div className="dk-card dk-card--flush">
-        <DataTable<TypeLoad> columns={columns} rows={loads} rowKey={(l) => l.typeId}
-          rowClassName={(l) => (l.utilization >= HOT ? 'is-alert' : undefined)}
+    <Section id="an-bottleneck" title={<>Ранжир по загрузке {info}<InfoTip id="analytics.labor_constraint" values={{ machines: top.machines, operators: top.operators, parallel: Math.min(top.machines, top.operators) }} /></>}>
+      <div className="an-bn">
+        <DataTable<TypeLoad> columns={columns} rows={loads} rowKey={(l) => l.typeId} framed
+          rowClassName={(l) => (loadLevel(l.utilization) === 'bad' ? 'is-alert' : undefined)}
           caption="Типы рабочих центров по средней загрузке станков" />
       </div>
     </Section>

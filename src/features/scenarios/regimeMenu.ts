@@ -5,7 +5,7 @@
  * `MacroMode` (JSON в `price_scenarios.macro_mode`). Слово «прогноз» — только для базового.
  */
 import type { MacroMode, MacroModeName, MacroRef, MacroStress } from '../../lib/api'
-import { num, pct } from '../../explain/format'
+import { NBSP, num, pct } from '../../explain/format'
 
 export type RegimeKind = 'base' | 'regime' | 'quantile' | 'episode'
 
@@ -86,14 +86,53 @@ export function fromMacroMode(raw: string | MacroMode | MacroModeName | null | u
   return s
 }
 
-/** Подпись для чипов: «прогноз» допустимо только для базового (§2.6б). */
-export function regimeLabel(s: RegimeMenuState, regimeNames: readonly string[] = []): { text: string; isForecast: boolean } {
+/** Подпись для чипов: «прогноз» допустимо только для базового (§2.6б). `horizon` — длина горизонта сценария, мес. */
+export function regimeLabel(s: RegimeMenuState, regimeNames: readonly string[] = [], horizon?: number): { text: string; isForecast: boolean } {
   switch (s.kind) {
     case 'base': return { text: 'базовый — прогноз', isForecast: true }
     case 'regime': return { text: `режим «${regimeNames[s.regime] ?? s.regime}» навязан — стресс`, isForecast: false }
     case 'quantile': return { text: `квантильный стресс q = ${num(s.quantile, 2)}`, isForecast: false }
-    case 'episode': return { text: `исторический эпизод ${s.episode} (${s.episodeMonths} мес)`, isForecast: false }
+    case 'episode': return {
+      text: horizon && horizon > 0
+        ? `эпизод ${s.episode} на первые ${num(Math.min(s.episodeMonths, horizon), 0)} из ${num(horizon, 0)} мес`
+        : `эпизод ${s.episode} · ${num(s.episodeMonths, 0)} мес`,
+      isForecast: false,
+    }
   }
+}
+
+/** Нейтральный чип типа режима: глиф + слово, без цветового тона (X2 «цвет — одна работа»). */
+export function regimeChip(s: RegimeMenuState): { glyph: '●' | '◆'; word: 'прогноз' | 'стресс' } {
+  return s.kind === 'base' ? { glyph: '●', word: 'прогноз' } : { glyph: '◆', word: 'стресс' }
+}
+
+/** Варианты переключателя режима генератора (вкладка «Условия»). */
+export const KIND_OPTIONS: ReadonlyArray<{ id: RegimeKind; label: string; title: string }> = [
+  { id: 'base', label: 'Прогноз', title: 'Базовый режим генератора: режимы по последнему наблюдению — прогноз' },
+  { id: 'regime', label: 'Режим', title: 'Один режим навязан на весь горизонт — стресс' },
+  { id: 'quantile', label: 'Квантиль', title: 'Путь — заданный квантиль распределения инноваций — стресс' },
+  { id: 'episode', label: 'Эпизод', title: 'Блоки из окна истории (например, 2022-02) — стресс' },
+]
+
+/** Состояние меню → строка поля сценария `macro_mode`. */
+export function serializeMode(s: RegimeMenuState, horizonMonths: number): string {
+  const mode = toMacroMode(s, horizonMonths)
+  return typeof mode === 'string' ? mode : JSON.stringify(mode)
+}
+
+/**
+ * Значение паспорта генератора словами: «flat» → «последнее наблюдение», «nodes» → «узлы прогноза
+ * ЦБ РФ», «14.0» → «14 %» (ставка в годовых процентах). Сырые коды до пользователя не доходят.
+ */
+export function passportValueLabel(v: unknown): string {
+  if (v === null || v === undefined || String(v).trim() === '') return 'последнее наблюдение'
+  const s = String(v).trim()
+  if (s === 'flat' || s === 'плоская') return 'последнее наблюдение'
+  if (s === 'nodes') return 'узлы прогноза ЦБ РФ'
+  if (s === 'custom') return 'пользовательская'
+  const n = Number(s.replace(',', '.'))
+  if (Number.isFinite(n)) return `${num(n, Number.isInteger(n) ? 0 : 1)}${NBSP}%`
+  return s.replace(/[_.]+/g, ' ')
 }
 
 export interface RegimeShare {

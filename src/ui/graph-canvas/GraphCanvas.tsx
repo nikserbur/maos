@@ -1,7 +1,8 @@
 /**
  * Граф-канвас (UX-V2 §6.1, X1 §6.6): вынесенный из AI-воркфлоу движок вьюпорта — пан по фону,
- * зум колесом вокруг курсора, «вписать» (кнопка · клавиша F · автоматически при монтировании и
- * ресайзе), клавиатура (+ − 0 F, стрелки — пан), плавающие кнопки масштаба.
+ * зум колесом вокруг курсора, «вписать» (кнопка · клавиша F · при монтировании; при ресайзе — только
+ * если `refitOnResize`: открытие боковой панели не меняет масштаб), клавиатура (+ − 0 F, стрелки — пан),
+ * плавающие кнопки масштаба (снизу справа или сверху справа). Общий вид карточки узла — `.gc-node`.
  * Два слоя в одной системе координат: SVG (рёбра, узлы-svg) и HTML (узлы-карточки).
  * Трансформация мира задаётся атрибутом <g transform> и императивно (style.transform) —
  * без inline-стилей в JSX и без перерисовки React на каждый кадр пана.
@@ -20,6 +21,8 @@ export interface GraphCanvasHandle {
   reset: () => void
   toWorld: (clientX: number, clientY: number) => Point
   getView: () => View
+  /** Центр видимой области в координатах мира (куда ставить новый узел). */
+  getViewportCenterWorld: () => Point
 }
 
 interface GraphCanvasProps {
@@ -27,8 +30,14 @@ interface GraphCanvasProps {
   bounds: Bounds
   /** Увеличивается, когда экран просит «вписать» (кнопка или клавиша F снаружи). */
   fitToken?: number
-  /** Вписывать при монтировании и изменении размера вьюпорта. */
+  /** Прежний флаг: false — не вписывать при ресайзе (при монтировании — вписывать). */
   autoFit?: boolean
+  /** Вписать при монтировании (по умолчанию да). */
+  fitOnMount?: boolean
+  /** Вписывать заново при изменении размера вьюпорта (по умолчанию да; карта и воркфлоу — нет). */
+  refitOnResize?: boolean
+  /** Где плавающие кнопки масштаба. */
+  controlsPlacement?: 'bottom-right' | 'top-right'
   minZoom?: number
   maxZoom?: number
   /** SVG-содержимое в координатах мира (рёбра, svg-узлы). */
@@ -57,11 +66,12 @@ const ZOOM_STEP = 1.2
 const PAN_STEP = 48
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas({
-  bounds, fitToken = 0, autoFit = true, minZoom, maxZoom, svg, children, onBackgroundPointerDown, onViewChange, onKeyDown,
-  controls = true, grid = true, ariaLabel, ariaRoleDescription, pad, nodeSelector = '[data-gc-node]', className,
+  bounds, fitToken = 0, autoFit, fitOnMount = true, refitOnResize, controlsPlacement = 'bottom-right', minZoom, maxZoom, svg, children,
+  onBackgroundPointerDown, onViewChange, onKeyDown, controls = true, grid = true, ariaLabel, ariaRoleDescription, pad, nodeSelector = '[data-gc-node]', className,
 }, ref) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
+  const refit = refitOnResize ?? autoFit ?? true
   const api = useGraphView(viewportRef, { minZoom, maxZoom, pad })
   const { view, fit, zoomBy, reset, toWorld, panBy, setView } = api
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
@@ -77,19 +87,33 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     reset,
     toWorld,
     getView: () => view,
+    getViewportCenterWorld: () => {
+      const vp = viewportRef.current
+      const w = vp?.clientWidth ?? 0
+      const h = vp?.clientHeight ?? 0
+      return { x: (w / 2 - view.x) / view.k, y: (h / 2 - view.y) / view.k }
+    },
   }), [fitNow, zoomBy, reset, toWorld, view])
 
-  // «Вписать»: по запросу экрана, при монтировании и при изменении размера области.
+  // «Вписать»: по запросу экрана и один раз при монтировании; при ресайзе — только если просили
+  // (иначе открытие панели узла сбивало бы масштаб, который выбрал пользователь).
   useEffect(() => { if (fitToken > 0) fitNow() }, [fitToken, fitNow])
+  const fitOnMountRef = useRef(fitOnMount)
   useEffect(() => {
-    if (!autoFit) return undefined
+    if (!fitOnMountRef.current) return undefined
     fitNow()
+    // Вьюпорт мог ещё не получить размер (ленивый экран) — повтор на первом кадре.
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => fitNow()) : 0
+    return () => { if (raf) cancelAnimationFrame(raf) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!refit) return undefined
     const vp = viewportRef.current
     if (!vp || typeof ResizeObserver === 'undefined') return undefined
     const ro = new ResizeObserver(() => fitNow())
     ro.observe(vp)
     return () => ro.disconnect()
-  }, [autoFit, fitNow])
+  }, [refit, fitNow])
 
   useEffect(() => { onViewChange?.(view) }, [view, onViewChange])
 
@@ -172,7 +196,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       </svg>
       {children && <div ref={worldRef} className="gc__world">{children}</div>}
       {controls && (
-        <div className="gc__controls" role="group" aria-label="Масштаб">
+        <div className={`gc__controls gc__controls--${controlsPlacement}`} role="group" aria-label="Масштаб">
           <button type="button" className="btn btn--icon gc__btn" title="Уменьшить (−)" aria-label="Уменьшить" onClick={() => zoomBy(1 / ZOOM_STEP)}>
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10" /></svg>
           </button>

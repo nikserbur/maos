@@ -1,7 +1,8 @@
 /**
  * Рамка графика (X1 §8 «ChartFrame»): заголовок · подзаголовок · бейджи слева, действия справа,
- * легенда (всегда при ≥ 2 рядов), состояния «загрузка» (прежний кадр с пониженной непрозрачностью,
- * без скелета-вспышки) и «пусто», `role="img"` + `aria-label` на теле графика и переключатель
+ * легенда (всегда при ≥ 2 рядов), честные состояния (X2): первая загрузка без данных — зарезервированная
+ * сетка-скелет (не «пусто»!), пересчёт с прежними данными — приглушённый прежний кадр и пометка
+ * «пересчитывается», «пусто» — только когда загрузка закончилась, `role="img"` + `aria-label` на теле графика и переключатель
  * «Таблица» — WCAG-двойник, в котором есть каждое значение графика. Действие «SVG» (G4) выгружает
  * тело графика файлом со вписанными стилями текущей темы (exportSvg.ts) — для отчётов и диплома.
  */
@@ -38,18 +39,25 @@ interface ChartFrameProps {
   exportable?: boolean
   /** Имя файла экспорта; по умолчанию — заголовок (если строка) или aria-label. */
   exportName?: string
+  /** Высота скелета при первой загрузке (обычно — высота графика), px. */
+  skeletonHeight?: number
   children?: ReactNode
 }
 
 export function ChartFrame({
   title, subtitle, badges, actions, legend, ariaLabel, table, loading = false, empty, emptyText, className, compact = false,
-  exportable, exportName, children,
+  exportable, exportName, skeletonHeight = 160, children,
 }: ChartFrameProps) {
+  // «Пусто» — только когда загрузка закончилась; первая загрузка — скелет, пересчёт — прежний кадр.
+  const hasEmpty = Boolean(empty)
+  const skeleton = hasEmpty && loading
+  const showEmpty = hasEmpty && !loading
+  const refetching = loading && !hasEmpty
   const [showTable, setShowTable] = useState(false)
   const bodyId = useId()
   const bodyRef = useRef<HTMLDivElement>(null)
   const [hasSvg, setHasSvg] = useState(false)
-  const canExport = (exportable ?? (!compact && Boolean(title))) && !empty
+  const canExport = (exportable ?? (!compact && Boolean(title))) && !hasEmpty
   // Кнопка «SVG» — только если в теле действительно есть SVG (у HTML-форм её нет).
   useLayoutEffect(() => { setHasSvg(canExport && !showTable && Boolean(bodyRef.current?.querySelector('svg'))) })
   const exportSvg = () => {
@@ -60,7 +68,7 @@ export function ChartFrame({
     downloadSvg(serializeSvg(svg, opaque), svgFileName(exportName ?? (typeof title === 'string' ? title : ariaLabel)))
   }
   const hasHead = Boolean(title || subtitle || badges || actions || table)
-  const cls = ['ch-frame', compact ? 'ch-frame--compact' : '', loading ? 'ch-frame--loading' : '', className ?? ''].filter(Boolean).join(' ')
+  const cls = ['ch-frame', compact ? 'ch-frame--compact' : '', refetching ? 'ch-frame--loading is-refetching' : '', className ?? ''].filter(Boolean).join(' ')
 
   return (
     <figure className={cls} aria-busy={loading || undefined}>
@@ -70,13 +78,18 @@ export function ChartFrame({
             {title && <span className="ch-title">{title}</span>}
             {subtitle && <span className="ch-sub">{subtitle}</span>}
           </div>
-          {badges && <div className="ch-badges">{badges}</div>}
+          {(badges || refetching) && (
+            <div className="ch-badges">
+              {refetching && <span className="ch-refetch" role="status">пересчитывается…</span>}
+              {badges}
+            </div>
+          )}
           <div className="ch-actions">
             {actions}
             {hasSvg && (
               <button type="button" className="btn btn--ghost ch-table-toggle" onClick={exportSvg} title="Скачать график в SVG (стили текущей темы)">SVG</button>
             )}
-            {table && (
+            {table && !skeleton && (
               <button
                 type="button"
                 className="btn btn--ghost ch-table-toggle"
@@ -91,7 +104,9 @@ export function ChartFrame({
         </figcaption>
       )}
 
-      {empty ? (
+      {skeleton ? (
+        <ChartSkeleton height={skeletonHeight} />
+      ) : showEmpty ? (
         <ChartEmpty title={empty} text={emptyText} />
       ) : showTable && table ? (
         <div id={bodyId} className="ch-tablewrap">
@@ -103,7 +118,7 @@ export function ChartFrame({
         </div>
       )}
 
-      {!empty && !showTable && legend && legend.length >= 2 && <Legend items={legend} />}
+      {!hasEmpty && !showTable && legend && legend.length >= 2 && <Legend items={legend} />}
     </figure>
   )
 }
@@ -160,6 +175,19 @@ export function DataTwin({ table }: { table: ChartTable }) {
         ))}
       </tbody>
     </table>
+  )
+}
+
+/** Скелет первой загрузки: место графика зарезервировано (без скачка макета), сетка из 4 линий. */
+export function ChartSkeleton({ height = 160 }: { height?: number }) {
+  const lines = [0.12, 0.38, 0.64, 0.9]
+  return (
+    <div className="ch-skel" role="status" aria-live="polite" aria-busy="true">
+      <span className="ch-vh">Загрузка графика…</span>
+      <svg className="ch-skel__svg" width="100%" height={height} aria-hidden="true" preserveAspectRatio="none" viewBox={`0 0 100 ${height}`}>
+        {lines.map((f) => <line key={f} x1="0" x2="100" y1={f * height} y2={f * height} className="ch-skel__line" />)}
+      </svg>
+    </div>
   )
 }
 

@@ -1,6 +1,16 @@
-import { Suspense, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+/**
+ * Схема предприятия: полоса режимов и уровней (SceneModeBar) · канвас (мировая карта или 3D) ·
+ * правая колонка 360 px (инспектор или симуляция). Данные — реестры Справочников (useSceneData),
+ * загрузка по плану (useSceneOps), правки с «Отменить» (useSceneWrites), уровень и выбор — в адресе
+ * (useSceneUrl). Клавиши: F — только в канвасе, Esc — через стек слоёв (MENTAT и меню не теряют уровень).
+ */
+import { Suspense, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Loader } from '@react-three/drei'
+import { ErrorBoundary } from '../../shell/ErrorBoundary'
+import { useEscapeLayer } from '../../shell/overlays'
+import { useAnimationPaused, usePrefersReducedMotion } from '../../ui/motion'
+import type { Crumb as KitCrumb } from '../../ui/kit'
 import { SceneEnvironment } from './SceneEnvironment'
 import { Facility } from './Facility'
 import { WorkshopInterior } from './WorkshopInterior'
@@ -9,380 +19,192 @@ import { PlantLayout } from './PlantLayout'
 import { EditorPanel } from './EditorPanel'
 import { SimulationLayer, createSimState } from './SimulationLayer'
 import { SimulationPanel } from './SimulationPanel'
-import { Breadcrumbs } from './Breadcrumbs'
+import { SceneTimeline } from './SceneTimeline'
+import { SceneCanvasState } from './SceneCanvasState'
 import { CameraFit } from './CameraFit'
 import { SceneLegend } from './SceneLegend'
-import { SceneModeBar, type SceneUiMode } from './SceneModeBar'
+import { SceneVerdict } from './SceneVerdict'
+import { SceneModeBar, type ModeAvailability, type SceneUiMode } from './SceneModeBar'
+import type { ObjectRow } from './SceneObjectsTable'
+import type { Pose } from './cameraPose'
 import { useDevHooks } from './useDevHooks'
-import type { ObjectKind } from './types'
+import { useSceneData } from './useSceneData'
+import { useSceneOps } from './useSceneOps'
+import { useSceneWrites } from './useSceneWrites'
+import { useSceneUrl } from './useSceneUrl'
+import { useSimSession } from './useSimSession'
+import { levelCountText, levelOf, machinesUnder } from './sceneView'
+import { levelHref } from './schemeHref'
+import { MIN_GEO_SITES, hasRealGeo } from './worldmap2d/cities'
 import { graphReducer, initialGraphState } from './graph/graphReducer'
-import { buildGraphFromDb, hasChildren } from './graph/sceneModel'
-import { api, type Machine, type WorkCenterType, type Operation, type Flow } from '../../lib/api'
+import type { SceneNode } from './graph/sceneModel'
 import './scene.css'
 
-/** Клавиши схемы не перехватываем из полей ввода. */
-const isTypingTarget = (t: EventTarget | null): boolean => {
-  const el = t as HTMLElement | null
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
-}
+const WORLD_EDIT = 'Заводы создаются в Справочниках › Подразделения — правка схемы доступна на площадке и в цехе'
+const WORLD_SIM = 'Симуляция видна на площадке и в цехе — войдите в завод'
 
 export default function PlantScene() {
   const [state, dispatch] = useReducer(graphReducer, initialGraphState)
-
-  const [machines, setMachines]     = useState<Machine[]>([])
-  const [wcTypes, setWcTypes]       = useState<WorkCenterType[]>([])
-  const [operations, setOperations] = useState<Operation[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [simOn, setSimOn]           = useState(false)
-  const [fitToken, setFitToken]     = useState(0)
-  const sim = useRef(createSimState())
-
-  // Дебаунс PUT-ов раскладки (перемещение/переименование тянут запросы пачками).
-  const persistTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-
-  // Схема строится из реестров НСИ — единый источник истины (БД).
-  const loadGraph = async () => {
-    const [m, t, f, ops, ous] = await Promise.all([
-      api.machines.list().catch(() => [] as Machine[]),
-      api.workCenterTypes.list().catch(() => [] as WorkCenterType[]),
-      api.flows.list().catch(() => [] as Flow[]),
-      api.operations.list().catch(() => [] as Operation[]),
-      api.orgUnits.list().catch(() => []),
-    ])
-    setMachines(m)
-    setWcTypes(t)
-    setOperations(ops)
-    // Дороги/дорожки берутся из flows (производственная линия внутри цеха + магистраль
-    // цех→цех, сформированные из техкарт). Прежний process_flows давал сотни рёбер и
-    // «глючную» кашу дорог — теперь сеть чистая и осмысленная.
-    dispatch({ type: 'LOAD_GRAPH', graph: buildGraphFromDb(m, t, f, ous) })
-    setLoading(false)
-  }
-
-  useEffect(() => { loadGraph() }, [])
+  const data = useSceneData(dispatch)
+  const ops = useSceneOps(state.graph, data.machines)
+  const writes = useSceneWrites(state, dispatch, data)
+  useSceneUrl(state, dispatch, data.loaded)
   useDevHooks(state, dispatch)
 
-  // useMemo обязателен: новые массивы на каждый рендер ломали useMemo в FlowLinks/
-  // Facility (deps [nodes, edges]) — сеть дорог и обвязка пересчитывались на каждый
-  // клик/hover по сцене.
-  const nodes = useMemo(
-    () => state.graph.nodes.filter((n) => n.parentId === state.currentParentId),
-    [state.graph, state.currentParentId])
-  const edges = useMemo(
-    () => state.graph.edges.filter((e) => e.parentId === state.currentParentId),
-    [state.graph, state.currentParentId])
-  const selected = state.graph.nodes.find((n) => n.id === state.selectedId) ?? null
-  const editing  = state.mode === 'edit'
+  const [simOn, setSimOn] = useState(false)
+  const [fitToken, setFitToken] = useState(0)
+  const sim = useRef(createSimState())
+  const poses = useRef<ReadonlyMap<string, Pose>>(new Map())
+  const session = useSimSession(sim, simOn, data.machines, data.wcTypes)
+  const [paused, setPaused] = useAnimationPaused()
+  const reduced = usePrefersReducedMotion()
+  // «Меньше движения» в системе — анимация схемы на паузе; снять можно кнопкой паузы (явный выбор).
+  useEffect(() => { if (reduced) setPaused(true) }, [reduced, setPaused])
 
-  // Уровень иерархии определяется типом узла в currentParentId:
-  //   null → МИР (WorldMap2D); refType 'factory' → ПЛОЩАДКА (Facility);
-  //   refType 'shop' → ЦЕХ (WorkshopInterior).
-  const currentNode = state.graph.nodes.find((n) => n.id === state.currentParentId) ?? null
-  const level: 'world' | 'site' | 'shop' =
-    state.currentParentId == null ? 'world'
-      : currentNode?.refType === 'shop' ? 'shop'
-        : 'site'
+  const { graph } = state
+  const nodes = useMemo(() => graph.nodes.filter((n) => n.parentId === state.currentParentId), [graph, state.currentParentId])
+  const edges = useMemo(() => graph.edges.filter((e) => e.parentId === state.currentParentId), [graph, state.currentParentId])
+  const byId = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph])
+  const parents = useMemo(() => new Set(graph.nodes.map((n) => n.parentId)), [graph])
+  const currentNode = state.currentParentId ? byId.get(state.currentParentId) ?? null : null
+  const selected = state.selectedId ? byId.get(state.selectedId) ?? null : null
+  const level = levelOf(currentNode)
   const indoor = level === 'shop'
+  const editing = state.mode === 'edit'
+  const factories = useMemo(() => graph.nodes.filter((n) => n.refType === 'factory'), [graph])
+  const showMap = level === 'world' && factories.filter(hasRealGeo).length >= MIN_GEO_SITES
 
-  // Габарит текущего уровня (самый дальний узел от центра) → туман/тени масштабируются
-  // под РАЗМЕР завода: большой кампус виден целиком, маленький цех — камернее.
-  const extent = useMemo(() => {
-    let m = 34
-    for (const n of nodes)
-      m = Math.max(m, Math.abs(n.position[0]) + 10, Math.abs(n.position[1]) + 10)
-    return m
-  }, [nodes])
+  // Габарит уровня → туман/тени под размер завода.
+  const extent = useMemo(() => nodes.reduce((m, n) => Math.max(m, Math.abs(n.position[0]) + 10, Math.abs(n.position[1]) + 10), 34), [nodes])
+  // Станок → цех (на площадке цеха «горят» по своим станкам).
+  const machineShop = useMemo(() => new Map(graph.nodes.filter((n) => n.refType === 'machine' && n.parentId).map((n) => [n.id, n.parentId as string])), [graph])
+  const levelMachines = useMemo(() => machinesUnder(graph, state.currentParentId), [graph, state.currentParentId])
+  const selectedMachines = useMemo(() => new Set(selected ? machinesUnder(graph, selected.id).map((m) => m.id) : []), [graph, selected])
 
-  // Карта станок→цех для симуляции (на уровне площадки цеха «горят» по своим станкам).
-  const machineShop = useMemo(() => {
-    const mm = new Map<string, string>()
-    for (const n of state.graph.nodes) if (n.refType === 'machine' && n.parentId) mm.set(n.id, n.parentId)
-    return mm
-  }, [state.graph])
-
-  // Один переключатель режимов: симуляция — поверх режима просмотра графа.
+  // ── Режимы по уровню (X2 P-29) ─────────────────────────────────────────────
+  const singleFactory = factories.length === 1 ? factories[0] : null
+  const simTarget = selected?.refType === 'factory' ? selected : singleFactory
+  const availability: ModeAvailability = {
+    edit: level === 'world' ? WORLD_EDIT : null,
+    sim: level === 'world' && !simTarget ? WORLD_SIM : null,
+  }
   const uiMode: SceneUiMode = simOn ? 'sim' : state.mode
+  /** Пауза до входа в «Редактирование»: на выходе возвращаем выбор пользователя. */
+  const pausedBeforeEdit = useRef<boolean | null>(null)
+  const leaveEdit = () => {
+    if (pausedBeforeEdit.current === false) setPaused(false)
+    pausedBeforeEdit.current = null
+  }
   const setUiMode = (m: SceneUiMode) => {
-    if (m === 'sim') { setSimOn(true); dispatch({ type: 'SET_MODE', mode: 'view' }); return }
+    if (m !== 'edit' && state.mode === 'edit') leaveEdit()
+    if (m === 'sim') {
+      if (level === 'world') {
+        if (!simTarget) return
+        dispatch({ type: 'ENTER_NODE', id: simTarget.id })
+      }
+      setSimOn(true)
+      dispatch({ type: 'SET_MODE', mode: 'view' })
+      return
+    }
     setSimOn(false)
     dispatch({ type: 'SET_MODE', mode: m })
+    if (m === 'edit' && state.mode !== 'edit') {
+      pausedBeforeEdit.current = paused
+      setPaused(true)   // в «Редактировании» анимация по умолчанию на паузе
+    }
   }
-
-  // Клавиатура: F — вписать (3D-уровни), Esc — снять выделение/отменить связь, иначе уровень выше.
-  const keyRef = useRef({ level, connecting: state.connecting, selectedId: state.selectedId, depth: state.path.length })
-  keyRef.current = { level, connecting: state.connecting, selectedId: state.selectedId, depth: state.path.length }
+  // Мировой уровень: правка и симуляция живут на площадке и в цехе.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return
-      const k = keyRef.current
-      if (e.code === 'KeyF') {
-        if (k.level === 'world') return
-        e.preventDefault()
-        setFitToken((t) => t + 1)
-      } else if (e.key === 'Escape') {
-        if (k.connecting || k.selectedId) dispatch({ type: 'CLEAR_SELECTION' })
-        else if (k.depth > 1) dispatch({ type: 'GO_TO_LEVEL', index: k.depth - 2 })
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    if (level !== 'world') return
+    if (state.mode === 'edit') { leaveEdit(); dispatch({ type: 'SET_MODE', mode: 'view' }) }
+    setSimOn(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level, state.mode])
 
-  /** Дебаунс-обёртка для частых PUT (позиция, имя). */
-  const persistDebounced = (key: string, fn: () => Promise<unknown>) => {
-    clearTimeout(persistTimers.current[key])
-    persistTimers.current[key] = setTimeout(() => { fn().catch(() => {}) }, 400)
-  }
-
-  // ── Мутации: локальный диспатч (мгновенный отклик) + запись в БД ───────────
-
-  const handleMove = (id: string, position: [number, number]) => {
-    // position — координата гизмо в ЦЕНТРИРОВАННОМ кадре (buildGraphFromDb вычитает
-    // центроид цеха при загрузке). В БД надо писать СЫРУЮ позицию, иначе перемещение
-    // «не запоминается»: при перезагрузке центрируется повторно и станок прыгает на
-    // центроид. Инвертируем центрирование, добавляя центроид сырых позиций цеха.
-    dispatch({ type: 'MOVE_NODE', id, position })
-    // Завод/склад (мировая карта) и цех (площадка): позиция АБСОЛЮТНАЯ (не центрируется)
-    // — пишем прямо в org_units.pos_x/pos_z. Виртуальный завод (без orgUnitId) не
-    // персистим. Тот же путь используется и для 'factory', и для 'shop'.
-    const node = state.graph.nodes.find((n) => n.id === id)
-    if (node?.refType === 'shop' || node?.refType === 'factory') {
-      if (node.orgUnitId)
-        persistDebounced(`pos-${id}`, () =>
-          api.orgUnits.update(node.orgUnitId!, {
-            pos_x: String(Math.round(position[0])), pos_z: String(Math.round(position[1])),
-          }))
-      return
-    }
-    const m = machines.find((x) => x.id === id)
-    const shopMs = m ? machines.filter((x) => x.org_unit_id === m.org_unit_id) : []
-    const cx = shopMs.length ? shopMs.reduce((s, x) => s + (Number(x.pos_x) || 0), 0) / shopMs.length : 0
-    const cz = shopMs.length ? shopMs.reduce((s, x) => s + (Number(x.pos_z) || 0), 0) / shopMs.length : 0
-    const rawX = String(Math.round(position[0] + cx))
-    const rawZ = String(Math.round(position[1] + cz))
-    // Держим локальный кэш сырых позиций согласованным (центроид для следующих move).
-    setMachines((prev) => prev.map((x) => (x.id === id ? { ...x, pos_x: rawX, pos_z: rawZ } : x)))
-    persistDebounced(`pos-${id}`, () => api.machines.update(id, { pos_x: rawX, pos_z: rawZ }))
-  }
-
-  const handleRename = (id: string, title: string) => {
-    dispatch({ type: 'RENAME_NODE', id, title })
-    persistDebounced(`name-${id}`, () => api.machines.update(id, { name: title }))
-  }
-
-  const handleDelete = async (id: string) => {
-    dispatch({ type: 'DELETE_NODE', id })
-    await api.machines.delete(id).catch(() => {})
-    await loadGraph()
-  }
-
-  /** Завершение прокладки связи: персистим flow до локального диспатча edge. */
+  // ── Выбор, связи, клавиши ──────────────────────────────────────────────────
   const handleSelect = (id: string) => {
-    if (state.connecting && state.connectFrom && state.connectFrom !== id) {
-      api.flows.create({
-        from_id: state.connectFrom,
-        to_id: id,
-        parent_id: state.currentParentId ?? '',
-      }).catch(() => {})
-    }
+    if (state.connecting && state.connectFrom && state.connectFrom !== id) writes.connect(state.connectFrom, id)
     dispatch({ type: 'NODE_CLICK', id })
   }
-
-  // Текущий цех (когда мы внутри цеха на схеме) — станки создаются в нём.
-  const currentShop = state.graph.nodes.find(
-    (n) => n.id === state.currentParentId && n.refType === 'shop',
-  )
-  // «Уровень площадки» (создание цехов) показываем ВНУТРИ ЗАВОДА (site), а не в
-  // мире. На мировом уровне заводы/склад приходят из НСИ (создаются отдельно).
-  const atRoot = level === 'site'
-
-  /** Регистрация оборудования прямо со схемы: станок создаётся ВНУТРИ текущего цеха. */
-  const handleCreateMachine = async (
-    nodeId: string,
-    data: { name: string; wcTypeId: string; orgUnit: string; status: string; kind: ObjectKind },
-  ) => {
-    const node = state.graph.nodes.find((n) => n.id === nodeId)
-    await api.machines.create({
-      name: data.name,
-      wc_type_id: data.wcTypeId,
-      // Цех берём из контекста (мы внутри цеха), а не из выпадашки — станок всегда в цехе.
-      org_unit: currentShop?.title ?? data.orgUnit,
-      org_unit_id: currentShop?.orgUnitId ?? '',
-      status: data.status,
-      subtitle: '',
-      pos_x: String(node?.position[0] ?? 0),
-      pos_z: String(node?.position[1] ?? 0),
-      parent_machine_id: '',   // иерархия цеха идёт через org_unit, не через машину-родителя
-    })
-    dispatch({ type: 'DELETE_NODE', id: nodeId })
-    await loadGraph()
+  const enter = (id: string) => dispatch({ type: 'ENTER_NODE', id })
+  const depth = state.path.length
+  useEscapeLayer('scene', () => {
+    if (state.connecting || state.selectedId) dispatch({ type: 'CLEAR_SELECTION' })
+    else if (depth > 1) dispatch({ type: 'GO_TO_LEVEL', index: depth - 2 })
+  }, state.connecting || state.selectedId !== null || depth > 1)
+  const onCanvasKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const tag = (e.target as HTMLElement).tagName
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return
+    if (e.code !== 'KeyF' || e.metaKey || e.ctrlKey || e.altKey || level === 'world') return
+    e.preventDefault()
+    setFitToken((t) => t + 1)
   }
 
-  /** Добавить станок: СРАЗУ создаётся в НСИ (без промежуточной «регистрации»).
-   *  Имя — «Тип №N», цех — текущий, позиция — продолжение линии цеха,
-   *  3D-модель — строго по типу оборудования. */
-  const handleAddMachine = async (wcTypeId: string) => {
-    const type = wcTypes.find((t) => t.id === wcTypeId)
-    if (!type || !currentShop) return
-    const n = machines.filter((m) => m.wc_type_id === wcTypeId).length + 1
-    // Позиция в СЫРОМ кадре (как в БД): правее самого правого станка цеха. Брать
-    // сырые pos из реестра машин, а не центрированные позиции сцены — иначе новый
-    // станок после перезагрузки прыгает на центроид (как было с перемещением).
-    const shopMs = machines.filter((m) => m.org_unit_id === currentShop.orgUnitId)
-    const maxX = shopMs.length ? Math.max(...shopMs.map((m) => Number(m.pos_x) || 0)) : 0
-    await api.machines.create({
-      name: `${type.name} №${n}`,
-      wc_type_id: wcTypeId,
-      org_unit: currentShop.title,
-      org_unit_id: currentShop.orgUnitId ?? '',
-      status: 'active', subtitle: '',
-      pos_x: String(Math.round(maxX + 8)), pos_z: '0',
-      parent_machine_id: '',
-    }).catch(() => {})
-    await loadGraph()
+  // ── Таблица-двойник и состав ───────────────────────────────────────────────
+  const rowOf = (n: SceneNode): ObjectRow => ({ node: n, ops: ops.byNode.get(n.id), enterable: n.refType !== 'machine' && parents.has(n.id) })
+  const levelRows = nodes.map(rowOf)
+  const childRows = selected && selected.refType !== 'machine' ? graph.nodes.filter((n) => n.parentId === selected.id).map(rowOf) : []
+  const pathIds = state.path.slice(1).map((c) => c.id).filter((id): id is string => id !== null)
+  const openChild = (row: ObjectRow, into: boolean) => {
+    if (!selected) return
+    const ids = into && row.enterable ? [...pathIds, selected.id, row.node.id] : [...pathIds, selected.id]
+    dispatch({ type: 'SET_PATH', ids, selectedId: into && row.enterable ? null : row.node.id })
   }
-
-  /** Создать новый цех (org_unit): имя + опционально 3D-модель здания.
-   *  На уровне площадки цех привязывается к ТЕКУЩЕМУ заводу (parent_id). Для
-   *  виртуального завода (legacy, без orgUnitId) parent_id опускаем — модель
-   *  сама повесит его на завод по умолчанию. */
-  const handleCreateShop = async (name: string, kind?: string) => {
-    if (!name.trim()) return
-    const parentId = currentNode?.refType === 'factory' ? currentNode.orgUnitId : undefined
-    await api.orgUnits.create({
-      name: name.trim(), kind: kind || undefined, parent_id: parentId || undefined,
-    }).catch(() => {})
-    await loadGraph()
-  }
-
-  /** Сменить 3D-модель здания цеха (сохраняется в НСИ за подразделением). */
-  const handleChangeShopKind = async (orgUnitId: string, kind: string) => {
-    await api.orgUnits.update(orgUnitId, { kind }).catch(() => {})
-    await loadGraph()
-  }
-
-  /** Удаление узла: цех → удаляем org_unit (станки станут «Без цеха»); станок → машину. */
-  const handleDeleteNode = async (id: string) => {
-    const node = state.graph.nodes.find((n) => n.id === id)
-    if (node?.refType === 'shop') {
-      if (node.orgUnitId) await api.orgUnits.delete(node.orgUnitId).catch(() => {})
-      await loadGraph()
-      return
-    }
-    await handleDelete(id)
-  }
-
-  /** Смена типа оборудования у уже зарегистрированной машины (3D-вид следует типу). */
-  const handleChangeMachineType = async (machineId: string, wcTypeId: string) => {
-    await api.machines.update(machineId, { wc_type_id: wcTypeId }).catch(() => {})
-    await loadGraph()
-  }
-
-  const hint = state.connecting
-    ? 'Связь: нажмите на целевой узел · Esc / клик на пустое — отмена'
-    : level === 'world'
-      ? 'ЛКМ — выбор · 2×ЛКМ — на площадку · колесо — зум · перетаскивание — панорама'
-      : 'ЛКМ — выбор · 2×ЛКМ — внутрь · колесо — зум · ПКМ — панорама · F — вписать · Esc — назад'
+  const crumbs: KitCrumb[] = state.path.map((c, i) => ({ label: c.title, href: i < depth - 1 ? levelHref(pathIds.slice(0, i)) : undefined }))
 
   return (
     <div className="scene">
-      <SceneModeBar mode={uiMode} onMode={setUiMode} level={level} count={nodes.length}
+      <SceneModeBar mode={uiMode} onMode={setUiMode} availability={availability} level={level}
+                    crumbs={crumbs} countText={data.loaded ? levelCountText(level, nodes) : ''}
+                    verdict={<SceneVerdict ops={ops} />} legend={<SceneLegend statuses={levelMachines.map((m) => m.status)} />}
                     onFit={() => setFitToken((t) => t + 1)} />
       <div className="scene__body">
-        <div className="scene__canvas">
-          {/* Мировой уровень — 2D-карта (DOM, вне R3F). Площадка/цех — 3D Canvas.
-              Условие ПОДНЯТО над <Canvas>, чтобы 2D-карта была обычным DOM-компонентом
-              (без второго WebGL-контекста, без rAF — скриншотится в фоне сразу). */}
+        <div className="scene__canvas" tabIndex={0} role="region" aria-label="Схема предприятия: сцена" aria-keyshortcuts="F Escape" onKeyDown={onCanvasKey}>
           {level === 'world' ? (
-            <WorldMap2D
-              nodes={nodes}
-              edges={edges}
-              graph={state.graph}
-              selectedId={state.selectedId}
-              editing={editing}
-              onSelect={handleSelect}
-              onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-              onMove={handleMove}
-              onBackground={() => dispatch({ type: 'CLEAR_SELECTION' })}
-            />
+            showMap && (
+              <ErrorBoundary variant="inline" label="Мировая карта" message="Карта не загрузилась — выберите предприятие в списке справа.">
+                <WorldMap2D nodes={nodes} edges={edges} graph={graph} ops={ops.byNode} selectedId={state.selectedId} editing={false}
+                            onSelect={handleSelect} onEnter={enter} onMove={writes.move}
+                            onBackground={() => dispatch({ type: 'CLEAR_SELECTION' })} />
+              </ErrorBoundary>
+            )
           ) : (
-            <Canvas
-              shadows
-              dpr={[1, 1.5]}
-              /* near=1.5 (было 0.1) — ГЛАВНЫЙ фикс z-fighting: точность буфера глубины
-                 определяется отношением far/near. 0.1/1000 давало «частокол» мерцаний
-                 на всех плоских декалях (тени, разметка, полосы, кольца) у земли;
-                 1.5/1500 повышает точность на порядок. Камера не ближе 8 ед. к цели
-                 (OrbitControls minDistance), поэтому near=1.5 ничего не срезает.
-                 logarithmicDepthBuffer НЕ используем — он ломает polygonOffset декалей. */
+            <Canvas shadows dpr={[1, 1.5]}
+              /* near=1,5: точность глубины (far/near) без z-fighting декалей; камера не ближе 8 к цели. */
               camera={{ position: [46, 36, 50], fov: 44, near: 1.5, far: 1500 }}
-              onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}
-            >
-              <SceneEnvironment indoor={indoor} extent={extent} />
-              {/* Автофит — при входе в цех; F/«Вписать» — на любом 3D-уровне. */}
-              <CameraFit nodes={nodes} levelKey={state.currentParentId ?? ''} autoFit={indoor} fitToken={fitToken} />
+              onPointerMissed={() => dispatch({ type: 'CLEAR_SELECTION' })}>
+              <SceneEnvironment indoor={indoor} extent={extent} nodes={nodes} />
+              <CameraFit nodes={nodes} levelKey={state.currentParentId ?? ''} fitToken={fitToken} poses={poses} />
               <Suspense fallback={null}>
                 {level === 'site' ? <Facility nodes={nodes} /> : <WorkshopInterior nodes={nodes} />}
-                {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} />}
-                <PlantLayout
-                  graph={state.graph}
-                  nodes={nodes}
-                  edges={edges}
-                  selectedId={state.selectedId}
-                  connectFrom={state.connectFrom}
-                  connecting={state.connecting}
-                  editing={editing}
-                  indoor={indoor}
-                  onSelect={handleSelect}
-                  onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-                  onMove={handleMove}
-                  onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })}
-                />
+                {simOn && <SimulationLayer sim={sim} nodes={nodes} machineShop={machineShop} productIds={session.productIds} still={paused} />}
+                <PlantLayout graph={graph} nodes={nodes} edges={edges} selectedId={state.selectedId}
+                             connectFrom={state.connectFrom} connecting={state.connecting} editing={editing} indoor={indoor}
+                             ops={ops.byNode} simActive={simOn} still={paused}
+                             onSelect={handleSelect} onEnter={enter} onMove={writes.move}
+                             onConnectFrom={(id) => dispatch({ type: 'CONNECT_FROM', id })} />
               </Suspense>
             </Canvas>
           )}
-
-          <Loader />
-
-          {simOn && <SimulationPanel sim={sim} onClose={() => setSimOn(false)} />}
-
-          <Breadcrumbs
-            path={state.path}
-            onNavigate={(index) => dispatch({ type: 'GO_TO_LEVEL', index })}
-          />
-          <SceneLegend />
-
-          {loading && (
-            <div className="scene__hint scene__hint--top mono" role="status">Загрузка схемы из НСИ…</div>
-          )}
-          <div className="scene__hint mono">{hint}</div>
+          {level !== 'world' && <Loader />}
+          <SceneCanvasState loading={data.loading} loaded={data.loaded} error={data.error} onRetry={() => { void data.reload() }}
+                            empty={data.loaded && graph.nodes.length === 0} noMap={data.loaded && level === 'world' && !showMap && graph.nodes.length > 0} />
+          {simOn && level !== 'world' && <SceneTimeline sim={sim} session={session} />}
         </div>
 
-        <EditorPanel
-          mode={state.mode}
-          connecting={state.connecting}
-          selectedNode={selected}
-          hasChildren={selected ? hasChildren(state.graph, selected.id) : false}
-          machines={machines}
-          wcTypes={wcTypes}
-          operations={operations}
-          atRoot={atRoot}
-          level={level}
-          currentShopName={currentShop?.title ?? null}
-          onCreateShop={handleCreateShop}
-          onChangeShopKind={handleChangeShopKind}
-          onAddMachine={handleAddMachine}
-          onRename={handleRename}
-          onDelete={handleDeleteNode}
-          onEnter={(id) => dispatch({ type: 'ENTER_NODE', id })}
-          onClose={() => dispatch({ type: 'CLEAR_SELECTION' })}
-          onLinkMachine={(nodeId, machineId) =>
-            dispatch({ type: 'LINK_MACHINE', id: nodeId, machineId })
-          }
-          onCreateMachine={handleCreateMachine}
-          onChangeMachineType={handleChangeMachineType}
-          onChangeKind={(nodeId, kind) => dispatch({ type: 'CHANGE_KIND', id: nodeId, kind })}
-        />
+        <ErrorBoundary variant="inline" label="Правая колонка схемы" message="Панель не удалось показать — сцена работает; повторите.">
+          {simOn ? (
+            <SimulationPanel sim={sim} session={session} selectedNode={selected} selectedMachines={selectedMachines} onExit={() => setUiMode('view')} />
+          ) : (
+            <EditorPanel editing={editing} connecting={state.connecting} level={level} selectedNode={selected}
+                         status={data.loaded ? 'ready' : data.error ? 'unavailable' : 'loading'}
+                         levelRows={levelRows} childRows={childRows} canEnter={Boolean(selected && selected.refType !== 'machine' && parents.has(selected.id))}
+                         currentShopName={currentNode?.refType === 'shop' ? currentNode.title : null}
+                         data={data} ops={ops} writes={writes}
+                         onSelectRow={(r) => handleSelect(r.node.id)} onEnterRow={(r) => enter(r.node.id)} onOpenChild={openChild}
+                         onEnter={enter} onClose={() => dispatch({ type: 'CLEAR_SELECTION' })} />
+          )}
+        </ErrorBoundary>
       </div>
     </div>
   )

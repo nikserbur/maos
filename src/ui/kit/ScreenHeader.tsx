@@ -1,11 +1,18 @@
 /**
- * Шапка экрана единого кита: eyebrow · дисплейный заголовок · чипы блоков карты · подзаголовок ·
- * действия справа · бренд-волосяная линия. Одна высота на всех экранах (X1 §10 2.1).
+ * Шапка экрана единого кита (X2 «контракт шапки»): eyebrow (капители, греческие буквы не портятся) и
+ * дисплейный заголовок в одной строке · чип происхождения/контекста · подзаголовок в одну строку
+ * (полный текст — в title, объяснения — в «i» или «Методике») · действия справа · бренд-линия.
+ * Высота ≤ 64 px; вариант `compact` (≤ 56 px) — для деталей и результатов. Чипы блоков карты не
+ * рисуются там, где под верхней панелью уже есть полоса методологии (контекст оболочки).
  */
-import type { CSSProperties, ReactNode } from 'react'
+import { createContext, useContext, type CSSProperties, type ReactNode } from 'react'
 import { BlockChips } from '../BlockChip'
 import type { BlockId } from '../../features/method-map/types'
+import { capsNode } from './CapsLabel'
 import './kit.css'
+
+/** Оболочка сообщает шапке, видна ли полоса методологии (тогда чипы блоков — дубль). */
+export const ScreenChromeContext = createContext<{ pipeline: boolean }>({ pipeline: false })
 
 /** Ступенчатое появление секции: style={rise(2)} (задержка 2 × 40 мс). */
 export function rise(i: number): CSSProperties {
@@ -17,21 +24,30 @@ interface ScreenHeaderProps {
   title: ReactNode
   subtitle?: ReactNode
   actions?: ReactNode
-  /** Блоки карты методологии, которые реализует экран — чипы «[n] Название ↗» (UX-V2 §2.6). */
+  /** Блоки карты методологии, которые реализует экран — чипы «[n] Название ↗» (UX-V2 §2.6); скрыты при полосе методологии. */
   blocks?: readonly BlockId[]
+  /** Чип происхождения/контекста рядом с заголовком: «Базовый · план №28 · 17:38». */
+  provenance?: ReactNode
+  /** Компактная шапка деталей и результатов (≤ 56 px): без подзаголовка под заголовком. */
+  compact?: boolean
   className?: string
 }
 
-export function ScreenHeader({ eyebrow, title, subtitle, actions, blocks, className }: ScreenHeaderProps) {
+export function ScreenHeader({ eyebrow, title, subtitle, actions, blocks, provenance, compact = false, className }: ScreenHeaderProps) {
+  const { pipeline } = useContext(ScreenChromeContext)
+  const showBlocks = !pipeline && blocks && blocks.length > 0
+  const subTitle = typeof subtitle === 'string' ? subtitle : undefined
+  const cls = ['dk-head', compact ? 'dk-head--compact' : '', 'dk-rise', className ?? ''].filter(Boolean).join(' ')
   return (
-    <header className={`dk-head dk-rise${className ? ` ${className}` : ''}`}>
+    <header className={cls}>
       <div className="dk-head__text">
-        {eyebrow && <p className="dk-head__eyebrow text-caps">{eyebrow}</p>}
-        <h1 className="dk-head__title">
-          {title}
-          {blocks && blocks.length > 0 && <span className="dk-head__blocks"><BlockChips blocks={blocks} /></span>}
-        </h1>
-        {subtitle && <p className="dk-head__sub">{subtitle}</p>}
+        <div className="dk-head__line">
+          {eyebrow && <p className="dk-head__eyebrow text-caps">{capsNode(eyebrow)}</p>}
+          <h1 className="dk-head__title" title={typeof title === 'string' ? title : undefined}>{title}</h1>
+          {provenance && <span className="dk-head__prov">{provenance}</span>}
+          {showBlocks && <span className="dk-head__blocks"><BlockChips blocks={blocks} /></span>}
+        </div>
+        {subtitle && !compact && <p className="dk-head__sub" title={subTitle}>{subtitle}</p>}
       </div>
       {actions && <div className="dk-head__actions">{actions}</div>}
       <span className="dk-head__rule" aria-hidden="true" />
@@ -54,7 +70,7 @@ export function Section({ id, title, meta, tools, children }: SectionProps) {
       <div className="dk-sec__hd">
         <div>
           <h2 className="dk-sec__title" id={`${id}-t`}>{title}</h2>
-          {meta && <div className="dk-sec__meta">{meta}</div>}
+          {meta && <div className="dk-sec__meta">{capsNode(meta)}</div>}
         </div>
         {tools && <div className="dk-sec__tools">{tools}</div>}
       </div>

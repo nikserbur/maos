@@ -2,6 +2,9 @@
 
 import { useEffect, useId, useState, type ChangeEvent } from 'react'
 import { areaPath, linePath } from '../../ui/charts/scale'
+import { num } from '../../explain/format'
+import { CapsLabel } from '../../ui/kit/CapsLabel'
+import { AnimationToggle } from '../../ui/motion'
 import '../../ui/charts/charts.css'
 
 export const PHASES = ['Оценка', 'Отбор', 'Скрещивание', 'Мутация'] as const
@@ -40,7 +43,7 @@ export const DEFAULT_LIVE: GaLiveParams = {
   genSec: 0.35,
 }
 
-const fmt = (v: number, d = 3) => v.toFixed(d).replace('.', ',')
+const fmt = (v: number, d = 3) => num(v, d)
 
 function sameParams(a: GaLiveParams, b: GaLiveParams) {
   return a.popSize === b.popSize
@@ -90,7 +93,7 @@ function Slider({ id, label, value, min, max, step, format, onChange }: SliderPr
   return (
     <label className="ga-hud__slider" htmlFor={id}>
       <span className="ga-hud__slider-lab">
-        <span>{label}</span>
+        <span><CapsLabel text={label} /></span>
         <b className="num">{format ? format(value) : String(value)}</b>
       </span>
       <input
@@ -128,6 +131,7 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
         <div className="ga-hud__head">
           <span className="text-caps ga-hud__title">Генетический алгоритм</span>
           <span className="ga-hud__gen num">поколение {hud.gen} · {PHASES[hud.phase] ?? 'максимум'}</span>
+          <AnimationToggle />
         </div>
         <ol className="ga-hud__phases" aria-label="Фаза поколения">
           {PHASES.map((p, i) => (
@@ -137,9 +141,9 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
           ))}
         </ol>
         <div className="ga-hud__stats">
-          <div><span className="text-caps">лучшее f</span><b className="num">{fmt(hud.best)}</b></div>
-          <div><span className="text-caps">среднее f</span><b className="num">{fmt(hud.mean)}</b></div>
-          <div><span className="text-caps">σ мутации</span><b className="num">{fmt(hud.sigma, 2)}</b></div>
+          <div><span className="text-caps"><CapsLabel text="лучшее f" /></span><b className="num">{fmt(hud.best)}</b></div>
+          <div><span className="text-caps"><CapsLabel text="среднее f" /></span><b className="num">{fmt(hud.mean)}</b></div>
+          <div><span className="text-caps"><CapsLabel text="σ мутации" /></span><b className="num">{fmt(hud.sigma, 2)}</b></div>
         </div>
         <Convergence history={hud.history} />
         <p className={`ga-hud__status${hud.converged ? ' is-done' : ''}`}>
@@ -184,7 +188,7 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
               format={(v) => fmt(v, 2)}
               onChange={(v) => patch({ genSec: v })} />
             <div className="ga-hud__actions">
-              <button type="button" className="btn btn--primary" onClick={() => onParams(draft)} disabled={synced}>
+              <button type="button" className="btn" onClick={() => onParams(draft)} title={synced ? 'Перезапустить с текущими параметрами' : 'Применить новые параметры'}>
                 Применить
               </button>
               <button type="button" className="btn btn--ghost" onClick={() => onParams(DEFAULT_LIVE)}>
@@ -195,7 +199,7 @@ export function LandscapeHud({ hud, params, onParams }: HudProps) {
         )}
 
         <p className="ga-hud__caption">
-          Иллюстрация: ГА ищет максимум многоэкстремальной функции; в MAOS так же улучшается расписание.
+          Иллюстрация: ГА ищет максимум многоэкстремальной функции; в PESCADITO так же улучшается расписание.
         </p>
       </div>
     </div>

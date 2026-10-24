@@ -1,8 +1,11 @@
 /*
- * KPI экрана «План» (X1 §5.1): ярус A — три плитки (герой E[Cmax] + хвост риска, OTD, CFaR),
- * ярус C — свёрнутая таблица; плюс карточка ГА (сходимость на LineChart) внутри «Что определило».
- * Полоса хвоста, метр OTD и разложение фонда — примитивы src/ui/charts.
+ * KPI экрана «План» (X2 «ответ сначала»): вердикт одной строкой, ярус A — три плитки (герой E[Cmax]
+ * + хвост риска, OTD, минимум кассы), ярус C — свёрнутая таблица; карточка ГА (сходимость) — в «Узком
+ * месте». Ровно одно число 44 px — герой. Норма — нейтрально, отклонение — глиф + слово.
  */
+.pl-verdict { margin: 0; max-width: 120ch; font-size: var(--fs-14); line-height: var(--lh-body); color: var(--text); }
+.pl-verdict__warn { color: var(--text); }
+.pl-verdict .glyph-setup::before { margin-right: 4px; }
 .pl-bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-3); }
 .pl-kpi { display: flex; flex-direction: column; gap: var(--space-3); }
 /* Ярус A: три плитки в один ряд — герой 5/12, OTD 4/12, CFaR 3/12; герой не растягивается на две строки */
@@ -21,12 +24,9 @@
 .pl-tile--s4 { grid-column: span 4; }
 .pl-tile--s5 { grid-column: span 5; }
 .pl-tile--s7 { grid-column: span 7; }
-.pl-tile--hero {
-  grid-row: span 2; gap: var(--space-3); padding: var(--space-5);
-  background:
-    radial-gradient(120% 80% at 0% 0%, color-mix(in oklch, var(--ultramarine) 14%, transparent), transparent 60%),
-    var(--pl-card-bg);
-}
+.pl-tile--s12 { grid-column: 1 / -1; }
+.pl-tile__sub--lead { font-size: var(--fs-16); color: var(--text); }
+.pl-tile--hero { grid-row: span 2; gap: var(--space-3); padding: var(--space-5); background: var(--pl-card-bg); }
 .pl-tile__k { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--text-muted); }
 .pl-tile__label { display: inline-flex; align-items: center; min-width: 0; }
 .pl-tile__v { display: flex; align-items: baseline; gap: 6px; color: var(--text); white-space: nowrap; }
@@ -40,9 +40,12 @@
 .pl-tile__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-4); }
 .pl-tile__div { height: 1px; background: color-mix(in oklch, var(--border) 60%, transparent); }
 
-/* Хвост риска — RangeStrip chart-системы; подпись E — точка акцента */
+/* Хвост риска — RangeStrip chart-системы; подпись E — точка ряда (--chart-1), не акцент */
+.pl-tail { display: flex; flex-direction: column; gap: var(--space-1); }
+.pl-tail__cap { margin: 0; color: var(--text-secondary); font-size: var(--fs-12); }
 .pl-tail__key { color: var(--text); }
-.pl-tail__key::before { content: ''; display: inline-block; width: 0.62em; height: 0.62em; margin-right: 0.45em; border-radius: 50%; background: var(--accent); }
+.pl-tail__key::before { content: ''; display: inline-block; width: 0.62em; height: 0.62em; margin-right: 0.45em; border-radius: 50%; background: var(--chart-1); }
+.pl-tile__state { font-size: var(--fs-13); color: var(--text); }
 
 /* Метр OTD — Meter chart-системы */
 .pl-tile__meter { margin-top: var(--space-1); }
@@ -56,18 +59,16 @@
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 260px); gap: var(--space-5); align-items: center;
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in oklch, var(--verdigris) 34%, var(--pl-line));
-  background:
-    radial-gradient(80% 140% at 100% 50%, color-mix(in oklch, var(--verdigris) 11%, transparent), transparent 64%),
-    var(--pl-card-bg);
+  border: 1px solid var(--pl-line);
+  background: var(--pl-card-bg);
   box-shadow: var(--pl-hl), var(--shadow-1);
 }
 .pl-ga--kept { border-color: var(--pl-line); background: var(--pl-card-bg); }
 .pl-ga__main { min-width: 0; }
-.pl-ga__eyebrow { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--verdigris); }
+.pl-ga__eyebrow { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-secondary); }
 .pl-ga--kept .pl-ga__eyebrow { color: var(--text-muted); }
 .pl-ga__headline { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-top: var(--space-1); color: var(--text-secondary); font-size: var(--fs-13); }
-.pl-ga__big { font-family: var(--font-display); font-size: var(--fs-32); font-weight: 300; line-height: 1; color: var(--text); white-space: nowrap; }
+.pl-ga__big { font-family: var(--font-sans); font-size: var(--fs-32); font-weight: 300; line-height: 1; color: var(--text); white-space: nowrap; }
 .pl-ga__big .unit { font-size: var(--fs-16); }
 .pl-ga--kept .pl-ga__big { font-size: var(--fs-20); font-weight: 500; }
 .pl-ga__formula {
@@ -80,12 +81,12 @@
 @media (max-width: 1280px) {
   .pl-bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .pl-tile, .pl-tile--s4 { grid-column: span 3; }
-  .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: span 6; }
+  .pl-tile--s5, .pl-tile--s7, .pl-tile--s12, .pl-tile--hero { grid-column: span 6; }
   .pl-tile--hero { grid-row: auto; }
   .pl-bento--tier-a .pl-tile--s4, .pl-bento--tier-a .pl-tile--s3 { grid-column: span 3; }
 }
 @media (max-width: 640px) {
   .pl-bento { grid-template-columns: minmax(0, 1fr); }
-  .pl-tile, .pl-tile--s4, .pl-tile--s5, .pl-tile--s7, .pl-tile--hero { grid-column: 1 / -1; }
+  .pl-tile, .pl-tile--s4, .pl-tile--s5, .pl-tile--s7, .pl-tile--s12, .pl-tile--hero { grid-column: 1 / -1; }
   .pl-ga { grid-template-columns: minmax(0, 1fr); }
 }

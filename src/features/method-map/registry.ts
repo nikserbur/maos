@@ -8,6 +8,8 @@
  */
 import pkg from '../../../package.json'
 import { getMetric } from '../../explain/metrics'
+import { featureStage } from '../../explain/stages'
+import type { MethodologyAnchor } from '../../explain/types'
 import { BLOCKS, blockOf } from './blocks'
 import { ALL_EDGES } from './edges'
 import { FLOW_NODES } from './nodes.flow'
@@ -20,8 +22,12 @@ const BLOCK_NODES: readonly MapNode[] = BLOCKS.map((b) => ({
   id: b.id, kind: 'block', block: b.id, title: b.title, short: b.summary, shape: b.shape, pos: b.pos,
 }))
 
-/** Параметры и формулы берут подпись из своих реестров — один источник истины для текста. */
-function enrich(node: MapNode): MapNode {
+/**
+ * Параметры и формулы берут подпись из своих реестров — один источник истины для текста; стадия
+ * узла с `feature` — из единого реестра стадий (тот же, что у чипов «Методики»).
+ */
+function enrich(raw: MapNode): MapNode {
+  const node = raw.feature ? { ...raw, stage: featureStage(raw.feature) } : raw
   if (node.kind === 'parameter' && node.paramId) {
     const def = getParamDef(node.paramId)
     if (def) return { ...node, title: def.label, screen: node.screen ?? def.screen, stage: node.stage ?? def.stage }
@@ -119,6 +125,15 @@ export function screenFor(node: MapNode): ScreenLink {
   if (parent?.screen) return parent.screen
   const firstScreen = subblocksOf(node.block).find((s) => s.screen)?.screen
   return firstScreen ?? { id: blockOf(node.block).id === 'llm' ? 'methodology' : 'map' }
+}
+
+/**
+ * Узлы карты, которые ссылаются на раздел «Методики» (`learnMore`): сначала подблоки, затем листья —
+ * для ссылки «На карте: N узлов →» из раздела (X2 P-123).
+ */
+export function nodesForSection(id: MethodologyAnchor | string): readonly MapNode[] {
+  const own = NODES.filter((n) => n.learnMore === id && n.kind !== 'block')
+  return [...own.filter((n) => n.kind === 'subblock'), ...own.filter((n) => n.kind !== 'subblock')]
 }
 
 /** Поиск по названию, id, metricId и paramId (командная строка «/»). */

@@ -18,6 +18,14 @@
 }
 .ch-frame--loading .ch-body,
 .ch-frame--loading .ch-tablewrap { opacity: 0.45; transition: opacity var(--dur-fast) var(--ease-out); }
+/* Пересчёт: прежний кадр приглушён + пометка; первая загрузка — зарезервированная сетка (не «пусто»). */
+.ch-refetch { font-size: var(--fs-11); color: var(--text-muted); }
+.ch-skel { position: relative; border-radius: var(--radius); }
+.ch-skel__svg { display: block; width: 100%; }
+.ch-skel__line { stroke: var(--chart-grid); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ch-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ch-scalenote { font-size: var(--fs-11); color: var(--text-muted); }
+.ch-caveat { margin: 0; font-size: var(--fs-12); color: var(--text-muted); line-height: var(--lh-body); }
 /* Сетка: текст (растягивается, переносится) · бейджи · действия — переключатель всегда в первой строке */
 .ch-head {
   display: grid;
@@ -38,6 +46,7 @@
 
 /* Плот: фокусируемый контейнер, перекрестие по клавиатуре */
 .ch-plot { position: relative; width: 100%; min-width: 0; outline: none; border-radius: var(--radius); }
+.ch-plot:focus-visible { outline: 2px solid transparent; }
 .ch-plot:focus-visible { box-shadow: var(--halo); }
 .ch-svg { display: block; width: 100%; height: auto; overflow: visible; }
 
@@ -175,6 +184,30 @@
 .ch-bar__fill { transition: width var(--dur) var(--ease-out); }
 .ch-bar__zero { stroke: var(--chart-axis); stroke-width: 1; }
 .ch-bar__value { font-size: var(--fs-12); color: var(--text); text-align: right; white-space: nowrap; }
+.ch-bars--compact .ch-bar { grid-template-columns: minmax(150px, 3fr) 3fr minmax(56px, auto); gap: var(--space-2); }
+.ch-bar__mark { stroke: var(--text); stroke-width: 1.5; }
+.ch-bars__marklegend { display: inline-flex; align-items: center; gap: 6px; margin: var(--space-1) 0 0; font-size: var(--fs-12); color: var(--text-secondary); }
+.ch-bars__markkey { width: 0; height: 10px; border-left: 1.5px solid var(--text); }
+.ch-bars__more { align-self: flex-start; }
+
+/* ── Лесной график: Δ к базе с ДИ, общая шкала, подписанный ноль ─────────── */
+.ch-forest { display: flex; flex-direction: column; }
+.ch-forest__row { display: grid; grid-template-columns: minmax(140px, 2fr) minmax(160px, 4fr) minmax(84px, auto); align-items: center; gap: var(--space-3); min-height: 26px; }
+.ch-forest--share .ch-forest__row { grid-template-columns: minmax(140px, 2fr) minmax(160px, 4fr) minmax(84px, auto) minmax(76px, auto); }
+.ch-forest__row + .ch-forest__row:not(.ch-forest__row--axis) { border-top: 1px solid color-mix(in oklch, var(--chart-grid) 70%, transparent); }
+.ch-forest__row.is-emph .ch-forest__name { color: var(--text); font-weight: 600; }
+.ch-forest__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-12); color: var(--text-secondary); }
+.ch-forest__track { min-width: 0; }
+.ch-forest__h { font-size: var(--fs-11); color: var(--text-muted); text-align: right; }
+.ch-forest__v { display: inline-flex; justify-content: flex-end; gap: 4px; font-size: var(--fs-12); color: var(--text); text-align: right; white-space: nowrap; }
+.ch-forest__glyph { font-size: 0.8em; color: var(--text-muted); }
+.ch-forest__glyph--better { color: var(--status-running); }
+.ch-forest__glyph--worse { color: var(--status-down); }
+.ch-forest__zero { stroke: var(--chart-axis); stroke-width: 1; }
+.ch-forest__thr { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.ch-forest__ci { stroke: var(--chart-1); stroke-width: 2; stroke-linecap: round; }
+.ch-forest__dot { fill: var(--chart-1); stroke: var(--ch-surface); stroke-width: 2; }
+.ch-forest__axislabel { font-size: var(--fs-11); fill: var(--text-muted); }
 
 /* ── Полоса долей и метр ─────────────────────────────────────────────────── */
 .ch-stack { display: block; width: 100%; height: 10px; border-radius: 3px; background: var(--chart-grid); overflow: hidden; }
@@ -202,7 +235,10 @@
 .ch-range__track { stroke: var(--chart-grid); stroke-width: 2; stroke-linecap: round; }
 .ch-range__hatch { fill: var(--chart-4); fill-opacity: 0.55; }
 .ch-range__zone rect { stroke: color-mix(in oklch, var(--chart-4) 45%, transparent); stroke-width: 1; }
-.ch-range__dot { stroke: color-mix(in oklch, var(--accent) 28%, transparent); stroke-width: 3; fill: var(--accent); }
+.ch-range__dot { stroke: color-mix(in oklch, var(--chart-1) 28%, transparent); stroke-width: 3; fill: var(--chart-1); }
+/* ДИ оценки — ровная полоса 15 % без штриховки (штриховка — только хвост риска). */
+.ch-range__zone--ci rect { fill: color-mix(in oklch, var(--chart-1) 15%, transparent); stroke: none; }
+.ch-range__end { font-family: var(--font-mono); font-size: var(--fs-11); fill: var(--text-muted); }
 .ch-range__ring { fill: var(--ch-surface); stroke: var(--status-idle); stroke-width: 1.5; }
 .ch-range__shape { stroke: var(--ch-surface); stroke-width: 1.5; }
 .ch-range__mark--warn .ch-range__shape { fill: var(--status-setup); }
@@ -240,16 +276,27 @@
 
 /* ── Веер ────────────────────────────────────────────────────────────────── */
 .ch-fan__future { fill: var(--chart-1); opacity: 0.04; }
-.ch-fan__bt { fill: var(--chart-2); opacity: 0.08; }
+.ch-fan__bt { fill: var(--chart-grid); opacity: 0.6; }
 .ch-fan__now { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 2 3; }
 .ch-fan__hist { fill: none; stroke: var(--text); stroke-width: 1.5; stroke-linejoin: round; }
-.ch-fan__fact { fill: var(--chart-2); stroke: var(--ch-surface); stroke-width: 1.5; }
+.ch-fan__fact { fill: var(--ch-surface); stroke: var(--text); stroke-width: 1.5; }
+.ch-fan__trend { stroke: var(--text-secondary); }
+.ch-fan__hatch { fill: var(--text-secondary); fill-opacity: 0.35; }
+.ch-fan__band-hatch { opacity: 0.6; }
+.ch-fan__ref line { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.ch-fan__reflabel { font-size: var(--fs-11); fill: var(--text-secondary); paint-order: stroke; stroke: var(--ch-surface); stroke-width: 3px; }
+/* Образцы легенды веера: внутренняя полоса, ромб факта, окно проверки, «прочие» */
+.ch-sw-band-inner { background: color-mix(in oklch, var(--chart-1) 40%, transparent); }
+.ch-sw-fact { width: 9px; height: 9px; border: 1.5px solid var(--text); border-radius: 1px; transform: rotate(45deg) scale(0.8); background: transparent; }
+.ch-sw-bt { background: var(--chart-grid); }
+.ch-sw-other { background: repeating-linear-gradient(45deg, var(--chart-other) 0 2px, transparent 2px 4px); border: 1px solid var(--chart-other); }
 .ch-fan__band { fill-opacity: 0.14; }
 .ch-fan__band--inner { fill-opacity: 0.18; }
 
 /* ── Потоки (Sankey) ─────────────────────────────────────────────────────── */
 .ch-sankey__link path { fill: none; stroke: var(--chart-1); stroke-opacity: 0.32; transition: stroke-opacity var(--dur-fast) var(--ease-out); }
 .ch-sankey__link.is-dim path { stroke-opacity: 0.08; }
+.ch-sankey__link.is-other path { stroke: var(--chart-other); stroke-opacity: 0.15; }
 .ch-sankey__link.is-hot path { stroke-opacity: 0.6; }
 .ch-sankey__link.is-dim .ch-sankey__value { opacity: 0; }
 .ch-sankey__value {

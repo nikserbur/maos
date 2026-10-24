@@ -1,17 +1,19 @@
 /*
- * Мастер плана (UX-V2 §4.1, §6.4): один шаг = одна колонка с иерархией «главное крупно,
- * экспертное — свёрнуто»; никаких равномерных сеток карточек. Степпер слева липкий.
- * Цвет — только состояние / блок; бренд-акцент — для действий.
+ * Мастер плана (UX-V2 §4.1, §6.4; X2 P-96): один шаг = одна колонка с иерархией «главное крупно,
+ * экспертное — свёрнуто»; никаких равномерных сеток карточек. Степпер слева липкий (внутри скролла
+ * `.plan`), подвал — сплошной, с волосяной линией и тенью; содержимое никогда не уходит под него.
+ * Цвет — только состояние / блок; акцент — для действий и выбора.
  */
-.wz { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start; }
-.wz-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.wz { --wz-foot-h: 56px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start; }
+.wz .pf-stepper { top: var(--space-3); }
+.wz-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-bottom: var(--space-2); }
+.plan:has(.wz) { scroll-padding-bottom: calc(var(--wz-foot-h, 56px) + var(--space-3)); }
 /* Заголовок шага — одна строка (X1 §5 п. 13): «Шаг N из 7 · Название · подсказка · [блок ↗]» */
 .wz-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; min-height: 32px; padding-bottom: var(--space-2); border-bottom: 1px solid var(--border); }
 .wz-head__eyebrow { margin: 0; color: var(--text-muted); }
 .wz-head__title { margin: 0; font: 500 var(--fs-20) var(--font-display); letter-spacing: -0.01em; }
 .wz-head__hint { color: var(--text-muted); font-size: var(--fs-13); }
 .wz-head__block { margin-left: auto; font-size: var(--fs-12); text-decoration: none; }
-.wz-foot__skip { margin-right: var(--space-2); font-size: var(--fs-12); }
 
 /* Переход между шагами: fade + сдвиг 4 px, 200 мс; ключ по шагу перезапускает анимацию */
 .wz-step-enter { animation: wz-step-in var(--dur) var(--ease-out) backwards; }
@@ -19,7 +21,6 @@
 @media (prefers-reduced-motion: reduce) { .wz-step-enter { animation: none; } }
 
 .wz-step { display: flex; flex-direction: column; gap: 14px; }
-.wz-step--result { gap: 18px; }
 .wz-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .wz-card--accent { border-left: 3px solid var(--accent); }
 .wz-card__head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -35,23 +36,8 @@
 .wz-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
 .wz-fields > .pf-field--lg { grid-column: 1 / -1; }
 
-/* Портфели Стадии 2 */
-.wz-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
-.wz-run {
-  display: grid; grid-template-columns: 112px minmax(90px, 0.7fr) minmax(220px, 1.4fr) auto auto; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; text-align: left;
-  background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-secondary); cursor: pointer;
-  font: 500 var(--fs-13) var(--font-sans); transition: border-color var(--dur-fast), background var(--dur-fast);
-}
-.wz-run:hover { background: var(--bg-hover); }
-.wz-run:focus-visible { outline: none; box-shadow: var(--halo); }
-.wz-run.is-on { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 10%, var(--bg-card)); }
-.wz-run__date { color: var(--text); }
-.wz-run__meta { font-size: var(--fs-11); color: var(--text-muted); }
-.wz-run__kpi { font-size: var(--fs-12); color: var(--text-muted); white-space: nowrap; }
-.wz-run__kpi b { font-weight: 500; color: var(--text); }
-.wz-orders__empty { text-align: left; color: var(--text-muted); }
-@media (max-width: 1100px) { .wz-run { grid-template-columns: 112px 1fr; } .wz-run__kpi { grid-column: 1 / -1; } }
-.wz-orders td, .wz-orders th { vertical-align: middle; }
+/* Заказы программы */
+.wz-step .dk-table td { vertical-align: middle; }
 .wz-summary { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; padding: 10px 14px; font-size: var(--fs-13); color: var(--text-secondary); border-top: 1px dashed var(--border-strong); }
 .wz-summary b { font-size: var(--fs-16); font-weight: 500; color: var(--text); }
 
@@ -70,12 +56,19 @@
 .wz-dist__name { font-size: var(--fs-13); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wz-dist__meta { font-size: var(--fs-11); color: var(--text-muted); }
 
-/* Цель и риск */
-.wz-formula { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 8px 10px; background: var(--bg-panel); border-radius: var(--radius-sm); font-size: var(--fs-13); color: var(--text-secondary); }
-.wz-formula__line { white-space: pre-wrap; overflow-wrap: anywhere; }
-.wz-formula b { color: var(--text); font-weight: 600; }
-.wz-formula b.is-empty { color: var(--text-muted); font-weight: 400; }
-.pl-note--warn { display: inline-flex; align-items: center; gap: 6px; color: var(--status-setup); }
+/* Цель и риск: одна фраза; экспертное и редкое — свёрнуто */
+.wz-sentence { margin: 0; font-size: var(--fs-14); color: var(--text); }
+.wz-fields--one { grid-template-columns: minmax(0, 1fr); }
+.wz-expert, .wz-fold, .wz-more { min-width: 0; }
+.wz-expert > summary, .wz-fold > summary, .wz-more > summary { cursor: pointer; min-height: 24px; list-style: none; }
+.wz-expert > summary::-webkit-details-marker, .wz-fold > summary::-webkit-details-marker, .wz-more > summary::-webkit-details-marker { display: none; }
+.wz-expert > summary { font-size: var(--fs-13); color: var(--text-secondary); }
+.wz-expert[open] > summary, .wz-fold[open] > summary { margin-bottom: var(--space-2); }
+.wz-more { display: inline-block; margin-left: var(--space-2); font-size: var(--fs-12); }
+.wz-more > summary { color: var(--text-muted); text-decoration: underline dotted; }
+.wz-more[open] > span { display: block; margin-top: var(--space-1); color: var(--text-muted); overflow-wrap: anywhere; }
+.wz-expert > summary:focus-visible, .wz-fold > summary:focus-visible, .wz-more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.pl-note--warn { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .wz-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
 .wz-method {
   display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; text-align: left; background: var(--bg-panel);
@@ -84,8 +77,8 @@
 }
 .wz-method:hover:not(:disabled) { background: var(--bg-hover); }
 .wz-method:focus-visible { outline: none; box-shadow: var(--halo); }
-.wz-method.is-on { border-color: var(--ochre); color: var(--text); background: color-mix(in oklch, var(--ochre) 9%, var(--bg-card)); }
-.wz-method.is-planned { border-style: dashed; color: var(--text-disabled); cursor: not-allowed; }
+.wz-method.is-on { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 9%, var(--bg-card)); }
+.wz-method.is-planned { border-style: dashed; color: var(--text-muted); cursor: not-allowed; }
 .wz-method__t { font-weight: 600; font-size: var(--fs-13); }
 .wz-method__s { font-size: var(--fs-11); color: var(--text-muted); }
 
@@ -96,9 +89,13 @@
 /* Финансы */
 .wz-fin.is-open { border-left: 3px solid var(--block-3); }
 
-/* Подвал */
-.wz-foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 0 2px; background: linear-gradient(to top, var(--bg-app) 70%, transparent); border-top: 1px solid var(--border); }
-.wz-foot__hint { flex: 1; font-size: var(--fs-12); color: var(--text-muted); }
+/* Подвал: сплошной фон, волосяная линия и тень — ничего не просвечивает и не уходит под него */
+.wz-foot {
+  position: sticky; bottom: 0; z-index: 4; display: flex; align-items: center; gap: 10px;
+  min-height: var(--wz-foot-h); padding: var(--space-2) var(--space-3);
+  background: var(--bg-app); border-top: 1px solid var(--border); box-shadow: var(--shadow-1);
+}
+.wz-foot__hint { flex: 1; text-align: center; font-size: var(--fs-12); color: var(--text-muted); }
 
 @media (max-width: 960px) {
   .wz { grid-template-columns: 1fr; }

@@ -27,12 +27,23 @@ export interface DashboardConfig {
   charts: [ChartConfig, ChartConfig]
 }
 
+/**
+ * Набор по умолчанию: герой — длина расписания с хвостом; вместо средней загрузки (величина без
+ * отклонения) — число просроченных заказов. Второй график — просрочка с хвостом CVaR: OTD у
+ * хорошего плана — ровные 100 % и ничего не рассказывает.
+ */
 export const DEFAULT_DASHBOARD: DashboardConfig = {
-  pinned: ['MAKESPAN', 'OTD', 'UTIL', 'THRU', 'BN_UTIL', 'COST'],
+  pinned: ['MAKESPAN', 'OTD', 'N_LATE', 'THRU', 'BN_UTIL', 'COST'],
   charts: [
-    { type: 'line', axis: 'plans', metrics: ['MAKESPAN'] },
-    { type: 'area', axis: 'plans', metrics: ['OTD'] },
+    { type: 'line', axis: 'plans', metrics: ['MAKESPAN', 'MK_CVAR'] },
+    { type: 'line', axis: 'plans', metrics: ['TARD', 'TARD_CVAR'] },
   ],
+}
+
+/** Второй график по умолчанию для оси (при смене оси). */
+export const SECOND_DEFAULT: Readonly<Record<AxisMode, string[]>> = {
+  plans: ['TARD', 'TARD_CVAR'],
+  timeline: ['workers'],
 }
 
 /**

@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { Icon, type IconName } from '../../shell/icons'
+import { useEscapeLayer } from '../../shell/overlays'
 import './menu.css'
 
 export interface MenuItem {
@@ -28,9 +29,11 @@ interface MenuProps {
   children?: ReactNode
   align?: 'start' | 'end'
   size?: 'sm' | 'md'
+  /** Иконка кнопки; null — без иконки (кнопка с подписью). По умолчанию «⋯». */
+  icon?: IconName | null
 }
 
-export function Menu({ items, label, children, align = 'end', size = 'md' }: MenuProps) {
+export function Menu({ items, label, children, align = 'end', size = 'md', icon = 'more' }: MenuProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
@@ -41,6 +44,8 @@ export function Menu({ items, label, children, align = 'end', size = 'md' }: Men
     setOpen(false)
     if (returnFocus) buttonRef.current?.focus()
   }, [])
+  // Слой стека Esc: открытое меню закрывается раньше панели/модалки/MENTAT, даже если фокус на кнопке.
+  useEscapeLayer('menu', () => close(true), open)
 
   const focusItem = (index: number) => {
     const nodes = itemNodes()
@@ -85,7 +90,7 @@ export function Menu({ items, label, children, align = 'end', size = 'md' }: Men
       <button ref={buttonRef} type="button" className={btnCls} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? listId : undefined}
               aria-label={children ? undefined : label} title={children ? undefined : label}
               onClick={() => setOpen((v) => !v)} onKeyDown={onButtonKeyDown}>
-        <Icon name="more" size={14} />
+        {icon && <Icon name={icon} size={14} />}
         {children}
       </button>
       {open && (

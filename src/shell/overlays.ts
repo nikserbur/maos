@@ -4,7 +4,7 @@
  * (действие «Спросить MENTAT») и контекстное действие узла карты / «i» показателя — тогда панель
  * открывается с узлом вопроса (`mentatFocus`); экраны не знают о панелях.
  */
-import { useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 export interface Overlays { palette: boolean; mentat: boolean; mentatFocus: string | null }
 
@@ -36,4 +36,77 @@ export const overlayActions = {
   /** «Спросить MENTAT» об узле карты: панель открывается с этим узлом вопроса. */
   askMentat: (nodeId: string) => commit({ palette: false, mentat: true, mentatFocus: nodeId }),
   clearMentatFocus: () => commit({ ...state, mentatFocus: null }),
+}
+
+/* ── Стек Esc (X2: Esc закрывает только самый внутренний слой) ──────────────
+ * Порядок: подсказка «i» → меню → палитра → боковая панель / модалка → MENTAT → сцена.
+ * Один слушатель на document (всплытие): обработчики, уже вызвавшие preventDefault, не трогаем;
+ * первый Esc в textarea/select только снимает фокус; иначе закрывается верхний активный слой
+ * (ранг, затем порядок регистрации) и событие дальше не идёт (window-слушатели его не видят). */
+
+export type EscapeKind = 'tip' | 'menu' | 'palette' | 'panel' | 'modal' | 'mentat' | 'scene'
+
+const RANK: Readonly<Record<EscapeKind, number>> = { tip: 60, menu: 50, palette: 40, panel: 30, modal: 30, mentat: 20, scene: 10 }
+
+interface EscapeLayer { id: number; kind: EscapeKind; close: () => void }
+
+let layerSeq = 0
+const layers: EscapeLayer[] = []
+
+/** Верхний слой: наибольший ранг, при равенстве — открытый последним. */
+export function topEscapeLayer(): EscapeLayer | undefined {
+  let top: EscapeLayer | undefined
+  for (const l of layers) if (!top || RANK[l.kind] > RANK[top.kind] || (RANK[l.kind] === RANK[top.kind] && l.id > top.id)) top = l
+  return top
+}
+
+/** Зарегистрировать слой; возвращает снятие. */
+export function pushEscapeLayer(kind: EscapeKind, close: () => void): () => void {
+  const layer = { id: ++layerSeq, kind, close }
+  layers.push(layer)
+  ensureEscapeListener()
+  return () => {
+    const at = layers.indexOf(layer)
+    if (at >= 0) layers.splice(at, 1)
+  }
+}
+
+/** Обработка Esc стеком (экспорт — для теста): true — событие поглощено. */
+export function handleEscape(e: Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'target' | 'preventDefault' | 'stopPropagation'>): boolean {
+  if (e.key !== 'Escape' || e.defaultPrevented) return false
+  const top = topEscapeLayer()
+  if (!top) return false
+  const target = e.target as HTMLElement | null
+  const tag = target?.tagName
+  if ((tag === 'TEXTAREA' || tag === 'SELECT') && typeof target?.blur === 'function') {
+    target.blur()
+    e.preventDefault()
+    return true
+  }
+  e.preventDefault()
+  e.stopPropagation()
+  top.close()
+  return true
+}
+
+let listening = false
+function ensureEscapeListener(): void {
+  if (listening || typeof document === 'undefined') return
+  listening = true
+  document.addEventListener('keydown', (e) => { handleEscape(e) })
+}
+
+/** Хук слоя: пока `active`, Esc закрывает его (если он самый внутренний). */
+export function useEscapeLayer(kind: EscapeKind, onClose: () => void, active = true): void {
+  const ref = useRef(onClose)
+  ref.current = onClose
+  useEffect(() => {
+    if (!active) return undefined
+    return pushEscapeLayer(kind, () => ref.current())
+  }, [kind, active])
+}
+
+/** Только для тестов. */
+export function resetEscapeLayersForTests(): void {
+  layers.splice(0, layers.length)
 }

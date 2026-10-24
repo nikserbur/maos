@@ -22,6 +22,8 @@ const INITIAL: CashState = { result: null, opt: null, params: null, running: fal
 
 let state: CashState = INITIAL
 let seq = 0
+/** Текущий запуск: «Отменить» прерывает ожидание ответа (сам запрос API без сигнала — ответ игнорируется). */
+let controller: AbortController | null = null
 const listeners = new Set<() => void>()
 
 function emit(next: CashState): void {
@@ -48,9 +50,15 @@ export function getCashState(): CashState {
  */
 export async function runCash(params: OptimizeParams): Promise<CashLpResult | null> {
   const token = ++seq
+  controller?.abort()
+  const ac = new AbortController()
+  controller = ac
   emit({ ...state, running: true, error: null, params })
   try {
-    const opt = await api.optimize.runCash({ cash: true, ...params })
+    const aborted = new Promise<never>((_, reject) => {
+      ac.signal.addEventListener('abort', () => reject(new DOMException('Расчёт кассы отменён', 'AbortError')), { once: true })
+    })
+    const opt = await Promise.race([api.optimize.runCash({ cash: true, ...params }), aborted])
     if (token !== seq) return null
     const result = opt.cash_lp ?? null
     emit({ ...state, running: false, result, opt, ranAt: Date.now(), error: result ? null : 'ответ без блока cash_lp' })
@@ -60,6 +68,15 @@ export async function runCash(params: OptimizeParams): Promise<CashLpResult | nu
     emit({ ...state, running: false, error: e instanceof Error ? e.message : 'Ошибка расчёта кассы' })
     return null
   }
+}
+
+/** «Отменить» расчёт кассы: ожидание прерывается, позднее пришедший ответ игнорируется, прежний результат остаётся. */
+export function cancelCash(): void {
+  if (!state.running) return
+  seq += 1
+  controller?.abort()
+  controller = null
+  emit({ ...state, running: false, error: null })
 }
 
 /** Только для тестов. */

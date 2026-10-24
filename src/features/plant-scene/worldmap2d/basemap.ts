@@ -1,7 +1,8 @@
 /**
  * Базовая подложка мировой карты по теме (X1 §1 п. 1): тёмная тема — CARTO «dark-matter»,
  * светлая — CARTO «positron». Оба векторных стиля без API-ключа. Подписи — русские
- * (`name:ru` с фолбэком) цветом `--text-muted` на ореоле `--bg-app`; слои дорог OSRM
+ * (`name:ru` с фолбэком) цветом `--text-muted` на ореоле `--bg-app`; дороги — нейтральные
+ * (--chart-8, 2,5 px, обводка --ink), акцент — только у выбранного пина; слои дорог OSRM
  * добавляются под первым слоем подписей и переживают смену стиля (`style.load`).
  */
 import type maplibregl from 'maplibre-gl'
@@ -34,11 +35,14 @@ export function styleLabels(map: maplibregl.Map, c: ThemeColors): void {
   }
 }
 
-/** Дороги: ультрамарин бренда в тёмной обводке (`--ink`) — читается и на суше, и на воде. */
+/** Цвет линии дорог: нейтральный «прочее» (--chart-8), не акцент — акцент только у выбора (X2 P-40). */
+const routeColor = (c: ThemeColors): string => c.chart[7] ?? c.textMuted
+
+/** Дороги: нейтральная линия 2,5 px в тёмной обводке (`--ink`) — читается и на суше, и на воде. */
 export function applyRouteColors(map: maplibregl.Map, c: ThemeColors): void {
   try {
     if (map.getLayer(ROUTES_CASING)) map.setPaintProperty(ROUTES_CASING, 'line-color', c.ink)
-    if (map.getLayer(ROUTES_LINE)) map.setPaintProperty(ROUTES_LINE, 'line-color', c.ultramarine)
+    if (map.getLayer(ROUTES_LINE)) map.setPaintProperty(ROUTES_LINE, 'line-color', routeColor(c))
   } catch { /* стиль перезагружается — цвета применятся после style.load */ }
 }
 
@@ -49,10 +53,10 @@ export function ensureRouteLayers(map: maplibregl.Map, c: ThemeColors, data: Geo
   map.addSource(ROUTES_SOURCE, { type: 'geojson', data })
   map.addLayer({ id: ROUTES_CASING, type: 'line', source: ROUTES_SOURCE,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': c.ink, 'line-width': 7, 'line-opacity': 0.85 } }, firstSymbol)
+    paint: { 'line-color': c.ink, 'line-width': 5, 'line-opacity': 0.85 } }, firstSymbol)
   map.addLayer({ id: ROUTES_LINE, type: 'line', source: ROUTES_SOURCE,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': c.ultramarine, 'line-width': 3.5, 'line-opacity': 0.95 } }, firstSymbol)
+    paint: { 'line-color': routeColor(c), 'line-width': 2.5, 'line-opacity': 0.95 } }, firstSymbol)
 }
 
 /** Обновить геометрию дорог (если источник ещё не создан — ничего не делаем). */

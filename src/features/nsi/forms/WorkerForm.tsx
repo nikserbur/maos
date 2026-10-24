@@ -1,251 +1,217 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../../../lib/api'
-import { useOrgUnits, useWorkCenterTypes } from '../useNsi'
-import type { EditCtx } from '../CreateDialog'
+import { num } from '../../../explain/format'
 import { currentSession, workerAccess } from '../../../shell/session'
-import { ConfirmDialog } from '../../../ui/ConfirmDialog'
+import { InfoTip } from '../../../ui/InfoTip'
+import { isEligible } from '../labor'
+import { shopCode, shopShort } from '../registries'
+import { useOrgUnits, useWorkCenterTypes, useWorkers } from '../useNsi'
+import { changedFields, fieldOf, useFormBridge, type NsiFormProps } from './formBridge'
+import { FormError, FormNote, NO_CHANGES } from './FormError'
 
-interface Props {
-  onSuccess: () => void
-  edit?: EditCtx
+const OUTSIDE = '__outside__'
+const OUTSIDE_LABEL = 'вне цеха'
+const TAB_RE = /^T\d{4}$/
+const LETTERS = /\p{L}/u
+
+type Field = 'last' | 'first' | 'tab' | 'unit'
+type Errors = Partial<Record<Field, string>>
+
+/** Табельный номер: верхний регистр, кириллическая «Т» → латинская (формат T0000). */
+const normTab = (v: string) => v.trim().toUpperCase().replace(/^Т/, 'T')
+
+/** Проверка полей сотрудника (P-49): буквы в имени, цех (или «вне цеха»), уникальный табельный T0000. */
+export function validateWorker(v: { last: string; first: string; tab: string; unit: string }, takenTabs: ReadonlySet<string>): Errors {
+  const e: Errors = {}
+  if (!LETTERS.test(v.last)) e.last = v.last.trim() ? 'Фамилия должна содержать буквы' : 'Укажите фамилию'
+  if (!LETTERS.test(v.first)) e.first = v.first.trim() ? 'Имя должно содержать буквы' : 'Укажите имя'
+  const tab = normTab(v.tab)
+  if (!TAB_RE.test(tab)) e.tab = 'Табельный номер — буква T и четыре цифры, например T0042'
+  else if (takenTabs.has(tab)) e.tab = `Номер ${tab} уже занят`
+  if (!v.unit) e.unit = 'Выберите цех или «вне цеха»'
+  return e
 }
 
-export function WorkerForm({ onSuccess, edit }: Props) {
+/** Сотрудник: личные данные, цех, должность, допуски к типам станков (группы по цехам). */
+export function WorkerForm({ onSuccess, edit, bridge }: NsiFormProps) {
   const orgUnits = useOrgUnits()
   const wcTypes = useWorkCenterTypes()
-  const r = edit?.row ?? {}
-  const sv = (k: string, d = '') => (r[k] == null ? d : String(r[k]))
-  const [tabNo, setTabNo]     = useState(sv('tab_no'))
-  const [last, setLast]       = useState(sv('last_name'))
-  const [first, setFirst]     = useState(sv('first_name'))
-  const [middle, setMiddle]   = useState(sv('middle_name'))
-  // Цех хранится по id (org_unit_id) — по нему сервер ограничивает найм начальником цеха;
-  // org_unit (название) пишется рядом для совместимости со старыми записями.
+  const workers = useWorkers()
+  const r = useMemo(() => edit?.row ?? {}, [edit])
+  const sv = fieldOf(r)
   const session = currentSession()
-  const access = workerAccess(session)
-  const lockedUnit = access === 'shop' ? session.orgUnitId : ''
-  const [orgUnitId, setOrgUnitId] = useState(lockedUnit || sv('org_unit_id'))
-  const [confirmDismiss, setConfirmDismiss] = useState(false)
-  const [position, setPos]    = useState(sv('position'))
-  const [grade, setGrade]     = useState(sv('grade', '3'))
-  // Допуски — множество ID типов РЦ. Раньше был текстовый ввод; теперь галочки.
-  // Пустое множество = универсал (допущен ко всем типам).
+  const lockedUnit = workerAccess(session) === 'shop' ? session.orgUnitId : ''
+
+  const [tabNo, setTabNo]   = useState(sv('tab_no'))
+  const [last, setLast]     = useState(sv('last_name'))
+  const [first, setFirst]   = useState(sv('first_name'))
+  const [middle, setMiddle] = useState(sv('middle_name'))
+  const [unitId, setUnitId] = useState(lockedUnit || sv('org_unit_id') || (sv('org_unit') === OUTSIDE_LABEL ? OUTSIDE : ''))
+  const [position, setPos]  = useState(sv('position'))
+  const [grade, setGrade]   = useState(sv('grade', '3'))
   const initialSkills = sv('skills')
-  const [allowed, setAllowed] = useState<Set<string>>(() => {
-    if (!initialSkills.trim()) return new Set()   // универсал — конкретных галочек нет
-    const toks = initialSkills.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean)
-    return new Set(wcTypes.filter((t) => {
-      const nm = t.name.toLowerCase(), idl = t.id.toLowerCase()
-      return toks.some((x) => x === nm || x === idl || (x.length > 3 && nm.includes(x)))
-    }).map((t) => t.id))
-  })
   const [universal, setUniversal] = useState(() => !initialSkills.trim())
+  const [allowed, setAllowed] = useState<Set<string> | null>(null) // null — допуски не трогали
+  const [errors, setErrors]   = useState<Errors>({})
   const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [error, setError]     = useState<unknown>(null)
+  const [note, setNote]       = useState<string | null>(null)
 
-  // Старые записи без org_unit_id: подбираем цех по названию, когда справочник подгрузился.
-  useEffect(() => {
-    if (orgUnitId || !sv('org_unit') || orgUnits.length === 0) return
-    const byName = orgUnits.find((o) => o.name === sv('org_unit'))
-    if (byName) setOrgUnitId(byName.id)
-  }, [orgUnits])  // eslint-disable-line react-hooks/exhaustive-deps
-  const unitName = orgUnits.find((o) => o.id === orgUnitId)?.name ?? sv('org_unit')
+  // Старые записи без org_unit_id: цех по названию (подставляется в выбор, но правкой не считается).
+  const legacyId = !unitId && sv('org_unit') ? orgUnits.find((o) => o.name === sv('org_unit'))?.id ?? '' : ''
+  const unitSel = unitId || legacyId
 
-  // Гидратация допусков, когда типы РЦ подгрузились асинхронно (режим правки):
-  // useState-инициализатор мог сработать при пустом wcTypes.
-  const hydrated = useRef(false)
-  useEffect(() => {
-    if (hydrated.current || !initialSkills.trim() || wcTypes.length === 0) return
-    hydrated.current = true
-    const toks = initialSkills.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean)
-    setAllowed(new Set(wcTypes.filter((t) => {
-      const nm = t.name.toLowerCase(), idl = t.id.toLowerCase()
-      return toks.some((x) => x === nm || x === idl || (x.length > 3 && nm.includes(x)))
-    }).map((t) => t.id)))
-  }, [wcTypes, initialSkills])
+  // Допуски записи (как у планировщика): пустые навыки — универсал.
+  const savedAllowed = useMemo(() => new Set(wcTypes.filter((t) => initialSkills.trim() && isEligible(initialSkills, t.name, t.id)).map((t) => t.id)), [wcTypes, initialSkills])
+  const cur = allowed ?? savedAllowed
+  const permsTouched = allowed !== null || universal !== !initialSkills.trim()
 
-  // Группировка типов по group_name (группы допусков).
+  const unitName = unitSel === OUTSIDE ? OUTSIDE_LABEL : orgUnits.find((o) => o.id === unitSel)?.name ?? sv('org_unit')
+  const fields = {
+    tab_no: normTab(tabNo), last_name: last.trim(), first_name: first.trim(), middle_name: middle.trim(),
+    org_unit: unitName, org_unit_id: unitSel === OUTSIDE ? '' : unitSel, position, grade,
+  }
+  const [initial] = useState(() => ({ ...fields }))
+  // «Есть изменения» — по тому, что ввёл пользователь (подстановки справочников правкой не считаются).
+  const raw = { tabNo, last, first, middle, unitId, position, grade }
+  const [initialRaw] = useState(() => ({ ...raw }))
+  const dirty = permsTouched || Object.keys(changedFields(raw, initialRaw)).length > 0
+  const takenTabs = useMemo(() => new Set(workers.filter((w) => w.id !== edit?.id).map((w) => normTab(w.tab_no))), [workers, edit])
+
+  const handleSubmit = async () => {
+    setNote(null)
+    const errs = validateWorker({ last, first, tab: tabNo, unit: unitSel }, takenTabs)
+    setErrors(errs)
+    if (Object.keys(errs).length) { setError('Проверьте отмеченные поля'); return }
+    // Универсал → пустые навыки; иначе CSV ИМЁН типов (планировщик сопоставляет по имени).
+    const skills = universal ? '' : wcTypes.filter((t) => cur.has(t.id)).map((t) => t.name).join(', ')
+    const base = edit ? changedFields(fields, initial) : fields
+    const body = permsTouched || !edit ? { ...base, skills } : base
+    if (edit && Object.keys(body).length === 0) { setNote(NO_CHANGES); return }
+    setLoading(true)
+    setError(null)
+    try {
+      if (edit) await api.workers.update(edit.id, body)
+      else await api.workers.create(body)
+      onSuccess(edit ? `Сохранено: ${last} ${first}` : `Добавлен сотрудник ${last} ${first}`)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setLoading(false)
+    }
+  }
+  useFormBridge(bridge, () => void handleSubmit(), dirty, loading)
+
   const groups = useMemo(() => {
     const g = new Map<string, typeof wcTypes>()
     for (const t of wcTypes) {
-      const key = t.group_name?.trim() || 'Прочие'
-      if (!g.has(key)) g.set(key, [])
-      g.get(key)!.push(t)
+      const key = shopShort(t.group_name) || 'Прочие'
+      g.set(key, [...(g.get(key) ?? []), t])
     }
     return [...g.entries()]
   }, [wcTypes])
-
-  const toggle = (id: string) => setAllowed((prev) => {
-    const n = new Set(prev)
-    n.has(id) ? n.delete(id) : n.add(id)
-    return n
-  })
-  const toggleGroup = (ids: string[], on: boolean) => setAllowed((prev) => {
-    const n = new Set(prev)
+  const ownShop = shopShort(unitName)
+  const toggle = (ids: string[], on: boolean) => {
+    const n = new Set(cur)
     ids.forEach((id) => (on ? n.add(id) : n.delete(id)))
-    return n
+    setAllowed(n)
+  }
+  const fieldProps = (f: Field) => ({
+    'aria-invalid': errors[f] ? true : undefined,
+    'aria-describedby': errors[f] ? `wf-${f}-err` : undefined,
   })
-
-  const handleSubmit = async () => {
-    if (!last.trim() || !first.trim()) { setError('Укажите фамилию и имя'); return }
-    if (!tabNo.trim()) { setError('Укажите табельный номер'); return }
-    // Универсал → пустые навыки; иначе CSV ИМЁН типов (планировщик матчит по имени).
-    const skills = universal ? '' :
-      wcTypes.filter((t) => allowed.has(t.id)).map((t) => t.name).join(', ')
-    setLoading(true)
-    setError(null)
-    try {
-      const payload = {
-        tab_no: tabNo, last_name: last, first_name: first,
-        middle_name: middle, org_unit: unitName, org_unit_id: orgUnitId, position,
-        grade, skills,
-      }
-      if (edit) await api.workers.update(edit.id, payload)
-      else await api.workers.create(payload)
-      onSuccess()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сохранения')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const dismiss = async () => {
-    if (!edit) return
-    setLoading(true)
-    setError(null)
-    try {
-      await api.workers.delete(edit.id)
-      onSuccess()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось уволить')
-      setConfirmDismiss(false)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const fieldErr = (f: Field) => (errors[f] ? <span className="form__hint form__hint--danger" id={`wf-${f}-err`}>{errors[f]}</span> : null)
+  const clear = (f: Field) => { if (errors[f]) setErrors({ ...errors, [f]: undefined }) }
 
   return (
     <div className="form">
-      {error && <div className="form__error">{error}</div>}
+      <FormError error={error} />
+      <FormNote text={note} />
 
-      <div className="form__section">Личные данные</div>
-      <div className="form__row form__row--3">
-        <div className="form__field">
-          <label className="form__label">Фамилия *</label>
-          <input className="form__input" value={last} onChange={(e) => setLast(e.target.value)} placeholder="Иванов" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Имя *</label>
-          <input className="form__input" value={first} onChange={(e) => setFirst(e.target.value)} placeholder="Иван" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Отчество</label>
+      <div className="form__row">
+        <label className="form__field">
+          <span className="form__label">Фамилия *</span>
+          <input className="form__input" value={last} {...fieldProps('last')} onChange={(e) => { setLast(e.target.value); clear('last') }} placeholder="Иванов" />
+          {fieldErr('last')}
+        </label>
+        <label className="form__field">
+          <span className="form__label">Имя *</span>
+          <input className="form__input" value={first} {...fieldProps('first')} onChange={(e) => { setFirst(e.target.value); clear('first') }} placeholder="Иван" />
+          {fieldErr('first')}
+        </label>
+      </div>
+      <div className="form__row">
+        <label className="form__field">
+          <span className="form__label">Отчество</span>
           <input className="form__input" value={middle} onChange={(e) => setMiddle(e.target.value)} placeholder="Иванович" />
-        </div>
+        </label>
+        <label className="form__field">
+          <span className="form__label">Табельный № *</span>
+          <input className="form__input mono" value={tabNo} {...fieldProps('tab')} onChange={(e) => { setTabNo(e.target.value); clear('tab') }} placeholder="T0042" />
+          {fieldErr('tab')}
+        </label>
       </div>
-
-      <div className="form__section">Должность и место работы</div>
+      <label className="form__field">
+        <span className="form__label">Цех *</span>
+        <select className="form__select" value={unitSel} disabled={Boolean(lockedUnit)} {...fieldProps('unit')} onChange={(e) => { setUnitId(e.target.value); clear('unit') }}>
+          <option value="">— выберите цех —</option>
+          {orgUnits.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          <option value={OUTSIDE}>Вне цеха (без подразделения)</option>
+        </select>
+        {fieldErr('unit')}
+        {lockedUnit && <span className="form__hint">Начальник цеха нанимает и переводит сотрудников только в свой цех.</span>}
+      </label>
       <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Табельный № *</label>
-          <input className="form__input" value={tabNo} onChange={(e) => setTabNo(e.target.value)} placeholder="ТВ-01042" />
-        </div>
-        <div className="form__field">
-          <label className="form__label">Разряд</label>
-          <select className="form__select" value={grade} onChange={(e) => setGrade(e.target.value)}>
-            {[1,2,3,4,5,6].map((g) => <option key={g} value={g}>{g} разряд</option>)}
-          </select>
-        </div>
-      </div>
-      <div className="form__row">
-        <div className="form__field">
-          <label className="form__label">Подразделение / Цех</label>
-          <select className="form__select" value={orgUnitId} disabled={Boolean(lockedUnit)}
-                  onChange={(e) => setOrgUnitId(e.target.value)}>
-            <option value="">— выберите подразделение —</option>
-            {orgUnits.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-          {lockedUnit && <span className="form__hint">Начальник цеха нанимает и переводит сотрудников только в свой цех.</span>}
-        </div>
-        <div className="form__field">
-          <label className="form__label">Должность</label>
+        <label className="form__field">
+          <span className="form__label">Должность</span>
           <input className="form__input" value={position} onChange={(e) => setPos(e.target.value)} placeholder="Оператор ЧПУ" />
-        </div>
+        </label>
+        <label className="form__field">
+          <span className="form__label">Разряд</span>
+          <select className="form__select" value={grade} onChange={(e) => setGrade(e.target.value)}>
+            {[1, 2, 3, 4, 5, 6].map((g) => <option key={g} value={g}>{g} разряд</option>)}
+          </select>
+        </label>
       </div>
 
-      <div className="form__section">Допуски к оборудованию</div>
+      <div className="form__section nsi-form-head">
+        Допуски к оборудованию
+        <InfoTip id="plan.labor_cost" label="Как допуски влияют на план" note="Операция ставится, только если есть свободный станок и допущенный к его типу оператор." />
+      </div>
       <label className="form__check">
         <input type="checkbox" checked={universal} onChange={(e) => setUniversal(e.target.checked)} />
         Универсал — допущен ко всем типам оборудования
       </label>
-      <span className="form__hint form__hint--tight">
-        Допуск = к каким <b>типам станков</b> рабочий может встать. Планировщик ставит
-        операцию только если есть свободный станок <b>и</b> допущенный оператор — поэтому
-        мало операторов с допуском = станки простаивают, даже если их несколько.
-      </span>
-
-      {!universal && (
-        wcTypes.length === 0 ? (
-          <span className="form__hint form__hint--warn">
-            Типов оборудования ещё нет — создайте их в реестре «Типы оборудования».
-          </span>
-        ) : (
-          <div className="form__groups">
-            {groups.map(([group, types]) => {
-              const ids = types.map((t) => t.id)
-              const allOn = ids.every((id) => allowed.has(id))
-              return (
-                <div key={group} className="form__group">
-                  <label className="form__check form__check--group">
-                    <input type="checkbox" checked={allOn}
-                           ref={(el) => { if (el) el.indeterminate = !allOn && ids.some((id) => allowed.has(id)) }}
-                           onChange={(e) => toggleGroup(ids, e.target.checked)} />
-                    {group} <span className="form__group-note">· группа допусков</span>
+      {!universal && (wcTypes.length === 0 ? (
+        <span className="form__hint form__hint--warn">Типов оборудования ещё нет — создайте их в реестре «Типы оборудования».</span>
+      ) : (
+        <div className="nsi-perms">
+          {groups.map(([group, types]) => {
+            const ids = types.map((t) => t.id)
+            const on = ids.filter((id) => cur.has(id)).length
+            return (
+              <details key={group} className="nsi-perms__group" open={group === ownShop}>
+                <summary className="nsi-perms__sum" title={group}>
+                  <span>{shopCode(group)}</span><span className="nsi-perms__n num">{num(on, 0)} из {num(ids.length, 0)}</span>
+                </summary>
+                <label className="form__check nsi-perms__all">
+                  <input type="checkbox" checked={on === ids.length}
+                         ref={(el) => { if (el) el.indeterminate = on > 0 && on < ids.length }}
+                         onChange={(e) => toggle(ids, e.target.checked)} />
+                  Все типы цеха
+                </label>
+                {types.map((t) => (
+                  <label key={t.id} className="form__check nsi-perms__item">
+                    <input type="checkbox" checked={cur.has(t.id)} onChange={(e) => toggle([t.id], e.target.checked)} />
+                    <span title={t.name}>{t.name}</span>
                   </label>
-                  <div className="form__group-grid">
-                    {types.map((t) => (
-                      <label key={t.id} className="form__check form__check--flat">
-                        <input type="checkbox" checked={allowed.has(t.id)} onChange={() => toggle(t.id)} />
-                        {t.name}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-            <span className="form__hint">
-              Отмечено допусков: <b>{allowed.size}</b>. Пусто и не «универсал» — рабочий
-              не встанет ни на один станок.
-            </span>
-          </div>
-        )
-      )}
-
-      <div className="form__actions">
-        {edit && (
-          <button type="button" className="btn btn--danger" onClick={() => setConfirmDismiss(true)} disabled={loading}>
-            Уволить
-          </button>
-        )}
-        <button className="btn btn--primary" onClick={handleSubmit} disabled={loading}>
-          {loading ? 'Сохраняем…' : edit ? 'Сохранить' : access === 'shop' ? 'Нанять' : 'Создать'}
-        </button>
-      </div>
-
-      {confirmDismiss && edit && (
-        <ConfirmDialog
-          title="Уволить сотрудника?"
-          confirmLabel="Уволить"
-          danger
-          busy={loading}
-          onCancel={() => setConfirmDismiss(false)}
-          onConfirm={dismiss}
-        >
-          {`${last} ${first}, таб. № ${tabNo}`} будет удалён из реестра рабочих; планы, построенные
-          с его участием, сохранятся. Действие попадёт в журнал.
-        </ConfirmDialog>
-      )}
+                ))}
+              </details>
+            )
+          })}
+          {cur.size === 0 && <span className="form__hint form__hint--warn">Допусков нет — сотрудник не встанет ни на один станок.</span>}
+        </div>
+      ))}
     </div>
   )
 }

@@ -76,7 +76,7 @@ export const FLOW_NODES: readonly MapNode[] = [
 
   { id: 'dist.identify', kind: 'subblock', block: 'distributions', parent: 'distributions', shape: 'disc',
     title: 'Идентификация по план-факту', short: 'Калибровка норм по факту симуляции/цеха; байесовское обновление и паспорт — волна 1.',
-    screen: { id: 'scheme' }, learnMore: 'validation', stage: 'w1', action: 'estimate' },
+    screen: { id: 'scheme' }, learnMore: 'validation', feature: 'identify', action: 'estimate' },
   ...formulas('dist.identify', 'distributions', ['sim.calibration']),
 
   /* ── [3] Внутренние условия ───────────────────────────────────────────── */
@@ -119,7 +119,7 @@ export const FLOW_NODES: readonly MapNode[] = [
   /* ── [4] Решения ──────────────────────────────────────────────────────── */
   { id: 'dec.portfolio', kind: 'subblock', block: 'decisions', parent: 'decisions', shape: 'triangle',
     title: 'Стадия 2 · портфель (CVaR-LP)', short: 'Что выпускать: робастный портфель по N сценариям цен — эвристика + точная LP Рокафеллара–Урясева (HiGHS).',
-    screen: { id: 'optimization' }, diagram: 'two-stages', learnMore: 'two-stages', stage: 'done', action: 'optimize' },
+    screen: { id: 'optimization' }, diagram: 'two-stages', learnMore: 'two-stages', feature: 'exact-cvar', action: 'optimize' },
   ...params('dec.portfolio', 'decisions', ['scenario.objective', 'scenario.max_share', 'opt.samples', 'opt.horizon_months']),
   ...formulas('dec.portfolio', 'decisions', ['opt.expected', 'opt.hhi', 'opt.effective_n', 'opt.max_share', 'opt.pareto', 'opt.risk_contribution']),
   { id: 'dec.portfolio.ds', kind: 'dataset', block: 'decisions', parent: 'dec.portfolio', title: 'optimization_runs',
@@ -127,7 +127,7 @@ export const FLOW_NODES: readonly MapNode[] = [
 
   { id: 'dec.schedule', kind: 'subblock', block: 'decisions', parent: 'decisions', shape: 'triangle',
     title: 'Стадия 1 · расписание (7 правил + ГА)', short: 'Как выпускать: порядок операций под F = w_time·E + w_risk·(CVaR − E); ГА с проверкой вне выборки.',
-    screen: { id: 'plan' }, diagram: 'dispatch-rules', learnMore: 'dispatch-rules', stage: 'done', action: 'schedule' },
+    screen: { id: 'plan' }, diagram: 'dispatch-rules', learnMore: 'dispatch-rules', feature: 'cpsat', action: 'schedule' },
   ...params('dec.schedule', 'decisions', ['plan.rule', 'plan.samples', 'plan.w_risk', 'plan.w_time', 'plan.w_cost', 'plan.improve_iters']),
   ...formulas('dec.schedule', 'decisions', ['plan.rule_score', 'plan.ga', 'plan.makespan', 'plan.bottleneck', 'plan.queue_peak']),
   { id: 'dec.schedule.ds', kind: 'dataset', block: 'decisions', parent: 'dec.schedule', title: 'plans · plan_tasks',
@@ -144,8 +144,8 @@ export const FLOW_NODES: readonly MapNode[] = [
 
   { id: 'dec.cash', kind: 'subblock', block: 'decisions', parent: 'decisions', shape: 'triangle',
     title: 'Транши кредитной линии (CVaR-LP с кассой)', short: 'Когда и сколько брать транш: рекурс d_i,t или «график заранее» d_t внутри одной CVaR-LP с потоком денег (HiGHS, §5.2); запасы как решение — волна 1.',
-    screen: { id: 'plan', anchor: 'new/result' }, learnMore: 'overview', stage: 'done', action: 'cash' },
-  ...params('dec.cash', 'decisions', ['fin.l_min', 'fin.beta']),
+    screen: { id: 'plan', runSection: 'cash' }, learnMore: 'overview', stage: 'done', action: 'cash' },
+  ...params('dec.cash', 'decisions', ['fin.l_min', 'fin.beta', 'fin.auto_repay', 'fin.tax_cumulative']),
   ...formulas('dec.cash', 'decisions', ['cash.pol', 'cash.debt_peak', 'cash.int_cost']),
 
   /* ── [5] Критерии ─────────────────────────────────────────────────────── */
@@ -163,10 +163,10 @@ export const FLOW_NODES: readonly MapNode[] = [
 
   { id: 'crit.cash', kind: 'subblock', block: 'criteria', parent: 'criteria', shape: 'triangle',
     title: 'CVaR кассы (CFaR), DSCR, цена ликвидности', short: 'CVaR минимального остатка кассы, вероятность разрыва (ДИ Уилсона), DSCR, ЧДД собственника и банка — KPI §6.0 по водопаду на решении LP.',
-    screen: { id: 'plan', anchor: 'new/result' }, learnMore: 'overview', stage: 'done' },
+    screen: { id: 'plan', runSection: 'cash' }, learnMore: 'overview', stage: 'done' },
   ...formulas('crit.cash', 'criteria', ['cash.cfar', 'cash.p_breach', 'cash.t_breach_p10', 'cash.dscr_min_p05', 'cash.cash_min_p50', 'cash.wc_avg', 'cash.npv', 'cash.tax_paid']),
 
   { id: 'crit.ci', kind: 'subblock', block: 'criteria', parent: 'criteria', shape: 'point',
     title: 'ДИ и протокол доказательности', short: 'Общие случайные числа, holdout, бутстреп-ДИ, Уилкоксон, бенчмарки — METHODOLOGY-V2 §10.',
-    screen: { id: 'methodology', anchor: 'validation' }, learnMore: 'validation', stage: 'w1' },
+    screen: { id: 'methodology', anchor: 'validation' }, learnMore: 'validation', feature: 'ci' },
 ]

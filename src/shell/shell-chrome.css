@@ -1,0 +1,130 @@
+/*
+ * Оболочка: статус-бар (связь, фоновые расчёты, худшее отклонение, учётная запись) и предохранители
+ * (экран, панель, полоса). Подключается из shell.css.
+ */
+/* ── Status bar ──────────────────────────────────────────────────────────── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-4);
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+}
+.statusbar__version {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.statusbar__sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border-strong);
+}
+/* Норма — спокойно: приглушённый текст и нейтральная точка; без связи — цвет только у глифа. */
+.statusbar__conn { display: inline-flex; align-items: center; gap: 6px; }
+.statusbar__dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.statusbar__conn--checking .statusbar__dot { background: transparent; border: 1px solid var(--text-muted); }
+.statusbar__conn--offline { color: var(--text); }
+.statusbar__retry { height: 20px; margin-left: 2px; }
+.statusbar__job, .statusbar__worst {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.statusbar__job:hover, .statusbar__worst:hover { color: var(--text); background: var(--bg-hover); }
+.statusbar__job:focus-visible, .statusbar__worst:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.statusbar__spin {
+  width: 8px; height: 8px; border: 1.5px solid var(--text-muted); border-right-color: transparent; border-radius: 50%;
+  animation: maos-spin 0.9s linear infinite;
+}
+@keyframes maos-spin { to { transform: rotate(360deg); } }
+.statusbar__value {
+  color: var(--text-secondary);
+}
+.statusbar__item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.statusbar__spacer {
+  flex: 1 1 auto;
+}
+
+/* ── Предохранители (ErrorBoundary): простой текст, ✕ на глифе, сырой текст — под «Подробнее» ── */
+.screen-error {
+  max-width: 720px;
+  padding: var(--space-8);
+}
+.screen-error__card {
+  padding: 18px var(--space-5);
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+.screen-error__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+.screen-error__text {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+}
+.screen-error__more { margin: 0 0 var(--space-3); font-size: var(--fs-12); color: var(--text-muted); }
+.screen-error__more > summary { width: fit-content; cursor: pointer; }
+.screen-error__more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.screen-error__msg {
+  margin: var(--space-2) 0 0;
+  padding: 10px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--bg-app);
+  border-radius: var(--radius);
+}
+.screen-error__actions { display: flex; gap: var(--space-2); }
+.screen-error--inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: none;
+  height: var(--pipeline-h);
+  padding: 0 var(--space-4);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.screen-error--inline .screen-error__text { margin: 0; }
+/* Панель (MENTAT, палитра) упала: колонка остаётся на месте, с «Закрыть» и «Повторить». */
+.shell-panel-error {
+  position: fixed;
+  z-index: var(--z-overlay);
+  top: var(--topbar-h);
+  right: 0;
+  bottom: var(--statusbar-h);
+  width: min(var(--mt-w, 480px), 100vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-3);
+}
+.shell-panel-error__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.shell-panel-error__title { margin: 0; font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; }
+

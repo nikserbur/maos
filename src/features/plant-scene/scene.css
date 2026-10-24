@@ -1,7 +1,8 @@
 /*
- * Схема предприятия: каркас экрана (панель режимов · канвас · инспектор), оверлеи канваса
- * (крошки, легенда, подсказка), ярлыки 3D-объектов. Только токены (src/styles/tokens.css),
- * типошкала --fs-*, обе темы. Инспектор — editor-panel.css, симуляция — simulation.css.
+ * Схема предприятия: каркас (полоса режимов и уровней · канвас · правая колонка 360 px), состояния
+ * канваса, полоса времени симуляции, ярлыки 3D-объектов. Только токены и шкала --fs-*, обе темы.
+ * Цвет статуса — только у отклонений; акцент — выбор, фокус, primary. Инспектор — editor-panel.css,
+ * симуляция — simulation.css, карта — worldmap2d/worldmap2d.css.
  */
 .scene {
   height: 100%;
@@ -15,54 +16,104 @@
   display: flex;
 }
 
-/* ── Панель режимов над канвасом (X1 §1 п. 6) ──────────────────────────── */
+/* ── Полоса режимов и уровней ──────────────────────────────────────────── */
 .scene__bar {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.scene__bar-row {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   min-height: 44px;
   padding: 0 var(--space-4);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
-.scene__bar::after {
-  /* брендовая волосяная линия под панелью — та же, что у dk-head */
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 1px;
-  background: var(--grad-brand);
-  -webkit-mask-image: linear-gradient(90deg, var(--text) 0%, var(--text) 40%, transparent 70%);
-  mask-image: linear-gradient(90deg, var(--text) 0%, var(--text) 40%, transparent 70%);
-  opacity: 0.5;
-  pointer-events: none;
+.scene__bar-row--meta {
+  min-height: 30px;
+  padding-bottom: var(--space-1);
+  gap: var(--space-3);
+  justify-content: space-between;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
 }
 .scene__bar-level {
   display: inline-flex;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1 1 auto;
   font-size: var(--fs-13);
-  color: var(--text-secondary);
+  color: var(--text);
 }
-.scene__bar-level-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.scene__bar-level-count {
-  padding: 1px 7px;
-  font-size: var(--fs-11);
-  font-weight: 600;
-  color: var(--text-muted);
+.scene__crumbs { flex: 0 1 auto; }
+.scene__crumbs .dk-crumbs__cur { font-weight: 600; color: var(--text); }
+.scene__bar-count { flex: none; white-space: nowrap; color: var(--text-secondary); }
+.scene__bar-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex: none;
+}
+
+/* Вердикт плана: одна строка, числа — цветом текста; ▲ — глиф отклонения. */
+.scene__verdict {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  margin: 0;
+}
+.scene__verdict-plan { font-weight: 600; color: var(--text); text-decoration: none; border-radius: var(--radius-sm); }
+.scene__verdict-plan:hover { text-decoration: underline; text-underline-offset: 2px; }
+.scene__verdict-part { display: inline-flex; align-items: baseline; gap: 4px; }
+.scene__verdict-part a { color: var(--accent-text); }
+.scene__verdict-dot { color: var(--text-muted); }
+
+/* Легенда статусов — ряд чипов. Штатное «В работе» — нейтральный глиф. */
+.scene-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scene-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
 }
-.scene__bar-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
+.scene-legend__item b { font-weight: 600; color: var(--text); }
+.scene-legend__item.is-running .glyph-running::before,
+.stage-tag__glyph.is-calm.glyph-running::before { background: var(--text-muted); }
+
+/* «?» управление */
+.scene-help__btn { font-weight: 700; }
+.scene-help__keys { display: grid; gap: 6px; margin: 0; padding: var(--space-3) var(--space-4) var(--space-4); }
+.scene-help__keys > div { display: grid; grid-template-columns: 11rem 1fr; gap: var(--space-3); align-items: baseline; }
+.scene-help__keys dt, .scene-help__keys dd { margin: 0; font-size: var(--fs-12); }
+.scene-help__keys dd { color: var(--text-secondary); }
+.scene-help__keys kbd {
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* ── Канвас ────────────────────────────────────────────────────────────── */
@@ -71,106 +122,127 @@
   flex: 1;
   min-width: 0;
   height: 100%;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
 }
+.scene__canvas:focus-visible { outline-color: var(--focus); }
 .scene__canvas canvas {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-/* Подсказка управления — внизу справа; загрузка — вверху по центру. */
-.scene__hint {
+/* Состояния канваса: загрузка, «недоступно», первое использование, мир без карты. */
+.scene__overlay {
   position: absolute;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  padding: 6px var(--space-3);
-  font-size: var(--fs-11);
-  color: var(--text-muted);
-  background: color-mix(in oklch, var(--bg-panel) 80%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  pointer-events: none;
-}
-.scene__hint--top {
-  top: var(--space-4);
-  right: auto;
+  z-index: 4;
   left: 50%;
-  bottom: auto;
   transform: translateX(-50%);
-  color: var(--text-secondary);
+  width: min(560px, calc(100% - var(--space-8)));
 }
-
-/* ── Крошки уровней — вверху слева канваса ─────────────────────────────── */
-.breadcrumbs {
-  position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 4px var(--space-2);
-  font-size: var(--fs-13);
-  background: color-mix(in oklch, var(--bg-panel) 90%, transparent);
+.scene__overlay--top { top: var(--space-4); }
+.scene__overlay--center {
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--space-4);
+  background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
 }
-.breadcrumbs__item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+.scene__status {
+  top: var(--space-4);
+  width: auto;
+  padding: 6px var(--space-3);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
-.breadcrumbs__btn {
-  padding: 2px var(--space-1);
-  font: inherit;
-  color: var(--accent-text);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.breadcrumbs__btn:hover { color: var(--text); background: var(--bg-hover); }
-.breadcrumbs__btn:focus-visible { outline: none; box-shadow: var(--halo); }
-.breadcrumbs__btn:disabled {
-  color: var(--text);
-  font-weight: 600;
-  background: transparent;
-  cursor: default;
-}
-.breadcrumbs__sep { color: var(--text-muted); }
 
-/* ── Ярлык 3D-объекта (Html из drei) ───────────────────────────────────── */
+/* ── Полоса времени симуляции (56 px, низ канваса) ─────────────────────── */
+.scene__timeline {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 56px;
+  padding: 0 var(--space-4);
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+}
+.scene__timeline--empty { font-size: var(--fs-12); color: var(--text-secondary); }
+.scene__play {
+  width: 36px;
+  height: 36px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border-control);
+  border-radius: 50%;
+}
+.scene__play[aria-pressed='true'] { border-color: var(--text-secondary); }
+.scene__speed {
+  height: var(--control-compact);
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+}
+.scene__speed:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.scene__clock { display: flex; flex-direction: column; min-width: 12rem; line-height: 1.25; }
+.scene__clock-now { font-family: var(--font-mono); font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+.scene__clock-span { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
+.scene__scrub { flex: 1; min-width: 120px; accent-color: var(--accent); }
+
+/* ── Ярлык 3D-объекта (Html из drei, фиксированный 12 px — без distanceFactor) ─ */
 .stage-tag-wrap { pointer-events: none; }
 .stage-tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px var(--space-2) 4px var(--space-3);
+  max-width: 18rem;
+  padding: 3px var(--space-2);
   white-space: nowrap;
-  font-size: var(--fs-13);
+  font-size: var(--fs-12);
   color: var(--text);
-  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2);
-  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  box-shadow: var(--shadow-1);
 }
-.stage-tag.is-selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 30%, transparent), var(--shadow-2);
+.stage-tag.is-selected { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus), var(--shadow-1); }
+.stage-tag__glyph { display: inline-flex; font-size: var(--fs-12); line-height: 1; }
+.stage-tag__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.stage-tag__meta { flex: none; color: var(--text-secondary); }
+.stage-tag__flag { flex: none; font-size: var(--fs-12); }
+/* Постоянный маркер ▲ у узкого места / перегруженного станка. */
+.stage-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: var(--fs-12);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
 }
-.stage-tag__glyph { display: inline-flex; font-size: var(--fs-13); line-height: 1; }
-.stage-tag__title { font-weight: 500; }
-.stage-tag__meta { font-size: var(--fs-11); color: var(--text-muted); }
+.stage-mark::before { margin: 0; }
 
 /* Кнопка связи внутри ярлыка (режим редактирования) */
 .stage-connect-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   margin-left: 2px;
   color: var(--text-secondary);
@@ -182,37 +254,10 @@
   pointer-events: auto;
   flex: 0 0 auto;
 }
-.stage-connect-btn:hover {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.stage-connect-btn:focus-visible { outline: none; box-shadow: var(--halo); }
+.stage-connect-btn:hover { color: var(--text); border-color: var(--text-secondary); }
+.stage-connect-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-/* ── Легенда статусов — внизу слева (глифы ● ▲ ○ ■) ─────────────────────── */
-.legend {
-  position: absolute;
-  left: var(--space-4);
-  bottom: var(--space-4);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
-}
-.legend__title {
-  margin-bottom: var(--space-1);
-  color: var(--text-muted);
-}
-.legend__row {
-  display: flex;
-  align-items: center;
-  font-size: var(--fs-12);
-  line-height: 1.9;
-  color: var(--text-secondary);
-}
-
-/* ── Показатели узла (используются инспектором) ─────────────────────────── */
+/* ── Показатели узла (инспектор) ───────────────────────────────────────── */
 .kpi {
   display: flex;
   justify-content: space-between;
@@ -224,3 +269,10 @@
 .kpi:last-child { border-bottom: none; }
 .kpi__label { font-size: var(--fs-13); color: var(--text-secondary); }
 .kpi__value { font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-tag, .stage-connect-btn { transition: none; }
+}
+@media (forced-colors: active) {
+  .scene__canvas:focus-visible, .stage-tag.is-selected { outline: 2px solid Highlight; }
+}

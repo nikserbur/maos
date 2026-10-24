@@ -32,6 +32,8 @@ export interface DeriveInput {
   plan: { result: ScheduleResult | null; builtAt: number | null; running: boolean; params: PlanParams }
   kpi: KpiBundle | null
   forecast: ForecastResult | null
+  /** Когда прогноз опубликован «Мониторингом» (мс); нет — неизвестно. */
+  forecastAt?: number | null
   /** Волна G2: серверный паспорт по коду (GET /api/passport); null — недоступен, бейджи по умолчаниям кода. */
   passport: Readonly<Record<string, PassportParam>> | null
   /** Волна F: финансовые параметры водопада (GET /api/fin_params). */
@@ -44,8 +46,16 @@ export interface DeriveInput {
   rl?: RlStatus | null
   /** Полномочия агента (prefs agent_guardrails или локально); undefined — не загружены. */
   guardrails?: AgentGuardrails | null
+  /** Блок [8]: подключение локальной модели MENTAT (GET /api/mentat/status); undefined — статус не получен. */
+  mentat?: MentatLink | null
   /** Момент расчёта (мс); для тестов — детерминированный. */
   now: number
+}
+
+/** Что карте нужно знать о MENTAT: подключена ли модель и какая. */
+export interface MentatLink {
+  configured: boolean
+  model: string
 }
 
 export const EMPTY_COUNTS: RefCounts = {

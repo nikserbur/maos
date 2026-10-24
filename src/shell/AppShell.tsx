@@ -1,28 +1,36 @@
-import { Suspense, useEffect, useMemo } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { NavRail } from './NavRail'
 import { TopBar } from './TopBar'
 import { StatusBar } from './StatusBar'
 import { ErrorBoundary } from './ErrorBoundary'
-import { SCREENS } from './screens'
+import { Modal } from './Modal'
+import { SCREENS, buildCrumbs } from './screens'
 import { DEFAULT_SCREEN_ID, replaceRoute, useHashRoute } from './router'
 import { PipelineStrip } from '../ui/PipelineStrip'
 import { CommandPalette } from '../ui/CommandPalette'
+import { ScreenChromeContext } from '../ui/kit/ScreenHeader'
+import { UndoToast } from '../ui/kit'
 import { MentatPanel } from '../features/explain/MentatPanel'
+import { useRefs } from '../features/method-map/useMethodMapState'
+import { ReloginForm } from '../features/auth/ReloginForm'
 import { isMentatShortcut, isPaletteShortcut } from './commandIndex'
-import { overlayActions, useOverlays } from './overlays'
-import { buildCommandItems } from './useCommandItems'
+import { overlayActions, useEscapeLayer, useOverlays } from './overlays'
+import { buildCommandItems, recordRecentRoute } from './useCommandItems'
+import { SESSION_EXPIRED_EVENT, onWindowEvent } from './session'
+import { useCrumbTitles } from './crumbs'
 import './shell.css'
 
 const DEFAULT_SCREEN = SCREENS.find((screen) => screen.id === DEFAULT_SCREEN_ID) ?? SCREENS[0]
 
 /**
- * Оболочка приложения: верхняя панель + рельса навигации + контент + статус-бар.
- * Активный экран — из hash-маршрута `#/<screenId>[/<anchor>]` (router.ts): переживает
- * перезагрузку, даёт глубокие ссылки и «Назад». Неизвестный id → «Схема предприятия».
- * Экраны ленивые (React.lazy) — Suspense показывает заглушку на время загрузки чанка.
+ * Оболочка приложения: верхняя панель (крошки) + рельса + полоса методологии + экран + статус-бар.
+ * Активный экран — из hash-маршрута `#/<screenId>[/<anchor>][?query]` (router.ts): переживает F5,
+ * даёт глубокие ссылки и «Назад». Неизвестный id → «Схема предприятия». У экрана, полосы, палитры
+ * и MENTAT — свои предохранители: падение одного не гасит остальное. MENTAT, раз открытый, остаётся
+ * смонтированным (скрыт и inert), чтобы набранный вопрос пережил закрытие панели.
  */
 export default function AppShell() {
-  const { screenId, navigate } = useHashRoute()
+  const { screenId, anchor, navigate } = useHashRoute()
   const active = SCREENS.find((screen) => screen.id === screenId) ?? DEFAULT_SCREEN
   const ActiveScreen = active.Component
 
@@ -31,12 +39,8 @@ export default function AppShell() {
     if (active.id !== screenId || !window.location.hash) replaceRoute(active.id)
   }, [active.id, screenId])
 
-  useEffect(() => {
-    document.title = `${active.label} · PESCADITO`
-  }, [active.label])
 
-  // Командная палитра — Cmd/Ctrl+K, MENTAT — Cmd/Ctrl+J в любом месте (UX-V2 §7 G4); MENTAT — ещё из верхней
-  // панели, палитры и действия «Спросить MENTAT» узла карты / «i».
+  // Командная палитра — Cmd/Ctrl+K в любом месте, MENTAT — Cmd/Ctrl+J (UX-V2 §7 G4).
   const overlays = useOverlays()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -51,34 +55,89 @@ export default function AppShell() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  // Индекс собирается при открытии: прогоны из кэша и тема — на момент вызова.
-  const commandItems = useMemo(() => (overlays.palette ? buildCommandItems() : []), [overlays.palette])
+
+  // MENTAT — слой стека Esc (внешний: подсказки, меню, палитра и модалки закрываются раньше).
+  useEscapeLayer('mentat', overlayActions.closeMentat, overlays.mentat)
+  const [mentatMounted, setMentatMounted] = useState(false)
+  useEffect(() => { if (overlays.mentat) setMentatMounted(true) }, [overlays.mentat])
+  const mentatRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (mentatRef.current) mentatRef.current.inert = !overlays.mentat }, [overlays.mentat, mentatMounted])
+
+  // Сессия истекла (401 от сервера): модалка с входом на месте — экран и черновики сохраняются.
+  const [expired, setExpired] = useState(false)
+  useEffect(() => onWindowEvent(SESSION_EXPIRED_EVENT, () => setExpired(true)), [])
+
+  const chrome = useMemo(() => ({ pipeline: Boolean(active.pipeline) }), [active.pipeline])
 
   return (
     <div className={overlays.mentat ? 'shell shell--mentat' : 'shell'}>
-      <TopBar title={active.label} />
+      <RouteTitle screenId={active.id} anchor={active.id === screenId ? anchor : null} />
+      <TopBar />
       <div className="shell__body">
         <NavRail activeId={active.id} onSelect={navigate} />
         <main className="shell__content" id="maos-main">
-          {/* Полоса методологии (UX-V2 §2.4) — на экранах решений; сама не падает: ошибки ловит предохранитель. */}
+          {/* Полоса методологии (UX-V2 §2.4) — на экранах конвейера; свой предохранитель. */}
           {active.pipeline && (
-            <ErrorBoundary key={`strip-${active.id}`} label="Полоса методологии">
+            <ErrorBoundary key={`strip-${active.id}`} label="Полоса методологии" variant="inline">
               <PipelineStrip activeBlocks={active.blocks} />
             </ErrorBoundary>
           )}
           <div className="shell__screen">
             {/* key=id → предохранитель сбрасывается при переключении экрана. */}
-            <ErrorBoundary key={active.id} label={active.label}>
-              <Suspense fallback={<div className="shell__loading" role="status">Загрузка модуля…</div>}>
-                <ActiveScreen />
-              </Suspense>
-            </ErrorBoundary>
+            <ScreenChromeContext.Provider value={chrome}>
+              <ErrorBoundary key={active.id} label={active.label}>
+                <Suspense fallback={<div className="shell__loading" role="status">Загрузка модуля…</div>}>
+                  <ActiveScreen />
+                </Suspense>
+              </ErrorBoundary>
+            </ScreenChromeContext.Provider>
           </div>
         </main>
       </div>
-      <StatusBar screen={active.label} />
-      {overlays.palette && <CommandPalette items={commandItems} onClose={overlayActions.closePalette} />}
-      {overlays.mentat && <MentatPanel screenId={active.id} onClose={overlayActions.closeMentat} />}
+      <StatusBar />
+      {overlays.palette && (
+        <ErrorBoundary key="palette" label="Командная палитра" variant="panel" onClose={overlayActions.closePalette}
+          message="Палитру не удалось открыть — закройте её или повторите.">
+          <PaletteHost />
+        </ErrorBoundary>
+      )}
+      {mentatMounted && (
+        <div ref={mentatRef} className="shell__mentat" hidden={!overlays.mentat}>
+          <ErrorBoundary key="mentat" label="MENTAT" variant="panel" onClose={overlayActions.closeMentat}>
+            <MentatPanel screenId={active.id} onClose={overlayActions.closeMentat} />
+          </ErrorBoundary>
+        </div>
+      )}
+      {expired && (
+        <Modal title="Сессия истекла" onClose={() => setExpired(false)}>
+          <ReloginForm onDone={() => setExpired(false)} />
+        </Modal>
+      )}
+      <UndoToast />
     </div>
   )
+}
+
+/**
+ * Заголовок вкладки и «Недавние» палитры — каноническое имя экрана и объект из крошек
+ * («ТК-12 Вал · Техкарты · Справочники · PESCADITO»). Отдельный компонент: имя объекта, которое
+ * сообщает экран, перерисовывает только его, а не всю оболочку.
+ */
+function RouteTitle({ screenId, anchor }: { screenId: string; anchor: string | null }) {
+  useCrumbTitles()
+  const crumbs = buildCrumbs(screenId, anchor)
+  const pageTitle = crumbs.map((c) => c.label).reverse().join(' · ')
+  const trail = crumbs.map((c) => c.label).join(' › ')
+  useEffect(() => {
+    document.title = `${pageTitle} · PESCADITO`
+    recordRecentRoute(window.location.hash || `#/${screenId}`, trail)
+  }, [pageTitle, trail, screenId])
+  return null
+}
+
+/** Палитра: индекс собирается при открытии (прогоны из кэша, сценарии из справочников, тема). */
+function PaletteHost() {
+  const refs = useRefs()
+  const items = useMemo(() => buildCommandItems({ scenarios: refs.scenarios }), [refs.scenarios])
+  return <CommandPalette items={items} onClose={overlayActions.closePalette} />
 }

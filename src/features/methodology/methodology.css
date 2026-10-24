@@ -64,15 +64,17 @@
   background: transparent;
   transition: background var(--dur) var(--ease-out);
 }
+.mth-toc__item { text-decoration: none; }
 .mth-toc__item:hover { color: var(--text); background: var(--bg-hover); }
+.mth-toc__item:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 .mth-toc__item.is-active { color: var(--text); background: color-mix(in oklch, var(--ultramarine) 12%, transparent); }
 .mth-toc__item.is-active::before { background: var(--grad-brand); }
-.mth-toc__num { color: var(--text-disabled); font-size: var(--fs-11); min-width: 18px; }
+.mth-toc__num { color: var(--text-muted); font-size: var(--fs-11); min-width: 18px; }
 .mth-toc__item.is-active .mth-toc__num { color: var(--accent-text); }
 
 /* ── Герой ──────────────────────────────────────────────────────────────── */
 .mth-hero { padding: var(--space-8) 0 var(--space-6); border-bottom: 1px solid var(--border); margin-bottom: var(--space-6); }
-.mth-hero__eyebrow { color: var(--ochre); }
+.mth-hero__eyebrow { color: var(--text-muted); }
 .mth-hero__title {
   font-family: var(--font-display);
   font-weight: 400;
@@ -90,7 +92,10 @@
 /* ── Раздел ─────────────────────────────────────────────────────────────── */
 .mth-sec { padding: var(--space-8) 0 var(--space-6); scroll-margin-top: var(--space-4); }
 .mth-sec + .mth-sec { border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent); }
-.mth-sec__meta { display: flex; gap: var(--space-3); align-items: baseline; }
+.mth-sec__meta { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; }
+.mth-sec__map { margin-left: auto; font-size: var(--fs-12); color: var(--text-muted); text-decoration: none; }
+.mth-sec__map:hover { color: var(--accent-text); text-decoration: underline; }
+.mth-sec__map:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-radius: 2px; }
 .mth-sec__num {
   font-family: var(--font-display);
   font-size: var(--fs-13);
@@ -117,11 +122,20 @@
 .mth-steps { padding-left: 1.3em; }
 .mth-steps li + li { margin-top: var(--space-2); }
 .mth-steps li::marker { color: var(--ochre); font-weight: 600; }
+.mth-steps--blocks { list-style: none; padding-left: 0; }
+.mth-steps--blocks .block-chip { margin-right: var(--space-1); }
+.mth-steps--blocks .dk-chip { vertical-align: middle; }
+.mth-details { margin-top: var(--space-4); }
+.mth-details > summary { width: fit-content; font-size: var(--fs-13); color: var(--text-secondary); cursor: pointer; }
+.mth-details[open] > summary { margin-bottom: var(--space-3); }
 
 /* ── Чипы статуса ───────────────────────────────────────────────────────── */
 .dk-chip.mth-chip { height: 24px; font-size: var(--fs-11); }
 .mth-chip__stage { font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .mth-chip__what { font-weight: 400; color: var(--text-muted); }
+/* Единый STAGE_META (src/explain/stages.ts): реализовано — ● нейтрально-хорошо, волны — ○ пунктиром. */
+.dk-chip.mth-chip--done { color: var(--text-secondary); background: transparent; border-color: var(--border-strong); }
+.dk-chip.mth-chip--planned { color: var(--text-muted); background: transparent; border-color: var(--border-strong); border-style: dashed; }
 
 /* ── Рисунок ────────────────────────────────────────────────────────────── */
 .mth-fig {

@@ -1,0 +1,124 @@
+{
+ "snapshot_date": "2026-10-24",
+ "source": "rl/results/a3/champion_a3.json · rl/results/a3/v5_a3.json · rl/results/a4/champions_a4.json · rl/results/a4/distill_a4.json",
+ "a3": {
+  "n_instances": 30,
+  "seeds": 3,
+  "seeds_converged": 3,
+  "gate_pass": false,
+  "gate_g1": true,
+  "gate_g2_prereg": true,
+  "vs_best_rule": {
+   "iqm": 1.46,
+   "ci95": [
+    1.008,
+    1.917
+   ],
+   "p": 1.30385160446167e-07,
+   "win_share": 0.9667
+  },
+  "vs_champion": {
+   "iqm": 0.938,
+   "ci95": [
+    0.61,
+    1.417
+   ]
+  },
+  "vs_strict": {
+   "iqm": 0.0,
+   "ci95": [
+    0.0,
+    0.021
+   ],
+   "p": 0.156
+  },
+  "candidate_overtime": {
+   "variant": "B",
+   "seed": 1,
+   "deviations": [
+    {
+     "instance": "a3-s09",
+     "d_pct_v": 1.444
+    },
+    {
+     "instance": "a3-m14",
+     "d_pct_v": -0.265
+    },
+    {
+     "instance": "a3-m17",
+     "d_pct_v": 1.24
+    },
+    {
+     "instance": "a3-l21",
+     "d_pct_v": 0.331
+    },
+    {
+     "instance": "a3-l22",
+     "d_pct_v": -0.309
+    },
+    {
+     "instance": "a3-l23",
+     "d_pct_v": 0.481
+    }
+   ]
+  },
+  "units": "% V (стоимость портфеля), IQM по экземплярам"
+ },
+ "a4": {
+  "n_instances": 60,
+  "holdout_complete": false,
+  "champion_counts": {
+   "C*": 49,
+   "best_rule": 4,
+   "LA*": 4,
+   "GA": 2,
+   "CPSAT": 1
+  },
+  "mean_vs_rule_pct_v": {
+   "C*": 1.41,
+   "CPSAT": -3.02,
+   "GA": -2.99,
+   "LA*": -0.6
+  },
+  "variants": [
+   {
+    "id": "A",
+    "decisions_m": 0.5,
+    "val_lo": 0.0,
+    "val_hi": 0.0
+   },
+   {
+    "id": "B",
+    "decisions_m": 0.5,
+    "val_lo": 0.0,
+    "val_hi": 0.0
+   },
+   {
+    "id": "C",
+    "decisions_m": 2.0,
+    "val_lo": -0.0002,
+    "val_hi": 0.0
+   },
+   {
+    "id": "D",
+    "decisions_m": 1.76,
+    "val_lo": -0.0027,
+    "val_hi": -0.002
+   }
+  ],
+  "distill": {
+   "A3B": {
+    "n_states": 21795,
+    "n_deviation_states": 4805,
+    "adv_mean_pct_v": -0.018,
+    "adv_pos_share": 0.537
+   },
+   "A4D": {
+    "n_states": 27753,
+    "n_deviation_states": 150,
+    "adv_mean_pct_v": -0.013,
+    "adv_pos_share": 0.16
+   }
+  }
+ }
+}

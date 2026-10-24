@@ -4,20 +4,23 @@
  * `<html data-theme>` стиль переключается на лету, слои дорог восстанавливаются после
  * `style.load`. Рендерится как обычный DOM-компонент (НЕ внутри R3F Canvas) на уровне `world`.
  *
- * Заводы/склад — пины «цвет статуса + глиф (● ▲ ○ ■)» в реальных городах (см. cities.ts);
- * выбранный — акцент с ореолом. Дороги склад↔заводы — настоящие трассы через OSRM, при
- * недоступности сети — прямая линия. Наведение на пин — карточка KPI (`MapCard`, React-портал
- * в popup MapLibre — X1 §1 п. 7).
+ * Заводы/склад — пины в реальных городах (см. cities.ts; без настоящих координат пина нет —
+ * X2 P-35): штатный статус нейтрален, цвет и глиф — только у отклонений (▲ ТО, ■ авария),
+ * акцент — только у выбранного (X2 P-40). Пины доступны с клавиатуры (X2 P-32): Tab, Enter/Space —
+ * выбрать, Shift+Enter — войти на площадку. Дороги — настоящие трассы через OSRM (офлайн — прямая).
+ * Наведение или фокус на пине — карточка KPI (`MapCard`, React-портал в popup MapLibre).
  *
- * Требует интернет (тайлы CARTO + маршруты OSRM). Drop-in: те же 7 пропсов + onBackground.
+ * Требует интернет (тайлы CARTO + маршруты OSRM).
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { SceneNode, SceneEdge, SceneGraph } from './graph/sceneModel'
+import { statusWord } from './graph/status'
 import { STATUS_META } from './types'
 import { useThemeColors, type ThemeColors } from './themeColors'
+import type { NodeOps } from './sceneOps'
 import { nodeLngLat } from './worldmap2d/cities'
 import { MapCard, type MapCardStats } from './worldmap2d/MapCard'
 import {
@@ -40,6 +43,8 @@ export interface WorldMap2DProps {
   onMove: (id: string, position: [number, number]) => void
   onBackground?: () => void
   graph?: SceneGraph
+  /** Загрузка предприятий по последнему плану (карточка пина). */
+  ops?: ReadonlyMap<string, NodeOps>
 }
 
 type LngLat = [number, number]
@@ -62,7 +67,7 @@ function factoryStats(graph: SceneGraph | undefined): Map<string, MapCardStats> 
   return m
 }
 
-export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBackground, graph }: WorldMap2DProps) {
+export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBackground, graph, ops }: WorldMap2DProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const readyRef = useRef(false)
@@ -81,10 +86,14 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
   const colors = useThemeColors()
   const colorsRef = useRef(colors)
   colorsRef.current = colors
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
 
   const stats = useMemo(() => factoryStats(graph), [graph])
   const placed = useMemo(
-    () => nodes.filter((n) => n.refType === 'factory').map((n) => ({ node: n, lngLat: nodeLngLat(n) as LngLat })),
+    () => nodes.filter((n) => n.refType === 'factory')
+      .map((n) => ({ node: n, lngLat: nodeLngLat(n) }))
+      .filter((p): p is { node: SceneNode; lngLat: LngLat } => p.lngLat !== null),
     [nodes],
   )
   if (!cardElRef.current && typeof document !== 'undefined') {
@@ -148,27 +157,38 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
       for (const { node, lngLat } of placed) {
         const warehouse = node.kind === 'wirehouse'
         const meta = STATUS_META[node.status]
+        const word = statusWord(node.refType, node.status)
         const el = document.createElement('div')
-        el.className = `wm2d-pin wm2d-pin--${node.status}` + (node.id === selectedId ? ' is-selected' : '')
+        el.className = `wm2d-pin wm2d-pin--${node.status}` + (node.id === selectedRef.current ? ' is-selected' : '')
         el.setAttribute('role', 'button')
-        el.setAttribute('aria-label', `${node.title} — ${meta.label}`)
+        el.setAttribute('tabindex', '0')
+        el.setAttribute('aria-pressed', String(node.id === selectedRef.current))
+        el.setAttribute('aria-label', `${node.title} — ${word}. Enter — выбрать, Shift+Enter — войти на площадку`)
         el.innerHTML =
           `<div class="wm2d-pin__body"><div class="wm2d-pin__badge">${warehouse ? ICON_WAREHOUSE : ICON_FACTORY}` +
           `<span class="wm2d-pin__glyph ${meta.glyphClass}"></span></div><div class="wm2d-pin__tip"></div></div>`
         const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(lngLat).addTo(map)
-        el.addEventListener('mouseenter', () => {
+        const showCard = () => {
           const popup = popupRef.current, card = cardElRef.current
           if (!popup || !card) return
           setHoverId(node.id)
           popup.setLngLat(lngLat).setDOMContent(card).addTo(map)
-        })
-        el.addEventListener('mouseleave', () => {
-          if (node.id === selectedId) return
+        }
+        const hideCard = () => {
+          if (node.id === selectedRef.current) return
           popupRef.current?.remove()
           setHoverId((h) => (h === node.id ? null : h))
-        })
+        }
+        el.addEventListener('mouseenter', showCard)
+        el.addEventListener('mouseleave', hideCard)
+        el.addEventListener('focus', showCard)
+        el.addEventListener('blur', hideCard)
         el.addEventListener('click', (e) => { e.stopPropagation(); cbRef.current.onSelect(node.id) })
         el.addEventListener('dblclick', (e) => { e.stopPropagation(); cbRef.current.onEnter(node.id) })
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); cbRef.current.onEnter(node.id); return }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cbRef.current.onSelect(node.id) }
+        })
         store.set(node.id, marker)
       }
       // Первое авто-кадрирование по узлам.
@@ -181,7 +201,16 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
     }
     if (readyRef.current) build()
     else map.once('wm2d:ready', build)
-  }, [placed, selectedId])
+  }, [placed])
+
+  // ── Выбор: только классы существующих пинов (пересборка сбила бы фокус клавиатуры) ──
+  useEffect(() => {
+    for (const [id, marker] of markersRef.current) {
+      const el = marker.getElement()
+      el.classList.toggle('is-selected', id === selectedId)
+      el.setAttribute('aria-pressed', String(id === selectedId))
+    }
+  }, [selectedId, placed])
 
   // ── Дороги: прямые линии сразу + реальные трассы OSRM асинхронно ──
   useEffect(() => {
@@ -217,7 +246,7 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
   return (
     <div className="wm2d">
       <div className="wm2d__map" ref={boxRef} />
-      {hovered && cardElRef.current && createPortal(<MapCard node={hovered} stats={stats.get(hovered.id)} />, cardElRef.current)}
+      {hovered && cardElRef.current && createPortal(<MapCard node={hovered} stats={stats.get(hovered.id)} ops={ops?.get(hovered.id)} />, cardElRef.current)}
     </div>
   )
 }

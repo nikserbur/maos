@@ -53,6 +53,9 @@ export class MentatHttpError extends Error {
 /** 503 — модель не подключена (не ошибка продукта). */
 export const isNotConnected = (e: unknown): boolean => e instanceof MentatHttpError && e.status === 503
 
+/** Запрос отменён кнопкой «Остановить» (AbortController) — не ошибка. */
+export const isAborted = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { name?: string }).name === 'AbortError'
+
 async function call<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -76,5 +79,6 @@ export const mentatApi = {
   /** Статус подключения; probe — проверить, отвечает ли модель (короткий таймаут на сервере). */
   status: (probe = false) => call<MentatStatus>('GET', `/status${probe ? '?probe=1' : ''}`).then(normalizeStatus),
   saveSettings: (s: LlmSettings) => call<MentatStatus>('PUT', '/settings', s).then(normalizeStatus),
+  /** Вопрос модели; `signal` — «Остановить»: fetch отменяется, сервер видит закрытое соединение. */
   ask: (body: AskBody, signal?: AbortSignal) => call<MentatAnswer>('POST', '/ask', body, signal),
 }

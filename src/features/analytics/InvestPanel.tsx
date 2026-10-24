@@ -1,145 +1,145 @@
 /**
- * Инвестпроекты (X1 §6.3 п. 6): калькулятор докупки станков узкого места. Поля — ParamField
- * с единицами и «i»; результат — карточка «NPV · IRR · срок» рядом с формой (bento), вердикт —
- * чип с глифом, числа всегда `--text` и только через format.ts.
+ * Инвестпроекты (P-111, P-118): докупка оборудования, по умолчанию — для узкого места (первая строка
+ * ранжира; `?wc=` в адресе — выбор пользователя). Ставка дисконта — ключевая + спред из финпараметров
+ * проекта с бейджем происхождения паспорта; цена станка — в млн ₽. Результат — вердикт движка по
+ * сценариям (InvestResult), детерминированная оценка свёрнута. Прогресс — по прогонам, с «Отменить».
  */
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { api, type InvestmentResult, type WorkCenterType } from '../../lib/api'
-import { InfoTip } from '../../ui/InfoTip'
 import { ParamField } from '../../ui/ParamField'
-import { Chip, EmptyState, ErrorBanner, errorText } from '../../ui/kit'
-import { money, num, pct } from '../../explain/format'
+import { RunProgress, type RunPhase } from '../../ui/RunProgress'
+import { EmptyState, ErrorBanner } from '../../ui/kit'
+import { num, pct } from '../../explain/format'
+import { usePassport } from '../passport/passportStore'
 import type { TypeLoad } from './analyticsModel'
+import { chosenCandidate } from './investModel'
 import { publishInvest } from './investStore'
+import { DeterministicEstimate, InvestCandidates, InvestVerdictCard } from './InvestResult'
 
 const SAMPLES = 500
-const MONTHS_IN_YEAR = 12
+const MLN = 1e6
+const DEFAULT_RATE_PCT = 18
+const ETA_SECONDS = 25
+
+const phases = (n: number): RunPhase[] => [
+  { id: 'base', title: 'Прогон 1 из 2: портфель без докупки', weight: 0.35, mapNode: 'dec.portfolio' },
+  { id: 'plus', title: `Прогон 2 из 2: портфель с +${num(n, 0)} станк.`, weight: 0.35, mapNode: 'dec.portfolio' },
+  { id: 'crn', title: 'Вердикт по сценариям: кандидаты на отбирающем и отложенном наборах', weight: 0.3, mapNode: 'dec.invest' },
+]
 
 interface InvestPanelProps {
   wcTypes: ReadonlyArray<WorkCenterType>
+  /** Ранжир загрузки: первая строка — узкое место (тип по умолчанию). */
   loads: ReadonlyArray<TypeLoad>
-  /** Тип РЦ, выбранный на других вкладках («Инвестпроект» у узкого места). */
+  /** Тип из адреса (`?wc=`): «Инвестпроект» у узкого места или выбор в форме. */
   preselect: string
   nameOfType: (id: string) => string
+  onType: (wcTypeId: string) => void
 }
 
-export function InvestPanel({ wcTypes, loads, preselect, nameOfType }: InvestPanelProps) {
-  const [wct, setWct] = useState(preselect || wcTypes[0]?.id || '')
+export function InvestPanel({ wcTypes, loads, preselect, nameOfType, onType }: InvestPanelProps) {
+  const passport = usePassport()
+  const wct = preselect || loads[0]?.typeId || wcTypes[0]?.id || ''
   const [addN, setAddN] = useState(2)
-  const [capex, setCapex] = useState(2_500_000)
-  const [disc, setDisc] = useState(18)
+  const [capexM, setCapexM] = useState(2.5)
+  const [discEdit, setDiscEdit] = useState<number | null>(null)
   const [life, setLife] = useState(60)
   const [demand, setDemand] = useState(1)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<InvestmentResult | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  useEffect(() => { if (preselect) setWct(preselect) }, [preselect])
+  const [err, setErr] = useState<unknown>(null)
+  const [cancelled, setCancelled] = useState(false)
+  const runId = useRef(0)
+
+  const fin = passport.fin
+  const discDefault = fin ? (fin.key_rate + fin.spread) * 100 : DEFAULT_RATE_PCT
+  const disc = discEdit ?? discDefault
+  const rateStatus = fin ? passport.byCode['fin.key_rate']?.status ?? 'НОРМ' : undefined
+  const rateOwner = fin ? `ключевая ${pct(fin.key_rate, 0)} + спред ${pct(fin.spread, 0)} · финпараметры проекта` : 'финпараметры не прочитаны — значение по умолчанию'
 
   const run = async () => {
-    if (!wct) { setErr('Выберите тип оборудования'); return }
-    setRunning(true); setErr(null); setResult(null)
+    if (!wct) { setErr(new Error('Выберите тип оборудования')); return }
+    const id = ++runId.current
+    setRunning(true); setErr(null); setCancelled(false)
     try {
       const r = await api.analytics.investment({
         wc_type_id: wct, add_machines: Math.max(1, Math.round(addN)),
-        machine_capex: Math.max(0, capex), discount_rate: disc / 100,
+        machine_capex: Math.max(0, capexM * MLN), discount_rate: disc / 100,
         life_months: Math.max(1, Math.round(life)), demand: Math.max(0.1, demand), samples: SAMPLES,
       })
+      if (id !== runId.current) return
       setResult(r)
       publishInvest(r) // MENTAT объясняет уже посчитанный проект
-    } catch (e) { setErr(errorText(e, 'Ошибка расчёта инвестпроекта')) } finally { setRunning(false) }
+    } catch (e) {
+      if (id === runId.current) setErr(e)
+    } finally {
+      if (id === runId.current) setRunning(false)
+    }
   }
+  const cancel = () => { runId.current += 1; setRunning(false); setCancelled(true) }
 
   const load = loads.find((l) => l.typeId === wct)
+  const chosen = result ? chosenCandidate(result.crn, result.wc_type_id) : null
   return (
-    <div className="dk-bento an-invest">
-      <section className="dk-card dk-span-7 dk-stack dk-rise" aria-label="Параметры инвестпроекта">
-        <div className="dk-card__head">
-          <h2 className="dk-card__title">Докупка оборудования</h2>
-          <span className="dk-card__meta">узкое место → +N станков → прирост выпуска через рынок → окупаемость</span>
-        </div>
-        <div className="an-form">
-          <ParamField label="Тип оборудования" value={null} size="md">
-            <select className="dk-select" value={wct} onChange={(e) => setWct(e.target.value)} aria-label="Тип оборудования">
-              {wcTypes.map((t) => {
-                const l = loads.find((x) => x.typeId === t.id)
-                return <option key={t.id} value={t.id}>{t.name}{l ? ` · загрузка ${pct(l.utilization, 0)}` : ''}</option>
-              })}
-            </select>
-          </ParamField>
-          <ParamField label="Докупить" unit="шт" value={addN} min={1} max={50} step={1} onChange={setAddN} size="md" />
-          <ParamField label="Цена станка" unit="₽" value={capex} min={0} step={100_000} onChange={setCapex} size="md" info="invest.capex"
-            infoValues={{ n: addN, price: capex, capex: addN * capex }} />
-          <ParamField label="Ставка дисконта" unit="% в год" value={disc} min={0} max={60} step={1} range={[5, 40]} onChange={setDisc} size="md" />
-          <ParamField label="Срок службы" unit="мес" value={life} min={1} step={12} range={[12, 240]} onChange={setLife} size="md" />
-          <ParamField label="Множитель спроса" value={demand} min={0.1} step={0.5} range={[0.5, 3]} onChange={setDemand} size="md"
-            note="сценарный множитель годового спроса (стресс рынка)" />
-        </div>
-        {load && (
-          <p className="an-note">
-            Сейчас «{load.name}»: {num(load.machines, 0)} станк., загрузка <b>{pct(load.utilization, 0)}</b>
-            {load.laborBound && <> — операторов лишь {num(load.operators, 0)}, докупка станков без операторов не поможет</>}.
-          </p>
-        )}
-        {err && <ErrorBanner message={err} onDismiss={() => setErr(null)} />}
-        <div className="an-form__cta">
-          <button type="button" className="btn btn--primary dk-cta" onClick={run} disabled={running}>
-            {running ? 'Считаем (2 прогона оптимизатора)…' : 'Рассчитать инвестпроект'}
-          </button>
-        </div>
-      </section>
+    <>
+      <div className="dk-bento an-invest">
+        <section className="dk-card dk-span-5 dk-stack" aria-label="Параметры инвестпроекта">
+          <div className="dk-card__head">
+            <h2 className="dk-card__title">Докупка оборудования</h2>
+          </div>
+          <div className="an-form">
+            <ParamField label="Тип оборудования" value={null} size="md">
+              <select className="dk-select" value={wct} onChange={(e) => onType(e.target.value)} aria-label="Тип оборудования">
+                {wcTypes.map((t) => {
+                  const l = loads.find((x) => x.typeId === t.id)
+                  const tail = l ? ` · загрузка ${pct(l.utilization, 0)}${l === loads[0] ? ' · узкое место' : ''}` : ''
+                  return <option key={t.id} value={t.id}>{t.name}{tail}</option>
+                })}
+              </select>
+            </ParamField>
+            <ParamField label="Докупить" unit="шт" value={addN} min={1} max={50} step={1} onChange={setAddN} size="md" />
+            <ParamField label="Цена станка" unit="млн ₽" value={capexM} min={0} step={0.1} onChange={setCapexM} size="md" info="invest.capex"
+              infoValues={{ n: addN, price: capexM * MLN, capex: addN * capexM * MLN }} />
+            <ParamField label="Ставка дисконта" unit="% в год" value={disc} min={0} max={60} step={0.5} range={[5, 40]} size="md"
+              status={rateStatus} owner={rateOwner} changed={discEdit !== null && discEdit !== discDefault}
+              onRevert={() => setDiscEdit(null)} onChange={setDiscEdit} />
+            <ParamField label="Срок службы" unit="мес" value={life} min={1} step={12} range={[12, 240]} onChange={setLife} size="md" />
+            <ParamField label="Множитель спроса" unit="×" value={demand} min={0.1} step={0.5} range={[0.5, 3]} onChange={setDemand} size="md"
+              hint="Сценарный множитель годового спроса (стресс рынка): 1 — как в сценарии." />
+          </div>
+          <p className="an-form__defaults"><span className="mm-glyph mm-glyph--default" aria-hidden="true" /> Остальные значения — по умолчанию; ставка — из финпараметров проекта.</p>
+          {load && (
+            <p className="an-note">
+              Сейчас «{load.name}»: {num(load.machines, 0)} станк., загрузка {pct(load.utilization, 0)}
+              {load.laborBound && <> — операторов лишь {num(load.operators, 0)}, докупка станков без операторов не поможет</>}.
+            </p>
+          )}
+          {err ? <ErrorBanner error={err} onDismiss={() => setErr(null)} onRetry={run} /> : null}
+          {cancelled && !running && <p className="an-muted">Расчёт отменён — сервер может досчитать в фоне, но результат не будет показан.</p>}
+          <div className="an-form__cta">
+            {running ? (
+              <div className="an-run">
+                <RunProgress phases={phases(addN)} running etaSeconds={ETA_SECONDS} title="Инвестпроект" />
+                <button type="button" className="btn btn--sm" onClick={cancel}>Отменить</button>
+              </div>
+            ) : (
+              <button type="button" className="btn btn--primary" onClick={run}>Рассчитать инвестпроект</button>
+            )}
+          </div>
+        </section>
 
-      <div className="dk-span-5 dk-rise">
-        {result
-          ? <InvestResult r={result} name={nameOfType(result.wc_type_id)} />
-          : <EmptyState title="Результат появится здесь" variant="chart" size="sm">NPV, IRR и срок окупаемости для выбранного типа и числа станков.</EmptyState>}
+        <div className="dk-span-7">
+          {result
+            ? <InvestVerdictCard r={result} chosen={chosen} nameOfType={nameOfType} />
+            : (
+              <EmptyState title="Здесь появится вердикт: применять или нет" quiet size="sm" variant="chart">
+                ЧДД с 95 %-ДИ по сценариям, частота убытка и сдвиг частоты разрыва кассы к базе — для выбранного типа.
+              </EmptyState>
+            )}
+        </div>
       </div>
-    </div>
-  )
-}
-
-/* ── Карточка результата: NPV · IRR · срок — герои 24 px, остальное — список ── */
-function InvestResult({ r, name }: { r: InvestmentResult; name: string }) {
-  const paysBack = r.payback_months > 0
-  const rm = (1 + r.discount_annual) ** (1 / MONTHS_IN_YEAR) - 1
-  const vals = { capex: r.capex, dcf: r.delta_cf_month, life: r.life_months, r: r.discount_annual, rm, npv: r.npv, irr: r.irr_annual, roi: r.roi }
-  return (
-    <section className={`dk-card an-result${paysBack ? ' an-result--ok' : ' an-result--bad'}`} aria-label="Результат инвестпроекта">
-      <div className="dk-card__head">
-        <h2 className="dk-card__title">{name} +{num(r.add_machines, 0)} станк.</h2>
-        <Chip tone={paysBack ? 'good' : 'bad'}>{paysBack ? 'окупается' : 'не окупается'}</Chip>
-      </div>
-      {!paysBack && <p className="an-note">Прирост прибыли ≈ 0 — при этом спросе тип не является ограничением.</p>}
-      <div className="an-result__heroes">
-        <HeroValue label="NPV" info="invest.npv" values={vals} text={money(r.npv)} />
-        <HeroValue label="IRR" info="invest.irr" values={vals} text={paysBack ? pct(r.irr_annual, 0) : '—'} />
-        <HeroValue label="Срок" info="invest.dpp" values={{ dpp: paysBack ? r.payback_months : null, spp: r.delta_cf_month > 0 ? r.capex / r.delta_cf_month : null }}
-          text={paysBack ? `${num(r.payback_months, 1)} мес` : '—'} />
-      </div>
-      <dl className="an-result__list">
-        <dt>CAPEX <InfoTip id="invest.capex" values={{ n: r.add_machines, price: r.add_machines > 0 ? r.capex / r.add_machines : null, capex: r.capex }} /></dt>
-        <dd>{money(r.capex)}</dd>
-        <dt>Прирост прибыли <InfoTip id="invest.delta_cf" values={{ dcf: r.delta_cf_month, p0: r.profit_before, p1: r.profit_after, months: r.plan_months }} /></dt>
-        <dd>{money(r.delta_cf_month)}/мес</dd>
-        <dt>ROI за срок <InfoTip id="invest.roi" values={vals} /></dt>
-        <dd>{pct(r.roi, 0)}</dd>
-        <dt>Загрузка типа</dt>
-        <dd>{pct(r.util_before, 0)} → {pct(r.util_after, 0)}</dd>
-        {r.next_bottleneck.wc_name && (
-          <>
-            <dt>Ограничение перейдёт к <InfoTip id="invest.next_bottleneck" values={{ name: r.next_bottleneck.wc_name, util: r.next_bottleneck.utilization, before: r.util_before, after: r.util_after }} /></dt>
-            <dd>{r.next_bottleneck.wc_name} · {pct(r.next_bottleneck.utilization, 0)}{r.next_bottleneck.utilization > 0.9 && <Chip size="sm" tone="setup">следующий кандидат</Chip>}</dd>
-          </>
-        )}
-      </dl>
-    </section>
-  )
-}
-
-function HeroValue({ label, info, values, text }: { label: string; info: string; values: Readonly<Record<string, number | null>>; text: string }) {
-  return (
-    <div className="an-hero">
-      <span className="an-hero__k text-caps">{label}<InfoTip id={info} values={values} /></span>
-      <span className="an-hero__v">{text}</span>
-    </div>
+      {result?.crn?.status === 'ok' && <InvestCandidates crn={result.crn} chosen={chosen} nameOfType={nameOfType} />}
+      {result && <DeterministicEstimate r={result} name={nameOfType(result.wc_type_id)} />}
+    </>
   )
 }

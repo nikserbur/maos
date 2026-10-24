@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { groupRows, nextSort, sortRows, type ColumnSpec } from './tableModel'
+import { NBSP } from '../../explain/format'
+import { countLabel, groupLabel, groupRows, nextSort, sortRows, type ColumnSpec } from './tableModel'
 
 interface Row { name: string; qty: number | null; shop: string }
 
@@ -64,5 +65,20 @@ describe('nextSort', () => {
 
   it('клик по другой колонке начинает с её первого направления', () => {
     expect(nextSort({ key: 'name', dir: 'desc' }, 'qty', true)).toEqual({ key: 'qty', dir: 'desc' })
+  })
+})
+
+describe('group and count labels', () => {
+  it('group header reads «Сегодня · 24»', () => {
+    expect(groupLabel('Сегодня', 24)).toBe('Сегодня · 24')
+    expect(groupLabel('', 3)).toBe('Без группы · 3')
+  })
+  it('count reads «12 из 82 записей», all shown — «82 записи»', () => {
+    const sp = (t: string) => t.replace(/ (?=[а-я])(?!из)/g, NBSP)
+    expect(countLabel(12, 82)).toBe(sp('12 из 82 записей'))
+    expect(countLabel(82, 82)).toBe(sp('82 записи'))
+    expect(countLabel(3, 21)).toBe(sp('3 из 21 записи'))
+    expect(countLabel(1, 1)).toBe(sp('1 запись'))
+    expect(countLabel(5, 11, ['заказ', 'заказа', 'заказов'])).toBe(sp('5 из 11 заказов'))
   })
 })

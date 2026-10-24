@@ -1,267 +1,107 @@
 /*
- * Визуальный редактор AI-воркфлоу — раскладка палитра / канвас / инспектор.
- * Только токены дизайн-системы MAOS, без хардкода палитры.
+ * «AI-воркфлоу»: верхняя полоса · палитра / канвас / инспектор. Общий язык графов: карточка .gc-node
+ * (нейтральная, полоса --block-8 только у шагов LLM), тип — глифом и словом в --text-muted, рёбра —
+ * нейтральные, выделение — фокусом. Без hex и rgba: только токены.
  */
-.wfb {
-  height: 100%;
-  display: flex;
-  min-height: 0;
-  min-width: 0;
-}
+.wfb { height: 100%; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg-app); }
+.wfb__bar { flex: none; padding: var(--space-3) var(--space-5) 0; background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+.wfb__bar .dk-head { padding-bottom: var(--space-2); }
+.wfb__kbd { margin-left: var(--space-1); font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-muted); }
+.wfb__body { flex: 1 1 auto; display: flex; min-height: 0; min-width: 0; }
+.wfb__side-title { margin: 0 0 var(--space-2); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.wfb__glyph { display: inline-block; width: 1.1em; text-align: center; color: var(--text-muted); font-family: var(--font-sans); }
 
-/* ── Палитра узлов (слева) ─────────────────────────────────────────────── */
-.wfb__palette {
-  width: 232px;
-  flex: 0 0 auto;
-  padding: var(--space-3) var(--space-2);
-  overflow-y: auto;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
-}
-.wfb__palette-title {
-  padding: var(--space-1) var(--space-2) var(--space-2);
-  font-size: var(--fs-11);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-.wfb__palette-hint {
-  padding: 0 var(--space-2) var(--space-3);
-  font-size: var(--fs-11);
-  line-height: 1.5;
-  color: var(--text-muted);
-}
+/* ── Палитра типов (слева) ─────────────────────────────────────────────── */
+.wfb__palette { width: 216px; flex: none; padding: var(--space-3) var(--space-2); overflow-y: auto; background: var(--bg-panel); border-right: 1px solid var(--border); }
+.wfb__palette .wfb__side-title { padding: 0 var(--space-2); }
 .wfb__palette-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: 4px;
-  font-size: var(--fs-13);
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 30px; margin-bottom: 2px;
+  padding: var(--space-1) var(--space-2); text-align: left; font: inherit; font-size: var(--fs-13); color: var(--text-secondary);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.wfb__palette-btn:hover {
-  color: var(--text);
-  background: var(--bg-input);
-  border-color: var(--border-strong);
-}
-.wfb__swatch {
-  flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-sm);
-}
+.wfb__palette-btn:hover { color: var(--text); background: var(--bg-hover); }
+.wfb__palette-btn:focus-visible { outline: 2px solid transparent; border-color: var(--focus); box-shadow: var(--halo); }
+.wfb__palette-btn--llm .wfb__glyph { color: var(--block-8); }
 
-/* ── Центральная область: шапка + канвас ───────────────────────────────── */
-.wfb__center {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+/* ── Центр: строка подсказок + канвас ─────────────────────────────────── */
+.wfb__center { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.wfb__tools {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); flex-wrap: wrap;
+  padding: 6px var(--space-4); font-size: var(--fs-12); color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--bg-panel);
 }
-.wfb__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  padding: var(--space-4) var(--space-5) var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-.wfb__title {
-  font-size: var(--fs-16);
-  font-weight: 600;
-}
-.wfb__desc {
-  margin-top: 4px;
-  max-width: 560px;
-  font-size: var(--fs-12);
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-.wfb__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-.wfb__count {
-  font-size: var(--fs-12);
-  color: var(--text-muted);
-}
+.wfb__tools-right { display: inline-flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.wfb__count { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.wfb__unsaved { color: var(--text-secondary); }
+.wfb__legend { display: inline-flex; align-items: center; gap: var(--space-1); }
+.wfb__legend-line { display: inline-block; width: 22px; border-top: 2px dashed var(--border-strong); }
 
-/* ── Канвас: вьюпорт/сетка/слои — общий GraphCanvas (src/ui/graph-canvas); здесь — рёбра ── */
+/* ── Канвас: вьюпорт — общий GraphCanvas; здесь — рёбра и подписи ─────── */
 .wfb__canvas { flex: 1 1 auto; min-height: 0; }
-.wfb__edge {
-  fill: none;
-  stroke: var(--border-strong);
-  stroke-width: 2;
-  pointer-events: stroke;
-  cursor: pointer;
+.wfb__arrow { fill: var(--border-strong); }
+.wfb__edge { fill: none; stroke: var(--border-strong); stroke-width: 2; pointer-events: none; transition: stroke var(--dur-fast) var(--ease-out); }
+.wfb__edge--back { stroke-dasharray: 6 5; }
+.wfb__edge.is-selected { stroke: var(--focus); }
+.wfb__edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.wfb__edge-hit:hover + .wfb__edge:not(.is-selected) { stroke: var(--text-muted); }
+.wfb__rubber { fill: none; stroke: var(--focus); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
+.wfb__edge-label {
+  position: absolute; transform: translate(-50%, -50%); padding: 1px var(--space-2); min-height: 18px;
+  font: inherit; font-size: var(--fs-11); line-height: 16px; color: var(--text-secondary); white-space: nowrap;
+  background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-pill); cursor: pointer;
 }
-.wfb__edge:hover {
-  stroke: var(--text-muted);
-}
-.wfb__edge--selected {
-  stroke: var(--accent);
-}
-.wfb__edge-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 14;
-  pointer-events: stroke;
-  cursor: pointer;
-}
-.wfb__rubber {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-dasharray: 5 4;
-  pointer-events: none;
-}
+.wfb__edge-label--back { color: var(--text-muted); border-style: dashed; }
+.wfb__edge-label.is-selected { color: var(--text); border-color: var(--focus); }
 
-/* ── Узел-карточка ─────────────────────────────────────────────────────── */
-.wfb__node {
-  position: absolute;
-  width: 190px;
-  min-height: 76px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  cursor: grab;
-  overflow: hidden;
-}
-.wfb__node--dragging {
-  cursor: grabbing;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-}
-.wfb__node--selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 8px 20px rgba(0, 0, 0, 0.5);
-}
-.wfb__node-head {
-  padding: 5px 10px;
-  font-size: var(--fs-11);
-  font-weight: 600;
-  color: var(--bone);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* ── Шаг: карточка .gc-node, подпись типа одной строкой, заголовок переносится ── */
+.wfb__node { width: 200px; height: 80px; padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--space-3) + 3px); cursor: grab; touch-action: none; }
+.wfb__node--neutral { --node-stripe: var(--text-muted); }
+.wfb__node--llm { --node-stripe: var(--block-8); }
+.wfb__node.is-dragging { cursor: grabbing; box-shadow: var(--shadow-2), inset 3px 0 0 var(--node-stripe); }
+.wfb__node-cap { display: flex; align-items: center; gap: 2px; font-size: var(--fs-11); color: var(--text-muted); line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wfb__node--llm .wfb__node-cap .wfb__glyph { color: var(--block-8); }
 .wfb__node-title {
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  font-size: var(--fs-13);
-  color: var(--text);
-  line-height: 1.35;
-  word-break: break-word;
+  margin-top: 2px; font-size: var(--fs-13); line-height: 1.3; color: var(--text); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
 }
 
-/* ── Порты входа/выхода ────────────────────────────────────────────────── */
+/* ── Порты входа/выхода (зона нажатия шире видимого кружка) ───────────── */
 .wfb__port {
-  position: absolute;
-  left: 50%;
-  width: 13px;
-  height: 13px;
-  margin-left: -6.5px;
-  background: var(--bg-input);
-  border: 2px solid var(--border-strong);
-  border-radius: 50%;
-  cursor: crosshair;
+  position: absolute; left: 50%; width: 12px; height: 12px; margin-left: -6px;
+  background: var(--bg-card); border: 2px solid var(--border-strong); border-radius: 50%;
 }
-.wfb__port:hover {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-.wfb__port--in {
-  top: -7px;
-}
-.wfb__port--out {
-  bottom: -7px;
-}
-.wfb__port--active {
-  border-color: var(--accent);
-  background: var(--accent);
-}
+.wfb__port--in { top: -7px; pointer-events: none; }
+.wfb__port--out { bottom: -7px; cursor: crosshair; }
+.wfb__port::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
+.wfb__port--out:hover, .wfb__port--out.is-active { border-color: var(--focus); background: var(--focus); }
 
-/* ── Инспектор (справа) ────────────────────────────────────────────────── */
+/* ── Инспектор (справа) ───────────────────────────────────────────────── */
 .wfb__inspector {
-  width: var(--inspector-w);
-  flex: 0 0 auto;
-  padding: var(--space-4);
-  overflow-y: auto;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  width: var(--inspector-w); flex: none; display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4); overflow-y: auto; background: var(--bg-panel); border-left: 1px solid var(--border);
 }
-.wfb__inspector-title {
-  font-size: var(--fs-11);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-.wfb__inspector-empty {
-  font-size: var(--fs-13);
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-.wfb__field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.wfb__label {
-  font-size: var(--fs-12);
-  color: var(--text-secondary);
-}
+.wfb__inspector .wfb__side-title { margin: 0; }
 .wfb__type-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--fs-12);
-  color: var(--bone);
-  border-radius: var(--radius);
+  display: inline-flex; align-items: center; gap: var(--space-1); align-self: flex-start; padding: 2px var(--space-2);
+  font-size: var(--fs-12); color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: var(--radius-pill);
 }
-.wfb__input,
-.wfb__textarea {
-  width: 100%;
-  padding: 6px 8px;
-  color: var(--text);
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  font: inherit;
-  font-size: var(--fs-13);
+.wfb__notes { min-height: 140px; }
+.wfb__links { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.wfb__link {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 24px; padding: 2px var(--space-2);
+  font: inherit; font-size: var(--fs-12); text-align: left; color: var(--text-secondary); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer;
 }
-.wfb__input {
-  height: var(--control);
-}
-.wfb__textarea {
-  min-height: 140px;
-  resize: vertical;
-  line-height: 1.5;
-}
-.wfb__input:focus,
-.wfb__textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.wfb__inspector-actions {
-  margin-top: auto;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-.wfb .btn--danger {
-  width: 100%;
+.wfb__link:hover { color: var(--text); background: var(--bg-hover); }
+.wfb__link:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.wfb__link-label { margin-left: auto; padding: 0 var(--space-2); font-size: var(--fs-11); color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-pill); }
+.wfb__route { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: 0; font-size: var(--fs-13); color: var(--text); }
+.wfb__route-arrow { color: var(--text-muted); }
+.wfb__quick { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
+.wfb__inspector-actions { margin-top: auto; padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.wfb__inspector-actions .btn { width: 100%; }
+
+@media (forced-colors: active) {
+  .wfb__edge, .wfb__edge-label { forced-color-adjust: auto; }
+  .wfb__edge.is-selected { stroke: Highlight; }
+  .wfb__node.is-selected { outline: 2px solid Highlight; }
 }

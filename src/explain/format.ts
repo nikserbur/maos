@@ -225,17 +225,175 @@ export function bindFormula(
 /* ── Дата и время ─────────────────────────────────────────────────────────── */
 const DT_FULL = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 const DT_DATE = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short' })
+const DT_DM = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' })
+const DT_TIME = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' })
+
+/** «ГГГГ-ММ-ДД ЧЧ:ММ[:СС[.мс]]» без зоны — так отдаёт сервер (SQLite datetime('now') = UTC). */
+const ZONELESS = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
 
 function toDate(v: string | number | Date): Date {
   if (v instanceof Date) return v
-  // Бэкенд отдаёт «ГГГГ-ММ-ДД ЧЧ:ММ:СС» без зоны — трактуем как локальное время.
-  return new Date(typeof v === 'string' ? v.replace(' ', 'T') : v)
+  if (typeof v === 'number') return new Date(v)
+  const s = v.trim()
+  // Серверные отметки времени без зоны — это UTC: дописываем «Z», показываем в местном времени.
+  return new Date(ZONELESS.test(s) ? `${s.replace(' ', 'T')}Z` : s)
 }
 
-/** Дата и время по-русски: dateTime('2026-10-22 18:35:10') = «22.10.2026, 18:35»; пусто/мусор → «—». */
-export function dateTime(v: string | number | Date | null | undefined, opts: { time?: boolean } = {}): string {
-  if (v === null || v === undefined || v === '') return DASH
+type DateInput = string | number | Date | null | undefined
+
+function validDate(v: DateInput): Date | null {
+  if (v === null || v === undefined || v === '') return null
   const d = toDate(v)
-  if (Number.isNaN(d.getTime())) return DASH
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Дата и время по-русски: dateTime('2026-10-22 18:35:10') = «22.10.2026, 21:35» (UTC → местное); пусто/мусор → «—». */
+export function dateTime(v: DateInput, opts: { time?: boolean } = {}): string {
+  const d = validDate(v)
+  if (!d) return DASH
   return (opts.time ?? true ? DT_FULL : DT_DATE).format(d)
+}
+
+/** Время «17:38» (местное). */
+export function time(v: DateInput): string {
+  const d = validDate(v)
+  return d ? DT_TIME.format(d) : DASH
+}
+
+/** Коротко: «24.10 17:38» в текущем году, иначе «24.10.2025 17:38». */
+export function dateTimeShort(v: DateInput, now: Date = new Date()): string {
+  const d = validDate(v)
+  if (!d) return DASH
+  const day = d.getFullYear() === now.getFullYear() ? DT_DM.format(d) : DT_DATE.format(d)
+  return `${day} ${DT_TIME.format(d)}`
+}
+
+/* ── Склонение и счётчики ─────────────────────────────────────────────────── */
+
+export type PluralForms = readonly [one: string, few: string, many: string]
+
+/** Форма слова по числу: plural(1, ['запись','записи','записей']) = «запись»; 2 → «записи», 5/11 → «записей», 21 → «запись». */
+export function plural(n: number, forms: PluralForms): string
+export function plural(n: number, one: string, few: string, many: string): string
+export function plural(n: number, a: PluralForms | string, few?: string, many?: string): string {
+  const [f1, f2, f5] = typeof a === 'string' ? [a, few ?? a, many ?? a] : a
+  const abs = Math.abs(n)
+  if (!Number.isInteger(abs)) return f2
+  const n10 = abs % 10, n100 = abs % 100
+  if (n10 === 1 && n100 !== 11) return f1
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return f2
+  return f5
+}
+
+/** Число со словом: countText(24, ['запись','записи','записей']) = «24 записи». */
+export function countText(n: number, forms: PluralForms): string {
+  return `${num(n, 0)}${NBSP}${plural(n, forms)}`
+}
+
+/* ── Диапазоны, пункты, частоты ───────────────────────────────────────────── */
+
+/** «12,3 тыс. ₽» → ["12,3", "тыс. ₽"]; «−5 %» → ["−5", "%"]; без единицы — ["…", ""]. */
+function splitNumUnit(text: string): [string, string] {
+  const m = /^([−+]?[\d\s ,]*\d)(?:[\s ](.+))?$/u.exec(text)
+  return m ? [m[1], m[2] ?? ''] : [text, '']
+}
+
+/** Деньги двух концов в одном порядке (тыс./млн/млрд — по большему по модулю). */
+function moneyPair(lo: number, hi: number): [string, string, string] {
+  const big = Math.max(Math.abs(lo), Math.abs(hi))
+  let tier = MONEY_TIERS.length - 1
+  while (tier > 0 && big < MONEY_TIERS[tier].factor) tier--
+  if (tier < MONEY_TIERS.length - 1 && roundTo(big / MONEY_TIERS[tier].factor, adaptiveDigits(big / MONEY_TIERS[tier].factor)) >= 1000) tier++
+  const f = MONEY_TIERS[tier].factor
+  const one = (v: number) => withSign(v / f, adaptiveDigits(Math.abs(v / f)))
+  const suffix = MONEY_TIERS[tier].suffix
+  return [one(lo), one(hi), `${suffix ? suffix + NBSP : ''}₽`]
+}
+
+/**
+ * Диапазон с одной единицей: rangeText(54e3, 86.7e3, '₽') = «54–86,7 тыс. ₽»;
+ * со знаком — словами, чтобы минус не слипался с тире: «от −150 до −50 млн ₽».
+ */
+export function rangeText(lo: number | null | undefined, hi: number | null | undefined, unit: Unit = '—'): string {
+  if (!isNum(lo) || !isNum(hi)) return DASH
+  const [a, b] = lo <= hi ? [lo, hi] : [hi, lo]
+  let ta: string, tb: string, u: string
+  if (unit === '₽') {
+    [ta, tb, u] = moneyPair(a, b)
+  } else {
+    const [na, ua] = splitNumUnit(fmtValue(a, unit))
+    const [nb, ub] = splitNumUnit(fmtValue(b, unit))
+    if (ua !== ub) return a < 0 ? `от ${fmtValue(a, unit)} до ${fmtValue(b, unit)}` : `${fmtValue(a, unit)} – ${fmtValue(b, unit)}`
+    ;[ta, tb, u] = [na, nb, ub]
+  }
+  const tail = u ? `${NBSP}${u}` : ''
+  if (a < 0 && ta.startsWith(MINUS)) return `от ${ta} до ${tb}${tail}`
+  return `${ta}–${tb}${tail}`
+}
+
+/**
+ * Диапазон из двух готовых строк форматтера: общая единица — один раз, со знаком — словами.
+ * joinRange('54 тыс. ₽', '86,7 тыс. ₽') = «54–86,7 тыс. ₽»; разные единицы — «950 ₽ – 1,2 тыс. ₽».
+ */
+export function joinRange(a: string, b: string): string {
+  if (a === DASH || b === DASH) return DASH
+  const [na, ua] = splitNumUnit(a)
+  const [nb, ub] = splitNumUnit(b)
+  const neg = na.startsWith(MINUS)
+  if (ua !== ub) return neg ? `от ${a} до ${b}` : `${a} – ${b}`
+  const tail = ua ? `${NBSP}${ua}` : ''
+  return neg ? `от ${na} до ${nb}${tail}` : `${na}–${nb}${tail}`
+}
+
+function pointsText(v: number, scale: number, digits: number, unit: string, opts: { signed?: boolean }): string {
+  const text = withSign(v * scale, digits)
+  const zero = text === '0'
+  const sign = opts.signed && !zero && v > 0 ? '+' : ''
+  return `${sign}${text}${NBSP}${unit}`
+}
+
+/** Базисные пункты из доли: bp(0.0047) = «47 б. п.»; { signed } — «+47 б. п.». */
+export function bp(v: number | null | undefined, opts: { signed?: boolean } = {}): string {
+  if (!isNum(v)) return DASH
+  return pointsText(v, 10_000, 0, `б.${NBSP}п.`, opts)
+}
+
+/** Процентные пункты из разности долей: pp(0.012) = «1,2 п. п.»; { signed } — «+1,2 п. п.». */
+export function pp(v: number | null | undefined, opts: { signed?: boolean; digits?: number } = {}): string {
+  if (!isNum(v)) return DASH
+  return pointsText(v, 100, opts.digits ?? 1, `п.${NBSP}п.`, opts)
+}
+
+/**
+ * Вероятность как частота: freqText(0.03) = «в 3 из 100»; редкое — «реже 1 из 100», ноль — «ни в одном из 100».
+ * Слово («сценариев») добавляет вызывающий.
+ */
+export function freqText(p: number | null | undefined, of = 100): string {
+  if (!isNum(p)) return DASH
+  const k = Math.round(Math.min(1, Math.max(0, p)) * of)
+  if (p <= 0) return `ни в одном из ${num(of, 0)}`
+  if (k === 0) return `реже 1 из ${num(of, 0)}`
+  return `в ${num(k, 0)} из ${num(of, 0)}`
+}
+
+/* ── Прогоны ──────────────────────────────────────────────────────────────── */
+
+export interface RunLabelInput {
+  /** Порядковый номер прогона (№28). */
+  seq?: number | null
+  /** Идентификатор прогона: показывается номером, только если это число (хэш не показывается никогда). */
+  id?: string | null
+  /** Человеческое имя правила/цели (ruleLabel(…, 'short')). */
+  rule?: string | null
+  createdAt?: DateInput
+  /** Слово-тип прогона: «План», «Портфель». */
+  kind?: string
+}
+
+/** «План №28 · CR · 24.10 17:38» — одно имя прогона во всём интерфейсе; без хэшей. */
+export function runLabel({ seq, id, rule, createdAt, kind = 'План' }: RunLabelInput): string {
+  const n = isNum(seq) ? seq : id && /^\d+$/.test(id.trim()) ? Number(id) : null
+  const head = n !== null ? `${kind} №${n}` : kind
+  const when = createdAt !== undefined && createdAt !== null && createdAt !== '' ? dateTimeShort(createdAt) : ''
+  return [head, rule?.trim() || '', when === DASH ? '' : when].filter(Boolean).join(' · ')
 }

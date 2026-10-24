@@ -10,6 +10,7 @@ import {
   type WorkCalendar,
 } from '../../../lib/api'
 import { getDecisionContext } from '../../../shell/context'
+import { errorText } from '../../../ui/kit'
 import { useRefs, ensureRefs } from '../../method-map/useMethodMapState'
 import { usePassport } from '../../passport/passportStore'
 import { useWizard, wizardActions, type WizardOrder } from './wizardStore'
@@ -54,11 +55,12 @@ export function useWizardData(): WizardData {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const reloadOrders = () => api.demandOrders.list().then(setOrders).catch(() => {})
+  // Ошибка перечитывания — словами в шапке шага (не глотаем): данные на экране могут быть устаревшими.
+  const reloadOrders = () => api.demandOrders.list().then(setOrders).catch((e: unknown) => setError(`заказы не обновились (${errorText(e)})`))
   const reloadPlans = () => api.plans.list().then((ps) => {
     setPlans(ps)
     if (ps.length && !w.planId) wizardActions.setPlanId(ps[0].id)
-  }).catch(() => {})
+  }).catch((e: unknown) => setError(`планы не обновились (${errorText(e)})`))
 
   useEffect(() => {
     let alive = true
@@ -130,7 +132,7 @@ export function useWizardData(): WizardData {
   // fin_params → база L_min / β (владелец — проект).
   useEffect(() => {
     if (!passport.fin) return
-    wizardActions.setBase({ lMin: passport.fin.l_min, beta: passport.fin.beta }, 'из fin_params проекта')
+    wizardActions.setBase({ lMin: passport.fin.l_min, beta: passport.fin.beta }, 'из финансовых параметров проекта')
   }, [passport.fin])
 
   // Календарь проекта → база «календарь смен».

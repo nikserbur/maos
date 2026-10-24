@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import type { PriceScenario, ScheduleResult } from '../../lib/api'
+import type { CashLpResult, ForecastResult, PriceScenario, ScheduleResult } from '../../lib/api'
 import type { OptResultExt } from '../optimization/optTypes'
 import { EMPTY_COUNTS, emptyInput, type DeriveInput } from './deriveInput'
-import { deriveState, liveOf } from './deriveState'
+import { forecastLive } from './deriveLoops'
+import { deriveState, liveOf, worstSubblock } from './deriveState'
+import { lpStatusLive } from './lpStatus'
 import { NODES, subblocksOf } from './registry'
 import { worstState } from './stateMeta'
 import { BLOCK_IDS } from './types'
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0)
+const NB = '\u00A0'
 
 const scenario = (patch: Partial<PriceScenario> = {}): PriceScenario => ({
   id: 'scn-1', name: 'Базовый', description: '', horizon_hours: '8640', created_at: '2026-10-01',
@@ -76,7 +79,7 @@ describe('deriveState', () => {
     expect(s.nodes['ext.macro.inflation'].reason).toBe('вне разумного диапазона')
     expect(s.nodes['ext.macro.energy']).toMatchObject({ state: 'default', badge: 'не используется' })
     expect(s.nodes['int.finance.dso'].state).toBe('calibrated')
-    expect(s.nodes['int.finance'].badge).toBe('fin_params не загружены')
+    expect(s.nodes['int.finance'].badge).toBe('финансовые параметры не загружены')
   })
 
   it('reads provenance from the server passport and flags synthetic datasets', () => {
@@ -99,20 +102,25 @@ describe('deriveState', () => {
     expect(s.params['scenario.alpha']).toMatchObject({ provenance: 'calibrated', status: 'К' }) // [К] никогда не «оценено»
     expect(s.nodes['int.finance']).toMatchObject({ state: 'calibrated' })
     expect(s.nodes['int.finance'].badge).toContain('лимит')
-    expect(s.nodes['ext.prices.ds']).toMatchObject({ state: 'default', badge: 'синтетика' })
+    // синтетика — ▲ (данные не факт), статус паспорта — в поле status, а не бейджем «паспорт …»
+    expect(s.nodes['ext.prices.ds']).toMatchObject({ state: 'stale', badge: 'синтетика', status: 'синтетика' })
+    expect(s.nodes['ext.generator.ds']).toMatchObject({ status: 'О' })
+    expect(s.nodes['ext.generator.ds'].badge).toBeUndefined()
+    expect(Object.values(s.nodes).some((n) => n.badge?.startsWith('паспорт'))).toBe(false)
     expect(s.nodes['ext.generator'].badge).toBe('сводка генератора не загружена')
   })
 
   it('reports NSI-backed blocks as manual with counts and decisions as not computed', () => {
     const s = deriveState(filled())
-    expect(s.nodes['int.capacity']).toMatchObject({ state: 'manual', badge: '6 станков · 3 типов РЦ' })
+    expect(s.nodes['int.capacity']).toMatchObject({ state: 'manual', badge: `6${NB}станков · 3${NB}типа РЦ` })
+    expect(s.nodes['dist.durations'].badge).toBe(`12${NB}операций`)
     expect(s.nodes['int.mrp'].state).toBe('default') // MRP считается только при построении плана
     expect(s.nodes.internal.state).toBe('default') // худшее из детей: default < manual
     expect(s.nodes['dist.breakdowns']).toMatchObject({ state: 'manual', badge: 'MTBF задан: 1 из 3' })
     expect(s.nodes['dist.prices'].state).toBe('default')
     expect(s.nodes['dec.portfolio']).toMatchObject({ state: 'default', badge: 'портфель не рассчитан' })
     expect(s.nodes.decisions.state).toBe('default')
-    expect(s.nodes['crit.profit'].badge).toContain('α = 0,1')
+    expect(s.nodes['crit.profit'].badge).toContain(`α 10${NB}%`)
     expect(s.values['crit.profit.f.cvar']).toBeUndefined()
     expect(s.nodes['crit.profit.f.cvar'].state).toBe('default')
   })
@@ -170,9 +178,9 @@ describe('deriveState', () => {
       const kids = subblocksOf(b).map((k) => s.nodes[k.id].state)
       expect(s.nodes[b].state, b).toBe(worstState(kids))
     }
-    expect(s.nodes.monitoring.detail).toContain('в плане')
+    expect(s.nodes.monitoring.detail).toContain('Мониторинг') // прогноз не запрошен — куда идти
     expect(s.nodes.external.badge).toBe('Базовый') // контекст блока — первый реализованный подблок
-    expect(s.nodes.internal.detail).toContain('по умолчанию:') // вторая строка — что тянет блок вниз
+    expect(s.nodes.internal.detail).toMatch(/^MRP: материалы и запуск: /) // вторая строка — какой подблок тянет блок вниз
   })
 
   it('liveOf falls back honestly for unknown and planned nodes', () => {
@@ -190,6 +198,52 @@ describe('deriveState', () => {
     const on = { ...off, available: true, l0: { ...off.l0, ok: true, sha256: 'abcdef0123456789' } }
     const live = deriveState({ ...emptyInput(NOW), rl: on })
     expect(live.nodes['ag.rl'].state).toBe('estimated')
-    expect(live.nodes['ag.rl'].badge).toContain('abcdef01')
+    expect(live.nodes['ag.rl'].badge).toBe('политика опубликована') // хэш — только в паспорте версии
+    expect(live.params['agent.policy_version'].value).toBe('abcdef0123')
+    expect(gated.nodes['ag.rl'].detail).toBe('политика не опубликована: не прошла гейт V5 → Агенты')
+  })
+
+  it('shows an LP time limit as one ▲ on [4] and a neutral «ждёт» on [5]; raw solver text only in raw', () => {
+    const cash = { status: 'time_limit', reason: 'Time limit reached', solve_ms: 30_200 } as unknown as CashLpResult
+    const s = deriveState({ ...filled(), cash: { result: cash, ranAt: NOW, running: false } })
+    expect(s.nodes['dec.cash']).toMatchObject({ state: 'stale', badge: `касса: не решено за 30${NB}с`, raw: 'Time limit reached' })
+    expect(s.nodes['dec.cash'].reason).toContain('повторите с большим лимитом')
+    expect(s.nodes['crit.cash']).toMatchObject({ state: 'unconfigured', badge: 'ждёт решения кассы [4]' })
+    expect(s.nodes.decisions.state).toBe('stale')
+    expect(s.nodes.decisions.detail).toBe(`Транши кредитной линии (CVaR-LP с кассой): касса: не решено за 30${NB}с`)
+    expect(worstSubblock(s, 'decisions')?.id).toBe('dec.cash')
+    // английский текст решателя — только в raw («Подробнее»), не в бейдже, причине или детали
+    const visible = Object.values(s.nodes).flatMap((n) => [n.badge, n.detail, n.reason]).join(' ')
+    expect(visible).not.toContain('Time limit')
+    expect(lpStatusLive('infeasible')).toMatchObject({ state: 'error', reason: 'ограничение ликвидности неразрешимо — снизьте L_min' })
+    expect(lpStatusLive('unbounded').reason).toContain('расчёт кассы не выполнен')
+  })
+
+  it('reads the published forecast into block [7] with coverage and the share worse than naive', () => {
+    const bt = (coverage80: number, skill: number) => ({ k: 6, mape: 0.1, mape_naive: 0.12, skill, pinball10: 0, pinball90: 0, coverage80 })
+    const prod = (backtest?: ReturnType<typeof bt>) => ({ id: 'p', name: 'Вал', role: 'product', base: 1, p10: [1], p50: [1], p90: [1], mean: [1], ...(backtest ? { backtest } : {}) })
+    const f = { months: 12, inflation_index: [1, 1.01], products: [prod(bt(0.6, 0.1)), prod(bt(0.74, -0.2)), prod(bt(0.67, 0.3)), prod()] } as unknown as ForecastResult
+    expect(forecastLive(f)).toMatchObject({ state: 'estimated', badge: `покрытие 67${NB}% · хуже наивного у 1 из 3` })
+    expect(forecastLive(null).badge).toBe('прогноз не запрошен')
+    const s = deriveState({ ...filled(), forecast: f })
+    expect(s.nodes['mon.forecast'].badge).not.toBe('прогноз не запрошен')
+  })
+
+  it('reflects v0.74: MENTAT live state, ДИ done, auto_repay under the cash decision, no raw objective ids', () => {
+    const off = deriveState({ ...filled(), mentat: { configured: false, model: '' } })
+    expect(off.nodes['llm.mentat']).toMatchObject({ state: 'unconfigured', badge: 'модель не подключена' })
+    const on = deriveState({ ...filled(), mentat: { configured: true, model: 'qwen2.5' } })
+    expect(on.nodes['llm.mentat']).toMatchObject({ state: 'estimated', badge: 'модель qwen2.5 · локально' })
+    expect(on.nodes.llm.detail ?? '').not.toContain('в плане')
+    expect(on.nodes['crit.ci'].state).not.toBe('planned')
+    expect(on.params['fin.auto_repay']).toMatchObject({ provenance: 'normative' })
+    expect(on.nodes['dec.cash.auto_repay']).toBeDefined()
+    const input = filled()
+    input.opt = { ...input.opt, result: optResult({ objective: 'meanvariance' }), ranAt: NOW }
+    const ran = deriveState(input)
+    const text = Object.values(ran.nodes).flatMap((n) => [n.badge, n.detail]).join(' ')
+    expect(text).not.toContain('meanvariance')
+    expect(text).not.toContain('P(спокойный)')
+    expect(ran.nodes['crit.profit'].badge).toBe(`CVaR₁₀${NB}% −120${NB}тыс.${NB}₽ · E +1${NB}млн${NB}₽`)
   })
 })

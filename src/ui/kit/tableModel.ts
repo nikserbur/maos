@@ -2,6 +2,8 @@
  * Чистая модель таблицы данных: сортировка (числа — по значению, строки — по локали ru,
  * пустые — в конец) и группировка с сохранением порядка первого появления. Без DOM — vitest.
  */
+import { NBSP, countText, num, type PluralForms } from '../../explain/format'
+
 export type SortDir = 'asc' | 'desc'
 
 export interface SortState {
@@ -82,4 +84,20 @@ export function nextSort(current: SortState | null, key: string, numeric = false
   const first: SortDir = numeric ? 'desc' : 'asc'
   if (current.dir === first) return { key, dir: first === 'asc' ? 'desc' : 'asc' }
   return null
+}
+
+/** Подзаголовок группы: «Сегодня · 24». */
+export function groupLabel(key: string, count: number): string {
+  return `${key || 'Без группы'} · ${num(count, 0)}`
+}
+
+/**
+ * Счётчик строк: все видны — «82 записи»; отфильтровано — «12 из 82 записей»
+ * (после «из» — родительный: 1/21 → «записи», остальное — «записей»).
+ */
+export function countLabel(shown: number, total: number, forms: PluralForms = ['запись', 'записи', 'записей']): string {
+  if (shown >= total) return countText(total, forms)
+  const t = Math.abs(total)
+  const genitive = t % 10 === 1 && t % 100 !== 11 ? forms[1] : forms[2]
+  return `${num(shown, 0)} из ${num(total, 0)}${NBSP}${genitive}`
 }

@@ -1,19 +1,12 @@
 /**
- * Карточка привязанной единицы оборудования (НСИ) в инспекторе схемы: тип (= 3D-вид),
- * статус чипом кита, атрибуты, операции техкарт (сгруппированы по названию).
+ * Карточка единицы оборудования (НСИ) в инспекторе схемы: тип (= 3D-вид), статус чипом кита
+ * по единому словарю (STATUS_META, X2 P-28), атрибуты, операции техкарт (сгруппированы по названию).
  */
-import { Chip, type Tone } from '../../ui/kit'
+import { Chip } from '../../ui/kit'
 import { num } from '../../explain/format'
-import type { ObjectKind } from './types'
+import { STATUS_META, statusFromNsi, type ObjectKind } from './types'
 import { KIND_META } from './graph/sceneModel'
 import type { Machine, Operation, WorkCenterType } from '../../lib/api'
-
-/** Статус станка → человекочитаемая метка + тон чипа (глиф + цвет). */
-const MACHINE_STATUS: Record<string, { label: string; tone: Tone }> = {
-  active:         { label: 'В работе', tone: 'running' },
-  maintenance:    { label: 'Техобслуживание', tone: 'setup' },
-  decommissioned: { label: 'Выведено', tone: 'idle' },
-}
 
 interface OpGroup { name: string; count: number; range: string }
 
@@ -41,23 +34,22 @@ interface MachineCardProps {
   operations: Operation[]
   editing: boolean
   onChangeType: (machineId: string, wcTypeId: string) => void
-  onUnlink: () => void
 }
 
-export function MachineCard({ machine, wcTypes, operations, editing, onChangeType, onUnlink }: MachineCardProps) {
+export function MachineCard({ machine, wcTypes, operations, editing, onChangeType }: MachineCardProps) {
   const wcType = machine.wc_type_id ? wcTypes.find((t) => t.id === machine.wc_type_id) : null
   const wcTypeName = wcType?.name ?? null
   const compatible = wcTypeName
     ? operations.filter((op) => op.wc_types.split(',').some((t) => t.trim() === wcTypeName))
     : []
   const groups = groupOps(compatible)
-  const st = MACHINE_STATUS[machine.status] ?? { label: machine.status || '—', tone: 'idle' as Tone }
+  const status = statusFromNsi(machine.status)
 
   return (
     <div className="ep-machine-card">
       <div className="ep-machine-card__head">
         <div className="ep-machine-card__name">{machine.name}</div>
-        <Chip tone={st.tone} size="sm">{st.label}</Chip>
+        <Chip tone={status} size="sm">{STATUS_META[status].label}</Chip>
       </div>
       {/* Смена типа оборудования у уже зарегистрированной машины (3D-вид следует типу). */}
       {editing ? (
@@ -119,9 +111,6 @@ export function MachineCard({ machine, wcTypes, operations, editing, onChangeTyp
         <p className="editor-panel__tip">Нет операций для типа «{wcTypeName}».</p>
       )}
 
-      {editing && (
-        <button type="button" className="ep-machine-card__unlink" onClick={onUnlink}>Отвязать</button>
-      )}
     </div>
   )
 }

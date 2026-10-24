@@ -1,56 +1,86 @@
 /**
- * Строительные блоки лонгрида «Методика»: раздел, рисунок-карточка со схемой,
- * блок формулы, чипы статуса (реализовано / Волна 1–3), выноски, литература.
+ * Строительные блоки лонгрида «Методика»: раздел, рисунок-карточка со схемой, блок формулы, чипы
+ * стадии (единый реестр src/explain/stages.ts — тот же, что у узлов карты), выноски, литература.
+ * Раздел связан с «Картой методологии» в обе стороны (X2 P-123): чипы блоков [n] и тихая ссылка
+ * «На карте: N узлов →» на узлы, которые ссылаются сюда своим «Подробнее».
  */
 import type { ReactNode } from 'react'
-import { Chip, type ChipTone } from '../../ui/kit'
+import { STAGE_META, featureChipLabel, FEATURES, isFeatureId, type FeatureId, type Stage } from '../../explain/stages'
+import { countText } from '../../explain/format'
+import { Chip } from '../../ui/kit'
+import { BlockChips } from '../../ui/BlockChip'
 import { getDiagram, type DiagramId } from '../../diagrams'
+import { nodesForSection } from '../method-map/registry'
+import type { BlockId } from '../method-map/types'
 import { figureNumber, sectionGroup, sectionNumber, sectionTitle, type SectionId } from './toc'
 
-/** Статус реализации: честная граница «сделано ↔ в работе ↔ план». */
-export type Stage = 'done' | 'w1' | 'w2' | 'w3'
+export type { Stage }
 
-const STAGE_LABEL: Record<Stage, string> = {
-  done: 'реализовано',
-  w1: 'Волна 1 · внедряется',
-  w2: 'Волна 2 · план',
-  w3: 'Волна 3 · план',
-}
-
-/** Стадия → тон кита: реализовано ●, внедряется ▲, план ○ (глиф из glyphs.css рисует сам Chip). */
-const STAGE_TONE: Record<Stage, ChipTone> = { done: 'running', w1: 'setup', w2: 'idle', w3: 'idle' }
-
-/** Чип стадии — тот же `Chip`, что и на остальных экранах; здесь лишь ужат по высоте/кеглю. */
-export function StageChip({ stage, children }: { stage: Stage; children?: ReactNode }) {
+/**
+ * Чип стадии — тот же `Chip` кита и то же слово, что у узлов карты (STAGE_META): реализовано —
+ * ● нейтрально-хорошо, волны — ○ пунктиром, приглушённо (никогда не ▲). `feature` — стадия, версия и
+ * доказательство из реестра возможностей; `stage` — для пунктов без записи в реестре.
+ */
+export function StageChip({ stage, feature, children }: { stage?: Stage; feature?: FeatureId; children?: ReactNode }) {
+  const s: Stage = feature ? FEATURES[feature].stage : stage ?? 'done'
+  const meta = STAGE_META[s]
+  const label = feature ? featureChipLabel(feature) : meta.label
   return (
-    <Chip tone={STAGE_TONE[stage]} className="mth-chip">
-      <span className="mth-chip__stage">{STAGE_LABEL[stage]}</span>
-      {children && <span className="mth-chip__what">{children}</span>}
-    </Chip>
+    <span data-feature={feature} data-stage={s} title={feature ? FEATURES[feature].evidence : undefined}>
+      <Chip tone={meta.tone} className={`mth-chip mth-chip--${s === 'done' ? 'done' : 'planned'}`}>
+        <span className="mth-chip__stage">{label}</span>
+        {children && <span className="mth-chip__what">{children}</span>}
+      </Chip>
+    </span>
   )
 }
 
-export type StageItem = readonly [Stage, ReactNode]
+/** Пункт стадий раздела: [стадия, что] или [возможность реестра, что?]. */
+export type StageItem = readonly [Stage | FeatureId, ReactNode?]
 
 interface SectionProps {
   id: SectionId
   stages?: readonly StageItem[]
+  /** Блоки карты [1]…[8], о которых раздел. */
+  blocks?: readonly BlockId[]
   lead?: ReactNode
   children: ReactNode
 }
 
-export function Section({ id, stages, lead, children }: SectionProps) {
+const NODE_FORMS = ['узел', 'узла', 'узлов'] as const
+const STAGE_ORDER: Readonly<Record<Stage, number>> = { done: 0, w1: 1, w2: 2, w3: 3 }
+const stageOf = (s: Stage | FeatureId): Stage => (isFeatureId(s) ? FEATURES[s].stage : s)
+/** Пункты стадий по порядку «реализовано → волна 1 → 2 → 3» (порядок внутри стадии — как в разделе). */
+const sortStages = (items: readonly StageItem[]): StageItem[] =>
+  items.map((it, i) => ({ it, i })).sort((a, b) => STAGE_ORDER[stageOf(a.it[0])] - STAGE_ORDER[stageOf(b.it[0])] || a.i - b.i).map((x) => x.it)
+
+/** «На карте: 3 узла →» — к первому узлу, остальные перечислены в подсказке. */
+function MapLink({ id }: { id: SectionId }) {
+  const nodes = nodesForSection(id)
+  if (nodes.length === 0) return null
+  return (
+    <a className="mth-sec__map" href={`#/map/${encodeURIComponent(nodes[0].id)}`} title={nodes.map((n) => n.title).join(' · ')}>
+      На карте: {countText(nodes.length, NODE_FORMS)} →
+    </a>
+  )
+}
+
+export function Section({ id, stages, blocks, lead, children }: SectionProps) {
   return (
     <section id={id} className="mth-sec" aria-labelledby={`${id}-h`}>
       <header className="mth-sec__head">
         <div className="mth-sec__meta">
           <span className="mth-sec__num">{sectionNumber(id)}</span>
           <span className="mth-sec__eyebrow text-caps">{sectionGroup(id)}</span>
+          {blocks && blocks.length > 0 && <BlockChips blocks={blocks} />}
+          <MapLink id={id} />
         </div>
         <h2 id={`${id}-h`} className="mth-sec__title">{sectionTitle(id)}</h2>
         {stages && stages.length > 0 && (
           <div className="mth-sec__stages">
-            {stages.map(([s, what], i) => <StageChip key={i} stage={s}>{what}</StageChip>)}
+            {sortStages(stages).map(([s, what], i) => (isFeatureId(s)
+              ? <StageChip key={i} feature={s}>{what ?? FEATURES[s].title}</StageChip>
+              : <StageChip key={i} stage={s}>{what}</StageChip>))}
           </div>
         )}
       </header>

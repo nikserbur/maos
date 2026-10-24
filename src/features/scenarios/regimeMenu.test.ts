@@ -58,3 +58,16 @@ describe('regime / stress menu reducer (§2.6б)', () => {
     expect(regimeMenuReducer(DEFAULT_MENU, { type: 'kind', kind: 'base' })).toBe(DEFAULT_MENU)
   })
 })
+
+describe('подписи режима без внутренностей движка', () => {
+  it('нейтральный чип, эпизод в месяцах горизонта, значения паспорта словами', async () => {
+    const { passportValueLabel, regimeChip } = await import('./regimeMenu')
+    expect(regimeChip(DEFAULT_MENU)).toEqual({ glyph: '●', word: 'прогноз' })
+    const e = regimeMenuReducer(DEFAULT_MENU, { type: 'episode', episode: '2022-02', months: 6 })
+    expect(regimeChip(e)).toEqual({ glyph: '◆', word: 'стресс' })
+    expect(regimeLabel(e, [], 13).text).toBe('эпизод 2022-02 на первые 6 из 13 мес')
+    expect(passportValueLabel('flat')).toBe('последнее наблюдение')
+    expect(passportValueLabel('14.0')).toBe(`14${NBSP}%`)
+    expect(passportValueLabel(undefined)).toBe('последнее наблюдение')
+  })
+})

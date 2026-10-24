@@ -4,8 +4,12 @@
  * analytics.recommendations в src/explain/metrics.analytics.ts).
  */
 import type { KpiBundle, Machine, SimResults, WorkCenterType, Worker } from '../../lib/api'
+import { num, pct } from '../../explain/format'
 import { isEligible } from '../nsi/labor'
 import { kpiDef, kpiField, type KpiContext } from './kpiCatalog'
+import { LOAD_THRESHOLDS } from './thresholds'
+
+export { LOAD_THRESHOLDS, LOAD_MARK, loadLevel, type LoadLevel } from './thresholds'
 
 /** Загрузка типа + труд: реальный параллелизм = min(станки, операторы). */
 export interface TypeLoad {
@@ -50,8 +54,8 @@ export function computeTypeLoads(
   return out.sort((x, y) => y.utilization - x.utilization)
 }
 
-/** Пороги правил (экспертные — см. caveat analytics.recommendations). */
-export const REC_THRESHOLDS = { bottleneck: 0.9, laborUtil: 0.6, otd: 0.9, wait: 0.5, setup: 0.2 } as const
+/** Пороги правил (экспертные — см. caveat analytics.recommendations); узкое место — общий порог загрузки «внимание». */
+export const REC_THRESHOLDS = { bottleneck: LOAD_THRESHOLDS.warn, laborUtil: 0.6, otd: 0.9, wait: 0.5, setup: 0.2 } as const
 
 export type RecKind = 'bottleneck' | 'labor' | 'otd' | 'wait' | 'setup'
 
@@ -62,7 +66,7 @@ export interface Recommendation {
   wct?: string
 }
 
-const pct0 = (v: number) => `${Math.round(v * 100)} %`
+const pct0 = (v: number) => pct(v, 0)
 
 /** Значения для подстановки в формулу «i» рекомендаций. */
 export function recommendationValues(b: KpiBundle, ctx?: KpiContext) {
@@ -88,7 +92,7 @@ export function buildRecommendations(b: KpiBundle, loads: readonly TypeLoad[], c
   for (const l of loads.filter((x) => x.laborBound && x.utilization >= REC_THRESHOLDS.laborUtil).slice(0, 2)) {
     recs.push({
       kind: 'labor',
-      text: `На «${l.name}» операторов (${l.operators}) меньше станков (${l.machines}) при загрузке ${pct0(l.utilization)} — добавьте допуски или рабочих, иначе станки простаивают.`,
+      text: `На «${l.name}» операторов (${num(l.operators, 0)}) меньше станков (${num(l.machines, 0)}) при загрузке ${pct0(l.utilization)} — добавьте допуски или рабочих, иначе станки простаивают.`,
     })
   }
   const otd = kpiField(b, 'otd')
@@ -96,7 +100,7 @@ export function buildRecommendations(b: KpiBundle, loads: readonly TypeLoad[], c
     const nLate = kpiField(b, 'n_late')
     recs.push({
       kind: 'otd',
-      text: `OTD ${pct0(otd)} — просрочено заказов: ${Number.isFinite(nLate) ? nLate : '—'}; смягчите сроки или снимите узкое место.`,
+      text: `OTD ${pct0(otd)} — просрочено заказов: ${num(nLate, 0)}; смягчите сроки или снимите узкое место.`,
     })
   }
   const wait = kpiField(b, 'wait_share')

@@ -8,6 +8,7 @@ import type { CashLpResult, InvestmentResult, MacroStress, RlStatus, ScheduleRes
 import type { OptResultExt } from '../../optimization/optTypes'
 import { isSoft } from '../../optimization/optTypes'
 import type { BlockId } from '../../method-map/types'
+import { moveLabel } from '../../plan/moves/moveKinds'
 import type { CtxNode, CtxValue } from './types'
 import { compactValues, ctxValue } from './values'
 
@@ -51,7 +52,7 @@ function capacityDuals(opt: OptResultExt | null | undefined, cash: CashLpResult 
   const fromOpt = opt?.exact?.duals ?? []
   const rows = fromOpt.length
     ? fromOpt.map((d) => ({ wc: d.wc_type, price: d.shadow_price, util: d.utilization, binding: d.binding }))
-    : (cash?.duals.capacity ?? []).map((d) => ({ wc: d.wc_type, price: d.shadow_price, util: d.utilization, binding: d.binding }))
+    : (cash?.duals?.capacity ?? []).map((d) => ({ wc: d.wc_type, price: d.shadow_price, util: d.utilization, binding: d.binding }))
   const top = [...rows].sort((a, b) => Math.abs(b.price) - Math.abs(a.price) || a.wc.localeCompare(b.wc)).slice(0, TOP_N)
   const values = top.flatMap((d, i) => compactValues([
     ctxValue(`dual_${i + 1}`, `Двойственная цена фонда, ₽ за час: ${d.wc}`, d.price, '₽'),
@@ -63,7 +64,8 @@ function capacityDuals(opt: OptResultExt | null | undefined, cash: CashLpResult 
 }
 
 function cashDuals(cash: CashLpResult | null | undefined): FactNode | null {
-  if (!cash) return null
+  // Касса не решена (time_limit, infeasible) — двойственных нет, факта тоже нет.
+  if (!cash?.duals) return null
   const d = cash.duals
   return fact('dec.cash.duals', 'Двойственные оценки кассового LP', 'decisions', 'dec.cash', compactValues([
     ctxValue('liq_dual', 'Двойственная оценка ограничения ликвидности (безразмерная)', d.liquidity),
@@ -75,6 +77,7 @@ function cashDuals(cash: CashLpResult | null | undefined): FactNode | null {
   ]))
 }
 
+/** Гейт RL — то же поле `gate_a3` статуса (useRlStatus), что читает экран «Агенты». */
 function rlGate(rl: RlStatus | null | undefined): FactNode | null {
   if (!rl) return null
   const g = rl.gate_a3
@@ -94,16 +97,10 @@ function rlGate(rl: RlStatus | null | undefined): FactNode | null {
   ]), g?.source ? `Источник гейта: ${g.source}` : rl.note || undefined)
 }
 
-const MOVE_KIND: Readonly<Record<string, string>> = {
-  reroute: 'смена маршрута', reassign: 'смена станка', reorder: 'перестановка', split: 'разбиение партии', merge: 'слияние партий',
-  transfer: 'передача в цех', outsource: 'аутсорсинг', shift: 'сдвиг', drop: 'отказ от заказа', finance: 'финансирование',
-  shift_plus: 'сдвиг позже', shift_minus: 'сдвиг раньше',
-}
-
 function rlMoves(plan: ScheduleResult | null | undefined): FactNode[] {
   const moves = plan?.moves?.moves ?? []
-  return moves.slice(0, TOP_N).map((m, i) => fact(`ag.rl.move.${i + 1}`, `Ход агента ${i + 1}: ${MOVE_KIND[m.kind] ?? m.kind}`, 'agents', 'ag.rl', compactValues([
-    ctxValue('kind', 'Вид хода', MOVE_KIND[m.kind] ?? m.kind),
+  return moves.slice(0, TOP_N).map((m, i) => fact(`ag.rl.move.${i + 1}`, `Ход агента ${i + 1}: ${moveLabel(m.kind)}`, 'agents', 'ag.rl', compactValues([
+    ctxValue('kind', 'Вид хода', moveLabel(m.kind)),
     ctxValue('status', 'Статус', m.status),
     ctxValue('level', 'Уровень агента', m.agent.level),
     ctxValue('cvar_before', 'CVaR прибыли до хода', m.impact.profit.cvar_before, '₽'),
@@ -170,12 +167,30 @@ function macroRun(opt: OptResultExt | null | undefined): FactNode | null {
   ]))
 }
 
+/**
+ * Построитель факта под предохранителем: неполный ответ API (касса без duals, план без ходов) даёт
+ * «нет факта» и одно предупреждение в консоли, а не падение панели MENTAT.
+ */
+function safe<T>(name: string, build: () => T, fallback: T): T {
+  try {
+    return build()
+  } catch (e) {
+    console.warn(`MENTAT: факт «${name}» пропущен —`, e)
+    return fallback
+  }
+}
+
 /** Все факты в детерминированном порядке. */
 export function buildFacts(src: FactSources): FactNode[] {
   const names = src.productNames ?? {}
   const list = [
-    riskContrib(src.opt, names), capacityDuals(src.opt, src.cash), cashDuals(src.cash), rlGate(src.rl),
-    ...rlMoves(src.plan), ...invest(src.invest), macroRun(src.opt),
+    safe('вклады в риск', () => riskContrib(src.opt, names), null),
+    safe('двойственные мощности', () => capacityDuals(src.opt, src.cash), null),
+    safe('двойственные кассы', () => cashDuals(src.cash), null),
+    safe('гейт RL', () => rlGate(src.rl), null),
+    ...safe('ходы агента', () => rlMoves(src.plan), []),
+    ...safe('инвестпроект', () => invest(src.invest), []),
+    safe('режим генератора', () => macroRun(src.opt), null),
   ]
   return list.filter((f): f is FactNode => f !== null)
 }

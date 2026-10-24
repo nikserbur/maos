@@ -1,14 +1,15 @@
 /**
- * Узел-блок на канвасе L0: номер в моно и цвет блока, название, глиф состояния,
- * бейдж контекста (две строки), подвал «n подблоков · k в плане». Развёрнутый блок
- * (↓ / двойной клик) показывает подблоки списком внутри контейнера (L1 без раскладки).
- * Фокусируемый `role="button"`; клавиши обрабатывает канвас.
+ * Узел-блок на канвасе L0 (X2 P-127): номер в моно и цвет блока, название (до двух строк), бейдж
+ * контекста (до двух строк, без «…»), чип состояния (глиф + слово). Деталь и причина — в панели и в
+ * aria-describedby, а не на карточке; текст карточки — без статусного цвета. Развёрнутый блок
+ * (↓ / двойной клик) показывает подблоки списком внутри карточки. Вид карточки — общий `.gc-node`.
  */
 import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react'
+import { STAGE_META } from '../../explain/stages'
 import type { BlockMeta } from './blocks'
 import type { Rect } from './mapLayout'
 import { STATE_META } from './stateMeta'
-import { StateGlyph, stateDescription } from './StateGlyph'
+import { StateChip, StateGlyph, stateDescription } from './StateGlyph'
 import type { MapNode, NodeLive } from './types'
 
 interface MapNodeViewProps {
@@ -26,11 +27,10 @@ interface MapNodeViewProps {
 }
 
 export function MapNodeView({ rect, meta, live, subs, subLive, selectedId, hoveredId, onSelect, onToggle, onHover, onKeyDown }: MapNodeViewProps) {
-  const planned = subs.filter((s) => subLive(s.id).state === 'planned').length
   const selected = selectedId === meta.id
   const descId = `mm-desc-${meta.id}`
   const cls = [
-    'mm-node', `is-${live.state}`,
+    'gc-node', 'mm-node', `is-${live.state}`,
     selected ? 'is-selected' : '', hoveredId === meta.id ? 'is-hover' : '', rect.expanded ? 'is-expanded' : '',
   ].filter(Boolean).join(' ')
 
@@ -42,7 +42,7 @@ export function MapNodeView({ rect, meta, live, subs, subLive, selectedId, hover
   return (
     <div
       className={cls}
-      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, '--block': meta.colorVar } as CSSProperties}
+      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, '--block': meta.colorVar, '--node-stripe': meta.colorVar } as CSSProperties}
       role="button"
       tabIndex={0}
       data-node={meta.id}
@@ -60,31 +60,29 @@ export function MapNodeView({ rect, meta, live, subs, subLive, selectedId, hover
     >
       <header className="mm-node__head">
         <span className="mm-node__n mono">{String(meta.n).padStart(2, '0')}</span>
-        <span className="mm-node__title text-caps">{meta.title}</span>
-        <StateGlyph state={live.state} className="mm-node__state" />
+        <span className="mm-node__title">{meta.title}</span>
       </header>
       <p className="mm-node__badge">{live.badge ?? STATE_META[live.state].label}</p>
-      {live.detail && <p className="mm-node__detail">{live.detail}</p>}
-      {live.reason && live.state !== 'planned' && <p className="mm-node__reason">{live.reason}</p>}
       <footer className="mm-node__foot">
-        <span>{subs.length} подбл.{planned ? ` · ${planned} в плане` : ''}</span>
+        <StateChip state={live.state} />
         <button
           type="button"
           className="mm-node__expand"
           tabIndex={-1}
           aria-hidden="true"
-          title={rect.expanded ? 'Свернуть (↑)' : 'Развернуть подблоки (↓)'}
+          title={rect.expanded ? 'Свернуть подблоки (↑)' : 'Развернуть подблоки (↓)'}
           onClick={(e) => { e.stopPropagation(); onToggle(meta.id) }}
         >
           {rect.expanded ? '▴' : '▾'}
         </button>
       </footer>
-      <span id={descId} className="mm-sr">{stateDescription(live.state, live.badge, live.reason)}</span>
+      <span id={descId} className="mm-sr">{stateDescription(live.state, [live.badge, live.detail].filter(Boolean).join(' · '), live.reason)}</span>
       {rect.expanded && (
         <ul className="mm-node__subs" aria-label={`Подблоки блока ${meta.n}`}>
           {subs.map((s) => {
             const sl = subLive(s.id)
             const on = selectedId === s.id
+            const planned = s.stage && s.stage !== 'done'
             return (
               <li key={s.id}>
                 <button
@@ -99,7 +97,7 @@ export function MapNodeView({ rect, meta, live, subs, subLive, selectedId, hover
                 >
                   <StateGlyph state={sl.state} />
                   <span className="mm-sub__title">{s.title}</span>
-                  {s.stage && s.stage !== 'done' && <span className="mm-sub__stage mono">{s.stage}</span>}
+                  {planned && <span className="mm-sub__stage">{STAGE_META[s.stage!].short}</span>}
                 </button>
               </li>
             )

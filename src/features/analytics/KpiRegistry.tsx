@@ -1,42 +1,47 @@
 /**
- * Разбор KPI выбранного плана (X1 §6.3 п. 4): рекомендации с количественным обоснованием,
- * сравнение с другим построением и реестр показателей таблицей — группы каталога как липкие
- * подзаголовки, значение `--text` вправо, направление «↑/↓», формула — через «i», не в открытую.
+ * Разбор KPI выбранного построения: рекомендации (простая карточка, приглушённая иконка), сравнение
+ * с базой — по умолчанию предыдущее построение («vs №27 (предыдущее)»), та же база, что у Δ на
+ * плитках, — и реестр показателей таблицей кита. Отклонение — глиф и слово; норма не подписывается.
+ * Пояснения секций — в «i», а не строкой меты.
  */
-import { useEffect, useMemo, useState } from 'react'
-import { api, type KpiBundle, type SimPlanSummary } from '../../lib/api'
+import { useMemo } from 'react'
+import type { KpiBundle } from '../../lib/api'
 import { Icon } from '../../shell/icons'
 import { InfoTip } from '../../ui/InfoTip'
-import { Chip, DataTable, IconButton, Section, type DataColumn } from '../../ui/kit'
+import { NoteTip } from '../../ui/NoteTip'
+import { Chip, DataTable, DeltaChip, IconButton, Section, type DataColumn } from '../../ui/kit'
 import { num } from '../../explain/format'
-import { KPI_CATALOG, readKpi, type KpiContext, type KpiDef } from './kpiCatalog'
-import { DIR_ARROW, DIR_TITLE, STATUS_GLYPH, STATUS_LABEL, isBetter, kpiDeltaText, kpiStatus, kpiText } from './kpiFormat'
+import { KPI_CATALOG, kpiDef, readKpi, type KpiContext, type KpiDef } from './kpiCatalog'
+import { DIR_ARROW, DIR_TITLE, STATUS_LABEL, deltaBetter, kpiDeltaText, kpiDeviation, kpiText } from './kpiFormat'
 import { buildRecommendations, type TypeLoad } from './analyticsModel'
-import { shortDate } from './chartData'
+import { planNo, planOptionLabel, previousPlan, type PlanRef } from './planRuns'
 
-const COMPARE_CODES = ['MAKESPAN', 'OTD', 'TARD', 'UTIL', 'THRU', 'COST']
+const COMPARE_CODES = ['MAKESPAN', 'MK_CVAR', 'OTD', 'TARD', 'UTIL', 'BN_UTIL', 'THRU', 'COST']
+const DEV_GLYPH = { warn: 'glyph-setup', bad: 'glyph-down' } as const
 
 interface KpiRegistryProps {
-  /** KPI-блок плана с «влитыми» полями кассы. */
+  /** KPI-блок построения с «влитыми» полями кассы. */
   bundle: KpiBundle
+  baseBundle: KpiBundle | null
+  baseRef: PlanRef | null
   loads: ReadonlyArray<TypeLoad>
-  plans: ReadonlyArray<SimPlanSummary>
+  refs: ReadonlyArray<PlanRef>
   planId: string
   ctx: KpiContext
-  /** Подпись источника денежных KPI (водопад кассы) для меты реестра. */
+  /** Подпись источника денежных KPI (водопад кассы) для «i» реестра. */
   cashNote: string
+  onBase: (planId: string) => void
   onInvest: (wcTypeId: string) => void
 }
 
-export function KpiRegistry({ bundle, loads, plans, planId, ctx, cashNote, onInvest }: KpiRegistryProps) {
+export function KpiRegistry({ bundle, baseBundle, baseRef, loads, refs, planId, ctx, cashNote, onBase, onInvest }: KpiRegistryProps) {
   const recs = useMemo(() => buildRecommendations(bundle, loads, ctx), [bundle, loads, ctx])
   return (
     <>
       {recs.length > 0 && (
-        <section className="dk-card an-recs dk-rise" aria-label="Рекомендации">
+        <section className="dk-card an-recs" aria-label="Что улучшить">
           <div className="dk-card__head">
-            <h2 className="dk-card__title"><Icon name="bulb" size={15} />Что улучшить</h2>
-            <span className="dk-card__meta">правила поддержки решений <InfoTip id="analytics.recommendations" /></span>
+            <h2 className="dk-card__title"><Icon name="bulb" size={15} />Что улучшить <InfoTip id="analytics.recommendations" /></h2>
           </div>
           <ul className="an-recs__list">
             {recs.map((r, i) => (
@@ -49,10 +54,10 @@ export function KpiRegistry({ bundle, loads, plans, planId, ctx, cashNote, onInv
         </section>
       )}
 
-      {plans.length > 1 && <PlanCompare bundle={bundle} plans={plans} planId={planId} />}
+      <PlanCompare bundle={bundle} baseBundle={baseBundle} baseRef={baseRef} refs={refs} planId={planId} ctx={ctx} onBase={onBase} />
 
-      <Section id="an-registry" title="Реестр показателей"
-        meta={<>{num(KPI_CATALOG.length, 0)} показателей · значения из сохранённого блока плана · {cashNote}</>}>
+      <Section id="an-registry"
+        title={<>Реестр показателей <NoteTip title="Реестр показателей">{num(KPI_CATALOG.length, 0)} показателей; значения — из сохранённого блока построения; {cashNote}. Формулы — в «i» каждой строки.</NoteTip></>}>
         <RegistryTable bundle={bundle} ctx={ctx} />
       </Section>
     </>
@@ -62,10 +67,10 @@ export function KpiRegistry({ bundle, loads, plans, planId, ctx, cashNote, onInv
 /* ── Реестр: таблица с группами каталога ───────────────────────────────────── */
 function RegistryTable({ bundle, ctx }: { bundle: KpiBundle; ctx: KpiContext }) {
   const columns = useMemo<DataColumn<KpiDef>[]>(() => [
-    { key: 'status', title: <span className="dk-vh">Статус</span>, sortable: false, className: 'an-td-status',
+    { key: 'status', title: <span className="dk-vh">Отклонение</span>, sortable: false, className: 'an-td-status',
       render: (k) => {
-        const st = kpiStatus(k, k.value(bundle, ctx), bundle)
-        return st ? <span className={STATUS_GLYPH[st]} title={STATUS_LABEL[st]} aria-label={STATUS_LABEL[st]} /> : null
+        const dev = kpiDeviation(k, k.value(bundle, ctx), bundle)
+        return dev ? <span className={DEV_GLYPH[dev]} title={STATUS_LABEL[dev]} aria-label={STATUS_LABEL[dev]} /> : null
       } },
     { key: 'name', title: 'Показатель', rowHeader: true, get: (k) => k.name,
       render: (k) => {
@@ -80,67 +85,62 @@ function RegistryTable({ bundle, ctx }: { bundle: KpiBundle; ctx: KpiContext }) 
       render: (k) => <InfoTip id={k.info} values={k.infoValues?.(bundle, ctx)} /> },
   ], [bundle, ctx])
   return (
-    <DataTable<KpiDef>
-      columns={columns}
-      rows={KPI_CATALOG}
-      rowKey={(k) => k.code}
-      groupBy={(k) => k.category}
-      rowTitle={(k) => `${k.nameEn} · ${k.formula}`}
-      caption="Реестр KPI выбранного плана по категориям"
-      tight
-    />
+    <DataTable<KpiDef> columns={columns} rows={KPI_CATALOG} rowKey={(k) => k.code} groupBy={(k) => k.category}
+      rowTitle={(k) => `${k.nameEn} · ${k.formula}`} caption="Реестр KPI выбранного построения по категориям" tight />
   )
 }
 
-/* ── Сравнение с другим построением (A/B) ──────────────────────────────────── */
+/* ── Сравнение с базой (по умолчанию — предыдущее построение) ───────────────── */
 interface CompareRow { def: KpiDef; a: number; b: number }
 
-function PlanCompare({ bundle, plans, planId }: { bundle: KpiBundle; plans: ReadonlyArray<SimPlanSummary>; planId: string }) {
-  const [cmpId, setCmpId] = useState('')
-  const [cmp, setCmp] = useState<KpiBundle | null>(null)
-  useEffect(() => {
-    if (!cmpId) { setCmp(null); return }
-    let alive = true
-    api.analytics.kpi(cmpId).then((b) => { if (alive) setCmp(b) }).catch(() => { if (alive) setCmp(null) })
-    return () => { alive = false }
-  }, [cmpId])
+interface PlanCompareProps {
+  bundle: KpiBundle
+  baseBundle: KpiBundle | null
+  baseRef: PlanRef | null
+  refs: ReadonlyArray<PlanRef>
+  planId: string
+  ctx: KpiContext
+  onBase: (planId: string) => void
+}
 
+function PlanCompare({ bundle, baseBundle, baseRef, refs, planId, ctx, onBase }: PlanCompareProps) {
+  const others = refs.filter((r) => r.id !== planId)
+  const prev = previousPlan(refs, planId)
+  const baseName = baseRef ? `${planNo(baseRef.seq)}${baseRef.id === prev?.id ? ' (предыдущее)' : ''}` : ''
   const rows = useMemo<CompareRow[]>(() => {
-    if (!cmp?.kpi || Object.keys(cmp.kpi).length === 0) return []
-    return COMPARE_CODES
-      .map((code) => KPI_CATALOG.find((k) => k.code === code))
-      .filter((k): k is KpiDef => Boolean(k))
-      .map((def) => ({ def, a: def.value(bundle), b: def.value(cmp) }))
-  }, [bundle, cmp])
+    if (!baseBundle?.kpi || Object.keys(baseBundle.kpi).length === 0) return []
+    return COMPARE_CODES.map(kpiDef).filter((k): k is KpiDef => Boolean(k))
+      .map((def) => ({ def, a: def.value(bundle, ctx), b: def.value(baseBundle, ctx) }))
+  }, [bundle, baseBundle, ctx])
 
   const columns: DataColumn<CompareRow>[] = [
     { key: 'name', title: 'Показатель', rowHeader: true, get: (r) => r.def.name },
-    { key: 'a', title: 'Этот план', num: true, get: (r) => r.a, render: (r) => kpiText(r.a, r.def.unit) },
-    { key: 'b', title: 'Второй план', num: true, get: (r) => r.b, render: (r) => kpiText(r.b, r.def.unit) },
-    { key: 'd', title: 'Разница', num: true, get: (r) => r.a - r.b,
-      render: (r) => {
-        const d = r.a - r.b
-        const better = isBetter(d, r.def.dir)
-        const text = kpiDeltaText(d, r.def.unit)
-        return better === null ? text : <Chip size="sm" tone={better ? 'good' : 'bad'}>{text}</Chip>
-      } },
+    { key: 'a', title: 'Это построение', num: true, get: (r) => r.a, render: (r) => kpiText(r.a, r.def.unit) },
+    { key: 'b', title: baseRef ? planNo(baseRef.seq) : 'База', num: true, get: (r) => r.b, render: (r) => kpiText(r.b, r.def.unit) },
+    { key: 'd', title: 'Δ к базе', num: true, get: (r) => r.a - r.b,
+      render: (r) => <DeltaChip value={r.a - r.b} better={deltaBetter(r.def.dir)} fmt={(x) => kpiDeltaText(x, r.def.unit)} /> },
   ]
-  const others = plans.filter((p) => p.id !== planId)
-  const tools = (
-    <label className="an-tool">
-      <span className="an-tool__k text-caps">Сравнить с</span>
-      <select className="dk-select" value={cmpId} onChange={(e) => setCmpId(e.target.value)}>
-        <option value="">— второй план —</option>
-        {others.map((p) => {
-          const n = plans.length - plans.indexOf(p)
-          return <option key={p.id} value={p.id}>#{n} · {shortDate(p.created_at)}</option>
-        })}
+  const tools = others.length > 0 && (
+    <label className="an-tool an-tool--row">
+      <span className="an-tool__k text-caps">База</span>
+      <select className="dk-select" value={baseRef?.id ?? ''} onChange={(e) => onBase(e.target.value)} aria-label="База сравнения">
+        {!baseRef && <option value="" disabled>— выберите построение —</option>}
+        {others.map((r) => <option key={r.id} value={r.id}>{planOptionLabel(r)}{r.id === prev?.id ? ' · предыдущее' : ''}</option>)}
       </select>
     </label>
   )
+  const title = <>Сравнение{baseName ? ` с ${baseName}` : ''} <InfoTip id="analytics.ab_delta" /></>
   return (
-    <Section id="an-compare" title="Сравнение построений" meta="разница по ключевым показателям; ● лучше · ■ хуже с учётом направления" tools={tools}>
-      {rows.length > 0 && <DataTable<CompareRow> columns={columns} rows={rows} rowKey={(r) => r.def.code} tight framed caption="Сравнение двух построений плана" />}
+    <Section id="an-compare" title={title} tools={tools || undefined}>
+      {others.length === 0 ? (
+        <p className="an-muted">Сравнивать не с чем: это единственное построение. Постройте план ещё раз — здесь появится разница с ним.</p>
+      ) : !baseRef ? (
+        <p className="an-muted">Это самое раннее построение — выберите базу сравнения в списке «База».</p>
+      ) : rows.length === 0 ? (
+        <p className="an-muted">У {planNo(baseRef.seq)} нет сохранённых показателей — выберите другое построение в списке «База».</p>
+      ) : (
+        <DataTable<CompareRow> columns={columns} rows={rows} rowKey={(r) => r.def.code} tight framed caption={`Сравнение построения с ${baseName || 'базой'}`} />
+      )}
     </Section>
   )
 }

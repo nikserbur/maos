@@ -44,7 +44,9 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.ga-hud__head { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--space-2); }
+.ga-hud__head { position: relative; display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--space-2); padding-right: 28px; }
+/* «Пауза анимации» (WCAG 2.2.2) — в углу шапки HUD */
+.ga-hud__head > .btn { position: absolute; top: -2px; right: 0; color: var(--text-secondary); }
 .ga-hud__title { color: var(--ochre); }
 .ga-hud__gen { color: var(--text); }
 .ga-hud__phases {
@@ -67,7 +69,7 @@
 .ga-hud__phases li:nth-child(4).is-on { background: var(--cinnabar); }
 .ga-hud__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
 .ga-hud__stats div { display: flex; flex-direction: column; gap: 2px; }
-.ga-hud__stats span { font-size: var(--fs-9); color: var(--text-muted); }
+.ga-hud__stats span { font-size: var(--fs-11); color: var(--text-muted); }
 .ga-hud__stats b { font-size: var(--fs-14); font-weight: 400; color: var(--text); }
 .ga-hud__chart { display: block; width: 100%; height: 44px; margin-top: var(--space-2); overflow: visible; }
 .ga-hud__best { stroke: var(--chart-2); }
@@ -99,7 +101,7 @@
   cursor: pointer;
 }
 .ga-hud__toggle:hover { color: var(--text); }
-.ga-hud__toggle-chevron { color: var(--ochre); font-size: var(--fs-9); }
+.ga-hud__toggle-chevron { color: var(--text-muted); font-size: var(--fs-11); }
 
 .ga-hud__settings {
   margin: var(--space-3) 0 0;

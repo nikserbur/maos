@@ -1,52 +1,17 @@
 /**
- * «Методика» — научный лонгрид: модель, формулы, схемы, терминология,
- * верификация, конкуренты и агентный слой. Якоря: #/methodology/<id>.
+ * «Методика» — научный лонгрид: модель, формулы, схемы, терминология, верификация, конкуренты и
+ * агентный слой. Якоря: #/methodology/<id>. Оглавление — настоящие ссылки (X2 P-132): Cmd/Ctrl+клик
+ * открывает раздел в новой вкладке, «Назад» возвращает к прежнему разделу.
  */
-import { useRef, type ComponentType } from 'react'
-import { TOC, sectionNumber, type SectionId } from './toc'
+import { useRef } from 'react'
+import { TOC, sectionNumber } from './toc'
 import { useAnchorNav } from './useAnchorNav'
-import { Overview, TwoStages } from './sections/Intro'
-import { CorrelationSection, ForecastSection } from './sections/External'
-import { CvarSection, ParetoSection, RobustnessSection } from './sections/StageTwo'
-import { DispatchSection, HeavyTailSection, Idef0Section, LotStreamingSection, MrpSection } from './sections/StageOne'
-import { LittleSection, NpvSection, TocSection } from './sections/FlowInvest'
-import { KpiSection, TermsSection } from './sections/Reference'
-import { CompetitorsSection, ValidationSection } from './sections/Science'
-import { AgentLayersSection, RlSection } from './sections/Agents'
+import { SECTIONS } from './sections'
 import './methodology.css'
-
-const SECTIONS: Record<SectionId, ComponentType> = {
-  'overview': Overview,
-  'two-stages': TwoStages,
-  'forecast-decomposition': ForecastSection,
-  'correlation-diversification': CorrelationSection,
-  'cvar-tail': CvarSection,
-  'price-of-robustness': RobustnessSection,
-  'pareto': ParetoSection,
-  'idef0': Idef0Section,
-  'heavy-tail': HeavyTailSection,
-  'lot-streaming': LotStreamingSection,
-  'dispatch-rules': DispatchSection,
-  'mrp': MrpSection,
-  'toc': TocSection,
-  'little-law': LittleSection,
-  'npv': NpvSection,
-  'kpi-definitions': KpiSection,
-  'terminology': TermsSection,
-  'validation': ValidationSection,
-  'competitors': CompetitorsSection,
-  'agent-layers': AgentLayersSection,
-  'rl': RlSection,
-}
 
 export function MethodologyScreen() {
   const rootRef = useRef<HTMLDivElement>(null)
-  const { active, scrollTo } = useAnchorNav(rootRef)
-
-  const go = (id: SectionId) => {
-    history.replaceState(null, '', `#/methodology/${id}`)
-    scrollTo(id)
-  }
+  const { active } = useAnchorNav(rootRef)
 
   return (
     <div className="mth" ref={rootRef}>
@@ -57,16 +22,15 @@ export function MethodologyScreen() {
             <div key={g.title} className="mth-toc__group">
               <div className="mth-toc__group-title">{g.title}</div>
               {g.items.map((it) => (
-                <button
+                <a
                   key={it.id}
-                  type="button"
+                  href={`#/methodology/${it.id}`}
                   className={`mth-toc__item${active === it.id ? ' is-active' : ''}`}
                   aria-current={active === it.id ? 'location' : undefined}
-                  onClick={() => go(it.id)}
                 >
                   <span className="mth-toc__num num">{sectionNumber(it.id)}</span>
                   <span>{it.title}</span>
-                </button>
+                </a>
               ))}
             </div>
           ))}
@@ -74,11 +38,12 @@ export function MethodologyScreen() {
 
         <article className="mth__article">
           <header className="mth-hero">
-            <div className="mth-hero__eyebrow text-caps">MAOS · научная основа</div>
+            <div className="mth-hero__eyebrow text-caps">Объяснение · научная основа</div>
             <h1 className="mth-hero__title">Методика</h1>
             <p className="mth-hero__lead">
               Как модель превращает справочники, сценарии рынка и технологию в робастный портфель и расписание —
               с формулами, допущениями, литературой и честной границей «реализовано / в плане».
+              Каждый раздел ссылается на свои узлы <a href="#/map">«Карты методологии»</a>.
             </p>
           </header>
           {TOC.flatMap((g) => g.items).map((it) => {

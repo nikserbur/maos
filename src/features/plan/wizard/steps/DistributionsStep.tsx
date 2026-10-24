@@ -1,26 +1,39 @@
 /**
- * Шаг 3 «Распределения» [2] (UX-V2 §4.2): хвосты длительностей (`tail_weight` — переопределение
- * прогона с паспортом r1.03, `tail_index` — паспорт r1.04), PERT σ (норматив r1.07), поломки
- * (MTBF по типам РЦ), распределения цен сценария. «Оценить по план-факту» — честно: R20 блокирует
- * калибровку без plan_fact_ops; предпросмотр (`GET /api/simulation/calibration`) показывается.
+ * Шаг 3 «Распределения» [2] (UX-V2 §4.2; X2 «один экран на шаг»): одна колонка полей — вес хвоста
+ * длительностей (переопределение прогона), индекс хвоста, разброс PERT, поломки; пояснения — в «i».
+ * Распределения цен сценария и предпросмотр калибровки по план-факту — свёрнуты. Названия
+ * распределений — словами (labels.ts); технические подробности — под «Подробнее».
  */
 import { useState } from 'react'
 import { api, type CalibRow } from '../../../../lib/api'
 import { num, pct } from '../../../../explain/format'
+import { fitLabel } from '../../../../explain/labels'
 import { DensityMini } from '../../../../ui/DensityMini'
 import { ParamField } from '../../../../ui/ParamField'
+import { ProvenanceBadge } from '../../../../ui/ProvenanceBadge'
 import { useRefs } from '../../../method-map/useMethodMapState'
 import { usePassport } from '../../../passport/passportStore'
-import { Chip } from '../../../../ui/kit'
+import { DataTable, InlineError, type DataColumn } from '../../../../ui/kit'
 import type { WizardData } from '../useWizardData'
 import { effectiveFields, isChanged, useWizard, wizardActions } from '../wizardStore'
+
+const DIST_SHOWN = 8
+
+const CALIB_COLS: DataColumn<CalibRow>[] = [
+  { key: 'op', title: 'Операция', rowHeader: true, clip: true, get: (r) => r.op_name },
+  { key: 'prod', title: 'Изделие', clip: true, get: (r) => r.product_name },
+  { key: 'norm', title: 'Норма, ч', num: true, get: (r) => r.t_norm, render: (r) => num(r.t_norm, 1) },
+  { key: 'fact', title: 'Факт симуляции, ч', num: true, get: (r) => r.realized_mean, render: (r) => num(r.realized_mean, 1) },
+  { key: 'n', title: 'Наблюдений', num: true, get: (r) => r.n, render: (r) => num(r.n, 0) },
+  { key: 'd', title: 'Отклонение', num: true, get: (r) => r.delta_pct, render: (r) => `${r.delta_pct > 0 ? '+' : ''}${num(r.delta_pct, 1)} %` },
+]
 
 export function DistributionsStep({ data }: { data: WizardData }) {
   const w = useWizard()
   const refs = useRefs()
   const passport = usePassport()
   const f = effectiveFields(w)
-  const [calib, setCalib] = useState<{ rows: CalibRow[]; planId: string | null } | null | 'loading' | 'error'>(null)
+  const [calib, setCalib] = useState<{ rows: CalibRow[] } | null | 'loading' | { error: unknown }>(null)
   const tailDef = Number(passport.byCode['r1.03']?.value) || 0.08
   const tailIdx = passport.byCode['r1.04']?.value ?? '2.5'
   const dists = data.scenario?.distributions ?? []
@@ -29,74 +42,61 @@ export function DistributionsStep({ data }: { data: WizardData }) {
 
   const preview = () => {
     setCalib('loading')
-    api.simulation.calibration().then((r) => setCalib({ rows: r.rows, planId: r.plan_id })).catch(() => setCalib('error'))
+    api.simulation.calibration().then((r) => setCalib({ rows: r.rows })).catch((e: unknown) => setCalib({ error: e }))
   }
 
   return (
     <div className="wz-step">
-      <div className="wz-fields">
-        <ParamField label="Вес хвоста Парето · tail_weight" value={f.tailWeight ?? tailDef} unit="доля операций" status={passport.byCode['r1.03']?.status ?? 'UI'}
-          provenance={isChanged(w, 'tailWeight') ? 'manual' : 'ui'} owner={isChanged(w, 'tailWeight') ? 'этот прогон' : 'умолчание планировщика (r1.03)'}
+      <div className="wz-fields wz-fields--one">
+        <ParamField label="Доля операций с тяжёлым хвостом" value={(f.tailWeight ?? tailDef) * 100} unit="% операций" status={passport.byCode['r1.03']?.status ?? 'UI'}
+          provenance={isChanged(w, 'tailWeight') ? 'manual' : 'ui'} owner={isChanged(w, 'tailWeight') ? 'этот прогон' : 'умолчание планировщика'}
           changed={isChanged(w, 'tailWeight')} onRevert={() => wizardActions.revert('tailWeight')}
-          range={[0, 0.5]} step={0.01} min={0} max={0.5} slider onChange={(v) => wizardActions.setOverride('tailWeight', v)}
-          info="plan.makespan_cvar" note={<>Доля операций, у которых длительность получает множитель Парето 1 + min(8, F − 1); остальные — логнормаль вокруг PERT. Переопределение действует только на этот прогон (■ manual) и не пишется в НСИ.{' '}{passport.byCode['r1.03']?.source && <>Цель паспорта: {passport.byCode['r1.03'].source}.</>}</>} />
-        <ParamField label="Индекс хвоста α · tail_index" value={String(tailIdx)} status={passport.byCode['r1.04']?.status ?? 'UI'} owner="паспорт r1.04 · задаётся в НСИ операций" readOnly
-          note="Нижняя граница ≥ 1,2; по операции может быть индивидуальным. Оценка Хилла/GPD по план-факту — после импорта факта (R20)." />
-        <ParamField label="PERT: σ при t_opt = t_pess" value="0,15 · mean" status={passport.byCode['r1.07']?.status ?? 'НОРМ'} owner="норматив r1.07" readOnly
-          note={`${num(refs.counts.operations, 0)} операций с нормами t_opt / t_norm / t_pess; переделка с вероятностью risk_coef ${passport.byCode['r1.02']?.value ?? '0,05'} [НОРМ].`} />
-        <ParamField label="Поломки и ремонт · MTBF" value={`${withMtbf} из ${refs.counts.wcTypes}`} unit="типов РЦ" provenance={withMtbf > 0 ? 'manual' : 'default'} owner="НСИ типов РЦ" readOnly
-          note={<>Интенсивность отказов λ = (0,5 + 1,5u)/MTBF [{passport.byCode['r1.12']?.status ?? 'UI'}], CV ремонта {passport.byCode['r1.13']?.value ?? '0,6'} [НОРМ]. <a className="pf-link" href="#/nsi/work_center_types">задать MTBF →</a></>} />
+          range={[0, 50]} step={1} min={0} max={50} onChange={(v) => wizardActions.setOverride('tailWeight', v / 100)} info="plan.makespan_cvar"
+          hint="У этих операций длительность получает множитель Парето; остальные — логнормаль вокруг оценки PERT. Переопределение действует только на этот прогон и не пишется в справочники." />
+        <ParamField label="Индекс хвоста α" value={String(tailIdx).replace('.', ',')} status={passport.byCode['r1.04']?.status ?? 'UI'} owner="задаётся в справочнике операций" readOnly
+          hint="Не ниже 1,2; по операции может быть индивидуальным. Оценка по план-факту — после импорта факта." />
+        <ParamField label="Разброс длительности без оценок разброса" value="0,15 · среднее" status={passport.byCode['r1.07']?.status ?? 'НОРМ'} owner="норматив" readOnly
+          hint={`${num(refs.counts.operations, 0)} операций с нормами «оптимист · норма · пессимист»; переделка — с вероятностью ${String(passport.byCode['r1.02']?.value ?? '0,05').replace('.', ',')}.`} />
+        <ParamField label="Поломки и ремонт" value={`${num(withMtbf, 0)} из ${num(refs.counts.wcTypes, 0)}`} unit="типов РЦ с наработкой на отказ" provenance={withMtbf > 0 ? 'manual' : 'default'} owner="справочник типов РЦ" readOnly
+          hint="Интенсивность отказов растёт с износом; время ремонта — с разбросом. Наработку на отказ задают в справочнике типов РЦ."
+          actions={<a className="pf-link" href="#/nsi/work_center_types">задать →</a>} />
       </div>
 
-      <section className="wz-card" aria-label="Распределения цен сценария">
-        <div className="wz-card__head">
-          <p className="wz-card__t">Распределения цен сценария «{data.scenario?.name ?? '—'}» · {dists.length} из {nProd} изделий</p>
-          <span className="wz-badges">
-            {dists.length === 0 ? <Chip tone="warn">по умолчанию: σ = 12 % · β = 0,7 [UI/НОРМ]</Chip> : <Chip>задано {dists.length}</Chip>}
-            <a className="pf-link" href="#/scenarios/distributions">править в «Сценариях» →</a>
-          </span>
-        </div>
+      <details className="wz-card wz-fold">
+        <summary className="wz-card__t">
+          Распределения цен сценария «{data.scenario?.name || 'сценарий без имени'}» · {num(dists.length, 0)} из {num(nProd, 0)} изделий
+          {dists.length === 0 && <ProvenanceBadge status="НОРМ" title="По умолчанию: разброс 12 %, β = 0,7" />}
+        </summary>
         {dists.length > 0 && (
           <div className="wz-dists">
-            {dists.slice(0, 8).map((d) => {
+            {dists.slice(0, DIST_SHOWN).map((d) => {
               const mean = Number(d.mean) || 0, sd = Number(d.stddev) || 0
               return (
                 <div key={d.product_id} className="wz-dist">
                   <DensityMini type={d.dist_type} rel={mean > 0 ? sd / mean : 0.12} width={120} height={36} />
-                  <span className="wz-dist__name">{data.products.find((p) => p.id === d.product_id)?.name ?? d.product_id}</span>
-                  <span className="wz-dist__meta mono">{d.dist_type} · σ {mean > 0 ? pct(sd / mean, 0) : '—'} · β {d.beta ?? '0,7'}</span>
+                  <span className="wz-dist__name">{data.products.find((p) => p.id === d.product_id)?.name ?? 'изделие'}</span>
+                  <span className="wz-dist__meta">{fitLabel(d.dist_type)} · разброс {mean > 0 ? pct(sd / mean, 0) : '—'}</span>
                 </div>
               )
             })}
-            {dists.length > 8 && <span className="pl-note">… ещё {dists.length - 8}</span>}
+            {dists.length > DIST_SHOWN && <span className="pl-note">… ещё {num(dists.length - DIST_SHOWN, 0)} · <a className="pf-link" href="#/scenarios/distributions">все в «Сценариях» →</a></span>}
           </div>
         )}
-        <p className="pl-note">Цены влияют на кассу и портфель, не на порядок операций; на этом шаге они показаны, чтобы видеть унаследованное.</p>
-      </section>
+        <p className="pl-note">Цены влияют на кассу и портфель, не на порядок операций. <a className="pf-link" href="#/scenarios/distributions">Править в «Сценариях» →</a></p>
+      </details>
 
-      <section className="wz-card" aria-label="Оценка по план-факту">
-        <div className="wz-card__head">
-          <p className="wz-card__t">Оценить по план-факту (калибровка норм, R20)</p>
-          <button type="button" className="btn" onClick={preview} disabled={calib === 'loading'}>{calib === 'loading' ? 'Загружаем…' : 'Предпросмотр калибровки'}</button>
+      <details className="wz-card wz-fold">
+        <summary className="wz-card__t">Сверка норм с план-фактом</summary>
+        <p className="pl-note">Нормы калибруются только по настоящему план-факту: пока его нет, доступен предпросмотр по последней симуляции — он ничего не записывает.</p>
+        <div className="wz-row">
+          <button type="button" className="btn btn--sm" onClick={preview} aria-disabled={calib === 'loading'}>{calib === 'loading' ? 'Загружаем…' : 'Предпросмотр по симуляции'}</button>
+          <details className="wz-more"><summary>Подробнее</summary><span className="mono">POST /api/simulation/calibrate → 409, пока таблица plan_fact_ops пуста (решение R20)</span></details>
         </div>
-        <p className="pl-note">
-          <b>Оценка недоступна без план-факта:</b> `POST /api/simulation/calibrate` отвечает 409, пока таблица `plan_fact_ops` (synthetic = 0) пуста —
-          нормы не калибруются по синтетической симуляции (решение Р7/R20). Предпросмотр по последней симуляции показывается, но в НСИ не пишется.
-        </p>
-        {calib === 'error' && <p className="pl-note pl-note--danger">Предпросмотр недоступен.</p>}
-        {calib && calib !== 'loading' && calib !== 'error' && (
-          calib.rows.length === 0 ? <p className="pl-note">Нет данных симуляции для предпросмотра.</p> : (
-            <table className="plan__rules">
-              <thead><tr><th>Операция</th><th>Изделие</th><th>Норма</th><th>Факт (симуляция)</th><th>n</th><th>Δ</th></tr></thead>
-              <tbody>
-                {calib.rows.slice(0, 8).map((r) => (
-                  <tr key={r.op_id}><td>{r.op_name}</td><td>{r.product_name}</td><td className="num">{num(r.t_norm, 1)}</td><td className="num">{num(r.realized_mean, 1)}</td><td className="num">{r.n}</td><td className="num">{r.delta_pct >= 0 ? '+' : ''}{num(r.delta_pct, 1)} %</td></tr>
-                ))}
-              </tbody>
-            </table>
-          )
+        {calib && typeof calib === 'object' && 'error' in calib && <InlineError error={calib.error} title="Предпросмотр недоступен" onRetry={preview} />}
+        {calib && typeof calib === 'object' && 'rows' in calib && (
+          <DataTable columns={CALIB_COLS} rows={calib.rows} rowKey={(r) => r.op_id} tight limit={DIST_SHOWN} empty="Нет данных симуляции для предпросмотра" caption="Предпросмотр калибровки норм" />
         )}
-      </section>
+      </details>
     </div>
   )
 }

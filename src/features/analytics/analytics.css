@@ -1,114 +1,82 @@
 /*
- * «Аналитика» — KPI, узкие места, инвестпроекты, потоки (X1 §6.3, G3 2.4).
- * Только токены (--fs-*, --space-*, --chart-*, --status-*); шапка/табы/таблицы/чипы — из src/ui/kit.
- * Числа плиток всегда `--text`; статус — глиф + полоса; текст никогда цветом ряда.
+ * «Аналитика» — вердикт, KPI, узкие места, инвестпроекты, потоки (X2).
+ * Только токены (--fs-*, --space-*, --chart-*); шапка/табы/таблицы/чипы/плитки — из src/ui/kit.
+ * Поверхности ровные, без цветных подложек: цвет — только у отклонения (глиф + слово), числа — `--text`,
+ * данные — `--chart-*`, ▲ охрой — только «выбранный/оцениваемый».
  */
 .an {
   height: 100%;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-6) var(--space-8);
+  padding: var(--space-5) var(--space-6) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  background:
-    radial-gradient(45% 30% at 100% 0%, color-mix(in oklch, var(--verdigris) 7%, transparent), transparent 70%),
-    radial-gradient(40% 30% at 0% 0%, color-mix(in oklch, var(--ultramarine) 9%, transparent), transparent 70%),
-    var(--bg-app);
+  gap: var(--space-3);
+  background: var(--bg-app);
 }
 .an > * { flex-shrink: 0; min-width: 0; }
-.an-muted { margin: 0; color: var(--text-muted); font-size: var(--fs-13); }
+.an-muted { margin: 0; color: var(--text-muted); font-size: var(--fs-13); line-height: var(--lh-body); text-wrap: pretty; }
 .an-note { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-body); text-wrap: pretty; }
-.an-note b { color: var(--text); font-weight: 600; }
+.an-body { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.an-body.is-refetching { opacity: 0.55; }
 
-/* ── Одна строка фильтров над содержимым: план · ось · период ──────────────── */
-.an-filters {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3) var(--space-6);
-  flex-wrap: wrap;
-  padding: var(--space-3) var(--space-4);
-  background: color-mix(in oklch, var(--bg-panel) 70%, var(--bg-card));
-  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-  border-radius: var(--radius-lg);
-}
+/* ── Шапка: выбор построения справа ────────────────────────────────────────── */
+.an-plansel { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.an-plansel .dk-select { width: auto; max-width: 420px; height: var(--control); }
 .an-tool { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.an-tool--row { flex-direction: row; align-items: center; gap: var(--space-2); }
+.an-tool--row .dk-select { width: auto; max-width: 360px; }
 .an-tool__k { color: var(--text-muted); }
-.an-filters__plan { width: auto; max-width: 420px; height: var(--control); }
-.an-body { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
 
-/* ── Закреплённые показатели: герой 2 колонки, остальные плитки 24 px ─────── */
-.an-pins {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-  gap: var(--space-3);
-}
-.an-pin {
-  position: relative;
+/* ── Строка-вердикт ────────────────────────────────────────────────────────── */
+.an-verdict {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-4);
-  overflow: hidden;
-  text-align: left;
-  font: inherit;
-  color: var(--text);
-  cursor: pointer;
-  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 97%, var(--bone)), var(--bg-card));
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  flex-wrap: wrap;
+  min-height: 28px;
+}
+.an-verdict__text { margin: 0; min-width: 0; font-size: var(--fs-14); line-height: var(--lh-body); color: var(--text-secondary); text-wrap: pretty; }
+.an-verdict__head { color: var(--text); font-weight: 600; }
+.an-verdict__fact { font-variant-numeric: tabular-nums; }
+.an-verdict__act { flex: none; }
+
+/* ── Фильтры графиков: ось · период ────────────────────────────────────────── */
+.an-filters { display: flex; align-items: flex-end; gap: var(--space-3) var(--space-6); flex-wrap: wrap; }
+
+/* ── Закреплённые показатели: плитки кита на ровной поверхности ────────────── */
+.an-pins { display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: var(--space-3); }
+.an-pin {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
   border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
   border-radius: var(--radius-lg);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--bone) 5%, transparent), var(--shadow-1);
-  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
-[data-theme='light'] .an-pin { background: var(--bg-card); border-color: var(--border); }
-.an-pin:hover { border-color: color-mix(in oklch, var(--accent) 45%, var(--border)); }
-.an-pin:focus-visible { outline: none; box-shadow: var(--halo); }
-.an-pin--hero {
-  grid-column: span 2;
-  background:
-    radial-gradient(120% 90% at 0% 0%, color-mix(in oklch, var(--ultramarine) 16%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 97%, var(--bone)), var(--bg-card));
-  border-color: color-mix(in oklch, var(--ultramarine) 34%, var(--border));
-}
-[data-theme='light'] .an-pin--hero {
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in oklch, var(--ultramarine) 7%, transparent), transparent 60%), var(--bg-card);
-}
-.an-pin__k { display: flex; align-items: center; gap: 6px; color: var(--text-muted); line-height: 1.3; }
-.an-pin__dir { color: var(--text-muted); font-weight: 500; letter-spacing: 0; }
-.an-pin__v {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-1);
-  font-size: var(--fs-24);
-  font-weight: 300;
-  line-height: 1.05;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-/* Герой: одно крупное число — пропорциональные цифры, без tabular-nums (dataviz). */
-.an-pin--hero .an-pin__v { font-size: var(--fs-44); font-variant-numeric: normal; letter-spacing: -0.02em; }
-.an-pin__v small { font-size: var(--fs-13); font-weight: 400; color: var(--text-muted); }
-.an-pin--hero .an-pin__v small { font-size: var(--fs-16); }
-.an-pin__est { font-size: var(--fs-16); color: var(--text-muted); margin-right: 2px; }
-.an-pin__trend { display: flex; align-items: flex-end; gap: var(--space-3); margin-top: auto; }
+[data-theme='light'] .an-pin { border-color: var(--border); }
+.an-pin--hero { grid-column: span 2; }
+.an-pin__tools { display: inline-flex; align-items: center; gap: var(--space-1); }
+.an-pin__est { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
+.an-pin__trend { display: flex; align-items: flex-end; gap: var(--space-3); min-height: 36px; margin-top: auto; }
 .an-pin__trend-k { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
-.an-pin::after {
-  content: '';
-  position: absolute;
-  left: var(--space-4);
-  right: var(--space-4);
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
+.an-pin-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 64px;
+  padding: var(--space-3);
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+  cursor: pointer;
   background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
-.an-pin--good::after { background: var(--status-running); }
-.an-pin--warn::after { background: var(--status-setup); }
-.an-pin--bad::after { background: var(--status-down); }
+.an-pin-add:hover { color: var(--text); border-color: var(--text-muted); }
+.an-pin-add[aria-pressed='true'] { color: var(--text); border-style: solid; border-color: var(--accent); }
+.an-pin-add:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 
-/* Редактор набора — пунктирная карточка с чипами по категориям. */
 .an-pin-editor {
   display: flex;
   flex-direction: column;
@@ -121,9 +89,11 @@
 .an-pin-cat__t { min-width: 96px; color: var(--text-muted); }
 .an-pin-cat__chips { display: flex; gap: 6px; flex-wrap: wrap; }
 
-/* ── Графики: заголовок = метрики, редактор метрик под плотом ──────────────── */
+/* ── Графики: заголовок-утверждение, ровный ряд, редактор метрик ──────────── */
 .an-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: var(--space-4); }
 .an-chart { display: flex; flex-direction: column; gap: var(--space-3); }
+.an-flat { display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); min-height: 120px; }
+.an-flat__title { margin: 0; font-size: var(--fs-16); font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; text-wrap: balance; }
 .an-metrics {
   display: flex;
   align-items: center;
@@ -137,7 +107,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  min-height: 26px;
   padding: 0 2px 0 var(--space-2);
   font-size: var(--fs-12);
   color: var(--text);
@@ -153,16 +123,13 @@
 .an-metric[data-slot='4'] .an-metric__sw { background: var(--chart-5); }
 .an-metric[data-slot='5'] .an-metric__sw { background: var(--chart-6); }
 .an-metric[data-slot='6'] .an-metric__sw { background: var(--chart-7); }
-.an-metric .btn { height: 20px; width: 20px; padding: 0; border-radius: 50%; }
-.an-metrics__add { width: auto; max-width: 180px; height: 26px; font-size: var(--fs-12); }
+/* Хвост, слитый с показателем: тот же цвет, полупрозрачная «полоса». */
+.an-metric--band .an-metric__sw { border-radius: 2px; opacity: 0.35; }
+.an-metric .btn { height: 24px; width: 24px; padding: 0; border-radius: 50%; }
+.an-metrics__add { width: auto; max-width: 200px; height: 26px; font-size: var(--fs-12); }
 
-/* ── Рекомендации ──────────────────────────────────────────────────────────── */
-.an-recs {
-  background:
-    radial-gradient(80% 120% at 0% 0%, color-mix(in oklch, var(--ochre) 10%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 97%, var(--bone)), var(--bg-card));
-}
-.an-recs .dk-card__title > svg { color: var(--ochre); }
+/* ── Рекомендации: простая карточка, иконка приглушена ─────────────────────── */
+.an-recs .dk-card__title > svg { color: var(--text-muted); }
 .an-recs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .an-rec {
   display: flex;
@@ -178,38 +145,48 @@
 .an-rec__text { color: var(--text-secondary); text-wrap: pretty; }
 .an-rec .btn { flex: none; }
 
-/* ── Реестр и ранжир: служебные колонки таблиц кита ────────────────────────── */
+/* ── Таблицы: реестр, ранжир, кандидаты ────────────────────────────────────── */
 .dk-table td.an-td-status, .dk-table th.an-td-status { width: 28px; padding-right: 0; text-align: center; }
 .dk-table td.an-td-info, .dk-table th.an-td-info { width: 36px; text-align: center; }
 .dk-table td.an-td-dir { color: var(--text-muted); white-space: nowrap; }
 .dk-table th[scope='row'] .dk-chip { margin-left: var(--space-2); vertical-align: middle; }
 .dk-table td.an-td-rank, .dk-table th.an-td-rank { width: 44px; }
 .dk-table td.an-td-bar { width: 220px; min-width: 140px; }
-.dk-table td.an-td-act { width: 140px; text-align: right; }
-.an-rank {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  font-size: var(--fs-12);
-  font-weight: 700;
-  color: var(--accent-text);
-  background: color-mix(in oklch, var(--accent) 18%, transparent);
-  border-radius: var(--radius);
-}
-.an-rank--top { color: var(--ochre); background: color-mix(in oklch, var(--ochre) 24%, transparent); }
+.dk-table td.an-td-act { width: 200px; text-align: right; }
+.an-rank { font-size: var(--fs-12); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .an-bname { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.an-loadmark { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.an-rowacts { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
+/* Меню «⋯» строки ранжира не обрезается рамкой таблицы, пока таблица помещается без прокрутки. */
+@media (min-width: 1100px) { .an-bn .dk-table-wrap { overflow: visible; } }
+.an-cand { display: inline-flex; align-items: baseline; gap: var(--space-2); }
+.an-cand__src { display: block; font-size: var(--fs-11); font-weight: 400; color: var(--text-muted); }
+/* ▲ охрой — оцениваемый (выбранный) вариант; не статус. */
+.an-chosen {
+  display: inline-block;
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 0.37em solid transparent;
+  border-right: 0.37em solid transparent;
+  border-bottom: 0.64em solid var(--ochre);
+}
+@media (forced-colors: active) { .an-chosen { border-bottom-color: CanvasText; } }
 
-/* ── Инвестпроекты: форма слева, результат рядом ───────────────────────────── */
-.an-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3); }
+/* ── Инвестпроекты: форма · вердикт · кандидаты · детерминированная оценка ─── */
+.an-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); }
+.an-form > :first-child { grid-column: 1 / -1; }
+/* Происхождение «по умолчанию» — одной строкой под формой, а не бейджем у каждого поля. */
+.an-form .pf-badge--default { display: none; }
+.an-form__defaults { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-12); color: var(--text-muted); }
 .an-form__cta { display: flex; justify-content: flex-start; }
+.an-run { display: flex; align-items: flex-start; gap: var(--space-3); width: 100%; }
+.an-run > :first-child { flex: 1; min-width: 0; }
 .an-result { display: flex; flex-direction: column; gap: var(--space-3); }
-.an-result--ok { border-color: color-mix(in oklch, var(--status-running) 40%, var(--border)); }
-.an-result--bad { border-color: color-mix(in oklch, var(--status-down) 40%, var(--border)); }
-.an-result__heroes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
-.an-hero { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.an-hero__k { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
-.an-hero__v { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; color: var(--text); letter-spacing: -0.01em; word-break: break-word; }
+.an-result__verdict { margin: 0; font-size: var(--fs-14); line-height: var(--lh-body); color: var(--text-secondary); text-wrap: pretty; }
+.an-result__verdict b { color: var(--text); font-weight: 600; }
+.an-result__lose { margin: 0; font-size: var(--fs-13); line-height: var(--lh-body); color: var(--text-secondary); text-wrap: pretty; }
+.an-result__foot { font-size: var(--fs-12); }
 .an-result__list {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -221,13 +198,35 @@
 }
 .an-result__list dt { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
 .an-result__list dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
-.an-result__list dd .dk-chip { margin-left: var(--space-2); }
+.an-det > summary { cursor: pointer; font-size: var(--fs-13); color: var(--text-secondary); }
+.an-det > summary:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-radius: var(--radius); }
+.an-det[open] > summary { margin-bottom: var(--space-2); }
+
+/* ── Потоки: главные переходы + матрица «откуда × куда» ────────────────────── */
+.an-flows { display: flex; flex-direction: column; gap: var(--space-4); }
+.an-flows__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.an-flows__title { display: inline-flex; align-items: center; gap: var(--space-1); margin: 0 0 var(--space-1); font-size: var(--fs-16); font-weight: 500; color: var(--text); text-wrap: balance; }
+.an-flows__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: var(--space-5); align-items: start; }
+/* Подписи столбцов матрицы — по одной на ячейку, без обрезки (перенос). */
+.an-flowheat .ch-heat__axis {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  font-family: inherit;
+  text-align: center;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
 
 @media (max-width: 760px) {
   .an { padding: var(--space-4); }
   .an-pin--hero { grid-column: 1 / -1; }
-  .an-charts { grid-template-columns: 1fr; }
+  .an-charts, .an-flows__grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .an-pin { transition: none; }
+  .an-pin-add, .an-body { transition: none; }
+}
+@media (forced-colors: active) {
+  .an-pin-add[aria-pressed='true'] { border-color: Highlight; }
 }

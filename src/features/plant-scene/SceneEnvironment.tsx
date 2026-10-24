@@ -3,13 +3,19 @@ import * as THREE from 'three'
 import { ContactShadows, Grid, OrbitControls } from '@react-three/drei'
 import { useThemeColors, type ThemeColors } from './themeColors'
 import { scenePalette } from './scenePalette'
+import { useLevelFit } from './CameraFit'
+import type { SceneNode } from './graph/sceneModel'
 
 interface SceneEnvironmentProps {
   /** true — внутри цеха (закрытая площадка); false — открытая территория с травой. */
   indoor?: boolean
   /** Габарит сцены (расстояние до самого дальнего объекта) — туман/тени под него. */
   extent?: number
+  /** Узлы уровня (X2 P-31): дальность орбиты ≥ 1,2 × дистанции вписывания, туман — за уровнем. */
+  nodes?: ReadonlyArray<SceneNode>
 }
+
+const NO_NODES: ReadonlyArray<SceneNode> = []
 
 /** Небо = вертикальный градиент по направлению взгляда: горизонт = туман = --bg-app. */
 interface SkyPalette { horizon: THREE.Color; glow: THREE.Color; zenith: THREE.Color }
@@ -90,7 +96,8 @@ function SkyDome({ palette }: { palette: SkyPalette }) {
  * мягкое освещение и контактные тени. Небо/туман следуют теме (горизонт = --bg-app),
  * чтобы 3D-двойник сидел ВНУТРИ интерфейса, а не в отдельном «мире».
  */
-export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironmentProps) {
+export function SceneEnvironment({ indoor = false, extent = 60, nodes = NO_NODES }: SceneEnvironmentProps) {
+  const fit = useLevelFit(nodes)
   const colors = useThemeColors()
   const palette = useMemo(() => skyPalette(colors, indoor), [colors, indoor])
   const pal = scenePalette(colors)
@@ -100,8 +107,11 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
   // Туман: завод по умолчанию чёткий (near ≈ за самым дальним цехом от камеры),
   // а земля растворяется в горизонте ЗАДОЛГО до края ground-плоскости — границ карты
   // не видно, горизонт «бесконечный».
-  const fogNear = extent * (indoor ? 1.6 : 2.1)
-  const fogFar  = extent * (indoor ? 3.6 : 4.2)
+  // Вписанный уровень всегда до тумана: fogNear ≥ дистанция вписывания + радиус уровня.
+  const fitReach = fit.distance + fit.bounds.radius
+  const fogNear = Math.max(extent * (indoor ? 1.6 : 2.1), fitReach)
+  const fogFar  = Math.max(extent * (indoor ? 3.6 : 4.2), fogNear * 1.8)
+  const maxDistance = Math.max(indoor ? 110 : 170, extent * 2.3, fit.distance * 1.2)
   // Тени плотно вокруг застройки — растянутый масштаб давал радиальные «мазки».
   const shadowScale = Math.min(200, extent * 1.7)
   // Ортокамера тени ПЛОТНО облегает сцену: раньше огромный frustum (extent+20,
@@ -175,7 +185,7 @@ export function SceneEnvironment({ indoor = false, extent = 60 }: SceneEnvironme
       )}
 
       <OrbitControls makeDefault target={[1, 1, 0]} enablePan
-                     minDistance={8} maxDistance={Math.max(indoor ? 110 : 170, extent * 2.3)}
+                     minDistance={8} maxDistance={maxDistance}
                      maxPolarAngle={Math.PI / 2.1} />
     </>
   )

@@ -1,92 +1,100 @@
 /**
- * Таблицы стенда rl/ (A1 §3, §5) на DataTable кита из снимков JSON: V5 — претенденты RL против
- * базовой линии на отложенных сценариях по стрессам (IQM, бутстреп-ДИ, Уилкоксон, гейт); V4 —
- * расписание «правила / ГА / CP-SAT» против BKS и нижней границы по семействам экземпляров.
+ * Таблица V5 (претенденты RL против базовой линии на отложенных сценариях) на DataTable кита:
+ * ≤ 8 колонок без мёртвых — ΔCVaR прибыли в б. п. с ДИ-полосой в ячейке (общая шкала, отметка нуля),
+ * «лучше в N из 12», p, ΔCVaR кассы, ΔE[Cmax], вердикт (гейт слит с ним). ΔP(разрыв), если она нулевая
+ * везде, — в сноске. У каждого заголовка — «i». Стресс и база сравнения живут в адресе.
  */
-import { useState } from 'react'
-import { dateTime, num, pct, signed } from '../../explain/format'
+import type { ReactNode } from 'react'
+import { num, signed } from '../../explain/format'
+import { InfoTip } from '../../ui/InfoTip'
+import { useMeasuredWidth } from '../../ui/charts'
 import { Chip, DataTable, Segmented, type DataColumn } from '../../ui/kit'
+import { useHashParams } from '../../shell/router'
 import {
-  FAMILY_LABEL, STRESS_HINT, STRESS_LABEL, V4, V5, ciVerdict, familyOf, gap, policyLabel, referenceOf, summarizeV4, v5Rows,
-  type V4Row, type V5Comparison, type V5Stress,
+  BASELINE_LABEL, STRESS_HINT, STRESS_LABEL, V5, bpCi, bpFine, bpPoint, breachAllZero, candidateLabel, candidateRows, ciDomain, ciVerdict, snapDay, winCount,
+  type V5Comparison, type V5Stress,
 } from './benchData'
-import { moveLabel } from '../plan/moves/moveKinds'
-import type { MoveKind } from '../../lib/api'
 
-// Разности долей E[Π] малы (10⁻⁵…10⁻³): три знака, иначе L2 округляется в «0 %».
-const share = (v: number) => pct(v, 3)
-const VERDICT: Readonly<Record<ReturnType<typeof ciVerdict>, { glyph: string; text: string }>> = {
-  above: { glyph: 'glyph-running', text: 'ДИ > 0' },
-  below: { glyph: 'glyph-down', text: 'ДИ < 0' },
-  straddles: { glyph: 'glyph-idle', text: 'ДИ ∋ 0' },
+const P_MAX = 0.05
+const STRESSES = Object.keys(STRESS_LABEL) as V5Stress[]
+
+/** Заголовок колонки с «i» (несортируемый: кнопка «i» не может жить внутри кнопки сортировки). */
+export function Head({ id, children }: { id: string; children: ReactNode }) {
+  return <span className="ag-th">{children}<InfoTip id={id} /></span>
 }
 
-const V5_COLS: ReadonlyArray<DataColumn<V5Comparison>> = [
-  { key: 'policy', title: 'Претендент', rowHeader: true, get: (r) => policyLabel(r.policy) },
-  { key: 'iqm', title: 'IQM ΔCVaR₀.₁(Π)', num: true, hint: 'доли E[Π] базовой линии', render: (r) => share(r.iqm) },
-  { key: 'ci', title: '95 %-ДИ', num: true, get: (r) => r.ci95[0], render: (r) => `[${share(r.ci95[0])}; ${share(r.ci95[1])}]` },
-  { key: 'verdict', title: 'ДИ', get: (r) => ciVerdict(r.ci95), render: (r) => { const v = VERDICT[ciVerdict(r.ci95)]; return <span className="ag-nowrap"><span className={v.glyph} aria-hidden="true" /> {v.text}</span> } },
-  { key: 'p', title: 'p (Уилкоксон)', num: true, render: (r) => num(r.p, 3) },
-  { key: 'win', title: 'Доля побед', num: true, hint: 'доля экземпляров, где претендент лучше', render: (r) => pct(r.win, 0) },
-  { key: 'd_cash_iqm', title: 'ΔCVaR кассы', num: true, render: (r) => share(r.d_cash_iqm) },
-  { key: 'd_p_breach', title: 'ΔP(разрыв)', num: true, render: (r) => signed(r.d_p_breach, '%') },
-  { key: 'd_makespan_h', title: 'ΔE[Cmax]', num: true, render: (r) => signed(r.d_makespan_h, 'ч') },
-  { key: 'gate', title: 'Гейт', get: (r) => (r.gate ? 1 : 0), render: (r) => <Chip size="sm" tone={r.gate ? 'good' : 'idle'}>{r.gate ? 'пройден' : 'нет'}</Chip> },
-]
-
-const gapText = (x: number, ref: number | null) => { const g = gap(x, ref); return g === null ? '—' : signed(g, '%') }
-
-const V4_COLS: ReadonlyArray<DataColumn<V4Row>> = [
-  { key: 'name', title: 'Экземпляр', rowHeader: true },
-  { key: 'n_jobs', title: 'Операций', num: true, render: (r) => num(r.n_jobs, 0) },
-  { key: 'bks', title: 'BKS', num: true, render: (r) => (r.bks === null ? '—' : num(r.bks, 0)) },
-  { key: 'best_rule', title: 'Лучшее правило', render: (r) => `${r.best_rule} ${num(r.rule_serial, 0)}` },
-  { key: 'rule_event', title: 'Событийно', num: true, hint: 'non-delay режим той же среды', render: (r) => num(r.rule_event, 0) },
-  { key: 'ga', title: 'ГА', num: true, render: (r) => num(r.ga, 0) },
-  { key: 'cpsat', title: 'CP-SAT', num: true, render: (r) => `${num(r.cpsat, 0)} · ${r.cpsat_status === 'OPTIMAL' ? 'оптимум' : 'допустимое'}, ${num(r.cpsat_sec, 0)} с` },
-  { key: 'g_rule', title: 'Разрыв правила', num: true, get: (r) => gap(r.rule_serial, referenceOf(r)), render: (r) => gapText(r.rule_serial, referenceOf(r)) },
-  { key: 'g_ga', title: 'Разрыв ГА', num: true, get: (r) => gap(r.ga, referenceOf(r)), render: (r) => gapText(r.ga, referenceOf(r)) },
-  { key: 'g_cp', title: 'Разрыв CP-SAT к BKS', num: true, get: (r) => gap(r.cpsat, r.bks), render: (r) => gapText(r.cpsat, r.bks) },
-]
-
-export function V5Table() {
-  const [stress, setStress] = useState<V5Stress>('base')
-  const [vs, setVs] = useState('best_rule')
-  const rows = v5Rows(V5, stress, vs)
-  const kinds = Object.entries(V5.moves).flatMap(([, m]) => Object.entries(m.kinds))
-  const byKind = kinds.reduce<Record<string, number>>((acc, [k, n]) => ({ ...acc, [k]: (acc[k] ?? 0) + n }), {})
+/** Полоса ДИ в ячейке: общая шкала строк, тонкая отметка нуля, точка IQM. */
+export function CiCell({ lo, hi, mid, domain, label }: { lo: number; hi: number; mid: number; domain: readonly [number, number]; label: string }) {
+  const [ref, w] = useMeasuredWidth<HTMLSpanElement>(96)
+  const span = domain[1] - domain[0] || 1
+  const x = (v: number) => 4 + ((Math.min(domain[1], Math.max(domain[0], v)) - domain[0]) / span) * Math.max(8, w - 8)
   return (
-    <div className="ag-bench">
-      <div className="ag-bench__bar">
-        <Segmented label="Стресс" size="sm" fit value={stress} onChange={setStress}
-          options={(Object.keys(STRESS_LABEL) as V5Stress[]).map((id) => ({ id, label: STRESS_LABEL[id], title: STRESS_HINT[id] }))} />
-        <Segmented label="Против чего" size="sm" fit value={vs} onChange={setVs}
-          options={[{ id: 'best_rule', label: 'лучшее правило' }, { id: 'GA', label: 'ГА' }, { id: 'EDD', label: 'EDD' }]} />
-        <Chip tone="idle" title={V5.source}>снимок от {dateTime(V5.snapshot_date, { time: false })}</Chip>
-      </div>
-      <p className="pl-note">{STRESS_HINT[stress]}. Гейт: ДИ выигрыша CVaR целиком выше нуля и p &lt; 0,05 против чемпиона.</p>
-      <DataTable columns={V5_COLS} rows={rows} rowKey={(r) => `${r.policy}-${r.vs}`} tight caption="V5: претенденты RL против базовой линии" />
-      <p className="pl-note">
-        Структурные ходы L2 на базовых holdout-сценариях (сумма по экземплярам и сидам):{' '}
-        {Object.entries(byKind).map(([k, n]) => `${moveLabel(k as MoveKind)} — ${num(n, 0)}`).join(' · ') || 'нет'};
-        «сдвиг запуска» ни разу — маска «запуск + цикл ≤ срок» почти всегда закрыта; аутсорсинг, маршрут и станок недоступны на демо-НСИ.
-      </p>
-    </div>
+    <span className="ag-ci">
+      <span ref={ref} className="ag-ci__track">
+        <svg width={w} height={12} viewBox={`0 0 ${w} 12`} aria-hidden="true">
+          <line className="ag-ci__zero" x1={x(0)} x2={x(0)} y1={0} y2={12} />
+          <line className="ag-ci__band" x1={x(lo)} x2={x(hi)} y1={6} y2={6} />
+          <circle className="ag-ci__dot" cx={x(mid)} cy={6} r={3} />
+        </svg>
+      </span>
+      <span className="ag-ci__text">{label}</span>
+    </span>
   )
 }
 
-export function V4Table() {
-  const s = summarizeV4(V4.rows)
+function pText(p: number): string {
+  return p < 0.001 ? `< ${num(0.001, 3)}` : num(p, 3)
+}
+
+function Verdict({ r }: { r: V5Comparison }) {
+  const v = ciVerdict(r.ci95)
+  if (v === 'below') return <span className="ag-verdict"><span className="ag-verdict__g ag-verdict__g--below" aria-hidden="true">▼</span>ДИ &lt; 0 — хуже, не опубликовано</span>
+  if (v === 'above' && r.gate) return <span className="ag-verdict"><span className="ag-verdict__g" aria-hidden="true">▲</span>ДИ &gt; 0 — прошёл гейт</span>
+  if (v === 'above') return <span className="ag-verdict"><span className="ag-verdict__g" aria-hidden="true">△</span>ДИ &gt; 0, p ≥ {num(P_MAX, 2)} — не опубликовано</span>
+  return <span className="ag-verdict"><span className="glyph-idle" aria-hidden="true" />ДИ ∋ 0 — не опубликовано</span>
+}
+
+function columns(domain: readonly [number, number], n: number): ReadonlyArray<DataColumn<V5Comparison>> {
+  return [
+    { key: 'policy', title: <Head id="agent.candidate">Претендент</Head>, rowHeader: true, sortable: false, get: (r) => candidateLabel(V5, r.policy) },
+    {
+      key: 'iqm', title: <Head id="agent.gate_delta">ΔCVaR прибыли, б. п. [95 %-ДИ]</Head>, num: true, sortable: false, className: 'ag-col-ci',
+      render: (r) => <CiCell lo={r.ci95[0]} hi={r.ci95[1]} mid={r.iqm} domain={domain} label={`${bpPoint(r.iqm)} ${bpCi(r.ci95)}`} />,
+    },
+    { key: 'win', title: <Head id="agent.win_share">Лучше в N из {num(n, 0)}</Head>, num: true, sortable: false, render: (r) => `${num(winCount(V5, r.win), 0)} из ${num(n, 0)}` },
+    { key: 'p', title: <Head id="agent.gate_p">p</Head>, num: true, sortable: false, render: (r) => pText(r.p) },
+    { key: 'cash', title: <Head id="agent.cash_delta">ΔCVaR кассы</Head>, num: true, sortable: false, render: (r) => bpFine(r.d_cash_iqm, { signed: true }) },
+    { key: 'cmax', title: <Head id="agent.makespan_delta">ΔE[Cmax]</Head>, num: true, sortable: false, render: (r) => signed(r.d_makespan_h, 'ч') },
+    { key: 'verdict', title: <Head id="agent.gate_ci">Вердикт</Head>, sortable: false, render: (r) => <Verdict r={r} /> },
+  ]
+}
+
+export function V5Table() {
+  const [params, setParams] = useHashParams()
+  const stress: V5Stress = STRESSES.includes(params.stress as V5Stress) ? (params.stress as V5Stress) : 'base'
+  const vs = params.vs && BASELINE_LABEL[params.vs] ? params.vs : 'best_rule'
+  const rows = candidateRows(V5, stress, vs)
+  const domain = ciDomain(rows)
+  const n = V5.instances.length
   return (
     <div className="ag-bench">
       <div className="ag-bench__bar">
-        <Chip tone="good">CP-SAT = BKS: {s.cpsatAtBks} из {s.withBks}</Chip>
-        <Chip>медиана разрыва: правило {signed(s.medRule, '%')} · событийно {signed(s.medEvent, '%')} · ГА {signed(s.medGa, '%')}</Chip>
-        <Chip tone="idle" title={V4.source}>снимок от {dateTime(V4.snapshot_date, { time: false })} · CP-SAT {num(V4.cpsat_sec, 0)} с · ГА {V4.ga_gens} поколений</Chip>
+        <Segmented label="Стресс" size="sm" fit value={stress} onChange={(id) => setParams({ stress: id === 'base' ? null : id })}
+          options={STRESSES.map((id) => ({ id, label: STRESS_LABEL[id], title: STRESS_HINT[id] }))} />
+        <Segmented label="Против чего" size="sm" fit value={vs} onChange={(id) => setParams({ vs: id === 'best_rule' ? null : id })}
+          options={Object.entries(BASELINE_LABEL).map(([id, label]) => ({ id, label: `против: ${label}` }))} />
+        <span className="ag-snap">
+          <Chip size="sm" title={V5.source}>снимок {snapDay(V5.snapshot_date)}</Chip>
+          <span className="glyph-setup">устарело — есть A2–A4</span>
+        </span>
       </div>
-      <DataTable columns={V4_COLS} rows={V4.rows} rowKey={(r) => r.name} tight groupBy={(r) => FAMILY_LABEL[familyOf(r.name)]} framed
-        caption="V4: правила, ГА и CP-SAT против BKS" />
-      <p className="pl-note">На экземплярах MAOS CP-SAT — релаксация (без наладок, рабочих и календарей), поэтому разрыв там — к нижней оценке, не к оптимуму.</p>
+      <p className="ag-note">{STRESS_HINT[stress]} · N = {num(V5.n, 0)} сценариев на экземпляр · CVaR при α = {num(0.1, 1)}.</p>
+      <DataTable columns={columns(domain, n)} rows={rows} rowKey={(r) => `${r.policy}-${r.vs}`} tight
+        caption={`V5: претенденты RL против базовой линии «${BASELINE_LABEL[vs]}», стресс «${STRESS_LABEL[stress]}»`} />
+      <p className="ag-note ag-note--foot">
+        Гейт: весь 95 %-ДИ правее нуля и p &lt; {num(P_MAX, 2)} против лучшего правила.
+        {breachAllZero(V5) && <> Изменение вероятности кассового разрыва — ноль у всех претендентов во всех стрессах, поэтому отдельной колонки нет.</>}
+      </p>
     </div>
   )
 }

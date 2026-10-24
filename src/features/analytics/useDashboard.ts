@@ -6,10 +6,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type KpiBundle } from '../../lib/api'
 import {
-  loadDashboard, saveDashboard, type AxisMode, type ChartConfig, type DashboardConfig,
+  SECOND_DEFAULT, loadDashboard, saveDashboard, type AxisMode, type ChartConfig, type DashboardConfig,
 } from './dashboardConfig'
+import { withTail } from './kpiCatalog'
 
-const DEFAULT_METRIC: Record<AxisMode, string> = { plans: 'MAKESPAN', timeline: 'util' }
+const DEFAULT_METRIC: Record<AxisMode, string[]> = { plans: withTail('MAKESPAN'), timeline: ['util'] }
 
 export interface DashboardApi {
   cfg: DashboardConfig | null
@@ -17,6 +18,9 @@ export interface DashboardApi {
   series: KpiBundle[]
   /** Ряд ещё грузится — графики показывают прежний кадр, а не «нет данных». */
   seriesLoading: boolean
+  /** Ряд KPI не прочитан (сбой сервера) — не «нет данных», а ошибка с повтором. */
+  seriesError: unknown
+  reloadSeries: () => void
   axis: AxisMode
   /** Ошибка чтения конфига (показан дефолт) / последнего сохранения. */
   loadError: string | null
@@ -26,6 +30,8 @@ export interface DashboardApi {
   togglePin: (code: string) => void
   /** Клик по плитке: показать KPI в первом графике на оси «по планам». */
   pinToChart: (code: string) => void
+  /** Заменить метрики графика целиком (подсказка «лучше показать …» у ровного ряда). */
+  replaceMetrics: (i: number, metrics: string[]) => void
 }
 
 export function useDashboard(planId: string | null): DashboardApi {
@@ -34,6 +40,8 @@ export function useDashboard(planId: string | null): DashboardApi {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [series, setSeries] = useState<KpiBundle[]>([])
   const [seriesLoading, setSeriesLoading] = useState(true)
+  const [seriesError, setSeriesError] = useState<unknown>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -45,11 +53,12 @@ export function useDashboard(planId: string | null): DashboardApi {
     let alive = true
     setSeriesLoading(true)
     api.analytics.kpiSeries()
-      .then((s) => { if (alive) setSeries(s) })
-      .catch(() => { if (alive) setSeries([]) })
+      .then((s) => { if (alive) { setSeries(s); setSeriesError(null) } })
+      .catch((e: unknown) => { if (alive) { setSeries([]); setSeriesError(e) } })
       .finally(() => { if (alive) setSeriesLoading(false) })
     return () => { alive = false }
-  }, [planId])
+  }, [planId, reloadKey])
+  const reloadSeries = useCallback(() => setReloadKey((k) => k + 1), [])
 
   const apply = useCallback((next: DashboardConfig) => {
     setCfg(next)
@@ -65,10 +74,9 @@ export function useDashboard(planId: string | null): DashboardApi {
   const setAxis = useCallback((axis: AxisMode) => {
     if (!cfg || cfg.charts[0].axis === axis) return
     // Метрики осей несовместимы → у каждого графика разумный дефолт; второй — вторая метрика оси.
-    const second = axis === 'timeline' ? 'workers' : 'OTD'
     const charts: [ChartConfig, ChartConfig] = [
-      { ...cfg.charts[0], axis, metrics: [DEFAULT_METRIC[axis]] },
-      { ...cfg.charts[1], axis, metrics: [second] },
+      { ...cfg.charts[0], axis, metrics: DEFAULT_METRIC[axis] },
+      { ...cfg.charts[1], axis, metrics: SECOND_DEFAULT[axis] },
     ]
     apply({ ...cfg, charts })
   }, [cfg, apply])
@@ -81,12 +89,15 @@ export function useDashboard(planId: string | null): DashboardApi {
 
   const pinToChart = useCallback((code: string) => {
     if (!cfg) return
+    // Показатель с хвостом риска (длина, просрочка) идёт парой «E · хвост CVaR» — одной серией.
     const charts: [ChartConfig, ChartConfig] = [
-      { ...cfg.charts[0], axis: 'plans', metrics: [code] },
-      cfg.charts[1].axis === 'plans' ? cfg.charts[1] : { ...cfg.charts[1], axis: 'plans', metrics: ['OTD'] },
+      { ...cfg.charts[0], axis: 'plans', metrics: withTail(code) },
+      cfg.charts[1].axis === 'plans' ? cfg.charts[1] : { ...cfg.charts[1], axis: 'plans', metrics: SECOND_DEFAULT.plans },
     ]
     apply({ ...cfg, charts })
   }, [cfg, apply])
 
-  return { cfg, series, seriesLoading, axis: cfg?.charts[0].axis ?? 'plans', loadError, saveError, setAxis, setChart, togglePin, pinToChart }
+  const replaceMetrics = useCallback((i: number, metrics: string[]) => setChart(i, { metrics }), [setChart])
+
+  return { cfg, series, seriesLoading, seriesError, reloadSeries, axis: cfg?.charts[0].axis ?? 'plans', loadError, saveError, setAxis, setChart, togglePin, pinToChart, replaceMetrics }
 }

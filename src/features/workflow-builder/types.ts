@@ -1,10 +1,10 @@
 /*
- * Модель данных визуального редактора AI-воркфлоу.
- * Это спец-инструмент: описываем будущую «мини-ChatGPT с диалогами и
- * возможностью строить воркфлоу» как граф связанных узлов.
+ * Модель данных конструктора AI-воркфлоу — схемы диалога MENTAT (блок [8] карты методологии):
+ * шаги-узлы и направленные связи с подписью ветки («да»/«нет»). Вид узла — общий язык графов
+ * (.gc-node): нейтральная карточка, тип — глифом и словом, полоса блока [8] — только у шагов LLM.
  */
 
-/** Тип узла диалог/агент-воркфлоу. */
+/** Тип шага. */
 export type NodeType =
   | 'start'
   | 'userMessage'
@@ -27,11 +27,12 @@ export interface WorkflowNode {
   notes: string
 }
 
-/** Направленная связь: из выхода `from` во вход `to`. */
+/** Направленная связь: из выхода `from` во вход `to`; `label` — подпись ветки («да», «нет»). */
 export interface WorkflowEdge {
   id: string
   from: string
   to: string
+  label?: string
 }
 
 /** Полный сохраняемый граф. */
@@ -40,70 +41,53 @@ export interface WorkflowGraph {
   edges: WorkflowEdge[]
 }
 
-/** Метаданные типа узла — цвет заголовка и подпись в палитре. */
+/** Тип шага: подпись в палитре и инспекторе, глиф и короткое слово на карточке, тон полосы. */
 export interface NodeTypeMeta {
   label: string
-  color: string
+  caption: string
+  glyph: string
+  /** llm — шаг блока [8] (полоса --block-8); neutral — остальные (полоса --text-muted). */
+  tone: 'neutral' | 'llm'
 }
 
 /** Палитра типов — порядок совпадает с боковой панелью. */
 export const NODE_TYPES: NodeType[] = [
   'start',
   'userMessage',
-  'aiReply',
-  'clarify',
-  'tool',
-  'condition',
   'context',
+  'aiReply',
+  'condition',
+  'tool',
+  'clarify',
   'subflow',
   'end',
 ]
 
-export const NODE_META: Record<NodeType, NodeTypeMeta> = {
-  start: { label: 'Старт', color: '#238551' },
-  userMessage: { label: 'Сообщение пользователя', color: '#2d72d2' },
-  aiReply: { label: 'Ответ AI (LLM)', color: '#9179f2' },
-  clarify: { label: 'Уточняющий вопрос', color: '#c87619' },
-  tool: { label: 'Инструмент/действие', color: '#00a396' },
-  condition: { label: 'Условие/ветвление', color: '#d1980b' },
-  context: { label: 'Данные/контекст', color: '#7961db' },
-  subflow: { label: 'Под-воркфлоу', color: '#c22762' },
-  end: { label: 'Конец', color: '#cd4246' },
+export const NODE_META: Readonly<Record<NodeType, NodeTypeMeta>> = {
+  start: { label: 'Старт', caption: 'старт', glyph: '●', tone: 'neutral' },
+  userMessage: { label: 'Сообщение пользователя', caption: 'сообщение', glyph: '○', tone: 'neutral' },
+  context: { label: 'Данные и контекст', caption: 'контекст', glyph: '≡', tone: 'llm' },
+  aiReply: { label: 'Ответ LLM', caption: 'ответ LLM', glyph: '◇', tone: 'llm' },
+  condition: { label: 'Условие или ветвление', caption: 'условие', glyph: '◆', tone: 'neutral' },
+  tool: { label: 'Инструмент или действие', caption: 'инструмент', glyph: '▲', tone: 'neutral' },
+  clarify: { label: 'Уточняющий вопрос', caption: 'уточнение', glyph: '?', tone: 'neutral' },
+  subflow: { label: 'Под-воркфлоу', caption: 'под-воркфлоу', glyph: '↳', tone: 'neutral' },
+  end: { label: 'Конец', caption: 'конец', glyph: '■', tone: 'neutral' },
 }
 
-/** Размер карточки узла в координатах канваса. */
-export const NODE_W = 190
-export const NODE_H = 76
+export const isNodeType = (v: unknown): v is NodeType => typeof v === 'string' && Object.prototype.hasOwnProperty.call(NODE_META, v)
 
-/** Ключ localStorage для персистентности графа. */
-export const STORAGE_KEY = 'maos.aiWorkflow.v1'
+/** Размер карточки узла в координатах канваса (рёбра и порты считаются от него). */
+export const NODE_W = 200
+export const NODE_H = 80
 
-/** Детерминированный id с фолбэком, если crypto недоступен (SSR/старые среды). */
+/** Ключ localStorage для персистентности графа (v2 — схема MENTAT и подписи веток). */
+export const STORAGE_KEY = 'maos.aiWorkflow.v2'
+/** Прежний ключ: стартовый «мини-ChatGPT»-граф без подписей веток. */
+export const LEGACY_STORAGE_KEY = 'maos.aiWorkflow.v1'
+
+/** Уникальный id с фолбэком, если crypto недоступен (SSR/старые среды). */
 export const makeId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `wf-${Math.random().toString(36).slice(2)}`
-
-/** Стартовый пример-граф — показываем концепцию на пустом localStorage. */
-export function seedGraph(): WorkflowGraph {
-  const start: WorkflowNode = { id: makeId(), type: 'start', x: 360, y: 40, title: 'Старт диалога', notes: 'Пользователь открыл чат.' }
-  const userMsg: WorkflowNode = { id: makeId(), type: 'userMessage', x: 360, y: 170, title: 'Запрос пользователя', notes: 'Свободный текст: что хочет пользователь.' }
-  const aiReply: WorkflowNode = { id: makeId(), type: 'aiReply', x: 360, y: 300, title: 'Ответ AI', notes: 'LLM формирует ответ по контексту диалога.' }
-  const cond: WorkflowNode = { id: makeId(), type: 'condition', x: 360, y: 430, title: 'Достаточно данных?', notes: 'Ветвление: хватает ли информации для действия.' }
-  const tool: WorkflowNode = { id: makeId(), type: 'tool', x: 140, y: 560, title: 'Вызов инструмента', notes: 'Запуск действия/API, если данных достаточно.' }
-  const clarify: WorkflowNode = { id: makeId(), type: 'clarify', x: 560, y: 560, title: 'Уточнить у пользователя', notes: 'Задать уточняющий вопрос, вернуться к диалогу.' }
-  const end: WorkflowNode = { id: makeId(), type: 'end', x: 360, y: 690, title: 'Конец', notes: 'Итог выдан пользователю.' }
-
-  return {
-    nodes: [start, userMsg, aiReply, cond, tool, clarify, end],
-    edges: [
-      { id: makeId(), from: start.id, to: userMsg.id },
-      { id: makeId(), from: userMsg.id, to: aiReply.id },
-      { id: makeId(), from: aiReply.id, to: cond.id },
-      { id: makeId(), from: cond.id, to: tool.id },
-      { id: makeId(), from: cond.id, to: clarify.id },
-      { id: makeId(), from: tool.id, to: end.id },
-      { id: makeId(), from: clarify.id, to: userMsg.id },
-    ],
-  }
-}

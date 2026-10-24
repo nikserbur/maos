@@ -5,6 +5,7 @@
  */
 @import './surfaces.css';
 @import './table.css';
+@import './panels.css';
 
 /* ── Появление секций: fade + 4px, stagger 40 мс через --i ──────────────── */
 .dk-rise {
@@ -16,35 +17,45 @@
   to { opacity: 1; transform: none; }
 }
 
-/* ── Шапка экрана ───────────────────────────────────────────────────────── */
+/* ── Шапка экрана: eyebrow · заголовок в одну строку, подзаголовок в одну строку, ≤ 64 px ── */
 .dk-head {
   position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   flex-wrap: wrap;
-  padding-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
 }
-.dk-head__text { min-width: 0; max-width: 78ch; }
-.dk-head__eyebrow { margin: 0 0 var(--space-1); color: var(--accent-text); }
+.dk-head__text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 360px; min-width: 0; }
+.dk-head__line { display: flex; align-items: baseline; gap: var(--space-2) var(--space-3); min-width: 0; flex-wrap: wrap; }
+.dk-head__eyebrow { flex: none; margin: 0; color: var(--text-muted); }
 .dk-head__title {
+  min-width: 0;
   font-family: var(--font-display);
-  font-size: clamp(var(--fs-20), 1.1rem + 0.6vw, 28px);
+  font-size: clamp(var(--fs-20), 1.1rem + 0.5vw, var(--fs-24));
   font-weight: 500;
   line-height: var(--lh-display);
   letter-spacing: -0.012em;
   color: var(--text);
-  text-wrap: balance;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.dk-head__blocks { display: inline-flex; margin-left: var(--space-3); vertical-align: middle; }
+.dk-head__prov { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; font-size: var(--fs-12); color: var(--text-secondary); }
+.dk-head__blocks { display: inline-flex; flex: none; }
 .dk-head__sub {
-  margin-top: var(--space-2);
+  max-width: 140ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-13);
   color: var(--text-muted);
-  text-wrap: pretty;
 }
 .dk-head__actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* Компактная шапка деталей и результатов: ≤ 56 px */
+.dk-head--compact { padding-bottom: var(--space-2); }
+.dk-head--compact .dk-head__title { font-size: var(--fs-20); }
 .dk-head__rule {
   position: absolute;
   left: 0;
@@ -113,7 +124,7 @@
 .dk-seg__opt.is-on { color: var(--text); }
 .dk-seg__opt.is-on > svg { color: var(--accent-text); }
 .dk-seg__opt:disabled { color: var(--text-disabled); }
-.dk-seg__opt:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-seg__opt:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 .dk-seg__count { font-size: var(--fs-11); font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* ── Переключатель ──────────────────────────────────────────────────────── */
@@ -193,7 +204,7 @@
   transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 .dk-choice:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
-.dk-choice:focus-visible { outline: none; box-shadow: var(--halo); }
+.dk-choice:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 .dk-choice:disabled { opacity: 0.5; cursor: not-allowed; }
 .dk-choice.is-on {
   color: var(--text);
@@ -242,6 +253,10 @@
 .dk-err__title { font-weight: 600; }
 .dk-err__detail { color: var(--text-secondary); word-break: break-word; }
 .dk-err .btn { flex: none; }
+.dk-err__more { margin-top: var(--space-1); font-size: var(--fs-12); color: var(--text-muted); }
+.dk-err__more > summary { cursor: pointer; width: fit-content; }
+.dk-err__more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dk-err__raw { margin: var(--space-1) 0 0; padding: var(--space-2); max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: var(--fs-11); color: var(--text-secondary); background: var(--bg-app); border-radius: var(--radius-sm); }
 
 /* ── Пустое состояние ───────────────────────────────────────────────────── */
 .dk-empty {
@@ -259,6 +274,10 @@
   isolation: isolate;
 }
 .dk-empty--sm { min-height: 160px; gap: var(--space-5); padding: var(--space-5); }
+/* Тихое пустое состояние (внутри таблиц и карточек): без атмосферы и рамки. */
+.dk-empty--quiet { min-height: 0; border: 0; padding: var(--space-5) var(--space-3); gap: var(--space-4); justify-content: flex-start; }
+.dk-empty--quiet .dk-empty__art { width: auto; }
+.dk-empty--quiet .dk-empty__title { font-family: var(--font-sans); font-size: var(--fs-14); font-weight: 600; }
 .dk-empty__art,
 .dk-empty__body { position: relative; z-index: 1; }
 .dk-empty__art { width: min(280px, 100%); }
@@ -283,8 +302,10 @@
 .dk-kand__flow { fill: none; stroke: var(--verdigris); stroke-width: 3; stroke-linecap: round; }
 .dk-empty--sm .dk-empty__mark { width: 84px; height: 56px; }
 
-.dk-skel-stack { display: flex; flex-direction: column; gap: var(--space-3); }
+/* Скелет появляется через 150 мс: быстрые ответы его не показывают (без мигания). */
+.dk-skel-stack { display: flex; flex-direction: column; gap: var(--space-3); animation: dk-skel-in 1ms linear 150ms both; }
 .dk-skel-row { display: flex; gap: var(--space-3); align-items: center; }
+@keyframes dk-skel-in { from { visibility: hidden; } to { visibility: visible; } }
 
 /* ── Мелочи ─────────────────────────────────────────────────────────────── */
 .dk-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -294,3 +315,30 @@
   .dk-skel::after { animation: none; display: none; }
   .dk-seg__ind, .dk-switch__knob { transition: none; }
 }
+
+/* ── Плитка показателя (KpiTile) и Δ к базе (DeltaChip) ────────────────── */
+.dk-kpitile { position: relative; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.dk-kpitile__k { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--text-muted); }
+.dk-kpitile__label { display: inline-flex; align-items: center; min-width: 0; }
+.dk-kpitile__v { display: flex; align-items: baseline; gap: 6px; color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums lining-nums slashed-zero; }
+.dk-kpitile__v .unit { font-size: var(--fs-14); }
+.dk-kpitile__v--hero { font-size: var(--fs-32); font-weight: 300; line-height: 1.05; }
+.dk-kpitile__v--hero .unit { font-size: var(--fs-16); }
+.dk-kpitile__v--md { font-size: var(--fs-24); font-weight: 300; line-height: 1.1; }
+.dk-kpitile__v--sm { font-size: var(--fs-16); font-weight: 500; line-height: 1.2; }
+.dk-kpitile__state { font-size: var(--fs-12); color: var(--text-secondary); }
+.dk-kpitile__foot { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; margin-top: auto; font-size: var(--fs-12); color: var(--text-muted); }
+.dk-kpitile__interval { min-width: 0; }
+.dk-kpitile__interval .num { color: var(--text-secondary); }
+
+.dk-tail-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); color: var(--text-muted); font-size: var(--fs-12); }
+.dk-tail-legend__mean { color: var(--text); }
+.dk-tail-legend__mean::before { content: ''; display: inline-block; width: 0.62em; height: 0.62em; margin-right: 0.45em; border-radius: 50%; background: var(--chart-1); }
+
+.dk-delta { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-12); }
+.dk-delta--md { font-size: var(--fs-13); }
+.dk-delta__arrow { font-size: 0.8em; color: var(--text-muted); }
+.dk-delta--good .dk-delta__arrow { color: var(--status-running); }
+.dk-delta--bad .dk-delta__arrow { color: var(--status-down); }
+.dk-delta__v { color: var(--text); font-variant-numeric: tabular-nums; }
+.dk-delta__base { color: var(--text-muted); }

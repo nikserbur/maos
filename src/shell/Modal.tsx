@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './icons'
+import { useEscapeLayer } from './overlays'
 
 interface ModalProps {
   title: string
@@ -19,7 +20,7 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-/** Стек открытых модалок: Esc и ловушка фокуса работают только у верхней. */
+/** Стек открытых модалок: ловушка фокуса работает только у верхней; Esc — общий стек слоёв (overlays.ts). */
 const openStack: number[] = []
 let nextModalId = 0
 
@@ -50,7 +51,7 @@ function trapTab(event: KeyboardEvent, root: HTMLElement): void {
   }
 }
 
-/** Модальный диалог: портал, затемнение (без blur над WebGL), Esc, ловушка фокуса, возврат фокуса. */
+/** Модальный диалог: портал, затемнение (без blur над WebGL), Esc (стек слоёв), ловушка фокуса, возврат фокуса. */
 export function Modal({ title, size = 'md', onClose, children, footer }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
@@ -59,6 +60,9 @@ export function Modal({ title, size = 'md', onClose, children, footer }: ModalPr
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
+
+  // Esc закрывает только самый внутренний слой (подсказка/меню внутри модалки — раньше неё).
+  useEscapeLayer('modal', () => onCloseRef.current())
 
   useEffect(() => {
     const id = ++nextModalId
@@ -75,12 +79,7 @@ export function Modal({ title, size = 'md', onClose, children, footer }: ModalPr
 
     const onKey = (event: KeyboardEvent) => {
       if (openStack[openStack.length - 1] !== id || !dialog) return
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        onCloseRef.current()
-      } else if (event.key === 'Tab') {
-        trapTab(event, dialog)
-      }
+      if (event.key === 'Tab') trapTab(event, dialog)
     }
     document.addEventListener('keydown', onKey)
     return () => {

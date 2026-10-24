@@ -7,6 +7,7 @@
 import type { ReactNode } from 'react'
 import type { ParameterPassport } from '../features/method-map/types'
 import type { PassportParam } from '../lib/api'
+import { dateTime } from '../explain/format'
 import { ProvenanceBadge } from './ProvenanceBadge'
 import { ownerLabel } from './passportBadge'
 import './fields.css'
@@ -21,7 +22,8 @@ interface PassportCardProps {
   compact?: boolean
 }
 
-const fmtDate = (s?: string) => (s ? new Date(s.replace(' ', 'T')).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : null)
+/** Время паспорта — через общий форматтер (серверное время без зоны — UTC → местное). */
+const fmtDate = (s?: string) => (s ? dateTime(s) : null)
 
 export function PassportCard({ server, passport, scenarioName, actions, compact = false }: PassportCardProps) {
   if (!server && !passport) return null
@@ -39,6 +41,7 @@ export function PassportCard({ server, passport, scenarioName, actions, compact 
       <div className="pf-pass__value-row">
         <span className={`pf-pass__value num${passport?.outOfRange ? ' is-warn' : ''}`}>{value === null || value === '' ? '—' : String(value)}</span>
         {unit && <span className="pf-pass__unit">{unit}</span>}
+        {passport?.outOfRange && <span className="pf-pass__warn glyph-setup">вне разумного диапазона</span>}
       </div>
       <dl className="pf-pass__meta">
         {server?.code && <div><dt>код</dt><dd className="mono">{server.code}</dd></div>}

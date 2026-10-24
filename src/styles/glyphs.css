@@ -55,3 +55,44 @@
   background: var(--status-info);
   transform: rotate(45deg);
 }
+
+/* ── Глифы словаря состояний (src/ui/stateVocabulary.ts): ● по данным · ◆ норматив · ■ вручную ·
+ *    ○ по умолчанию · ▲ устарело · ✕ ошибка · ◌ не задано; «в плане» — пунктирное кольцо (не глиф
+ *    семьи). Глобальные: легенды «Сценариев» и полоса методологии рисуют их без визита на карту. */
+.mm-glyph { display: inline-block; flex: none; width: 9px; height: 9px; vertical-align: -1px; }
+.mm-glyph--estimated, .mm-glyph--calibrated { border-radius: 50%; background: var(--state-estimated); }
+.mm-glyph--calibrated { box-shadow: 0 0 0 1.5px var(--bg-card), 0 0 0 3px var(--status-setup); }
+.mm-glyph--manual { background: var(--state-manual); }
+.mm-glyph--normative { background: transparent; border: 2px solid var(--state-normative); transform: rotate(45deg) scale(0.82); }
+/* ✕ — две диагонали: в оттенках серого ошибка не путается с ■ «вручную». */
+.mm-glyph--error {
+  background:
+    linear-gradient(45deg, transparent calc(50% - 1.1px), var(--state-error) calc(50% - 1.1px) calc(50% + 1.1px), transparent calc(50% + 1.1px)),
+    linear-gradient(-45deg, transparent calc(50% - 1.1px), var(--state-error) calc(50% - 1.1px) calc(50% + 1.1px), transparent calc(50% + 1.1px));
+}
+.mm-glyph--default { border-radius: 50%; border: 2px solid var(--state-default); }
+.mm-glyph--unconfigured { border-radius: 50%; border: 1.5px dashed var(--state-unconfigured); }
+.mm-glyph--planned { border-radius: 50%; border: 1.5px dotted var(--state-planned); }
+.mm-glyph--stale {
+  width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 9px solid var(--state-stale);
+}
+[data-theme='light'] .mm-glyph--stale { filter: drop-shadow(0.5px 0 0 var(--ink)) drop-shadow(-0.5px 0 0 var(--ink)); }
+@media (forced-colors: active) {
+  .mm-glyph--estimated, .mm-glyph--calibrated, .mm-glyph--manual { background: CanvasText; }
+  .mm-glyph--error {
+    background:
+      linear-gradient(45deg, transparent calc(50% - 1.1px), CanvasText calc(50% - 1.1px) calc(50% + 1.1px), transparent calc(50% + 1.1px)),
+      linear-gradient(-45deg, transparent calc(50% - 1.1px), CanvasText calc(50% - 1.1px) calc(50% + 1.1px), transparent calc(50% + 1.1px));
+  }
+}
+
+/* Текстовый глиф ✕ перед подписью ошибки (плоские сообщения без красного текста). */
+.glyph-x::before {
+  content: '✕';
+  display: inline-block;
+  margin-right: 0.45em;
+  font-weight: 700;
+  color: var(--status-down);
+}
+.glyph-x:empty::before { margin-right: 0; }

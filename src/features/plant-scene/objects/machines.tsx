@@ -552,7 +552,9 @@ export function inferMachineArch(name: string): MachineArch {
 export function MachineModel({ arch, status }: { arch: MachineArch; status: StageStatus }) {
   const pal = useScenePalette()
   const C = useC()
-  const beacon = useThemeColors().status[status]   // токен --status-* активной темы
+  const colors = useThemeColors()
+  // Цвет статуса — только у отклонений (▲ ТО, ■ авария); штатная работа и вывод — нейтральны.
+  const beacon = status === 'setup' || status === 'down' ? colors.status[status] : colors.textMuted
   switch (arch) {
     case 'lathe':     return <Lathe beacon={beacon} />
     case 'mill':      return <EnclosedCenter beacon={beacon} body={C.body} />

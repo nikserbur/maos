@@ -1,5 +1,6 @@
 import type { KpiBundle } from '../../lib/api'
 import type { InfoTipValues } from '../../ui/InfoTip'
+import { LOAD_THRESHOLDS } from './thresholds'
 
 /** Направление «лучше»: up — больше лучше, down — меньше лучше, neutral — контекст. */
 export type KpiDir = 'up' | 'down' | 'neutral'
@@ -20,6 +21,10 @@ export interface KpiDef {
   /** Стабильный код — по нему сохранены дашборды (не переименовывать). */
   code: string
   name: string
+  /** Короткая подпись плитки — та же строка, что на «Плане» («Заказы в срок · OTD»); без неё — name. */
+  short?: string
+  /** Код KPI хвоста риска этого показателя (CVaR): в графике — одна серия с полосой хвоста. */
+  tail?: string
   nameEn: string
   category: KpiCategory
   unit: KpiUnit
@@ -84,7 +89,7 @@ export const KPI_CATEGORIES: KpiCategory[] = ['Сроки', 'Ресурсы', '�
  */
 export const KPI_CATALOG: KpiDef[] = [
   // ── Сроки / исполнение ──
-  { code: 'MAKESPAN', name: 'Длина расписания', nameEn: 'Makespan, E[Cmax]', category: 'Сроки', unit: 'ч', dir: 'down',
+  { code: 'MAKESPAN', name: 'Длина расписания', short: 'Длина расписания · E[Cmax]', tail: 'MK_CVAR', nameEn: 'Makespan, E[Cmax]', category: 'Сроки', unit: 'ч', dir: 'down',
     formula: 'E[Cmax] по Монте-Карло на итоговом расписании',
     value: makespanMain, estimate: (b) => !has(b, 'makespan_mean'),
     info: 'plan.makespan', infoValues: (b) => ({ mean: kpiField(b, 'makespan_mean'), det: kpiField(b, 'makespan') }) },
@@ -99,14 +104,17 @@ export const KPI_CATALOG: KpiDef[] = [
   { code: 'MK_WORST', name: 'Худший прогон', nameEn: 'Makespan worst', category: 'Сроки', unit: 'ч', dir: 'down',
     formula: 'maxᵢ Cmax,i по прогонам Монте-Карло', value: (b) => kpiField(b, 'makespan_worst'),
     info: 'plan.makespan_cvar', infoValues: (b) => ({ cvar: kpiField(b, 'makespan_cvar'), worst: kpiField(b, 'makespan_worst') }) },
-  { code: 'OTD', name: 'Доля заказов в срок (OTD)', nameEn: 'On-time delivery', category: 'Сроки', unit: '%', dir: 'up',
+  { code: 'OTD', name: 'Доля заказов в срок (OTD)', short: 'Заказы в срок · OTD', nameEn: 'On-time delivery', category: 'Сроки', unit: '%', dir: 'up',
     formula: '(n − n_просроч) / n', value: (b) => kpiField(b, 'otd'),
     info: 'plan.otd', infoValues: (b) => ({ otd: kpiField(b, 'otd'), n_late: kpiField(b, 'n_late') }),
     status: (v) => (v >= 0.95 ? 'good' : v >= 0.8 ? 'warn' : 'bad') },
-  { code: 'TARD', name: 'Суммарная просрочка', nameEn: 'Total tardiness', category: 'Сроки', unit: 'ч', dir: 'down',
+  { code: 'TARD', name: 'Суммарная просрочка', tail: 'TARD_CVAR', nameEn: 'Total tardiness', category: 'Сроки', unit: 'ч', dir: 'down',
     formula: 'Σₖ max(0, Cₖ − dₖ)', value: (b) => kpiField(b, 'tardiness'),
     info: 'plan.tardiness', infoValues: (b) => ({ tard: kpiField(b, 'tardiness'), tard_cvar: kpiField(b, 'tardiness_cvar'), n_late: kpiField(b, 'n_late') }),
     status: (v, b) => (v <= 0 ? 'good' : v < mkRef(b) * 0.1 ? 'warn' : 'bad') },
+  { code: 'TARD_CVAR', name: 'CVaR суммарной просрочки', nameEn: 'Tardiness CVaR', category: 'Сроки', unit: 'ч', dir: 'down',
+    formula: 'среднее худших ⌊α·N⌋ прогонов по просрочке (верхний хвост)', value: (b) => kpiField(b, 'tardiness_cvar'),
+    info: 'plan.tardiness', infoValues: (b) => ({ tard: kpiField(b, 'tardiness'), tard_cvar: kpiField(b, 'tardiness_cvar'), n_late: kpiField(b, 'n_late') }) },
   { code: 'N_LATE', name: 'Просроченных заказов', nameEn: 'Late orders', category: 'Сроки', unit: 'заказов', dir: 'down',
     formula: 'число заказов с Cₖ > dₖ', value: (b) => kpiField(b, 'n_late'),
     info: 'plan.otd', infoValues: (b) => ({ otd: kpiField(b, 'otd'), n_late: kpiField(b, 'n_late') }),
@@ -116,19 +124,19 @@ export const KPI_CATALOG: KpiDef[] = [
     info: 'plan.flow_time', infoValues: (b) => ({ flow: kpiField(b, 'flow_time_mean_h') }) },
 
   // ── Ресурсы ──
-  { code: 'UTIL', name: 'Загрузка оборудования', nameEn: 'Utilization (APT/PBT)', category: 'Ресурсы', unit: '%', dir: 'up',
+  // Средняя загрузка — величина, не отклонение: без светофора (X2 «цвет — только для отклонений»).
+  { code: 'UTIL', name: 'Загрузка оборудования (средняя)', short: 'Загрузка оборудования (ср.)', nameEn: 'Utilization (APT/PBT)', category: 'Ресурсы', unit: '%', dir: 'up',
     formula: 'Σ продуктивного времени / Σ календарного фонда станков', value: (b) => kpiField(b, 'utilization'),
     info: 'plan.utilization',
     infoValues: (b, ctx) => {
       const fund = machineFund(b, ctx), u = kpiField(b, 'utilization')
       return { util: u, fund, busy: Number.isFinite(fund) ? u * fund : Number.NaN }
-    },
-    status: (v) => (v >= 0.55 ? 'good' : v >= 0.3 ? 'warn' : 'bad') },
+    } },
   { code: 'BN_UTIL', name: 'Загрузка узкого места', nameEn: 'Bottleneck utilization', category: 'Ресурсы', unit: '%', dir: 'neutral',
     formula: 'maxₜ Uₜ по типам РЦ — ограничение системы',
     value: (b) => (typeof b.bottleneck?.utilization === 'number' ? b.bottleneck.utilization : Number.NaN),
     info: 'plan.bottleneck', infoValues: (b) => ({ name: b.bottleneck?.wc_name ?? null, util: b.bottleneck?.utilization ?? null }),
-    status: (v) => (v >= 0.95 ? 'bad' : v >= 0.8 ? 'warn' : 'good') },
+    status: (v) => (v >= LOAD_THRESHOLDS.bad ? 'bad' : v >= LOAD_THRESHOLDS.warn ? 'warn' : 'good') },
 
   // ── Поток ──
   { code: 'THRU', name: 'Темп выпуска', nameEn: 'Throughput', category: 'Поток', unit: 'ед./сут', dir: 'up',
@@ -233,6 +241,23 @@ const BY_CODE = new Map(KPI_CATALOG.map((k) => [k.code, k]))
 
 export function kpiDef(code: string): KpiDef | undefined {
   return BY_CODE.get(code)
+}
+
+/** Подпись плитки: короткая (общая с «Планом»), иначе полное имя. */
+export function kpiLabel(def: KpiDef): string {
+  return def.short ?? def.name
+}
+
+/** Код хвоста риска (CVaR) показателя, если он есть в каталоге. */
+export function tailOf(code: string): string | undefined {
+  const t = BY_CODE.get(code)?.tail
+  return t && BY_CODE.has(t) ? t : undefined
+}
+
+/** Метрики графика для показателя: сам KPI и его хвост (одна серия с полосой CVaR). */
+export function withTail(code: string): string[] {
+  const t = tailOf(code)
+  return t ? [code, t] : [code]
 }
 
 /** Значение KPI и признак «оценка» (план построен до унификации определений). */

@@ -57,3 +57,21 @@ describe('подписи', () => {
     expect(tailsLabel({ type: 'normal', d: { product_id: 'p1', dist_type: 'normal', mean: 1, stddev: 1, max_val: 9 } })).toBe('−∞ … 9')
   })
 })
+
+describe('группы и корреляция', () => {
+  it('первая часть имени и подпись группы', async () => {
+    const { firstPart, distGroupLabel } = await import('./distModel')
+    expect(firstPart('Вал приводной, сталь 40Х')).toBe('Вал приводной')
+    expect(firstPart('Корпус (литьё)')).toBe('Корпус')
+    expect(distGroupLabel('raw', 12)).toBe('Сырьё · 12')
+    expect(distGroupLabel('goods', 64)).toBe('Изделия (сбыт) · 64')
+  })
+
+  it('одинаковые β — одна корреляция на все пары, иначе матрица', async () => {
+    const { betaSpread, corrMatrix } = await import('./distModel')
+    expect(betaSpread([{ beta: 0.7 }, { beta: 0.7 }])).toMatchObject({ uniform: true, beta: 0.7 })
+    expect(betaSpread([{ beta: 0.7 }, { beta: 0.7 }]).rho).toBeCloseTo(0.49)
+    expect(betaSpread([{ beta: 0.7 }, { beta: 0.3 }]).uniform).toBe(false)
+    expect(corrMatrix([{ beta: 0.5 }, { beta: 0.4 }])).toEqual([[1, 0.2], [0.2, 1]])
+  })
+})

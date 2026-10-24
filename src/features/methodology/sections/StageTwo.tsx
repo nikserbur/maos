@@ -5,10 +5,12 @@ export function CvarSection() {
   return (
     <Section
       id="cvar-tail"
+      blocks={['criteria', 'decisions']}
       stages={[
         ['done', 'эмпирические VaR/CVaR; критерии cvar, worstcase, meanvariance, minregret'],
-        ['w1', 'точная LP Рокафеллара–Урясева (HiGHS, B2), двойственные цены мощностей'],
-        ['w2', 'bootstrap-ДИ, сходимость оценки по N'],
+        ['exact-cvar'],
+        ['ci', 'бутстреп-ДИ и проверка на отложенных сценариях'],
+        ['w2', 'сходимость оценки по N'],
       ]}
       lead={<>CVaR<sub>α</sub> (условная стоимость под риском, Expected Shortfall) — средний результат в худших α·100 %
         сценариев. В отличие от VaR это когерентная мера риска: она субаддитивна и учитывает, <i>насколько</i> плохи
@@ -51,6 +53,7 @@ export function RobustnessSection() {
   return (
     <Section
       id="price-of-robustness"
+      blocks={['criteria']}
       stages={[
         ['done', 'обе точки x* и x_E, ΔE, проверка на свежих сценариях (out-of-sample)'],
         ['w1', 'показ out-of-sample разрывов на экране «Оптимизация»'],
@@ -85,6 +88,7 @@ export function ParetoSection() {
   return (
     <Section
       id="pareto"
+      blocks={['decisions', 'criteria']}
       stages={[
         ['done', 'недоминируемые кандидаты на экране «Оптимизация»'],
         ['w1', 'точная граница: развёртка веса w в mean–CVaR LP'],

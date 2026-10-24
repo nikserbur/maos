@@ -1,12 +1,14 @@
 /**
- * Строка хода (UX-V2 §4.7.2): ▲/■ · вид и цели · CVaR прибыли «до → после» · касса и P(разрыв) ·
- * доля выигрышных сценариев с ДИ · режим-обоснование · решение (принять / отклонить с причиной /
- * заморозить). Числа «до → после» всегда парами в одних единицах; цвет никогда не один — глиф рядом.
+ * Строка хода (UX-V2 §4.7.2): ▲/■ · вид и цели (до двух строк) · CVaR прибыли «до → после» · касса и
+ * разрыв · доля выигрышных сценариев с ДИ · режим-обоснование · решение: «Принять» в строке,
+ * «Отклонить с причиной…» и «Заморозить» — в «⋯». Числа «до → после» парами в одних единицах;
+ * Δ — стрелка ▲▼ + слово (DeltaChip), цвет никогда не один.
  */
+import { useState } from 'react'
 import type { GanttJob, MoveStatus, StructuralMove } from '../../../lib/api'
 import { pct, signed } from '../../../explain/format'
 import { Meter } from '../../../ui/charts'
-import { Chip, Menu, type ChipTone } from '../../../ui/kit'
+import { Chip, DeltaChip, Menu, type ChipTone } from '../../../ui/kit'
 import { Icon } from '../../../shell/icons'
 import { moveLabel } from './moveKinds'
 import { REJECT_REASONS, SAFE_WIN_SHARE, isSafe, type Decision } from './movesStore'
@@ -33,6 +35,8 @@ interface Props {
 }
 
 export function MoveRow({ move, status, reason, gantt, selected, expanded, onSelect, onToggle, onDecide, onUndo }: Props) {
+  const [rejecting, setRejecting] = useState(false)
+  const [why, setWhy] = useState<string>(REJECT_REASONS[0])
   const i = move.impact
   const glyph = riskGlyph(i)
   const dp = profitDelta(i)
@@ -48,7 +52,7 @@ export function MoveRow({ move, status, reason, gantt, selected, expanded, onSel
           <span className="mv-row__change">{changeText(move, gantt)}{deps > 0 && <em className="mv-row__dep"> · пакетом с ходом выше</em>}</span>
         </button>
         <span className="mv-row__why">
-          <Chip size="sm" tone="setup">режим: {move.justification.regime.label} · {pct(move.justification.regime.share, 0)}</Chip>
+          <Chip size="sm" tone="idle">режим: {move.justification.regime.label} · {pct(move.justification.regime.share, 0)}</Chip>
           <button type="button" className="pf-link mv-row__more" aria-expanded={expanded} onClick={onToggle}>
             {expanded ? 'скрыть обоснование' : 'обоснование'}
           </button>
@@ -57,7 +61,7 @@ export function MoveRow({ move, status, reason, gantt, selected, expanded, onSel
       <div className="mv-row__num mv-row__num--profit">
         <span className="text-caps mv-row__lbl">CVaR прибыли</span>
         <span className="num">{pair(i.profit.cvar_before, i.profit.cvar_after)}</span>
-        <span className={`num mv-row__delta ${dp > 0 ? 'is-good' : 'is-bad'}`}>{signed(dp, '₽')}</span>
+        <DeltaChip value={dp} better="high" fmt={(v) => signed(v, '₽')} />
       </div>
       <div className="mv-row__num mv-row__num--cash">
         <span className="text-caps mv-row__lbl">CVaR кассы</span>
@@ -77,15 +81,21 @@ export function MoveRow({ move, status, reason, gantt, selected, expanded, onSel
             {reason && status === 'rejected' && <span className="mv-row__reason">{reason}</span>}
             <button type="button" className="btn btn--ghost btn--sm" onClick={onUndo}>отменить</button>
           </>
+        ) : rejecting ? (
+          <span className="mv-row__reject" role="group" aria-label="Причина отклонения">
+            <select className="pl-select pl-select--sm" value={why} onChange={(e) => setWhy(e.target.value)} aria-label="Причина отклонения">
+              {REJECT_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <button type="button" className="btn btn--sm" onClick={() => { onDecide('reject', why); setRejecting(false) }}>Отклонить</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setRejecting(false)}>Отмена</button>
+          </span>
         ) : (
           <>
             <button type="button" className="btn btn--sm" onClick={() => onDecide('accept')} title="Принять (a)"><Icon name="check" size={14} /> Принять</button>
-            <Menu label="Отклонить с причиной" size="sm" items={REJECT_REASONS.map((r) => ({ id: r, label: r, onSelect: () => onDecide('reject', r), hint: 'станет маской: агент не предложит этот ход снова' }))}>
-              Отклонить
-            </Menu>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => onDecide('freeze')} title="Заморозить: не трогать эти операции (f)">
-              <Icon name="pin" size={14} /> Заморозить
-            </button>
+            <Menu label="Ещё действия с ходом" size="sm" items={[
+              { id: 'reject', label: 'Отклонить с причиной…', hint: 'станет маской: агент не предложит этот ход снова', onSelect: () => setRejecting(true) },
+              { id: 'freeze', label: 'Заморозить', icon: 'pin', hint: 'не трогать эти операции, станок и время (f)', onSelect: () => onDecide('freeze') },
+            ]} />
           </>
         )}
       </div>

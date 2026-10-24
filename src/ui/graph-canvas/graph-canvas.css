@@ -21,7 +21,7 @@
   background-size: var(--gc-cell) var(--gc-cell);
   background-position: var(--gc-x) var(--gc-y);
 }
-.gc:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.gc:focus-visible { outline: 2px solid transparent; outline-offset: -2px; box-shadow: inset 0 0 0 2px var(--focus); }
 .gc.is-panning { cursor: grabbing; }
 .gc__svg {
   position: absolute;
@@ -54,3 +54,21 @@
 .gc__btn svg { stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; fill: none; }
 .gc__btn--fit { padding: 0 var(--space-2); font-size: var(--fs-12); }
 .gc__zoom { min-width: 40px; text-align: center; font-size: var(--fs-11); color: var(--text-muted); }
+.gc__controls--top-right { top: var(--space-3); bottom: auto; }
+
+/* ── Общая карточка узла (карта методологии, техкарты, воркфлоу) ─────────── */
+.gc-node {
+  --node-stripe: var(--border-strong);
+  position: absolute;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1), inset 3px 0 0 var(--node-stripe);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.gc-node:hover { border-color: var(--border-control); }
+.gc-node:focus-visible { outline: 2px solid transparent; border-color: var(--focus); box-shadow: var(--shadow-1), inset 3px 0 0 var(--node-stripe), 0 0 0 1px var(--focus); }
+.gc-node.is-selected, .gc-node[aria-selected='true'] { border-color: var(--focus); box-shadow: var(--shadow-2), inset 3px 0 0 var(--node-stripe), 0 0 0 1px var(--focus); }
+@media (forced-colors: active) { .gc-node.is-selected, .gc-node[aria-selected='true'] { outline: 2px solid Highlight; } }

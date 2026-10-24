@@ -64,7 +64,7 @@
 }
 
 .infotip:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   color: var(--it-accent);
   box-shadow: var(--it-halo);
 }
@@ -202,7 +202,7 @@
 
 .infotip-pop__close:focus-visible,
 .infotip-pop__more:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   box-shadow: var(--it-halo);
 }
 
@@ -246,7 +246,7 @@
 }
 
 .infotip-pop__val--empty {
-  color: var(--text-disabled);
+  color: var(--text-muted);
   font-weight: 400;
 }
 
@@ -278,7 +278,7 @@
 }
 
 .infotip-pop__var dd.is-empty {
-  color: var(--text-disabled);
+  color: var(--text-muted);
 }
 
 .infotip-pop__text {

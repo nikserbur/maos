@@ -22,15 +22,17 @@ async function request<T>(
     headers,
     body: body ? JSON.stringify(body) : undefined,
   })
-  // Токен истёк/сервер перезапущен → чистим сессию и возвращаем на окно входа.
+  // Токен истёк/сервер перезапущен → чистим токен и сообщаем оболочке: модалка «Сессия истекла»
+  // с входом на месте (открытый экран и черновики сохраняются), без перезагрузки страницы.
   if (res.status === 401 && !path.startsWith('/auth/')) {
-    try { sessionStorage.removeItem('maos.token'); sessionStorage.removeItem('maos.session') } catch { /* noop */ }
-    window.location.reload()
+    try { sessionStorage.removeItem('maos.token') } catch { /* noop */ }
+    window.dispatchEvent(new Event('maos:session-expired'))
   }
   const text = await res.text()
-  if (!text) throw new Error(`HTTP ${res.status}: empty response`)
+  // Код ответа — в поле `status` ошибки: errorText (кит) переводит его в понятную фразу.
+  if (!text) throw Object.assign(new Error(`HTTP ${res.status}: empty response`), { status: res.status })
   const json: ApiResponse<T> = JSON.parse(text)
-  if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`)
+  if (!res.ok || json.error) throw Object.assign(new Error(json.error ?? `HTTP ${res.status}`), { status: res.status })
   return json.data as T
 }
 
@@ -74,6 +76,8 @@ export interface Product {
 export interface Routing {
   id: string; name: string; product_id: string; created_at: string
   operations?: Operation[]
+  /** Версия техкарты изделия (сервер: max+1 при сохранении) и признак действующей ('1'/'0'; пусто = действующая). */
+  version?: string | number | null; is_default?: string | number | null; effective_from?: string
 }
 export interface Operation {
   id: string; routing_id: string; code: string; name: string
@@ -82,6 +86,11 @@ export interface Operation {
   cost: string; risk_coef: string; setup_cost?: string; labor_rate?: string
   controls: string; mechanisms: string; inputs: string; outputs: string
   created_at: string
+  /** Наладка, мин; тяжёлый хвост длительности; шаблон НСИ, из которого взят шаг. */
+  setup_time?: string | number | null; tail_weight?: string | number | null; tail_index?: string | number | null; template_id?: string
+  /** Связи по ID — когда сервер их отдаёт (operation_wc_types / operation_inputs); иначе не приходят. */
+  wc_type_ids?: string[]
+  input_products?: Array<{ product_id: string; qty: number | string }>
 }
 /** Тело создания операции: связи реестров — по ID (типы оборуд., входные изделия). */
 export interface OperationCreatePayload extends Partial<Operation> {
@@ -340,7 +349,8 @@ export interface CashLpResult extends CashLpSummary {
   shipment_profile: { source: 'plan' | 'uniform'; plan_id: string; products_from_plan: number }
   fixed_weekly: number; weekly_rate: number; tail_k: number; tail_k_beta: number
   portfolio: Array<{ product_id: string; qty: number; qty_rounded: number }>
-  duals: {
+  /** Нет, когда LP не решена (time_limit, infeasible): читать только через `?.`. */
+  duals?: {
     capacity: Array<{ wc_type: string; shadow_price: number; utilization: number; load_hours: number; capacity_hours: number; binding: boolean }>
     liquidity: number; liquidity_binding: boolean; price_of_liquidity_local: number; credit_limit: number
   }

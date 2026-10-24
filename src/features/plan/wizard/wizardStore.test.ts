@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  DEFAULT_FIELDS, RISK_PRESETS, WIZARD_STEPS, diffFields, effectiveFields, getWizardState, isChanged, stepState, wizardActions,
+  DEFAULT_FIELDS, RISK_PRESETS, WIZARD_STEPS, diffFields, effectiveFields, getWizardState, isChanged, parseDraft, stepState, wizardActions,
 } from './wizardStore'
+import { snapshotOf } from '../runMeta'
 
-const READY = { programOk: true, scenarioOk: true, finOk: true, running: false, hasResult: false }
+const READY = { programOk: true, scenarioOk: true, finOk: true, running: false }
 
 describe('plan wizard store — inherited vs changed', () => {
   beforeEach(() => wizardActions.reset())
@@ -60,9 +61,10 @@ describe('plan wizard store — inherited vs changed', () => {
     wizardActions.prev()
     expect(getWizardState().step).toBe('conditions')
     expect([...getWizardState().visited]).toEqual(['program', 'conditions', 'distributions'])
-    wizardActions.setStep('result')
+    wizardActions.setStep('launch')
     for (let i = 0; i < 10; i++) wizardActions.next()
     expect(getWizardState().step).toBe(WIZARD_STEPS[WIZARD_STEPS.length - 1])
+    expect(WIZARD_STEPS).toHaveLength(6) // результат — свой адрес #/plan/run/<id>, не шаг мастера
   })
 
   it('derives step glyphs from readiness and changes', () => {
@@ -74,7 +76,6 @@ describe('plan wizard store — inherited vs changed', () => {
     wizardActions.setOverride('useCalendar', false)
     expect(stepState(getWizardState(), 'constraints', READY)).toBe('done')
     expect(stepState(getWizardState(), 'launch', { ...READY, running: true })).toBe('running')
-    expect(stepState(getWizardState(), 'result', { ...READY, hasResult: true })).toBe('done')
   })
 
   it('starts a fresh flow from a portfolio run («Передать в План»)', () => {
@@ -83,5 +84,28 @@ describe('plan wizard store — inherited vs changed', () => {
     const s = getWizardState()
     expect(s).toMatchObject({ source: 'portfolio', runId: 'run-1', scenarioId: 'scn-1', step: 'program' })
     expect(s.overrides).toEqual({})
+  })
+
+  it('restores a draft from storage and rejects garbage', () => {
+    expect(parseDraft('{not json')).toBeNull()
+    expect(parseDraft(null)).toBeNull()
+    const d = parseDraft(JSON.stringify({ step: 'objective', source: 'manual', overrides: { alpha: 0.2, samples: 'много', bogus: 1 }, crits: [{ criterion: 'nope', weight: 1 }] }))
+    expect(d).toMatchObject({ step: 'objective', source: 'manual', overrides: { alpha: 0.2 } })
+    expect(d?.overrides).not.toHaveProperty('samples')
+    expect(d?.overrides).not.toHaveProperty('bogus')
+    expect(d?.crits).toEqual([{ criterion: 'duration', dir: -1, weight: 1 }])
+    expect(parseDraft(JSON.stringify({ step: 'result' }))?.step).toBe('program')
+  })
+
+  it('prefills the wizard from a past run («Новый план», «Повторить»)', () => {
+    wizardActions.setSource('manual')
+    wizardActions.setManualOrders([{ product_id: 'p1', qty: 3, due_hours: 48, priority: 5 }])
+    wizardActions.setOverride('samples', 800)
+    const snap = snapshotOf(getWizardState())
+    wizardActions.reset()
+    wizardActions.prefill(snap, 'launch')
+    const s = getWizardState()
+    expect(s).toMatchObject({ step: 'launch', source: 'manual', overrides: { samples: 800 } })
+    expect(s.manualOrders).toHaveLength(1)
   })
 })

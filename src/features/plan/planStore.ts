@@ -34,6 +34,8 @@ export interface PlanState {
   startDate: string | null
   /** Результат поднят из кэша (не считался в этой сессии). */
   restored: boolean
+  /** Адрес результата: plan_id бэкенда или `local-<время>` (маршрут `#/plan/run/<key>`). */
+  resultKey: string | null
 }
 
 export const INITIAL_PARAMS: PlanParams = { rule: 'auto', samples: '500', wRisk: '0.5', runId: '', useCalendar: true }
@@ -50,6 +52,7 @@ const initialState = (): PlanState => ({
   builtAt: null,
   startDate: null,
   restored: false,
+  resultKey: null,
 })
 
 let state: PlanState = initialState()
@@ -138,8 +141,8 @@ const browserStorage = (): StorageLike | null => {
   }
 }
 
-/** Идентификатор для кэша: plan_id бэкенда, иначе время построения. */
-const cacheId = (r: ScheduleResult, builtAt: number): string => r.plan_id || `local-${builtAt}`
+/** Адрес результата (кэш и маршрут `#/plan/run/<key>`): plan_id бэкенда, иначе время построения. */
+export const resultKeyOf = (r: ScheduleResult, builtAt: number): string => r.plan_id || `local-${builtAt}`
 
 export const planActions = {
   /** Смена программы (runId) сбрасывает ручные правки — они относятся к старым операциям. */
@@ -182,8 +185,9 @@ export const planActions = {
     if (token !== runSeq) return
     const builtAt = Date.now()
     const startDate = meta.startDate ?? state.startDate
-    commit({ ...state, running: false, error: null, result, builtAt, startDate, restored: false })
-    writePlanCache(meta.storage === undefined ? browserStorage() : meta.storage, { planId: cacheId(result, builtAt), result, builtAt, startDate })
+    const resultKey = resultKeyOf(result, builtAt)
+    commit({ ...state, running: false, error: null, result, builtAt, startDate, restored: false, resultKey })
+    writePlanCache(meta.storage === undefined ? browserStorage() : meta.storage, { planId: resultKey, result, builtAt, startDate })
   },
 
   /** Ошибка расчёта: прежний результат сохраняется, показывается ошибка. */
@@ -197,15 +201,16 @@ export const planActions = {
     if (state.result || state.running) return false
     const last = readPlanCache(storage)[0]
     if (!last) return false
-    commit({ ...state, result: last.result, builtAt: last.builtAt, startDate: last.startDate, restored: true, pins: EMPTY_PINS, error: null })
+    commit({ ...state, result: last.result, builtAt: last.builtAt, startDate: last.startDate, restored: true, pins: EMPTY_PINS, error: null, resultKey: last.planId })
     return true
   },
 
-  /** Открыть прогон из кэша по id (строка истории); false — в кэше нет. */
+  /** Открыть прогон из кэша по id (адрес `run/<id>`, строка истории); уже открытый — true без перерисовки; false — в кэше нет. */
   openCached(planId: string, storage: StorageLike | null | undefined = browserStorage()): boolean {
+    if (state.result && state.resultKey === planId) return true
     const hit = readPlanCache(storage).find((c) => c.planId === planId)
     if (!hit) return false
-    commit({ ...state, result: hit.result, builtAt: hit.builtAt, startDate: hit.startDate, restored: true, pins: EMPTY_PINS, error: null })
+    commit({ ...state, result: hit.result, builtAt: hit.builtAt, startDate: hit.startDate, restored: true, pins: EMPTY_PINS, error: null, resultKey: hit.planId })
     return true
   },
 

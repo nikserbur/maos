@@ -14,7 +14,9 @@ import { useOptStore } from '../optimization/optStore'
 import { usePlanStore } from '../plan/planStore'
 import { useRlStatus } from '../agents/rlStatusStore'
 import { useGuardrails } from '../agents/guardrailsStore'
-import { EMPTY_COUNTS, type DeriveInput, type RefCounts } from './deriveInput'
+import { useMentatStatusSnapshot } from '../explain/llm/statusStore'
+import { useForecastResult } from '../forecast/forecastStore'
+import { EMPTY_COUNTS, type DeriveInput, type MentatLink, type RefCounts } from './deriveInput'
 import { deriveState } from './deriveState'
 import type { MethodMapState } from './types'
 
@@ -150,6 +152,13 @@ export function useMethodMapState(): MethodMapLive {
   const passport = usePassport()
   const rl = useRlStatus()
   const guard = useGuardrails()
+  const mentatSnap = useMentatStatusSnapshot()
+  // Блок [7]: прогноз, опубликованный «Мониторингом» (X2 P-121) — его видят карта, полоса и MENTAT.
+  const published = useForecastResult()
+  // Блок [8]: undefined — статус ещё не получен (или сервер не ответил), иначе — подключена ли модель.
+  const mentat = useMemo<MentatLink | undefined>(() => (mentatSnap.status
+    ? { configured: mentatSnap.status.configured, model: mentatSnap.status.model }
+    : undefined), [mentatSnap.status])
 
   useEffect(() => {
     void ensureRefs()
@@ -171,17 +180,19 @@ export function useMethodMapState(): MethodMapLive {
       opt: { result: opt.result, ranAt: opt.ranAt, running: opt.running, form: opt.form },
       plan: { result: plan.result, builtAt: plan.builtAt, running: plan.running, params: plan.params },
       kpi: refsState.kpi,
-      forecast: null,
+      forecast: published?.result ?? null,
+      forecastAt: published?.meta.at ?? null,
       passport: passport.status === 'ready' ? passport.byCode : null,
       fin: passport.fin,
       macro: refsState.macro,
       cash: { result: cash.result, ranAt: cash.ranAt, running: cash.running },
       rl: rl.status ?? undefined,
       guardrails: guard.loaded ? guard.value : undefined,
+      mentat,
       now: Date.now(),
     }
     return deriveState(input)
-  }, [context, scenarioId, scenario, refsState.counts, refsState.calendar, refsState.kpi, refsState.macro, opt, plan, cash, passport, rl.status, guard])
+  }, [context, scenarioId, scenario, refsState.counts, refsState.calendar, refsState.kpi, refsState.macro, opt, plan, cash, passport, rl.status, guard, mentat, published])
 
   return { state, refs: refsState, scenario, scenarioId, refresh: () => void ensureRefs(true) }
 }

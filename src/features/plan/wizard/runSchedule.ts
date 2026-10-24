@@ -1,12 +1,15 @@
 /**
  * Запуск Стадии 1 из мастера: собирает `ScheduleParams` из эффективных полей (база + переопределения),
  * программы по источнику и пинов; пишет статус в `planStore`, контекст решения — в `DecisionContext`.
- * После успеха: результат — в planStore (его читает карта), касса не запускается автоматически
- * (отдельное действие на шаге «Результат»).
+ * После успеха: результат — в planStore (его читает карта) по адресу `#/plan/run/<key>`, паспорт
+ * прогона (правило, источник, параметры мастера) — в runMeta для истории и «Повторить», индекс
+ * прогонов перечитывается (номер №N). Касса не запускается автоматически — отдельное действие.
  */
 import { api, type ScheduleParams, type ScheduleResult } from '../../../lib/api'
 import { setDecisionContext } from '../../../shell/context'
 import { planActions, getPlanState } from '../planStore'
+import { refreshRunIndex } from '../runIndex'
+import { browserStorage, snapshotOf, writeRunMeta } from '../runMeta'
 import type { Crit } from '../types'
 import { effectiveFields, type WizardOrder, type WizardState } from './wizardStore'
 
@@ -38,8 +41,14 @@ export function emptyProgramMessage(w: WizardState, program: readonly WizardOrde
   return 'В программе нет заказов. Добавьте их на шаге «Программа»: изделие, количество, срок.'
 }
 
+export interface RunScheduleMeta {
+  /** Имя сценария — для подписи «Источник/сценарий» в истории. */
+  scenarioName?: string
+  scenarioId?: string
+}
+
 /** `startDate` — начало горизонта (ISO-дата) для оси дат Ганта; без него остаётся прежнее. */
-export async function runSchedule(w: WizardState, program: readonly WizardOrder[], startDate?: string): Promise<ScheduleResult | null> {
+export async function runSchedule(w: WizardState, program: readonly WizardOrder[], startDate?: string, meta: RunScheduleMeta = {}): Promise<ScheduleResult | null> {
   const ps = getPlanState()
   const params = buildScheduleParams(w, program, ps.pins, ps.result)
   const token = planActions.beginRun()
@@ -55,6 +64,15 @@ export async function runSchedule(w: WizardState, program: readonly WizardOrder[
       return null
     }
     planActions.finishRun(token, r, { startDate })
+    const st = getPlanState()
+    if (st.resultKey && st.result === r) {
+      writeRunMeta(browserStorage(), {
+        key: st.resultKey, rule: r.rule, adopted: Boolean(r.improver?.adopted), source: w.source,
+        scenarioId: meta.scenarioId ?? w.scenarioId, scenarioName: meta.scenarioName ?? '', builtAt: st.builtAt ?? Date.now(),
+        params: snapshotOf({ ...w, startDate: startDate ?? w.startDate, scenarioId: meta.scenarioId ?? w.scenarioId }),
+      })
+    }
+    void refreshRunIndex()
     if (r.plan_id) setDecisionContext({ scheduleRunId: r.plan_id })
     return r
   } catch (e) {

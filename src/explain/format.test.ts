@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   DASH,
+  bp,
+  countText,
   dateTime,
+  dateTimeShort,
+  freqText,
+  plural,
+  pp,
+  rangeText,
+  runLabel,
+  time,
   MINUS,
   NBSP,
   bindFormula,
@@ -164,12 +173,88 @@ describe('bindFormula', () => {
 })
 
 describe('dateTime', () => {
-  it('формат бэкенда «ГГГГ-ММ-ДД ЧЧ:ММ:СС» → дд.мм.гггг, чч:мм', () => {
-    expect(dateTime('2026-10-22 18:35:10')).toBe('22.10.2026, 18:35')
-    expect(dateTime('2026-10-22 18:35:10', { time: false })).toBe('22.10.2026')
+  const local = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+  it('серверное «ГГГГ-ММ-ДД ЧЧ:ММ:СС» без зоны — это UTC, показывается в местном времени', () => {
+    expect(dateTime('2026-10-22 18:35:10')).toBe(local.format(new Date(Date.UTC(2026, 9, 22, 18, 35, 10))))
+    expect(dateTime('2026-10-22T18:35:10')).toBe(dateTime('2026-10-22 18:35:10'))
+    expect(dateTime('2026-10-22 18:35:10', { time: false })).toMatch(/^\d{2}\.\d{2}\.2026$/)
+  })
+  it('строка с зоной и число не сдвигаются', () => {
+    const ms = Date.UTC(2026, 9, 22, 18, 35)
+    expect(dateTime('2026-10-22T18:35:00Z')).toBe(local.format(new Date(ms)))
+    expect(dateTime(ms)).toBe(local.format(new Date(ms)))
   })
   it('пусто и мусор → тире', () => {
     expect(dateTime(null)).toBe('—')
     expect(dateTime('не дата')).toBe('—')
+    expect(time('')).toBe('—')
+    expect(dateTimeShort(undefined)).toBe('—')
+  })
+  it('один прогон — одно время в шапке, истории и аналитике (time/dateTimeShort из одной отметки)', () => {
+    const at = '2026-10-24 14:38:00'
+    const t = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(new Date(Date.UTC(2026, 9, 24, 14, 38)))
+    expect(time(at)).toBe(t)
+    expect(dateTimeShort(at, new Date(Date.UTC(2026, 0, 1)))).toMatch(new RegExp(`^\\d{2}\\.\\d{2} ${t}$`))
+    expect(dateTimeShort(at, new Date(Date.UTC(2027, 5, 1)))).toMatch(/\.2026 /)
+  })
+})
+
+describe('plural / countText', () => {
+  const forms = ['запись', 'записи', 'записей'] as const
+  it.each([[1, 'запись'], [2, 'записи'], [5, 'записей'], [11, 'записей'], [12, 'записей'], [21, 'запись'], [22, 'записи'], [111, 'записей']])('%i → %s', (n, w) => {
+    expect(plural(n, forms)).toBe(w)
+    expect(plural(n, ...forms)).toBe(w)
+  })
+  it('дробное число — родительный единственного («2,5 записи»)', () => {
+    expect(plural(2.5, forms)).toBe('записи')
+  })
+  it('countText пишет число с NBSP', () => {
+    expect(countText(24, forms)).toBe(`24${NBSP}записи`)
+    expect(countText(1200, forms)).toBe(`1${NBSP}200${NBSP}записей`)
+  })
+})
+
+describe('rangeText', () => {
+  it('один порядок и одна единица на оба конца', () => {
+    expect(rangeText(54_000, 86_700, '₽')).toBe(`54–86,7${NBSP}тыс.${NBSP}₽`)
+    expect(rangeText(0.12, 0.15, '%')).toBe(`12–15${NBSP}%`)
+    expect(rangeText(10, 12.5, 'ч')).toBe(`10–12,5${NBSP}ч`)
+  })
+  it('со знаком — словами и с U+2212', () => {
+    expect(rangeText(-150e6, -50e6, '₽')).toBe(`от ${MINUS}150 до ${MINUS}50${NBSP}млн${NBSP}₽`)
+    expect(rangeText(-2e6, 3e6, '₽')).toBe(`от ${MINUS}2 до 3${NBSP}млн${NBSP}₽`)
+    expect(rangeText(-150e6, -50e6, '₽')).not.toContain('-')
+  })
+  it('концы в любом порядке; нет данных → тире', () => {
+    expect(rangeText(86_700, 54_000, '₽')).toBe(rangeText(54_000, 86_700, '₽'))
+    expect(rangeText(null, 5)).toBe(DASH)
+  })
+})
+
+describe('bp / pp / freqText', () => {
+  it('базисные и процентные пункты из долей', () => {
+    expect(bp(0.0047)).toBe(`47${NBSP}б.${NBSP}п.`)
+    expect(bp(-0.0012)).toBe(`${MINUS}12${NBSP}б.${NBSP}п.`)
+    expect(pp(0.012)).toBe(`1,2${NBSP}п.${NBSP}п.`)
+    expect(pp(0.012, { signed: true })).toBe(`+1,2${NBSP}п.${NBSP}п.`)
+    expect(pp(-0.005, { signed: true })).toBe(`${MINUS}0,5${NBSP}п.${NBSP}п.`)
+    expect(pp(null)).toBe(DASH)
+  })
+  it('вероятность как частота', () => {
+    expect(freqText(0.03)).toBe('в 3 из 100')
+    expect(freqText(0.5, 10)).toBe('в 5 из 10')
+    expect(freqText(0.001)).toBe('реже 1 из 100')
+    expect(freqText(0)).toBe('ни в одном из 100')
+    expect(freqText(Number.NaN)).toBe(DASH)
+  })
+})
+
+describe('runLabel', () => {
+  it('номер, правило и короткое время; хэш не показывается', () => {
+    const at = '2026-10-24 14:38:00'
+    expect(runLabel({ seq: 28, rule: 'CR', createdAt: at })).toBe(`План №28 · CR · ${dateTimeShort(at)}`)
+    expect(runLabel({ id: 'a3f9c2e1b7', rule: 'CR' })).toBe('План · CR')
+    expect(runLabel({ id: '27' })).toBe('План №27')
+    expect(runLabel({ seq: 3, kind: 'Портфель' })).toBe('Портфель №3')
   })
 })

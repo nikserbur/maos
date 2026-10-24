@@ -88,6 +88,8 @@ function liveValue(def: ParamDef, input: DeriveInput): number | string | null | 
     case 'fin.tau_v': return fin ? fin.tau_v : undefined
     case 'fin.tau_p': return fin ? fin.tau_p : undefined
     case 'fin.dscr_covenant': return fin ? fin.dscr_covenant : undefined
+    case 'fin.auto_repay': return fin ? (fin.auto_repay ? 'включено' : 'выключено') : undefined
+    case 'fin.tax_cumulative': return fin ? ((fin.tax_cumulative ?? 1) ? 'включено' : 'выключено') : undefined
     default: return undefined
   }
 }

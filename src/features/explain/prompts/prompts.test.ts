@@ -5,7 +5,7 @@ import { optFixture, planFixture, rlFixture, stateFixture } from '../mentatFixtu
 import { verifyAnswer } from '../verify'
 import {
   CUSTOM_TEMPLATE, FEW_SHOTS, NO_DATA, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION, TEMPLATES,
-  askedNodeFor, buildPrompt, missingNeeds, templateForFocus, cite, getTemplate, renderPrompt, templatesFor,
+  askedNodeFor, buildPrompt, missingNeeds, templateForFocus, cite, getTemplate, renderPrompt, templatesFor, splitTemplates, OWN_TEMPLATES_MAX,
 } from './index'
 
 const ctx = () => buildContext({ state: stateFixture(), opt: optFixture(), plan: planFixture(), rl: rlFixture(), asked: 'crit.profit.f.cvar' })
@@ -39,6 +39,11 @@ describe('templates', () => {
   it('orders templates by screen and applies the focused node only where allowed', () => {
     expect(templatesFor('agents')[0].id).toBe('agent_move')
     expect(templatesFor('agents')).toHaveLength(TEMPLATES.length)
+    // X2 P-130: на «Плане» — не больше пяти своих шаблонов, остальные — «Ещё вопросы (N)»
+    const plan = splitTemplates('plan')
+    expect(plan.own.length).toBeGreaterThan(0)
+    expect(plan.own.length).toBeLessThanOrEqual(OWN_TEMPLATES_MAX)
+    expect(plan.own.length + plan.more.length).toBe(TEMPLATES.length)
     expect(askedNodeFor(getTemplate('param_origin'), 'crit.cash.f.cfar')).toBe('crit.cash.f.cfar')
     expect(askedNodeFor(getTemplate('rl_gate'), 'crit.cash.f.cfar')).toBe('ag.rl')
     expect(askedNodeFor(getTemplate('param_origin'), null)).toBe('crit.profit.alpha')

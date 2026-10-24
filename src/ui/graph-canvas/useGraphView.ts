@@ -14,6 +14,8 @@ export interface GraphViewOptions {
   maxZoom?: number
   /** Поле вокруг содержимого при «вписать», px экрана. */
   pad?: number
+  /** Нижнее поле при «вписать» (под плавающими кнопками), px; по умолчанию max(pad, 56). */
+  padBottom?: number
   initial?: View
 }
 
@@ -39,6 +41,7 @@ export function useGraphView(viewportRef: RefObject<HTMLElement>, opts: GraphVie
   const minZoom = opts.minZoom ?? 0.35
   const maxZoom = opts.maxZoom ?? 2.2
   const pad = opts.pad ?? 48
+  const padBottom = opts.padBottom ?? Math.max(pad, 56)
   const initial = opts.initial ?? { x: pad, y: pad, k: 1 }
   const [view, setViewState] = useState<View>(initial)
   // Актуальный вид для обработчиков, не зависящих от перерисовки (колесо, перетаскивание).
@@ -71,9 +74,9 @@ export function useGraphView(viewportRef: RefObject<HTMLElement>, opts: GraphVie
     const W = vp.clientWidth
     const H = vp.clientHeight
     if (W <= 0 || H <= 0) return
-    const k = clampZoom(Math.min((W - pad * 2) / b.w, (H - pad * 2) / b.h), minZoom, maxZoom)
-    setView({ k, x: (W - b.w * k) / 2 - b.x * k, y: (H - b.h * k) / 2 - b.y * k })
-  }, [viewportRef, pad, minZoom, maxZoom, setView])
+    const k = clampZoom(Math.min((W - pad * 2) / b.w, (H - pad - padBottom) / b.h), minZoom, maxZoom)
+    setView({ k, x: (W - b.w * k) / 2 - b.x * k, y: pad + (H - pad - padBottom - b.h * k) / 2 - b.y * k })
+  }, [viewportRef, pad, padBottom, minZoom, maxZoom, setView])
 
   const reset = useCallback(() => setView(initial), [setView, initial.x, initial.y, initial.k]) // eslint-disable-line react-hooks/exhaustive-deps
 

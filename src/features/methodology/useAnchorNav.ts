@@ -1,7 +1,8 @@
 /**
  * Навигация по якорям «Методики»:
- *  — на монтировании и по `hashchange` читает `#/methodology/<anchor>` и плавно
- *    прокручивает к разделу (мгновенно при prefers-reduced-motion);
+ *  — на монтировании и по `hashchange` (клик по ссылке оглавления, «Назад») читает
+ *    `#/methodology/<anchor>` и прокручивает к разделу: плавно, а мгновенно — при
+ *    prefers-reduced-motion и в фоновой вкладке (там плавная прокрутка не выполняется);
  *  — scroll-spy: какой раздел сейчас читается (для индикатора в оглавлении).
  */
 import { useCallback, useEffect, useState, type RefObject } from 'react'
@@ -11,13 +12,19 @@ function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 }
 
+/** Плавно — только в видимой вкладке без prefers-reduced-motion. */
+export function scrollBehavior(): ScrollBehavior {
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  return hidden || prefersReducedMotion() ? 'auto' : 'smooth'
+}
+
 export function useAnchorNav(rootRef: RefObject<HTMLElement>): { active: SectionId; scrollTo: (id: SectionId | '') => void } {
   const [active, setActive] = useState<SectionId>(SECTION_IDS[0])
 
   const scrollTo = useCallback((id: SectionId | '') => {
     const root = rootRef.current
     if (!root) return
-    const behavior: ScrollBehavior = prefersReducedMotion() ? 'auto' : 'smooth'
+    const behavior = scrollBehavior()
     if (!id) { root.scrollTo({ top: 0, behavior }); return }
     const el = root.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
     if (!el) return

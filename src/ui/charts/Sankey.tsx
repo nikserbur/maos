@@ -1,13 +1,13 @@
 /**
  * Диаграмма потоков «откуда → куда» (X1 §6.3 п. 5): два столбца узлов, ленты толщиной ∝ величине,
- * подписи не обрезаются (левое поле считается по длине текста, длинные — в 2 строки),
- * наведение на узел подсвечивает его цепочку и показывает числа, остальные ленты приглушаются;
+ * подписи не обрезаются и без многоточий (до 3 строк; поле подписи растёт по тексту, полное имя — в
+ * подсказке), наведение на узел подсвечивает его цепочку и показывает числа, остальные ленты
+ * приглушаются; `emphasis` — узлы, о которых вывод (их ленты в цвете, прочие — «прочее» 15 %);
  * топ-N переходов подписаны числом на ленте.
  */
 import { useState, type ReactNode } from 'react'
 import { ChartFrame, type ChartTable } from './ChartFrame'
 import { useMeasuredWidth } from './hooks'
-import { wrapLabel } from './scale'
 import { num } from '../../explain/format'
 
 export interface SankeyLink { from: string; to: string; value: number }
@@ -24,19 +24,42 @@ interface SankeyProps {
   subtitle?: ReactNode
   ariaLabel?: string
   className?: string
+  /** Узлы вывода: их ленты — цветом ряда, прочие — нейтральным «прочее» 15 %. */
+  emphasis?: ReadonlyArray<string>
 }
 
-const ROW = 44
+const ROW = 52
+const MAX_LINES = 3
+
+/** Перенос по словам без обрезки: поле расширяется, пока подпись не уляжется в 3 строки. */
+export function wrapFull(text: string, maxChars: number, maxLines = MAX_LINES): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  const longest = words.reduce((m, w) => Math.max(m, w.length), 1)
+  for (let width = Math.max(maxChars, longest); ; width++) {
+    const lines: string[] = []
+    let cur = ''
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w
+      if (next.length <= width) { cur = next; continue }
+      lines.push(cur)
+      cur = w
+    }
+    if (cur) lines.push(cur)
+    if (lines.length <= maxLines || width > text.length) return lines
+  }
+}
 const PAD = 14
 const MAX_LABEL = 26
 
-export function Sankey({ nodes, links, fmt = (v) => num(v, 0), unit = 'партий', topN = 5, title, subtitle, ariaLabel, className }: SankeyProps) {
+export function Sankey({ nodes, links, fmt = (v) => num(v, 0), unit = 'партий', topN = 5, title, subtitle, ariaLabel, className, emphasis }: SankeyProps) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
   const [hot, setHot] = useState<string | null>(null)
   const labelOf = (id: string) => nodes.find((n) => n.id === id)?.label ?? id
-  const wrapped = new Map(nodes.map((n) => [n.id, wrapLabel(n.label, MAX_LABEL, 2)]))
+  const wrapped = new Map(nodes.map((n) => [n.id, wrapFull(n.label, MAX_LABEL)]))
+  const emph = emphasis && emphasis.length ? new Set(emphasis) : null
+  const isEmph = (l: SankeyLink) => !emph || emph.has(l.from) || emph.has(l.to)
   const maxChars = Math.max(6, ...[...wrapped.values()].flat().map((l) => l.length))
-  const labelW = Math.min(260, maxChars * 6.8 + 12)
+  const labelW = Math.min(320, maxChars * 6.8 + 12)
   const H = nodes.length * ROW + PAD * 2
   const leftX = labelW + 8
   const rightX = Math.max(leftX + 120, width - labelW - 8)
@@ -61,7 +84,7 @@ export function Sankey({ nodes, links, fmt = (v) => num(v, 0), unit = 'парт�
             const sw = 1.5 + (l.value / maxV) * 16
             const mx = (leftX + rightX) / 2
             return (
-              <g key={i} className={`ch-sankey__link${isHot(l) ? '' : ' is-dim'}${hot && isHot(l) ? ' is-hot' : ''}`}>
+              <g key={i} className={`ch-sankey__link${isHot(l) ? '' : ' is-dim'}${hot && isHot(l) ? ' is-hot' : ''}${isEmph(l) ? '' : ' is-other'}`}>
                 <path d={`M ${leftX} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${rightX} ${y2}`} strokeWidth={sw} />
                 {(labelled.has(l) || (hot && isHot(l))) && (
                   <text className="ch-sankey__value" x={mx} y={(y1 + y2) / 2 + 4} textAnchor="middle">{fmt(l.value)}</text>
@@ -72,7 +95,7 @@ export function Sankey({ nodes, links, fmt = (v) => num(v, 0), unit = 'парт�
           {nodes.map((n) => {
             const y = yOf(n.id)
             const lines = wrapped.get(n.id) ?? [n.label]
-            const dy0 = lines.length > 1 ? -3 : 4
+            const dy0 = 4 - ((lines.length - 1) * 13) / 2
             const hotNode = hot === n.id
             return (
               <g key={n.id} className={`ch-sankey__node${hotNode ? ' is-hot' : ''}`} tabIndex={0}

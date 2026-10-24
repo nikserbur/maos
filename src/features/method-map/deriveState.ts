@@ -15,40 +15,43 @@ import { BLOCK_IDS, type MapNode, type MethodMapState, type NodeLive, type Param
 
 const PLANNED: NodeLive = { state: 'planned' }
 
-/** Лист (параметр / формула / датасет / экран) — по паспорту или по родителю. */
+/**
+ * Лист (параметр / формула / датасет / экран) — по паспорту или по родителю. Статус паспорта не
+ * становится бейджем («паспорт НОРМ»): его показывает бейдж происхождения в панели (X2 P-124).
+ */
 function leafLive(node: MapNode, parent: NodeLive, passports: Record<string, ParameterPassport>, hasValues: boolean, input: DeriveInput): NodeLive {
-  if (node.stage && node.stage !== 'done') return { ...PLANNED, badge: 'в плане' }
+  if (node.stage && node.stage !== 'done') return { ...PLANNED, badge: STATE_META.planned.label }
   if (node.kind === 'dataset' && DATASET_PASSPORT[node.id] && input.passport?.[DATASET_PASSPORT[node.id]]) {
     const sp = input.passport[DATASET_PASSPORT[node.id]]
-    if (sp.status === 'синтетика') return { state: 'default', badge: 'синтетика', reason: sp.note || 'synthetic = 1: запрет в обучении и валидации (R7)', updatedAt: parent.updatedAt }
-    return { state: parent.state, badge: `паспорт ${sp.status}`, detail: sp.source || undefined, updatedAt: parent.updatedAt }
+    if (sp.status === 'синтетика') return { state: 'stale', badge: 'синтетика', status: sp.status, reason: sp.note || 'синтетические данные: обучение и проверка на них запрещены (R7)', updatedAt: parent.updatedAt }
+    return { state: parent.state, status: sp.status, detail: sp.source || undefined, updatedAt: parent.updatedAt }
   }
   if (node.kind === 'parameter' && node.paramId) {
     const p = passports[node.paramId]
     if (!p) return { state: 'default' }
-    if (p.stage && p.stage !== 'done') return { ...PLANNED, badge: 'в плане' }
+    if (p.stage && p.stage !== 'done') return { ...PLANNED, badge: STATE_META.planned.label }
     return {
-      state: stateFromProvenance(p.provenance),
-      badge: p.deprecated ? 'не используется' : p.status ? `паспорт ${p.status}` : undefined,
+      state: p.deprecated ? 'default' : stateFromProvenance(p.provenance),
+      badge: p.deprecated ? 'не используется' : undefined,
       value: p.value ?? undefined,
       unit: p.unit,
-      reason: p.outOfRange ? 'вне разумного диапазона' : p.deprecated ? 'ползунок принят API, но в расчёте не участвует (волна M)' : undefined,
+      reason: p.outOfRange ? 'вне разумного диапазона' : p.deprecated ? 'ползунок принят сервером, но в расчёте не участвует' : undefined,
       updatedAt: p.estimatedAt,
     }
   }
   if (node.kind === 'formula') {
     if (parent.state === 'planned') return PLANNED
     return hasValues
-      ? { state: 'estimated', badge: 'значения последнего прогона', updatedAt: parent.updatedAt }
-      : { state: parent.state === 'error' ? 'error' : 'default', badge: 'нет прогона' }
+      ? { state: 'estimated', badge: 'значения последнего расчёта', updatedAt: parent.updatedAt }
+      : { state: parent.state === 'error' ? 'error' : 'default', badge: 'нет расчёта' }
   }
   return { state: parent.state, updatedAt: parent.updatedAt }
 }
 
 /**
- * Блок: состояние = худшее из подблоков (`planned` не ухудшает), бейдж — контекст
- * первого реализованного подблока (имя сценария, портфель, станки…, UX-V2 §3.7),
- * вторая строка — что именно тянет блок вниз, либо счётчики «рассчитано · в плане».
+ * Блок: состояние = худшее из подблоков (`planned` не ухудшает), бейдж — контекст первого
+ * реализованного подблока (имя сценария, портфель, станки…, UX-V2 §3.7), вторая строка — какой
+ * подблок тянет блок вниз («Транши…: касса: не решено за 30 с»), либо счётчики «рассчитано · в плане».
  */
 function blockLive(block: string, live: Record<string, NodeLive>): NodeLive {
   const subs = subblocksOf(block as MapNode['block'])
@@ -64,7 +67,7 @@ function blockLive(block: string, live: Record<string, NodeLive>): NodeLive {
   const detail = state === 'planned'
     ? 'ещё не реализовано'
     : worst && worst !== primary && worstLive?.badge
-      ? `${STATE_META[state].label}: ${worstLive.badge}`
+      ? `${worst.title}: ${worstLive.badge}`
       : primaryLive?.detail ?? counts
   return {
     state,
@@ -73,6 +76,12 @@ function blockLive(block: string, live: Record<string, NodeLive>): NodeLive {
     reason: worstLive?.reason,
     updatedAt: subs.map((s) => live[s.id]?.updatedAt).filter(Boolean).sort().pop(),
   }
+}
+
+/** Подблок, который определяет состояние блока (первый с худшим состоянием) — для первой строки панели. */
+export function worstSubblock(state: MethodMapState, block: MapNode['block']): MapNode | undefined {
+  const own = state.nodes[block]?.state
+  return subblocksOf(block).find((s) => state.nodes[s.id]?.state === own)
 }
 
 export function deriveState(input: DeriveInput): MethodMapState {

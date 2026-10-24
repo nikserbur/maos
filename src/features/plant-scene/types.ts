@@ -38,10 +38,29 @@ export interface StatusMeta {
   color: string
 }
 
-/** Статусы = токены `--status-*` + глифы; WebGL получает цвета через themeColors.ts. */
+/**
+ * Один словарь статусов станка (X2 P-28): слово, глиф и цвет едины для чипа, легенды, кольца и пина.
+ * «Авария» ■ — только для событий симуляции и мониторинга, справочник её не задаёт.
+ */
 export const STATUS_META: Record<StageStatus, StatusMeta> = {
   running: { label: 'В работе', cssVar: 'var(--status-running)', glyphClass: 'glyph-running', color: STATUS_FALLBACK.running },
-  setup: { label: 'Наладка', cssVar: 'var(--status-setup)', glyphClass: 'glyph-setup', color: STATUS_FALLBACK.setup },
-  idle: { label: 'Простой', cssVar: 'var(--status-idle)', glyphClass: 'glyph-idle', color: STATUS_FALLBACK.idle },
+  setup: { label: 'ТО / ремонт', cssVar: 'var(--status-setup)', glyphClass: 'glyph-setup', color: STATUS_FALLBACK.setup },
+  idle: { label: 'Выведен', cssVar: 'var(--status-idle)', glyphClass: 'glyph-idle', color: STATUS_FALLBACK.idle },
   down: { label: 'Авария', cssVar: 'var(--status-down)', glyphClass: 'glyph-down', color: STATUS_FALLBACK.down },
+}
+
+/** Статус станка в справочнике «Оборудование» → статус на схеме. */
+export const NSI_STATUS: Readonly<Record<string, StageStatus>> = {
+  active: 'running',
+  maintenance: 'setup',
+  decommissioned: 'idle',
+}
+
+/** Значения справочника для выпадающих списков — те же слова, что на схеме. */
+export const NSI_STATUS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = Object.entries(NSI_STATUS)
+  .map(([value, s]) => ({ value, label: STATUS_META[s].label }))
+
+/** Статус из справочника; неизвестное значение — «В работе» (как прежде по умолчанию). */
+export function statusFromNsi(nsiStatus: string | null | undefined): StageStatus {
+  return NSI_STATUS[(nsiStatus ?? '').trim()] ?? 'running'
 }

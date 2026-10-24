@@ -1,167 +1,99 @@
 /*
- * Панель имитационного моделирования (плавающая справа над канвасом): шапка, табы кита,
- * прогоны, плеер, показатели (герой 24 · плитка 16), графики chart-системы, калибровка.
- * Только токены, обе темы; без backdrop-filter (перекомпоновка поверх WebGL каждый кадр).
+ * Правая колонка симуляции (360 px, на месте инспектора — X2 P-29): шапка, вкладки кита, прогоны,
+ * живые показатели, выбранный объект, свёрнутые обозначения, итог. Плеер — полоса времени внизу
+ * канваса (scene.css). Без радиальных заливок и тонированных рамок (X2 P-40); числа — цвет текста.
  */
-.sim {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  z-index: var(--z-overlay);
+.sim-col {
+  width: 360px;
+  flex: 0 0 360px;
   display: flex;
   flex-direction: column;
-  width: 420px;
-  max-width: calc(100% - var(--space-8));
-  max-height: calc(100% - var(--space-8));
+  min-height: 0;
   font-size: var(--fs-12);
   color: var(--text);
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2);
-  overflow: hidden;
+  border-left: 1px solid var(--border);
 }
-.sim__head {
+.sim-col__head {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in oklch, var(--ultramarine) 14%, transparent), transparent 62%);
   border-bottom: 1px solid var(--border);
 }
-.sim__head-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  color: var(--accent-text);
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
-  border-radius: var(--radius);
-}
-.sim__head-text { flex: 1; min-width: 0; }
-.sim__title {
+.sim-col__title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  font-size: var(--fs-14);
+  font-size: var(--fs-16);
   font-weight: 600;
-  letter-spacing: -0.01em;
   color: var(--text);
 }
-.sim__sub { margin: 1px 0 0; font-size: var(--fs-11); color: var(--text-muted); }
-.sim__tabs { padding: var(--space-3) var(--space-4) 0; }
-.sim__tabs .dk-seg { width: 100%; }
-.sim__body { flex: 1; min-height: 0; padding: var(--space-3) var(--space-4) var(--space-4); overflow: auto; }
+.sim-col__tabs { padding: var(--space-3) var(--space-4) 0; }
+.sim-col__tabs .dk-seg { width: 100%; }
+.sim-col__body { flex: 1; min-height: 0; padding: var(--space-3) var(--space-4) var(--space-4); overflow-y: auto; overflow-x: hidden; }
 .sim__stack { gap: var(--space-3); }
 
-/* Прогоны (выбор плана строкой истории) */
-.sim__runs .dk-table-wrap { max-height: 160px; }
+/* Прогоны: 3 строки + «все N», без горизонтальной прокрутки в 360 px. */
+.sim__runs .dk-table { width: 100%; }
 .sim__runs .dk-table td, .sim__runs .dk-table th[scope='row'] { font-size: var(--fs-12); }
 
-/* Плеер */
-.sim__player {
+/* Живые показатели: подпись · значение (цвет текста), без плиток-карточек. */
+.sim__live {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+.sim__live dt { font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.sim__live dd { margin: 2px 0 0; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
+.sim__live small { font-size: var(--fs-11); font-weight: 400; color: var(--text-muted); }
+
+/* Выбранный в сцене объект */
+.sim__node {
   padding: var(--space-3);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
-.sim__transport { display: flex; align-items: center; gap: var(--space-2); }
-.sim__play {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  flex: none;
-  padding: 0;
-  color: var(--on-accent);
-  background: var(--accent);
-  border: 0;
-  border-radius: 50%;
-  box-shadow: 0 4px 14px color-mix(in oklch, var(--accent) 40%, transparent);
+.sim__node-head { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-2); }
+.sim__node-k { color: var(--text-muted); }
+.sim__node-title { min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-13); font-weight: 600; }
+.sim__node-facts { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.sim__node-facts > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.sim__node-facts dt { color: var(--text-secondary); }
+.sim__node-facts dd { margin: 0; min-width: 0; text-align: right; overflow-wrap: anywhere; color: var(--text); }
+
+/* Обозначения — свёрнуты: «Обозначения (N)». */
+.sim__legend summary {
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
-}
-.sim__play:hover { background: color-mix(in oklch, var(--accent), var(--accent-hover) 25%); }
-.sim__play:active { transform: scale(0.96); }
-.sim__play:focus-visible { outline: none; box-shadow: var(--halo); }
-.sim__select {
-  height: var(--control-compact);
-  max-width: 100%;
-  padding: 0 var(--space-2);
-  font: inherit;
   font-size: var(--fs-12);
-  color: var(--text);
-  background: var(--bg-input);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
 }
-.sim__select:focus-visible { outline: none; border-color: var(--focus); box-shadow: var(--halo); }
-.sim__clock {
-  margin-left: auto;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: var(--fs-14);
-  font-weight: 600;
-  color: var(--text);
-}
-.sim__clock small {
-  display: block;
-  font-family: var(--font-sans);
-  font-size: var(--fs-11);
-  font-weight: 400;
-  color: var(--text-muted);
-}
-.sim__range { width: 100%; margin-top: var(--space-2); accent-color: var(--accent); }
+.sim__legend summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sim__legend-list { flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); }
 
-/* Показатели: три плитки; герой — две колонки, значение 24 */
-.sim__kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+/* Итог прогона и следующий шаг */
+.sim__done, .sim__next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
-}
-.sim__kpi {
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-.sim__kpi-k { color: var(--text-muted); font-weight: 500; letter-spacing: 0.04em; }
-.sim__kpi-v { margin-top: 2px; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
-.sim__kpi-v small { font-size: var(--fs-11); font-weight: 400; color: var(--text-muted); }
-.sim__kpi--hero { grid-column: span 2; border-color: color-mix(in oklch, var(--ultramarine) 40%, var(--border)); }
-.sim__kpi--hero .sim__kpi-v { font-size: var(--fs-24); font-weight: 400; font-variant-numeric: proportional-nums; }
-
-/* Легенда обозначений 3D-сцены — список кита графиков в колонку */
-.sim__legend { flex-direction: column; gap: var(--space-1); }
-
-/* Итог прогона и рекомендация */
-.sim__done,
-.sim__nsi {
   padding: var(--space-3);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
-.sim__done { border-color: color-mix(in oklch, var(--status-running) 45%, var(--border)); }
-.sim__nsi { border-color: color-mix(in oklch, var(--status-info) 40%, var(--border)); }
-.sim__done-title,
-.sim__nsi-title {
-  display: flex;
-  align-items: center;
-  margin-bottom: var(--space-1);
-  font-size: var(--fs-13);
-  font-weight: 600;
-  color: var(--text);
-}
-.sim__done-meta { margin-bottom: var(--space-2); font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-secondary); }
-.sim__nsi-text { margin: 0 0 var(--space-2); font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-secondary); }
-.sim__row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sim__done-title { font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+.sim__done-meta { font-size: var(--fs-12); color: var(--text-secondary); }
+.sim__verdict { margin: 0; font-size: var(--fs-13); line-height: var(--lh-body); color: var(--text); text-wrap: pretty; }
 .sim__note { margin: 0; font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-muted); text-wrap: pretty; }
+.sim__label { display: flex; align-items: center; gap: var(--space-1); color: var(--text-muted); }
 .sim__muted { color: var(--text-muted); }
-.sim__op {
-  display: block;
-  max-width: 180px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
+
+/* Список подтверждения калибровки: «операция · было → станет, мин». */
+.sim__calib-list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; margin: var(--space-2) 0 0; padding: 0; overflow-y: auto; list-style: none; }
+.sim__calib-list li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--fs-13); }
+.sim__calib-list li span:first-child { min-width: 0; overflow-wrap: anywhere; color: var(--text-secondary); }
+.sim__calib-list li .num { flex: none; color: var(--text); }

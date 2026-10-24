@@ -15,6 +15,7 @@ import { usePlanStore } from '../plan/planStore'
 import type { BuildContextInput } from './context'
 import { appendHistory, loadHistory, saveHistory, type HistoryEntry } from './llm/history'
 import { mentatApi, type MentatStatus } from './llm/mentatApi'
+import { publishMentatStatus } from './llm/statusStore'
 import type { Need } from './prompts'
 
 export type Sources = Omit<BuildContextInput, 'asked' | 'budgetTokens' | 'depth'>
@@ -84,7 +85,9 @@ export function useMentatStatus(): MentatStatusState {
   const refresh = useCallback(async (probe = false) => {
     if (probe) setProbing(true)
     try {
-      setStatus(await mentatApi.status(probe))
+      const s = await mentatApi.status(probe)
+      setStatus(s)
+      publishMentatStatus(s)
       setLoad('ready')
       setError(null)
     } catch (e) {
@@ -95,7 +98,7 @@ export function useMentatStatus(): MentatStatusState {
     }
   }, [])
   useEffect(() => { void refresh(false) }, [refresh])
-  const replace = useCallback((s: MentatStatus) => { setStatus(s); setLoad('ready'); setError(null) }, [])
+  const replace = useCallback((s: MentatStatus) => { setStatus(s); publishMentatStatus(s); setLoad('ready'); setError(null) }, [])
   return { load, status, error, probing, refresh, replace }
 }
 

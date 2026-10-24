@@ -81,6 +81,15 @@ export function getTemplate(id: string): TaskTemplate {
   return TEMPLATES.find((t) => t.id === id) ?? CUSTOM_TEMPLATE
 }
 
+/** Сколько шаблонов экрана показывать чипами сразу (X2 P-130); остальные — «Ещё вопросы (N)». */
+export const OWN_TEMPLATES_MAX = 5
+
+/** Шаблоны экрана (не больше OWN_TEMPLATES_MAX) и остальные — под раскрытием. */
+export function splitTemplates(screenId: string): { own: TaskTemplate[]; more: TaskTemplate[] } {
+  const own = TEMPLATES.filter((t) => t.screens.includes(screenId)).slice(0, OWN_TEMPLATES_MAX)
+  return { own, more: TEMPLATES.filter((t) => !own.includes(t)) }
+}
+
 /** Шаблоны в порядке уместности для экрана (сначала свои, затем остальные — порядок реестра). */
 export function templatesFor(screenId: string): TaskTemplate[] {
   const own = TEMPLATES.filter((t) => t.screens.includes(screenId))

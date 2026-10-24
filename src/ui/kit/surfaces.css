@@ -119,11 +119,6 @@
 .dk-tip__title { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; font-weight: 600; color: var(--text); }
 .dk-tip__row { display: flex; justify-content: space-between; gap: var(--space-4); font-variant-numeric: tabular-nums; }
 .dk-tip__row b { font-weight: 500; color: var(--text); }
-.dk-axis { font-size: var(--fs-11); fill: var(--text-muted); font-variant-numeric: tabular-nums; }
-.dk-axis--title { font-size: var(--fs-11); letter-spacing: 0.02em; }
-.dk-grid { stroke: var(--chart-grid); stroke-width: 1; stroke-dasharray: 2 4; }
-.dk-baseline { stroke: var(--chart-axis); stroke-width: 1; }
-.dk-cross { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
 
 /* InfoTip внутри плотных строк: появляется на hover/фокусе строки. */
 .dk-reveal .infotip { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
@@ -150,8 +145,8 @@
   transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 .dk-input:hover:not(:disabled), .dk-select:hover:not(:disabled) { border-color: var(--text-muted); }
-.dk-input:focus, .dk-select:focus { outline: none; border-color: var(--focus); box-shadow: var(--halo); }
-.dk-input::placeholder { color: var(--text-muted); opacity: 0.75; }
+.dk-input:focus, .dk-select:focus { outline: 2px solid transparent; border-color: var(--focus); box-shadow: var(--halo); }
+.dk-input::placeholder { color: var(--text-muted); opacity: 1; }
 
 /* Основная кнопка группы: лёгкий градиент ultramarine → hover. */
 .dk-cta.btn--primary {

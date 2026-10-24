@@ -1,13 +1,15 @@
 /**
  * Командная палитра (UX-V2 §6.2 `CommandPalette`, G4): Cmd/Ctrl+K в любом месте приложения —
- * экраны, узлы карты, прогоны плана, действия. Поиск и ранжирование — чистый commandIndex.ts;
- * клавиатура — ↑/↓ (Home/End), Enter, Esc; шаблон combobox + listbox (aria-activedescendant).
+ * недавние, экраны, сценарии, справочники, прогоны плана, действия, узлы карты. Поиск — чистый
+ * commandIndex.ts с лимитом на группу (на пустом запросе видны все экраны); клавиатура — ↑/↓
+ * (Home/End), Enter; Esc — стек слоёв (закрывает только палитру); шаблон combobox + listbox.
  * Портал поверх оболочки; фокус возвращается туда, откуда палитру открыли.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { GROUP_LABEL, groupCommands, searchCommands, type CommandItem } from '../shell/commandIndex'
+import { GROUP_LABEL, groupCommands, isMacPlatform, searchCommandsGrouped, shortcutText, type CommandItem } from '../shell/commandIndex'
 import { Icon } from '../shell/icons'
+import { useEscapeLayer } from '../shell/overlays'
 import './palette.css'
 
 interface Props {
@@ -15,14 +17,14 @@ interface Props {
   onClose: () => void
 }
 
-const LIMIT = 14
-
 export function CommandPalette({ items, onClose }: Props) {
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
-  const results = useMemo(() => searchCommands(items, q, LIMIT), [items, q])
+  const results = useMemo(() => searchCommandsGrouped(items, q), [items, q])
+  const mac = isMacPlatform()
+  useEscapeLayer('palette', onClose)
   const groups = useMemo(() => groupCommands(results), [results])
   const flat = groups.flatMap((g) => g.items)
 
@@ -46,7 +48,6 @@ export function CommandPalette({ items, onClose }: Props) {
     else if (e.key === 'Home') { e.preventDefault(); setActive(0) }
     else if (e.key === 'End') { e.preventDefault(); setActive(Math.max(0, n - 1)) }
     else if (e.key === 'Enter') { e.preventDefault(); run(flat[active]) }
-    else if (e.key === 'Escape') { e.preventDefault(); onClose() }
   }
   const optId = (i: number) => `${listId}-o${i}`
   let idx = -1
@@ -73,14 +74,15 @@ export function CommandPalette({ items, onClose }: Props) {
                     onMouseMove={() => setActive(i)} onClick={() => run(it)}>
                     <span className="cp-opt__t">{it.title}</span>
                     {it.hint && <span className="cp-opt__h">{it.hint}</span>}
+                    {it.shortcut && <kbd className="cp-kbd cp-opt__k" aria-label={`Сочетание: ${shortcutText(it.shortcut, mac)}`}>{shortcutText(it.shortcut, mac)}</kbd>}
                   </div>
                 )
               })}
             </div>
           ))}
-          {flat.length === 0 && <p className="cp-empty">Ничего не нашлось. Попробуйте «план», «CVaR», «агент», «тема».</p>}
+          {flat.length === 0 && <p className="cp-empty">Ничего не нашлось. Попробуйте «план», «портфель», «CVaR», «техкарты», «тема».</p>}
         </div>
-        <p className="cp-foot mono" aria-hidden="true"><kbd className="cp-kbd">↑</kbd><kbd className="cp-kbd">↓</kbd> выбор · <kbd className="cp-kbd">Enter</kbd> открыть · <kbd className="cp-kbd">⌘K</kbd> / <kbd className="cp-kbd">Ctrl K</kbd> закрыть</p>
+        <p className="cp-foot mono" aria-hidden="true"><kbd className="cp-kbd">↑</kbd><kbd className="cp-kbd">↓</kbd> выбор · <kbd className="cp-kbd">Enter</kbd> открыть · <kbd className="cp-kbd">Esc</kbd> или <kbd className="cp-kbd">{shortcutText('mod+k', mac)}</kbd> закрыть</p>
       </div>
     </div>,
     document.body,

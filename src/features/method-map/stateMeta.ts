@@ -1,15 +1,19 @@
 /**
- * Словарь состояний узлов (UX-V2 §3.4): глиф, подпись, тон токена и приоритет
- * агрегации «состояние блока = худшее из детей». Норматив — ◆, вручную — ■. Цвет никогда не единственный
- * сигнал — у каждого состояния свой глиф (● ▲ ■ ○ ◌).
+ * Словарь состояний узлов карты (UX-V2 §3.4) — производный от единого словаря src/ui/stateVocabulary.ts
+ * (X2 P-124: «одно состояние — один глиф — одно слово»): глиф и слово — оттуда, здесь только класс глифа,
+ * подсказка панели и приоритет агрегации «состояние блока = худшее из детей». ✕ — ошибка, ◌ — только
+ * «не задано», «в плане» — пунктирная карточка без глифа. Цвет никогда не единственный сигнал.
  */
+import { STAGE_META as STAGES } from '../../explain/stages'
+import { vocabForState } from '../../ui/stateVocabulary'
 import type { NodeState, Provenance, Stage } from './types'
 
 export interface StateMeta {
-  /** Текстовый глиф для подписей и aria. */
+  /** Текстовый глиф для подписей и aria (у «в плане» — пусто). */
   glyph: string
+  /** Слово единого словаря — то же в легенде, бейдже и чипе. */
   label: string
-  /** CSS-класс глифа (glyphs.css / map.css). */
+  /** CSS-класс глифа (styles/glyphs.css). */
   glyphClass: string
   /** Что предлагает панель (UX-V2 §3.4, колонка «Что предлагает панель»). */
   hint: string
@@ -17,37 +21,41 @@ export interface StateMeta {
   priority: number
 }
 
-export const STATE_META: Readonly<Record<NodeState, StateMeta>> = {
-  error:        { glyph: '■', label: 'ошибка', glyphClass: 'mm-glyph--error', hint: 'Валидация не прошла — откройте экран и исправьте.', priority: 0 },
-  unconfigured: { glyph: '◌', label: 'не задано', glyphClass: 'mm-glyph--unconfigured', hint: 'Обязательные данные не заданы — «Задать» ведёт на экран.', priority: 1 },
-  stale:        { glyph: '▲', label: 'устарело', glyphClass: 'mm-glyph--stale', hint: 'Вход изменился после последнего расчёта — пересчитайте.', priority: 2 },
-  default:      { glyph: '○', label: 'по умолчанию', glyphClass: 'mm-glyph--default', hint: 'Значения по умолчанию кода/НСИ — примите или оцените по данным.', priority: 3 },
-  manual:       { glyph: '■', label: 'задано вручную', glyphClass: 'mm-glyph--manual', hint: 'Задано пользователем.', priority: 4 },
-  normative:    { glyph: '◆', label: 'норматив', glyphClass: 'mm-glyph--normative', hint: 'ГОСТ, норматив или экспертная калибровка — не оценка по данным.', priority: 5 },
-  estimated:    { glyph: '●', label: 'оценено', glyphClass: 'mm-glyph--estimated', hint: 'Оценено по данным: есть источник, объём и период.', priority: 5 },
-  calibrated:   { glyph: '●', label: 'калибровано', glyphClass: 'mm-glyph--calibrated', hint: 'Подобрано по план-факту — см. отчёт калибровки.', priority: 5 },
-  planned:      { glyph: '◌', label: 'в плане', glyphClass: 'mm-glyph--planned', hint: 'Ещё не реализовано — см. волну в «Методике».', priority: 9 },
+const HINT: Readonly<Record<NodeState, string>> = {
+  error: 'Расчёт не выполнен — причина ниже.',
+  unconfigured: 'Обязательные данные не заданы — «Открыть» ведёт на экран, где их задают.',
+  stale: 'Вход изменился после расчёта или расчёт не завершён — пересчитайте.',
+  default: 'Значения по умолчанию кода или НСИ — примите или оцените по данным.',
+  manual: 'Задано пользователем.',
+  normative: 'ГОСТ, норматив или экспертная калибровка — не оценка по данным.',
+  estimated: 'Оценено по данным: есть источник, объём и период.',
+  calibrated: 'Подобрано по план-факту — см. отчёт калибровки.',
+  planned: 'Ещё не реализовано — см. волну в «Методике».',
 }
 
+const PRIORITY: Readonly<Record<NodeState, number>> = {
+  error: 0, unconfigured: 1, stale: 2, default: 3, manual: 4, normative: 5, estimated: 5, calibrated: 5, planned: 9,
+}
+
+/** «В плане» — без глифа (пустой слот той же ширины), чтобы ◌ значил только «не задано». */
+const GLYPH_CLASS = (s: NodeState): string => (s === 'planned' ? 'mm-glyph--blank' : `mm-glyph--${s}`)
+
+export const STATE_META: Readonly<Record<NodeState, StateMeta>> = Object.fromEntries(
+  (Object.keys(PRIORITY) as NodeState[]).map((s) => {
+    const v = vocabForState(s)
+    return [s, { glyph: v.glyph, label: v.word, glyphClass: GLYPH_CLASS(s), hint: HINT[s], priority: PRIORITY[s] }]
+  }),
+) as Record<NodeState, StateMeta>
+
+/** Подпись стадии — из единого реестра стадий (тот же STAGE_META, что у чипов «Методики»). */
 export const STAGE_LABEL: Readonly<Record<Stage, string>> = {
-  done: 'реализовано',
-  w1: 'волна 1',
-  w2: 'волна 2',
-  w3: 'волна 3',
+  done: STAGES.done.label,
+  w1: STAGES.w1.label,
+  w2: STAGES.w2.label,
+  w3: STAGES.w3.label,
 }
 
-export const PROVENANCE_LABEL: Readonly<Record<Provenance, string>> = {
-  observed: 'наблюдение',
-  estimated: 'оценка по данным',
-  calibrated: 'калибровка',
-  normative: 'норматив',
-  manual: 'вручную',
-  default: 'по умолчанию',
-  ui: 'подобрано для UI',
-  synthetic: 'синтетика',
-}
-
-/** Состояние узла по происхождению значения его паспорта. */
+/** Состояние узла по происхождению значения его паспорта; синтетика — ▲ (данные не факт). */
 export function stateFromProvenance(p: Provenance): NodeState {
   switch (p) {
     case 'observed':
@@ -59,8 +67,9 @@ export function stateFromProvenance(p: Provenance): NodeState {
       return 'normative'
     case 'manual':
       return 'manual'
-    case 'ui':
     case 'synthetic':
+      return 'stale'
+    case 'ui':
     default:
       return 'default'
   }

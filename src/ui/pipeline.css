@@ -1,4 +1,7 @@
-/* Полоса методологии (PipelineStrip) и чип блока (BlockChip) — UX-V2 §2.4, §2.6. */
+/* Полоса методологии (PipelineStrip) и чип блока (BlockChip) — UX-V2 §2.4, §2.6, X2.
+ * Ширина считается по контейнеру полосы (@container pstrip), а не по окну: пристыкованный MENTAT
+ * сужает полосу — подписи прячутся по ширине полосы, а не обрезаются многоточием. */
+.pstrip-wrap { container: pstrip / inline-size; min-width: 0; }
 .pstrip {
   position: sticky;
   top: 0;
@@ -28,16 +31,22 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   height: 100%;
   padding: 0 10px;
+  font: inherit;
+  text-align: left;
   color: var(--text-muted);
   text-decoration: none;
+  background: transparent;
+  border: 0;
   transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .pstrip__link:hover { color: var(--text); background: var(--bg-hover); }
-.pstrip__link:focus-visible { outline: none; box-shadow: inset var(--halo); }
+.pstrip__link:focus-visible { outline: 2px solid transparent; box-shadow: inset var(--halo); }
+/* Текущий блок: нейтральная подложка; цвет блока — только на номере и 2 px подчёркивании. */
 .pstrip__cell.is-current { flex: 2 1 0; }
-.pstrip__cell.is-current .pstrip__link { color: var(--text); background: color-mix(in oklch, var(--block) 10%, transparent); }
+.pstrip__cell.is-current .pstrip__link { color: var(--text); background: var(--bg-card); }
 .pstrip__cell.is-current::after {
   content: '';
   position: absolute;
@@ -45,36 +54,60 @@
   height: 2px;
   background: var(--block);
 }
+/* Отклонение — шире, чтобы «слово: причина» читалась. */
+.pstrip__cell.is-error, .pstrip__cell.is-stale, .pstrip__cell.is-unconfigured { flex-grow: 1.6; }
 .pstrip__n { flex: none; font-size: var(--fs-12); font-weight: 600; color: var(--block); }
 .pstrip__text { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.15; }
 .pstrip__name { flex: none; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
-/* Бейдж — только у текущих блоков, второй строкой под именем; полный текст в title */
+/* Вторая строка: без многоточия — край гаснет (полный текст в title ячейки); цвет текста нейтрален, состояние несёт глиф. */
 .pstrip__badge {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-11);
   color: var(--text-secondary);
+  -webkit-mask-image: linear-gradient(90deg, var(--text) 85%, transparent);
+  mask-image: linear-gradient(90deg, var(--text) 85%, transparent);
 }
 .pstrip__link > .mm-glyph { flex: none; }
 .pstrip__cell.is-planned .pstrip__badge, .pstrip__cell.is-unconfigured .pstrip__badge { color: var(--text-muted); }
-.pstrip__cell.is-error .pstrip__badge { color: var(--status-down); }
-.pstrip__cell.is-stale .pstrip__badge { color: var(--state-stale); }
-.pstrip__map {
-  flex: none;
-  display: inline-flex;
+
+/* Родословная результата: «Базовый · портфель 17:02 · план №28 · 17:38» */
+.pstrip__lineage {
+  display: flex;
   align-items: center;
-  padding: 0 12px;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 34%;
+  margin: 0;
+  padding: 0 var(--space-3);
+  overflow: hidden;
+  white-space: nowrap;
   font-size: var(--fs-12);
-  font-weight: 500;
-  color: var(--accent-text);
-  text-decoration: none;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border);
 }
-.pstrip__map:hover { background: var(--bg-hover); }
-.pstrip__map:focus-visible { outline: none; box-shadow: inset var(--halo); }
-@media (max-width: 1279px) { .pstrip__badge { display: none; } }
-@media (max-width: 820px) { .pstrip__text { display: none; } .pstrip__link { justify-content: center; padding: 0 4px; } }
+.pstrip__lin { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-secondary); text-decoration: none; border-radius: var(--radius-sm); }
+.pstrip__lin:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.pstrip__lin:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pstrip__stale { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.pstrip__dot { color: var(--text-muted); }
+.pstrip__map { flex: none; align-self: center; margin: 0 var(--space-1); color: var(--text-secondary); }
+
+@container pstrip (max-width: 1180px) { .pstrip__lineage { max-width: 28%; } }
+@container pstrip (max-width: 1040px) {
+  .pstrip__cell:not(.is-current):not(.is-error):not(.is-stale):not(.is-unconfigured) .pstrip__badge { display: none; }
+  .pstrip__lineage { display: none; }
+}
+@container pstrip (max-width: 760px) {
+  .pstrip__badge { display: none; }
+  .pstrip__cell.is-current, .pstrip__cell.is-error, .pstrip__cell.is-stale, .pstrip__cell.is-unconfigured { flex-grow: 1.4; }
+}
+@container pstrip (max-width: 560px) {
+  .pstrip__text { display: none; }
+  .pstrip__link { justify-content: center; padding: 0 4px; }
+}
 
 .block-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
 .block-chip {
@@ -96,4 +129,4 @@
 .block-chip__n { color: var(--block); }
 .block-chip__arrow { color: var(--text-muted); }
 .block-chip:hover { color: var(--text); background: color-mix(in oklch, var(--block) 12%, transparent); }
-.block-chip:focus-visible { outline: none; box-shadow: var(--halo); }
+.block-chip:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }

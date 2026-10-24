@@ -1,9 +1,12 @@
 /**
  * История вопросов MENTAT по проекту (localStorage этой машины, ключ по проекту-БД): вопрос, узел, версия
- * промпта, ответ модели и вердикт проверки верности. Только настоящие ответы модели — неудачные
- * запросы («модель не подключена») в историю не пишутся. Чистые функции + тонкая обёртка хранилища.
+ * промпта, ответ модели и вердикт проверки верности. Пишутся настоящие ответы модели и запросы, которые
+ * пользователь остановил («остановлено»); «модель не подключена» в историю не попадает.
+ * Чистые функции + тонкая обёртка хранилища.
  */
 import type { ClaimVerdict, VerifyReport } from '../verify'
+
+export type HistoryOutcome = 'answered' | 'stopped'
 
 export interface HistoryEntry {
   id: string
@@ -18,6 +21,14 @@ export interface HistoryEntry {
   report: VerifyReport
   /** Подписи и узлы карты процитированных узлов — чтобы чипы ссылок работали без контекста. */
   cited?: Readonly<Record<string, { title: string; mapNode: string }>>
+  /** Итог запроса; нет поля — ответ (записи до X2 P-130). */
+  outcome?: HistoryOutcome
+}
+
+/** Пустой отчёт проверки — для остановленного запроса (ответа нет). */
+export const EMPTY_REPORT: VerifyReport = {
+  claims: [], pass: false,
+  counts: { verified: 0, cited: 0, mismatch: 0, uncited: 0, unknown_node: 0, free: 0 },
 }
 
 export const HISTORY_MAX = 50
@@ -57,7 +68,7 @@ export function exportMarkdown(entries: readonly HistoryEntry[]): string {
   return entries.map((e) => [
     `## ${e.question}`,
     `- время: ${e.at}; узел: \`${e.asked}\`; шаблон: ${e.templateId}; модель: ${e.model}; промпт: ${e.promptVersion}`,
-    `- проверка верности: ${e.report.pass ? 'пройдена' : 'не пройдена'}`,
+    e.outcome === 'stopped' ? '- запрос остановлен пользователем, ответа нет' : `- проверка верности: ${e.report.pass ? 'пройдена' : 'не пройдена'}`,
     '',
     e.answer,
     '',

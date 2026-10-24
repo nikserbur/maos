@@ -1,76 +1,118 @@
 /**
- * Статус агента RL (A1 §5–6): живое состояние сервера (GET /api/rl/status — onnxruntime, файлы
- * политик L0/L2, SHA256) + вердикт гейта §7.4 из снимка V5 (лучший претендент, IQM ΔCVaR с 95 %-ДИ
- * на отложенных сценариях). Честная граница: без прошедшей гейт политики правило «RL» в «Плане»
- * не предлагается, чемпион — лучшее правило.
+ * Вердикт экрана «Агенты» за 5 секунд (X2 «ответ сначала»): одна фраза + три плитки рядом со своим
+ * риском — чемпион (C*, лучше в 49 из 60), лучший RL против правила (≈ 0 б. п. с ДИ и «лучше в N из
+ * 12»), сколько политик опубликовано (критерий гейта); один основной шаг конвейера — «Строить план
+ * с чемпионом»; сервер одной строкой с «Подробнее». Вердикт гейта — из `gate_a3` (то же поле, что у
+ * MENTAT); без сервера — снимок. Ниже — лесной график претендентов и реестр правил, найденных RL.
  */
-import { dateTime, num, pct } from '../../explain/format'
-import { RangeStrip } from '../../ui/charts'
-import { Chip, ErrorBanner, Skeleton } from '../../ui/kit'
-import { V5, ciVerdict, gateSummary, policyLabel } from './benchData'
-import { ensureRlStatus, rlAvailable, rlReason, shortSha, useRlStatus } from './rlStatusStore'
+import { num } from '../../explain/format'
+import { Forest } from '../../ui/charts'
+import { ErrorBanner, KpiTile, Skeleton } from '../../ui/kit'
+import { V5, bpApprox, bpCi, bpFine, bpNum, gateSummary, isIdle, policyLabel, snapDay, v5Forest, winCount } from './benchData'
+import { V4A2, summarizeA2 } from './benchV4'
+import { championShares, gateView, pctVci, strictNearZero, type GateView } from './rlLedger'
+import { ensureRlStatus, rlAvailable, serverDetails, useRlStatus, type RlStatusState } from './rlStatusStore'
 
-// Разности долей E[Π] малы (10⁻⁵…10⁻³) — три знака, иначе всё округляется в «0 %».
-const fmtShare = (v: number) => pct(v, 3)
+const P_MAX = 0.05
+/** Уровень хвоста стенда V5 (CVaR при α = 0,1). */
+const ALPHA_V5 = 0.1
+
+function verdictText(ok: boolean, g: GateView): string {
+  if (ok) return 'Политика прошла гейт и опубликована — правило «RL» доступно в мастере плана.'
+  if (g.pass) return 'Политика прошла гейт, но сервер её не видит — правило «RL» пока недоступно.'
+  return 'RL не прошёл строгий гейт — чемпион остаётся эвристикой C*, политика в продукт не опубликована.'
+}
 
 export function RlStatusCard() {
   const s = useRlStatus()
-  const st = s.status
-  const ok = rlAvailable(st)
-  const gate = gateSummary(V5)
-  const best = gate.best
-  const verdict = best ? ciVerdict(best.ci95) : 'straddles'
-  return (
-    <section className={`ag-status dk-card${ok ? ' is-live' : ''}`} aria-labelledby="ag-status-t">
-      <div className="ag-status__verdict">
-        <p className="text-caps ag-status__eyebrow" id="ag-status-t">Гейт §7.4 · отложенные сценарии · N = {num(V5.n, 0)} на экземпляр</p>
-        <h2 className="ag-status__headline">
-          {ok ? 'Политика опубликована — правило «RL» доступно в «Плане»'
-            : gate.passed === 0 ? <>RL не прошёл гейт, <span className="ag-status__accent">чемпион — лучшее правило</span></>
-              : 'Есть прошедшая гейт политика, но сервер её не видит'}
-        </h2>
-        <p className="ag-status__lead">
-          {gate.passed} из {gate.candidates} претендентов (L0 и L2 × 3 сида) прошли гейт. Лучший — {best ? policyLabel(best.policy) : '—'}:
-          IQM ΔCVaR₀.₁(Π) {best ? fmtShare(best.iqm) : '—'} от E[Π] против лучшего правила, ДИ 95 % {best ? `[${fmtShare(best.ci95[0])}; ${fmtShare(best.ci95[1])}]` : '—'}
-          {verdict === 'straddles' ? ' — содержит ноль: отличия от правила нет.' : verdict === 'below' ? ' — целиком ниже нуля: хуже правила.' : ' — выше нуля.'}
-        </p>
-        {best && (
-          <div className="ag-status__ci">
-            <RangeStrip fmt={fmtShare} zone={[best.ci95[0], best.ci95[1]]} zoneLabel="95 %-ДИ бутстрепа"
-              marks={[
-                { key: 'zero', value: 0, label: 'ноль — без выигрыша', glyph: 'ring', tone: 'idle', showValue: true },
-                { key: 'iqm', value: best.iqm, label: `IQM ${policyLabel(best.policy)}`, glyph: 'dot', tone: 'accent' },
-              ]}
-              ariaLabel={`ДИ выигрыша лучшего претендента ${fmtShare(best.ci95[0])} … ${fmtShare(best.ci95[1])}, IQM ${fmtShare(best.iqm)}; ноль внутри ДИ`} />
-          </div>
-        )}
-        <div className="ag-status__chips">
-          <Chip tone="idle" title={V5.source}>снимок V5 от {dateTime(V5.snapshot_date, { time: false })}</Chip>
-          <Chip>holdout seed {V5.holdout_seed}</Chip>
-          <Chip>{V5.instances.length} экземпляров MAOS · сиды {V5.seeds.join(', ')}</Chip>
-        </div>
-      </div>
+  const ok = rlAvailable(s.status)
+  const g = gateView(s.status?.gate_a3)
+  const v5 = gateSummary(V5)
+  const best = v5.best
+  const champ = championShares()[0]
+  const bks = summarizeA2(V4A2.rows)
+  // Публикуется только прошедшая гейт политика; если сервер видит политику — она опубликована.
+  const published = ok ? Math.max(1, v5.passed) : v5.passed
+  const strictNote = !g.pass && strictNearZero(g)
+    ? 'строгий контроль A3: выигрыш RL целиком даёт одно правило — оно уже в продукте'
+    : `строгий контроль A3: ${pctVci(g.strictCi)} стоимости портфеля`
+  const next = ok
+    ? { href: '#/plan/new/objective?rule=rl', text: 'Выбрать «RL» в мастере плана →' }
+    : { href: '#/plan/new/objective?rule=auto', text: 'Строить план с чемпионом C* →' }
 
-      <dl className="ag-status__server" aria-label="Состояние сервера">
-        <p className="text-caps ag-status__eyebrow">Сервер · сейчас</p>
-        {s.load === 'loading' && !st && <><Skeleton w="80%" /><Skeleton w="60%" /><Skeleton w="70%" /></>}
-        {s.load === 'error' && <ErrorBanner tone="setup" title="Статус политики недоступен" message={s.error ?? undefined} onRetry={() => void ensureRlStatus(true)} />}
-        {st && (
-          <>
-            <div><dt>onnxruntime</dt><dd>{st.onnxruntime ? <Chip size="sm" tone="good">собран</Chip> : <Chip size="sm" tone="warn">нет · MAOS_WITH_ONNX=OFF</Chip>}</dd></div>
-            <div><dt>Политика L0 (диспетчер)</dt><dd>{st.l0.ok ? <Chip size="sm" tone="good">{shortSha(st.l0.sha256)}</Chip> : <Chip size="sm" tone="idle">не опубликована</Chip>}</dd></div>
-            <div><dt>Политика L2 (планировщик)</dt><dd>{st.l2.ok ? <Chip size="sm" tone="good">{shortSha(st.l2.sha256)}</Chip> : <Chip size="sm" tone="idle">не опубликована</Chip>}</dd></div>
-            <div className="ag-status__why"><dt>Почему</dt><dd>{rlReason(s)}</dd></div>
-            {st.error && <div className="ag-status__why"><dt>Ответ сервера</dt><dd className="mono">{st.error}</dd></div>}
-          </>
+  return (
+    <section className="ag-hero" aria-labelledby="ag-hero-t">
+      <p className="ag-hero__eyebrow text-caps">Строгая проверка на отложенных сценариях</p>
+      <p className="ag-hero__verdict" id="ag-hero-t">{verdictText(ok, g)}</p>
+      <div className="ag-hero__tiles">
+        <KpiTile metric="agent.champion" label="Чемпион" value="C*" size="md" values={{ n_cstar: champ?.n, n: champ?.of }}
+          interval={champ ? `лучше в ${num(champ.n, 0)} из ${num(champ.of, 0)} экземпляров` : undefined}>
+          <p className="ag-tile__note">эвристика + казначейское правило · по валидации; holdout не завершён</p>
+        </KpiTile>
+        {best && (
+          <KpiTile metric="agent.gate_delta" label="Лучший RL против правила" value={bpApprox(best.iqm)} size="md"
+            values={{ delta: bpFine(best.iqm, { signed: true }), n: V5.n }}
+            interval={`95 %-ДИ ${bpCi(best.ci95)} б. п. · лучше в ${num(winCount(V5, best.win), 0)} из ${num(V5.instances.length, 0)}`}>
+            <p className="ag-tile__note">
+              {isIdle(V5, best.policy) ? '0 ходов — совпал с EDD' : policyLabel(best.policy)} ·{' '}
+              <span className="glyph-setup" title={`снимок стенда V5 от ${snapDay(V5.snapshot_date)}`}>снимок устарел — есть A2–A4</span>
+            </p>
+          </KpiTile>
         )}
-        <div className="ag-status__act">
-          {ok
-            ? <a className="btn btn--primary btn--sm" href="#/plan/new/objective">Выбрать «RL» в мастере плана →</a>
-            : <a className="btn btn--sm" href="#/plan/new/objective">Мастер плана: RL недоступно</a>}
-          <a className="btn btn--ghost btn--sm" href="#/map/ag.rl">[6] на карте ↗</a>
-        </div>
-      </dl>
+        <KpiTile metric="agent.gate_ci" label="Опубликовано политик RL" value={`${num(published, 0)} из ${num(v5.candidates, 0)}`} size="md"
+          values={best ? { ci_lo: bpNum(best.ci95[0]), ci_hi: bpNum(best.ci95[1]), p: num(best.p, 2) } : undefined}
+          interval={`критерий: весь 95 %-ДИ выше нуля и p < ${num(P_MAX, 2)}`}>
+          <p className="ag-tile__note">{strictNote}</p>
+        </KpiTile>
+      </div>
+      <div className="ag-hero__act">
+        <a className="btn btn--primary" href={next.href}>{next.text}</a>
+        <a className="btn btn--ghost btn--sm" href="#/map/ag.rl">[6] на карте ↗</a>
+        <a className="ag-link" href="#/agents/evidence?view=v4">Расписание без неопределённости: эталон — точный солвер, CP-SAT = BKS {num(bks.cpsatAtBks, 0)} из {num(bks.withBks, 0)} →</a>
+      </div>
+      <ServerLine s={s} />
     </section>
+  )
+}
+
+/** Сервер одной строкой: «Политика в продукте: не опубликована» + «Подробнее» (среда, SHA, каталог, ответ). */
+function ServerLine({ s }: { s: RlStatusState }) {
+  const st = s.status
+  if (s.load === 'loading' && !st) return <div className="ag-server" aria-busy="true"><Skeleton w="18em" /></div>
+  if (s.load === 'error' && !st) {
+    return (
+      <ErrorBanner tone="setup" title="Не удалось узнать, опубликована ли политика" message="Вердикт выше — по снимку стенда; правило «RL» в мастере плана недоступно."
+        detail={s.error ?? undefined} onRetry={() => void ensureRlStatus(true)} />
+    )
+  }
+  if (!st) return null
+  const published = st.l0.ok || st.l2.ok
+  return (
+    <div className="ag-server">
+      <span>Политика в продукте: <b className="ag-server__v">{published ? 'опубликована' : 'не опубликована'}</b></span>
+      <details className="ag-details">
+        <summary>Подробнее</summary>
+        <dl className="ag-server__dl">
+          {serverDetails(st).map((r) => (
+            <div key={r.k}><dt>{r.k}</dt><dd className={r.mono ? 'mono' : undefined}>{r.v}</dd></div>
+          ))}
+        </dl>
+      </details>
+    </div>
+  )
+}
+
+/** Лесной график претендентов V5: ДИ, IQM, ноль = правило, порог гейта — «весь ДИ правее нуля». */
+export function VerdictForest() {
+  const rows = v5Forest(V5, 'base')
+  const lo = Math.min(0, ...rows.map((r) => r.lo))
+  const hi = Math.max(1, ...rows.map((r) => r.hi))
+  return (
+    <Forest rows={rows} fmt={(v) => bpFine(v / 10_000, { signed: true })} domain={[Math.floor(lo), Math.ceil(hi)]}
+      fmtShare={(v) => `${num(winCount(V5, v), 0)} из ${num(V5.instances.length, 0)}`}
+      zeroLabel="0 = правило · гейт: весь ДИ правее" baseLabel="к лучшему правилу"
+      title="Ни один претендент не выигрывает у правила с уверенностью"
+      subtitle={`ΔCVaR прибыли при α = ${num(ALPHA_V5, 1)}, б. п., IQM по ${num(V5.instances.length, 0)} экземплярам · 95 %-ДИ бутстрепа · снимок ${snapDay(V5.snapshot_date)}`}
+      ariaLabel={`Лесной график: ${rows.length} претендентов RL против лучшего правила; ни у одного ДИ не лежит правее нуля`} />
   )
 }

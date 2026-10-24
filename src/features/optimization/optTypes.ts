@@ -5,6 +5,8 @@
  * необязательные — экран рисует их, только если бэкенд их прислал.
  */
 import type { OptimizeParams, OptResult } from '../../lib/api'
+import { objectiveLabel } from '../../explain/labels'
+import { pct } from '../../explain/format'
 
 /** Out-of-sample (SAA): робастный портфель на независимой выборке (seed + 9973). */
 export interface OptOos {
@@ -94,15 +96,45 @@ export type OptRunParams = OptimizeParams & {
 
 export type Objective = 'cvar' | 'worstcase' | 'meanvariance' | 'minregret'
 
-export const OBJECTIVES: ReadonlyArray<{ id: Objective; label: string; short: string; hint: string }> = [
-  { id: 'cvar', label: 'CVaR', short: 'CVaR', hint: 'Максимизировать среднюю прибыль в худших α·100 % сценариев (Rockafellar–Uryasev).' },
-  { id: 'worstcase', label: 'Худший случай', short: 'maximin', hint: 'Максимизировать гарантированный минимум прибыли (критерий Вальда).' },
-  { id: 'meanvariance', label: 'E − λ·σ', short: 'E − λσ', hint: 'Баланс ожидаемой прибыли и разброса (Марковиц).' },
-  { id: 'minregret', label: 'Мин. сожаление', short: 'Сэвидж', hint: 'Минимизировать наибольшее отставание от лучшего для сценария портфеля (Сэвидж).' },
-]
+/** Имя критерия — только из общего словаря (X2 «одно имя — одна вещь»); здесь — реэкспорт. */
+export { objectiveLabel }
 
-export function objectiveLabel(id: string): string {
-  return OBJECTIVES.find((o) => o.id === id)?.label ?? id
+const sentence = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
+
+const HINTS: Readonly<Record<Objective, string>> = {
+  cvar: 'Максимизировать среднюю прибыль в худших α·100 % сценариев (Rockafellar–Uryasev).',
+  worstcase: 'Максимизировать гарантированный минимум прибыли (критерий Вальда).',
+  meanvariance: 'Баланс ожидаемой прибыли и разброса (Марковиц).',
+  minregret: 'Минимизировать наибольшее отставание от лучшего для сценария портфеля (Сэвидж).',
+}
+
+/** Критерии портфеля: подпись контрола — словарная (с прописной), короткая — словарная как есть. */
+export const OBJECTIVES: ReadonlyArray<{ id: Objective; label: string; short: string; hint: string }> =
+  (['cvar', 'worstcase', 'meanvariance', 'minregret'] as const).map((id) => ({
+    id, label: sentence(objectiveLabel(id)), short: objectiveLabel(id), hint: HINTS[id],
+  }))
+
+/** Точная LP-постановка (Рокафеллар — Урясев) есть только для CVaR и худшего случая. */
+export function lpApplies(objective: string): boolean {
+  return objective === 'cvar' || objective === 'worstcase'
+}
+
+/**
+ * Одна карта подписей показателей портфеля (X2): герой, «Для сравнения», проверка вне выборки и
+ * подсказка Парето берут имена только отсюда. α входит в подпись CVaR/VaR — «CVaR (худшие 10 %)».
+ */
+export function kpiLabels(alpha: number) {
+  const tail = pct(alpha, 0)
+  return {
+    expected: 'Ожидаемая прибыль E',
+    cvar: `CVaR (худшие ${tail})`,
+    var: `VaR (порог худших ${tail})`,
+    worst: 'Худший сценарий',
+    p_loss: 'P(убыток)',
+    std: 'σ прибыли',
+    regret: 'Макс. сожаление',
+    share: 'Макс. доля изделия',
+  } as const
 }
 
 /** Ответ бэкенда без валидного результата (нет товарных изделий и т. п.). */

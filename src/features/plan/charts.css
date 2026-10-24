@@ -1,144 +1,158 @@
 /*
- * Графики экрана «План»: Гант (единая палитра --chart-n по индексу изделия в программе,
- * штриховка наладки ▲ и ТО/ремонта ■); очереди, загрузка и тепловая карта — на chart-системе (src/ui/charts).
+ * Графики экрана «План»: Гант по канону APS (X2 P-94/P-95) — полоса = цвет изделия (слоты --chart-n
+ * по slotForEntity), наладка — тёмная нейтральная штриховка ▲, ТО/ремонт — серая штриховка --chart-8 ■,
+ * просрочка — контур и глиф ■; статусные цвета только на глифах и контурах, никогда не заливкой.
+ * Очереди, загрузка и тепловая карта — на chart-системе (src/ui/charts).
  */
 
-/* ── Слоты палитры: одна раскраска для полос и легенды ───────────────────── */
+/* ── Слоты палитры: одна раскраска для полос, легенды и дифа ─────────────── */
 .pl-c0 { --c: var(--chart-1); --on-c: var(--bone); }
 .pl-c1 { --c: var(--chart-2); --on-c: var(--ink); }
 .pl-c2 { --c: var(--chart-3); --on-c: var(--ink); }
 .pl-c3 { --c: var(--chart-4); --on-c: var(--bone); }
 .pl-c4 { --c: var(--chart-5); --on-c: var(--ink); }
 .pl-c5 { --c: var(--chart-6); --on-c: var(--bone); }
-.pl-c6 { --c: var(--chart-7); --on-c: var(--ink); }
 .pl-cx { --c: var(--chart-other); --on-c: var(--ink); }
-[data-theme='light'] .pl-c2, [data-theme='light'] .pl-c6 { --on-c: var(--bone); }
+[data-theme='light'] .pl-c2 { --on-c: var(--bone); }
 
-/* ── Легенда (chart-система `Legend`, образцы штриховок — свои) ─────────── */
-.pl-legend { padding: 0 var(--space-4) var(--space-3); }
-
-.pl-sw { flex: none; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+/* ── Образцы легенды (штриховки — свои) ──────────────────────────────────── */
+.pl-sw { flex: none; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; background: var(--c); vertical-align: -1px; }
 .pl-sw.pl-cx, .pl-bar.pl-cx {
   background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in oklch, var(--c) 45%, transparent) 3px 6px);
 }
-.pl-sw--setup { background: repeating-linear-gradient(135deg, var(--status-setup) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--status-setup); }
-.pl-sw--down { background: repeating-linear-gradient(45deg, var(--status-down) 0 2px, var(--ink) 2px 4px); }
+.pl-sw--setup { background: repeating-linear-gradient(135deg, color-mix(in oklch, var(--ink) 55%, transparent) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink) 55%, var(--text-muted)); }
+.pl-sw--down { background: repeating-linear-gradient(45deg, var(--chart-8) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--chart-8); }
 .pl-sw--late { background: transparent; box-shadow: inset 0 0 0 1.5px var(--status-down); }
 .pl-sw--pin { background: transparent; outline: 1.5px dashed var(--accent-text); outline-offset: -2px; }
 
-/* ── Гант ────────────────────────────────────────────────────────────────── */
+/* ── Строка инструментов: вид, группировка, масштаб, легенда-переключатели ── */
 .pl-gtb { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-3) var(--space-4); }
 .pl-gtb__group { display: inline-flex; align-items: center; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--bg-input); border: 1px solid var(--pl-line); }
 .pl-gtb__group .btn { height: 24px; border-color: transparent; background: transparent; }
 .pl-gtb__group .btn:hover:not(:disabled) { background: var(--bg-hover); }
 .pl-gtb__meta { color: var(--text-muted); font-size: var(--fs-12); }
 .pl-gtb__spacer { flex: 1; }
-.pl-gtb__legend { padding: 0 var(--space-4) var(--space-3); }
+.pl-gtb__legend { display: flex; flex: 1 1 360px; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.pl-gtb__legend .dk-choice { min-height: 24px; font-size: var(--fs-12); }
+.pl-gtb__key { display: inline-flex; align-items: center; font-size: var(--fs-12); color: var(--text-muted); }
 
+/* ── Гант ────────────────────────────────────────────────────────────────── */
 .pl-gantt {
-  --pl-lane-w: 188px; /* = LANE_W в Gantt.tsx */
-  position: relative; overflow: auto; max-height: 440px;
+  --pl-lane-w: 240px; /* = LANE_W в Gantt.tsx; JS ставит ширину ручки */
+  --pl-axis-h: 40px;
+  --pl-row-h: 26px;
+  --pl-bar-h: 18px;
+  position: relative; overflow: auto; max-height: 70vh;
   border-top: 1px solid var(--pl-line); background: var(--bg-card);
 }
+.pl-gantt--dense { --pl-row-h: 18px; --pl-bar-h: 12px; }
 .pl-gantt--full { max-height: none; height: 100%; border: 1px solid var(--pl-line); border-radius: var(--radius-lg); }
 .pl-gantt__inner { position: relative; }
-.pl-gantt__axis { position: sticky; top: 0; z-index: 5; display: flex; height: 26px; background: var(--bg-panel); border-bottom: 1px solid var(--pl-line); }
-.pl-gantt__corner { position: sticky; left: 0; z-index: 6; flex: none; width: var(--pl-lane-w); display: flex; align-items: center; padding: 0 var(--space-3); background: var(--bg-panel); border-right: 1px solid var(--pl-line); color: var(--text-muted); }
-.pl-gantt__ticks { position: relative; flex: none; height: 26px; }
-.pl-gantt__tick { position: absolute; top: 0; height: 26px; display: flex; align-items: center; padding-left: 5px; font: 500 var(--fs-11)/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-muted); white-space: nowrap; border-left: 1px solid var(--chart-axis); }
-.pl-gantt__tick.is-major { color: var(--text-secondary); }
-.pl-gantt__grid { position: absolute; top: 26px; bottom: 0; left: var(--pl-lane-w); z-index: 0; pointer-events: none; }
+.pl-gantt__axis { position: sticky; top: 0; z-index: 5; display: flex; height: var(--pl-axis-h); background: var(--bg-panel); border-bottom: 1px solid var(--pl-line); }
+.pl-gantt__corner {
+  position: sticky; left: 0; z-index: 6; flex: none; width: var(--pl-lane-w); display: flex; align-items: center; padding: 0 var(--space-3);
+  background: var(--bg-panel); border-right: 1px solid var(--pl-line); color: var(--text-muted);
+}
+.pl-gantt__resize { position: absolute; top: 0; right: -4px; bottom: 0; width: 8px; cursor: col-resize; z-index: 7; }
+.pl-gantt__resize::after { content: ''; position: absolute; top: 8px; bottom: 8px; left: 3px; width: 2px; border-radius: 1px; background: var(--border-strong); opacity: 0; transition: opacity var(--dur-fast); }
+.pl-gantt__corner:hover .pl-gantt__resize::after, .pl-gantt__resize:focus-visible::after { opacity: 1; }
+.pl-gantt__resize:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.pl-gantt__ticks { position: relative; flex: none; height: var(--pl-axis-h); }
+.pl-gantt__lvl { position: absolute; left: 0; right: 0; height: 20px; }
+.pl-gantt__lvl--top { top: 0; }
+.pl-gantt__lvl--bottom { top: 20px; }
+.pl-gantt__tick {
+  position: absolute; top: 0; height: 20px; display: flex; align-items: center; padding-left: 5px;
+  font: 500 var(--fs-11)/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-muted); white-space: nowrap;
+  border-left: 1px solid var(--chart-grid);
+}
+.pl-gantt__tick.is-major { font-family: var(--font-sans); font-weight: 600; color: var(--text-secondary); border-left-color: var(--chart-axis); }
+.pl-gantt__grid { position: absolute; top: var(--pl-axis-h); bottom: 0; left: var(--pl-lane-w); z-index: 0; pointer-events: none; }
 .pl-gantt__gl { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--chart-grid); }
-.pl-gantt__gl.is-major { border-left-style: solid; border-left-color: color-mix(in oklch, var(--chart-axis) 45%, transparent); }
+.pl-gantt__gl.is-major { border-left-color: color-mix(in oklch, var(--chart-axis) 55%, transparent); }
+.pl-gantt__ref { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px solid var(--text-secondary); }
+.pl-gantt__ref--start { left: 0; }
+.pl-gantt__ref--horizon { border-left-style: dashed; }
+.pl-gantt__reflbl {
+  position: absolute; top: 2px; left: 4px; padding: 0 4px; border-radius: var(--radius-sm); white-space: nowrap;
+  font-size: var(--fs-11); color: var(--text-secondary); background: color-mix(in oklch, var(--bg-card) 85%, transparent);
+}
+.pl-gantt__reflbl--edge { left: auto; right: 4px; }
 
-.pl-grow { position: relative; z-index: 1; display: flex; align-items: center; height: 26px; }
+.pl-grow { position: relative; z-index: 1; display: flex; align-items: center; height: var(--pl-row-h); }
 .pl-grow + .pl-grow { box-shadow: inset 0 1px 0 color-mix(in oklch, var(--chart-grid) 60%, transparent); }
+.pl-grow.is-sel { box-shadow: inset 0 0 0 1.5px var(--accent); z-index: 2; }
 .pl-glane {
   position: sticky; left: 0; z-index: 3; flex: none; width: var(--pl-lane-w); height: 100%;
   display: flex; align-items: center; gap: 6px; padding: 0 var(--space-3);
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  overflow: hidden; white-space: nowrap;
   font-size: var(--fs-12); color: var(--text-secondary);
   background: var(--bg-card); border-right: 1px solid var(--pl-line);
 }
-.pl-glane > span { overflow: hidden; text-overflow: ellipsis; }
+.pl-glane__btn { min-width: 0; min-height: 18px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; white-space: nowrap; cursor: pointer; }
+.pl-glane__btn:hover { color: var(--text); }
+.pl-glane__btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-radius: var(--radius-sm); }
+.pl-glane__btn[aria-pressed='true'] { color: var(--text); font-weight: 600; }
 .pl-grow--head { height: 28px; background: color-mix(in oklch, var(--text-muted) 6%, transparent); }
 .pl-grow--head .pl-glane { padding: 0; background: var(--bg-panel); }
+.pl-grow--head.is-sel-group .pl-glane { box-shadow: inset 3px 0 0 var(--accent); }
 .pl-ghead {
   display: flex; align-items: center; gap: 6px; width: 100%; height: 100%; padding: 0 var(--space-3);
   border: 0; background: transparent; color: var(--text); font-size: var(--fs-12); font-weight: 600; text-align: left;
 }
+.pl-ghead__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pl-ghead:hover { color: var(--accent-text); }
-.pl-ghead:focus-visible { outline: none; box-shadow: inset var(--halo); }
+.pl-ghead:focus-visible { outline: 2px solid transparent; box-shadow: inset var(--halo); }
 .pl-ghead__caret { flex: none; color: var(--text-muted); transition: transform var(--dur-fast) var(--ease-out); }
 .pl-ghead[aria-expanded='false'] .pl-ghead__caret { transform: rotate(-90deg); }
-.pl-ghead__meta { margin-left: auto; font-weight: 400; color: var(--text-muted); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
-.pl-gtrack { position: relative; flex: none; height: 100%; outline: none; }
+.pl-ghead__meta { margin-left: auto; flex: none; font-weight: 400; color: var(--text-muted); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
+.pl-gtrack { position: relative; flex: none; height: 100%; outline: 2px solid transparent; }
 .pl-gtrack:focus-visible { box-shadow: inset var(--halo); }
 
 .pl-bar {
-  position: absolute; top: 4px; height: 18px; overflow: hidden;
+  position: absolute; top: calc((var(--pl-row-h) - var(--pl-bar-h)) / 2); height: var(--pl-bar-h); overflow: hidden;
   display: flex; align-items: center;
   border-radius: var(--radius-sm); background: var(--c); color: var(--on-c);
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--bone) 18%, transparent);
-  cursor: default;
+  cursor: pointer;
   transition: box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 }
 .pl-bar.is-draggable { cursor: grab; }
 .pl-bar.is-dragging { cursor: grabbing; opacity: 0.75; z-index: 2; }
+.pl-bar.is-dim { opacity: 0.3; }
 .pl-bar:hover { z-index: 2; box-shadow: 0 0 0 1px var(--text), var(--shadow-2); }
 .pl-bar.is-late { box-shadow: inset 0 0 0 1.5px var(--status-down); }
 .pl-bar.is-late::after { content: ''; position: absolute; right: 2px; top: 2px; width: 5px; height: 5px; background: var(--status-down); box-shadow: 0 0 0 1px var(--bg-card); }
 .pl-bar.is-pinned { outline: 1.5px dashed var(--accent-text); outline-offset: 1px; }
 .pl-bar.is-kbd { z-index: 2; box-shadow: 0 0 0 2px var(--focus), var(--shadow-2); }
-.pl-bar__setup { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--status-setup) 0 2px, transparent 2px 4px); box-shadow: inset -1px 0 0 var(--status-setup); }
-.pl-bar__down { position: absolute; right: 0; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--status-down) 0 2px, var(--ink) 2px 4px); }
+.pl-bar__setup { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in oklch, var(--ink) 55%, transparent) 0 2px, transparent 2px 4px); box-shadow: inset -1px 0 0 color-mix(in oklch, var(--ink) 55%, transparent); }
+.pl-bar__down { position: absolute; right: 0; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--chart-8) 0 2px, color-mix(in oklch, var(--ink) 40%, transparent) 2px 4px); }
 .pl-bar__label { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 0; padding: 0 6px; overflow: hidden; font-size: var(--fs-11); font-weight: 500; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
+.pl-gantt--dense .pl-bar__label { display: none; }
+.pl-due {
+  position: absolute; top: 50%; width: 9px; height: 9px; margin: -5px 0 0 -5px; z-index: 3; pointer-events: none;
+  background: var(--text); transform: rotate(45deg); box-shadow: 0 0 0 1.5px var(--bg-card);
+}
 
 .pl-gtip { position: fixed; z-index: var(--z-popover); pointer-events: none; width: max-content; max-width: 290px; }
 .pl-gtip .ch-tip { max-width: 290px; }
 .pl-gtip .ch-tip__x { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-sans); font-size: var(--fs-12); font-weight: 600; color: var(--text); }
 .pl-gtip .ch-tip__n--strong { color: var(--text-secondary); white-space: normal; }
-.pl-gtip .dk-chip { margin-top: var(--space-1); }
+.pl-gtip__late { margin: var(--space-1) 0 0; font-size: var(--fs-12); color: var(--text); }
 
-.pl-gantt-full {
-  position: fixed; inset: 0; z-index: var(--z-modal); display: flex; flex-direction: column; gap: var(--space-3);
-  padding: var(--space-4) var(--space-5); background: var(--bg-app);
-  animation: maos-fade-in var(--dur-fast) var(--ease-out);
-}
-.pl-gantt-full__hd { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.pl-gantt-full__title { font-family: var(--font-display); font-size: var(--fs-20); font-weight: 500; }
-.pl-gantt-full__body { flex: 1; min-height: 0; }
-
-/* ── Очереди: фильтр РЦ в строке инструментов секции ─────────────────────── */
+/* ── Очереди: фильтр РЦ в заголовке карточки ─────────────────────────────── */
 .pl-queue__filter { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
 .pl-queue__filter .pl-select { min-width: 220px; }
 
-/* ── Загрузка по ресурсам (BarList chart-системы) + инфраструктура без операций ── */
-.pl-load__infra { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius); font-size: var(--fs-12); line-height: 1.55; color: var(--text-muted); background: color-mix(in oklch, var(--status-idle) 8%, transparent); border: 1px dashed color-mix(in oklch, var(--status-idle) 35%, transparent); }
-.pl-load__infra b { color: var(--text-secondary); }
+/* ── Загрузка по ресурсам (BarList chart-системы) + инфраструктура без операций — одна строка ── */
+.pl-load__infra { margin-top: var(--space-3); font-size: var(--fs-12); color: var(--text-muted); }
+.pl-load__infra > summary { cursor: pointer; min-height: 24px; list-style: none; }
+.pl-load__infra > summary::-webkit-details-marker { display: none; }
+.pl-load__infra > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.pl-load__infra p { margin: var(--space-1) 0 0; line-height: 1.55; }
 
-/* ── Рабочие: строки с мини-шкалой ───────────────────────────────────────── */
-.pl-ubar { display: block; width: 100%; min-width: 80px; height: 6px; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--text-muted) 14%, transparent); overflow: hidden; }
-.pl-ubar > span { display: block; height: 100%; border-radius: inherit; background: var(--status-running); transform-origin: left center; }
-.pl-ubar--over > span { background: var(--status-setup); }
-
-/* ── Конструктор эвристики ───────────────────────────────────────────────── */
-.pl-heur { display: flex; flex-direction: column; gap: var(--space-4); }
-.pl-heur__list { display: flex; flex-direction: column; gap: var(--space-2); }
-.pl-heur__crit { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius); background: var(--bg-card); border: 1px solid var(--pl-line, var(--border)); }
-.pl-heur__crit:first-child { border-color: color-mix(in oklch, var(--accent) 50%, var(--border)); }
-.pl-heur__rank { display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--radius); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent-text); background: color-mix(in oklch, var(--accent) 18%, transparent); }
-.pl-heur__ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.pl-heur__w { width: 72px; }
-.pl-heur__add { width: 100%; justify-content: center; border-style: dashed; }
-.pl-heur__viz { display: grid; grid-template-columns: 150px minmax(0, 1fr) 110px; align-items: center; gap: var(--space-2) var(--space-3); font-size: var(--fs-12); }
-.pl-heur__viz .pl-ubar { height: 8px; }
-.pl-heur__viz .pl-ubar > span { background: var(--accent); }
-.pl-heur__presets { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--border); }
-.pl-heur__chip { display: inline-flex; align-items: center; border-radius: var(--radius-pill); background: var(--bg-input); border: 1px solid var(--border); }
-.pl-heur__chip button { height: 24px; padding: 0 var(--space-2); border: 0; background: transparent; color: var(--text-secondary); font-size: var(--fs-12); border-radius: var(--radius-pill); }
-.pl-heur__chip button:hover { color: var(--text); }
-.pl-heur__chip button:last-child:hover { color: var(--status-down); }
-.pl-heur__summary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-
-@media (prefers-reduced-motion: reduce) { .pl-ghead__caret, .pl-bar { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .pl-ghead__caret, .pl-bar, .pl-gantt__resize::after { transition: none; } }
+@media (forced-colors: active) {
+  .pl-grow.is-sel { outline: 2px solid Highlight; outline-offset: -2px; }
+  .pl-bar.is-late { outline: 2px solid CanvasText; }
+}

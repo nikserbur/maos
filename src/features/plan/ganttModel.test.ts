@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  COLOR_SLOTS, barSegments, buildPalette, colorVar, fmtTick, fmtTickDate, groupBars, groupBarsByShop, makeTicks, niceStep,
+  COLOR_SLOTS, barSegments, buildPalette, colorVar, distinctPart, fmtTick, fmtTickDate, groupBars, groupBarsByOrder, groupBarsByShop,
+  laneDue, laneLabels, makeTicks, middleEllipsis, niceStep,
 } from './ganttModel'
+import { axisLevels, dayLabel } from './ganttTime'
 import type { PlanBar } from './types'
 
 const bar = (p: Partial<PlanBar>): PlanBar => ({
@@ -11,15 +13,18 @@ const bar = (p: Partial<PlanBar>): PlanBar => ({
 })
 
 describe('buildPalette', () => {
-  it('assigns slots by first appearance in the program and aggregates qty', () => {
+  it('assigns slots by product id (slotForEntity), keeps program order in the legend and aggregates qty', () => {
     const pal = buildPalette([
       { product_id: 'b', product_name: 'B', qty: 5, due_hours: 1 },
       { product_id: 'a', product_name: 'A', qty: 2, due_hours: 1 },
       { product_id: 'b', product_name: 'B', qty: 3, due_hours: 1 },
     ], [])
-    expect(pal.swatches.map((s) => [s.productId, s.slot, s.qty])).toEqual([['b', 0, 8], ['a', 1, 2]])
-    expect(pal.slotOf('a')).toBe(1)
+    expect(pal.swatches.map((s) => [s.productId, s.slot, s.qty])).toEqual([['b', 1, 8], ['a', 0, 2]])
+    expect(pal.slotOf('a')).toBe(0)
     expect(pal.hasOther).toBe(false)
+    // Тот же цвет изделия при другом порядке программы.
+    const swapped = buildPalette([{ product_id: 'a', product_name: 'A', qty: 1, due_hours: 1 }, { product_id: 'b', product_name: 'B', qty: 1, due_hours: 1 }], [])
+    expect(swapped.slotOf('b')).toBe(pal.slotOf('b'))
   })
 
   it('puts products beyond the palette and non-program bars into «прочее»', () => {
@@ -114,5 +119,64 @@ describe('barSegments', () => {
   it('derives processing from the bar span when proc_hours is absent', () => {
     const s = barSegments(bar({ start: 0, end: 10, setup_hours: 5 }))
     expect(s.setupFrac).toBeCloseTo(0.5)
+  })
+})
+
+describe('lane labels (APS canon: only the distinguishing part)', () => {
+  it('strips the work-centre type from the machine name', () => {
+    expect(distinctPart('Ленточнопильный отрезной станок №1', 'Ленточнопильный отрезной станок')).toBe('№1')
+    expect(distinctPart('Пресс', 'Ленточнопильный станок')).toBe('Пресс')
+  })
+
+  it('ellipsises in the middle so both ends stay visible', () => {
+    expect(middleEllipsis('короткое', 20)).toBe('короткое')
+    const m = middleEllipsis('№1 · Ленточнопильный отрезной станок', 20)
+    expect(m).toHaveLength(20)
+    expect(m.startsWith('№1')).toBe(true)
+    expect(m.endsWith('станок')).toBe(true)
+  })
+
+  it('never yields two identical visible labels', () => {
+    const lanes = [
+      { id: 'm1', name: 'Станок А №1', wcName: 'Станок А' },
+      { id: 'm2', name: 'Станок А №1', wcName: 'Станок А' },
+      { id: 'm3', name: 'Станок Б №1', wcName: 'Станок Б' },
+    ]
+    for (const mode of ['wc', 'shop'] as const) {
+      const labels = [...laneLabels(lanes, mode, 30).values()]
+      expect(new Set(labels).size).toBe(labels.length)
+    }
+    expect(laneLabels(lanes, 'shop', 40).get('m3')).toBe('№1 · Станок Б')
+  })
+})
+
+describe('order lanes', () => {
+  it('groups by product with one lane per order and a single due date', () => {
+    const groups = groupBarsByOrder([
+      bar({ job_idx: 1, order_idx: 1, product_id: 'p1', due: 50 }),
+      bar({ job_idx: 2, order_idx: 0, product_id: 'p1', due: 40 }),
+      bar({ job_idx: 3, order_idx: 2, product_id: 'p2', product_name: 'P2', due: 60 }),
+    ])
+    expect(groups.map((g) => g.machines.map((m) => m.id))).toEqual([['o0', 'o1'], ['o2']])
+    expect(laneDue(groups[0].machines[1])).toBe(50)
+  })
+})
+
+describe('two-level axis', () => {
+  const start = new Date(Date.UTC(2026, 10, 2))
+  it('shows dates over hours when a day is wide', () => {
+    const lv = axisLevels(48, 10, start)
+    expect(lv.top.map((t) => t.label)).toEqual(['пн 02.11', 'вт 03.11', 'ср 04.11'])
+    expect(lv.bottom.length).toBeGreaterThan(0)
+    expect(lv.bottom.every((t) => t.t % 24 !== 0)).toBe(true)
+    expect(lv.bottom[0].label).toMatch(/^\d{2}:00$/)
+  })
+
+  it('shows months over day numbers when days are narrow, and day counters without a start date', () => {
+    const lv = axisLevels(24 * 60, 0.2, start)
+    expect(lv.top[0].label).toBe('ноябрь 2026')
+    expect(lv.top.some((t) => t.label === 'декабрь 2026')).toBe(true)
+    expect(axisLevels(48, 10, null).top[0].label).toBe('сутки 1')
+    expect(dayLabel(2, start)).toBe('04.11')
   })
 })

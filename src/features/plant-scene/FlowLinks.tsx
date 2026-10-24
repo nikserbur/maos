@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { SceneEdge, SceneNode } from './graph/sceneModel'
@@ -720,20 +720,39 @@ function brakeFactor(i: number, poses: Pt[], heads: Pt[]): number {
  * «видели» друг друга: сперва снимаем позы (точка + смещение в полосу + курс),
  * затем по ним считаем торможение и продвигаем каждую. Пинг-понг вдоль полилинии.
  */
-function VehicleFleet({ routes, indoor }: { routes: VehicleRoute[]; indoor?: boolean }) {
+/** Стартовые фазы разнесены по маршруту (детерминированно) — без кучи на старте. */
+const parkedPhase = (r: VehicleRoute, i: number): number => ((i * 0.41) % 1) * r.total
+
+/** Поставить машину в точку s маршрута (полоса движения, курс). */
+function placeVehicle(g: THREE.Group, r: VehicleRoute, s: number, dir: number): void {
+  const { p, yaw, tan } = sampleAt(r.pts, r.acc, s)
+  const mx = tan[0] * dir, mz = tan[1] * dir
+  g.position.set(p[0] - mz * LANE_OFFSET, 0.06, p[1] + mx * LANE_OFFSET)
+  g.rotation.y = dir > 0 ? yaw : yaw + Math.PI
+}
+
+function VehicleFleet({ routes, indoor, still }: { routes: VehicleRoute[]; indoor?: boolean; still: boolean }) {
   const groupRefs = useRef<(THREE.Group | null)[]>([])
   const sRef = useRef<number[]>([])
   const dirRef = useRef<number[]>([])
   const stuckRef = useRef<number[]>([])
+  const reset = () => {
+    sRef.current = routes.map(parkedPhase)
+    dirRef.current = routes.map(() => 1)
+    stuckRef.current = routes.map(() => 0)
+  }
+  // Пауза / «меньше движения» (X2 P-39): машины стоят в фиксированных фазах, кадр их не трогает.
+  useLayoutEffect(() => {
+    if (!still) return
+    reset()
+    routes.forEach((r, i) => { const g = groupRefs.current[i]; if (g && r.total >= 1) placeVehicle(g, r, sRef.current[i], 1) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [still, routes])
   useFrame((_, delta) => {
+    if (still) return
     const dt = Math.min(delta, 0.05)                       // защита от скачка при возврате во вкладку
     const n = routes.length
-    if (sRef.current.length !== n) {
-      // Стартовые фазы разнесены по маршруту (детерминированно) — без кучи на старте.
-      sRef.current = routes.map((r, i) => ((i * 0.41) % 1) * r.total)
-      dirRef.current = routes.map(() => 1)
-      stuckRef.current = routes.map(() => 0)
-    }
+    if (sRef.current.length !== n) reset()
     // Пасс 1: текущие позы всех машин (для взаимного «зрения»).
     const poses: Pt[] = new Array(n)
     const heads: Pt[] = new Array(n)
@@ -758,11 +777,7 @@ function VehicleFleet({ routes, indoor }: { routes: VehicleRoute[]; indoor?: boo
       sRef.current[i] += dirRef.current[i] * r.speed * f * dt
       if (sRef.current[i] >= r.total) { sRef.current[i] = r.total; dirRef.current[i] = -1 }
       else if (sRef.current[i] <= 0) { sRef.current[i] = 0; dirRef.current[i] = 1 }
-      const { p, yaw, tan } = sampleAt(r.pts, r.acc, sRef.current[i])
-      const dir = dirRef.current[i]
-      const mx = tan[0] * dir, mz = tan[1] * dir
-      g.position.set(p[0] - mz * LANE_OFFSET, 0.06, p[1] + mx * LANE_OFFSET)
-      g.rotation.y = dir > 0 ? yaw : yaw + Math.PI
+      placeVehicle(g, r, sRef.current[i], dirRef.current[i])
     }
   })
   return (
@@ -848,10 +863,16 @@ function Lorry({ variant }: { variant: number }) {
   )
 }
 
-interface FlowLinksProps { nodes: SceneNode[]; edges: SceneEdge[]; indoor?: boolean }
+interface FlowLinksProps {
+  nodes: SceneNode[]
+  edges: SceneEdge[]
+  indoor?: boolean
+  /** Анимация на паузе или «меньше движения»: транспорт стоит (X2 P-39). */
+  still?: boolean
+}
 
 /** Единая ортогональная дорожная сеть: дедуп-отрезки + развязки + транспорт. */
-export function FlowLinks({ nodes, edges, indoor }: FlowLinksProps) {
+export function FlowLinks({ nodes, edges, indoor, still = false }: FlowLinksProps) {
   const { hSegs, vSegs, roundabouts, corners, tees, routes } = useMemo(() => {
     const net = buildNetwork(nodes, edges)
     const pos: Record<string, Pt> = {}
@@ -988,7 +1009,7 @@ export function FlowLinks({ nodes, edges, indoor }: FlowLinksProps) {
       {corners.map((c, i) => <CornerPatch key={`k${i}`} cx={c.cx} cz={c.cz} a0={c.a0} />)}
       {!indoor && crossings.map((c, i) => <Crossing key={`c${i}`} x={c.x} z={c.z} horiz={c.horiz} />)}
       {roundabouts.map(([x, z], i) => <Roundabout key={`r${i}`} x={x} z={z} indoor={indoor} arms={roundArms[i]} />)}
-      <VehicleFleet routes={routes} indoor={indoor} />
+      <VehicleFleet routes={routes} indoor={indoor} still={still} />
     </group>
   )
 }

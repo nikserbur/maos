@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { CashLpResult } from '../../../lib/api'
 import { getNode } from '../../method-map/registry'
 import { optFixture, planFixture, rlFixture, stateFixture } from '../mentatFixtures'
 import { buildContext, serializeContext, estimateTokens, diffRuns, buildFacts, mapAnchor } from './index'
@@ -75,6 +76,18 @@ describe('buildContext', () => {
     const minDropped = Math.min(...full.nodes.filter((n) => !small.nodes.some((k) => k.id === n.id)).map((n) => n.distance))
     expect(maxKept).toBeLessThanOrEqual(minDropped + 1)
     expect(estimateTokens(serializeContext(small))).toBeLessThan(estimateTokens(serializeContext(full)))
+  })
+
+  it('never throws on an unsolved cash LP (time_limit, no duals) and skips only the cash facts', () => {
+    const cash = { status: 'time_limit', reason: 'Time limit reached' } as unknown as CashLpResult
+    const build = () => buildContext({ ...base(), cash, asked: 'dec.cash' })
+    expect(build).not.toThrow()
+    const ctx = build()
+    expect(ctx.nodes.find((n) => n.id === 'dec.cash.duals')).toBeUndefined()
+    expect(ctx.nodes.length).toBeGreaterThan(0)
+    // мощности берутся из точной LP портфеля, касса без duals их не ломает
+    expect(buildFacts({ opt: optFixture(), cash }).find((f) => f.id === 'dec.portfolio.duals')).toBeDefined()
+    expect(buildFacts({ cash }).find((f) => f.id === 'dec.portfolio.duals')).toBeUndefined()
   })
 
   it('a fact can be the asked node; an unknown node gives an empty context', () => {

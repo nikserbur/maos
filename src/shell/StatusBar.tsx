@@ -1,98 +1,87 @@
-import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
-
-interface StatusBarProps {
-  screen: string
-}
-
-type Connection = 'checking' | 'online' | 'offline'
-
-interface Health {
-  connection: Connection
-  project: string | null
-}
-
-const HEALTH_POLL_MS = 30_000
-
-/** «./data/Завод.db» → «Завод». */
-function projectName(path: unknown): string | null {
-  if (typeof path !== 'string' || !path.trim()) return null
-  const base = path.split(/[\\/]/).pop() ?? path
-  return base.replace(/\.db$/i, '') || null
-}
-
-/** Опрос GET /api/health: связь с сервером и текущий проект-БД. */
-function useBackendHealth(): Health {
-  const [health, setHealth] = useState<Health>({ connection: 'checking', project: null })
-  useEffect(() => {
-    let cancelled = false
-    const check = () => {
-      api.health()
-        .then((res) => {
-          // Бэкенд отдаёт и `project` (путь к БД), хотя в типе api.health его пока нет.
-          const project = projectName((res as { project?: unknown }).project)
-          if (!cancelled) setHealth({ connection: 'online', project })
-        })
-        .catch(() => {
-          if (!cancelled) setHealth((prev) => ({ ...prev, connection: 'offline' }))
-        })
-    }
-    check()
-    const timer = window.setInterval(check, HEALTH_POLL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [])
-  return health
-}
-
-/** Пользователь сессии (пишется окном входа в sessionStorage['maos.session']). */
-function readSessionUser(): string | null {
-  try {
-    const raw = sessionStorage.getItem('maos.session')
-    if (!raw) return null
-    const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return null
-    const { login, role } = parsed as { login?: unknown; role?: unknown }
-    if (typeof login !== 'string' || !login) return null
-    return typeof role === 'string' && role ? `${login} · ${role}` : login
-  } catch {
-    return null
-  }
-}
+/**
+ * Нижний статус-бар (X2 «спокойная норма»): в норме — приглушённое «Сервер: на связи» без цвета;
+ * без связи — «■ Нет связи с сервером · Повторить» (цвет только у глифа). Фоновая работа —
+ * чип «План: расчёт идёт…» со ссылкой на экран; одно худшее отклонение конвейера («✕ 1 ошибка»,
+ * «▲ 2 устарело») ведёт на экран-владелец блока. Пользователь и проект открывают меню учётной записи.
+ * Версия — из package.json (__APP_VERSION__).
+ */
+import { BLOCKS } from '../features/method-map/blocks'
+import { liveOf } from '../features/method-map/deriveState'
+import type { BlockId } from '../features/method-map/types'
+import { useMethodMapState } from '../features/method-map/useMethodMapState'
+import { useCashStore } from '../features/finance/cashStore'
+import { useOptStore } from '../features/optimization/optStore'
+import { usePlanStore } from '../features/plan/planStore'
+import { countText } from '../explain/format'
+import { AccountMenu } from './AccountMenu'
+import { blockHref } from './blockHome'
+import { checkHealth, useBackendHealth, type Connection } from './health'
+import { PRODUCT_VERSION } from './version'
 
 const CONNECTION: Record<Connection, { glyph: string; label: string }> = {
-  checking: { glyph: 'glyph-idle', label: 'Подключение…' },
-  online: { glyph: 'glyph-running', label: 'Локально' },
+  checking: { glyph: 'statusbar__dot', label: 'Сервер: подключение…' },
+  online: { glyph: 'statusbar__dot', label: 'Сервер: на связи' },
   offline: { glyph: 'glyph-down', label: 'Нет связи с сервером' },
 }
 
-/** Нижний статус-бар: версия, связь с сервером, проект, пользователь, активный экран. */
-export function StatusBar({ screen }: StatusBarProps) {
-  const { connection, project } = useBackendHealth()
-  const [user] = useState(readSessionUser)
+interface Job { key: string; text: string; href: string }
+
+/** Фоновые расчёты из хранилищ экранов: идут, даже когда пользователь ушёл на другой экран. */
+function useJobs(): Job[] {
+  const plan = usePlanStore()
+  const opt = useOptStore()
+  const cash = useCashStore()
+  const jobs: Job[] = []
+  if (opt.running) jobs.push({ key: 'opt', text: 'Портфель: расчёт идёт…', href: '#/optimization' })
+  if (plan.running) jobs.push({ key: 'plan', text: 'План: расчёт идёт…', href: '#/plan' })
+  if (cash.running) jobs.push({ key: 'cash', text: 'Касса: ЛП считается…', href: '#/plan' })
+  return jobs
+}
+
+interface Worst { kind: 'error' | 'stale'; count: number; block: BlockId }
+
+/** Одно худшее отклонение по блокам конвейера: ошибки важнее «устарело». */
+function useWorst(): Worst | null {
+  const { state } = useMethodMapState()
+  const errors = BLOCKS.filter((b) => liveOf(state, b.id).state === 'error')
+  if (errors.length) return { kind: 'error', count: errors.length, block: errors[0].id }
+  const stale = BLOCKS.filter((b) => liveOf(state, b.id).state === 'stale')
+  if (stale.length) return { kind: 'stale', count: stale.length, block: stale[0].id }
+  return null
+}
+
+export function StatusBar() {
+  const { connection } = useBackendHealth()
   const conn = CONNECTION[connection]
+  const jobs = useJobs()
+  const worst = useWorst()
 
   return (
     <footer className="statusbar">
-      <span className="statusbar__version num">PESCADITO v0.74.2</span>
+      <span className="statusbar__version num">{PRODUCT_VERSION}</span>
       <span className="statusbar__sep" aria-hidden="true" />
-      <span className={`statusbar__conn statusbar__conn--${connection} ${conn.glyph}`} role="status">
+      <span className={`statusbar__conn statusbar__conn--${connection}`} role="status">
+        <span className={conn.glyph} aria-hidden="true" />
         {conn.label}
+        {connection === 'offline' && (
+          <button type="button" className="btn btn--ghost btn--sm statusbar__retry" onClick={checkHealth}>Повторить</button>
+        )}
       </span>
-      <span className="statusbar__sep" aria-hidden="true" />
-      <span className="statusbar__item">
-        Проект: <span className="statusbar__value mono">{project ?? '—'}</span>
-      </span>
-      {user && (
-        <>
-          <span className="statusbar__sep" aria-hidden="true" />
-          <span className="statusbar__item">{user}</span>
-        </>
+      {jobs.map((j) => (
+        <a key={j.key} className="statusbar__job" href={j.href} title="Открыть экран расчёта">
+          <span className="statusbar__spin" aria-hidden="true" />{j.text}
+        </a>
+      ))}
+      {worst && (
+        <a className="statusbar__worst" href={blockHref(worst.block, false) ?? '#/map'}
+          title={worst.kind === 'error' ? 'Открыть экран блока с ошибкой' : 'Открыть экран устаревшего блока'}>
+          {worst.kind === 'error'
+            ? <><span className="glyph-x" aria-hidden="true" />{countText(worst.count, ['ошибка', 'ошибки', 'ошибок'])}</>
+            : <><span className="mm-glyph mm-glyph--stale" aria-hidden="true" /> {worst.count} устарело</>}
+        </a>
       )}
       <span className="statusbar__spacer" />
-      <span className="statusbar__item">Экран: <span className="statusbar__value">{screen}</span></span>
+      <AccountMenu variant="statusbar" />
     </footer>
   )
 }

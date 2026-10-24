@@ -5,7 +5,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { AreaChart, BarList, ColumnChart, Fan, Heatmap, Histogram, LineChart, Meter, RangeStrip, Sankey, Scatter, Sparkline, StackBar, heatStep } from './index'
+import { AreaChart, BarList, ColumnChart, Fan, Forest, Heatmap, Histogram, LineChart, Meter, RangeStrip, Sankey, Scatter, Sparkline, StackBar, fanLegend, fanTicks, heatStep } from './index'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { num } from '../../explain/format'
 
 const labels = ['01', '02', '03', '04']
@@ -214,5 +216,84 @@ describe('histogram window (domain)', () => {
     expect((html.match(/<g class="ch-col/g) ?? []).length).toBe(4)
     expect(html).toContain('Таблица')
     expect((html.match(/ch-hist__lanemark/g) ?? []).length).toBe(3)
+  })
+})
+
+describe('честные состояния (X2)', () => {
+  it('loading с пустыми рядами — скелет, а не «пусто»', () => {
+    const html = renderToStaticMarkup(<LineChart labels={[]} series={[]} loading emptyTitle="Нет данных" />)
+    expect(html).not.toContain('ch-empty')
+    expect(html).toContain('ch-skel')
+    expect(html).toContain('aria-busy="true"')
+  })
+  it('пересчёт с данными — прежний кадр приглушён и подписан', () => {
+    const html = renderToStaticMarkup(<LineChart labels={labels} series={series} loading title="Т" />)
+    expect(html).toContain('is-refetching')
+    expect(html).toContain('пересчитывается')
+    expect(html).not.toContain('ch-skel')
+  })
+  it('после загрузки без данных — «пусто»', () => {
+    expect(renderToStaticMarkup(<LineChart labels={[]} series={[]} emptyTitle="Нет данных" />)).toContain('ch-empty')
+  })
+})
+
+describe('грамматика веера', () => {
+  const fan = { p10: [8, 7, 6], p50: [10, 10, 10], p90: [12, 13, 14], p25: [9, 9, 8], p75: [11, 11, 12], history: [9, 10, 11, 10], trend: [10, 10.5, 11] }
+  it('легенда называет P50, P25–P75, P10–P90 с покрытием и каждый элемент', () => {
+    const labelsOf = fanLegend({ hasHistory: true, hasTrend: true, hasInner: true, backtestK: 2 }).map((i) => i.label)
+    expect(labelsOf).toEqual(expect.arrayContaining(['медиана (P50)', 'P25–P75 · 5 из 10 исходов', 'P10–P90 · 8 из 10 исходов', '◆ факт проверки', 'окно проверки 2 мес', 'тренд', 'история (факт)']))
+  })
+  it('ось Y — не меньше трёх делений', () => {
+    expect(fanTicks(0, 1).length).toBeGreaterThanOrEqual(3)
+    expect(fanTicks(10, 10.4).length).toBeGreaterThanOrEqual(3)
+  })
+  it('общая шкала yDomain задаёт деления, порог подписан в легенде и таблице', () => {
+    const html = renderToStaticMarkup(<Fan a={fan} backtestK={2} yDomain={[0, 100]} refLines={[{ key: 'lim', value: 50, label: 'лимит' }]} title="В" />)
+    expect(html).toContain('>100<')
+    expect(html).toContain('>0<')
+    expect(html).toContain('ch-fan__ref')
+    expect(html).toContain('лимит')
+  })
+  it('в CSS веера нет --chart-2 у окна проверки и факта', () => {
+    const css = readFileSync(fileURLToPath(new URL('./charts.css', import.meta.url)), 'utf8')
+    const rule = (sel: string) => css.split('\n').filter((l) => l.startsWith(sel)).join('\n')
+    expect(rule('.ch-fan__bt')).not.toContain('--chart-2')
+    expect(rule('.ch-fan__fact')).not.toContain('--chart-2')
+    expect(css).not.toContain('var(--accent)')
+  })
+})
+
+describe('примитивы вердикта (P-19)', () => {
+  it('RangeStrip: ДИ — без штриховки, хвост — со штриховкой', () => {
+    const marks = [{ key: 'e', value: 5, label: 'E', glyph: 'dot' as const, tone: 'accent' as const }]
+    const ci = renderToStaticMarkup(<RangeStrip marks={marks} fmt={(v) => num(v, 0)} zone={[3, 7]} zoneKind="ci" domain={[0, 10]} />)
+    const tail = renderToStaticMarkup(<RangeStrip marks={marks} fmt={(v) => num(v, 0)} zone={[3, 7]} />)
+    expect(ci).toContain('ch-range__zone--ci')
+    expect(ci.slice(ci.indexOf('ch-range__zone'))).not.toMatch(/fill="url\(#/)
+    expect(tail).toMatch(/fill="url\(#/)
+  })
+  it('Forest: подписанная нулевая линия, порог, доля побед и таблица-двойник', () => {
+    const html = renderToStaticMarkup(<Forest rows={[{ key: 'a', label: 'Вариант A', delta: 1.2, lo: 0.4, hi: 2, share: 0.62 }, { key: 'b', label: 'Вариант B', delta: -0.1, lo: -0.6, hi: 0.5 }]}
+      fmt={(v) => num(v, 1)} threshold={{ value: 1, label: 'порог' }} baseLabel="к CR" title="Сравнение" />)
+    expect(html).toContain('ch-forest__zero')
+    expect(html).toContain('0 — как база')
+    expect(html).toContain('ch-forest__thr')
+    expect(html).toContain('62 из 100')
+    expect(html).toContain('Таблица')
+  })
+  it('BarList: отметка цели на дорожке и в легенде, «Все N» при лимите', () => {
+    const rows = Array.from({ length: 6 }, (_, i) => ({ key: String(i), label: `Станок ${i}`, value: i * 10 }))
+    const html = renderToStaticMarkup(<BarList rows={rows} fmt={(v) => num(v, 0)} mark={{ value: 30, label: 'цель' }} limit={4} />)
+    expect(html).toContain('ch-bar__mark')
+    expect(html).toContain('цель')
+    expect(html).toContain('Все 6')
+    expect((html.match(/class="ch-bar(?: |")/g) ?? []).length).toBe(4)
+  })
+  it('Sankey: длинные подписи — до трёх строк без многоточия, прочие ленты приглушены', () => {
+    const nodes = [{ id: 'a', label: 'Токарно-винторезный участок номер один с длинным именем цеха' }, { id: 'b', label: 'Сборка' }, { id: 'c', label: 'Склад' }]
+    const html = renderToStaticMarkup(<Sankey nodes={nodes} links={[{ from: 'a', to: 'b', value: 5 }, { from: 'b', to: 'c', value: 3 }]} emphasis={['a']} ariaLabel="Потоки партий" />)
+    expect(html).not.toContain('…')
+    expect(html).toContain('is-other')
+    expect(html).toContain('Потоки партий')
   })
 })

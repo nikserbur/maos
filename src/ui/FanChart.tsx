@@ -1,13 +1,13 @@
 /**
- * Веер прогноза экранов «Сценарии»/«Мониторинг» (UX-V2 §5.3) — обёртка над `Fan` chart-системы:
- * качество прогноза «CRPS · skill · покрытие» выводится строкой под заголовком (не плашкой внутри
- * svg), бейджи — в шапке рамки, высота ≥ 200 px, ось дат и значений, ромбы факта бэктеста.
- * Контракт `FanSeries`/`FanQuality` сохранён для ForecastTab.
+ * Веер прогноза экранов «Сценарии»/«Мониторинг» (UX-V2 §5.3, X2) — обёртка над `Fan` chart-системы:
+ * качество прогноза — одной строкой простыми словами под заголовком («точнее наивного прогноза на
+ * 12 %; 8 из 10 исходов накрыли 7 фактов из 10 при норме 8»), мера (CRPS) — в «i». Хуже наивного —
+ * ▲ и штриховка внешней полосы. Контракт `FanSeries`/`FanQuality` сохранён для ForecastTab.
  */
 import type { ReactNode } from 'react'
-import { Fan, type FanSeries } from './charts'
+import { Fan, type FanRefLine, type FanSeries } from './charts'
 import { InfoTip } from './InfoTip'
-import { money, pct } from '../explain/format'
+import { pct } from '../explain/format'
 import './fields.css'
 
 export type { FanSeries }
@@ -19,10 +19,12 @@ export interface FanQuality {
   /** Подпись меры: «CRPS» или «прокси (пинбол P10/P90)». */
   crpsLabel?: string
   coverage80?: number | null
-  /** Сколько последних точек истории скрыто от модели (бэктест). */
+  /** Сколько последних точек истории скрыто от модели (окно проверки). */
   backtestK?: number
   /** Состояние: ok — лучше наивного, warn — хуже, none — нет проверки. */
   status: 'ok' | 'warn' | 'none'
+  /** Готовая фраза качества от экрана (приоритетнее собранной здесь). */
+  sentence?: string
   info?: string
   infoValues?: Readonly<Record<string, number | string | null | undefined>>
 }
@@ -40,25 +42,39 @@ interface FanChartProps {
   nameB?: string
   /** Скрыть легенду — у сетки малых кратных одна общая легенда. */
   showLegend?: boolean
+  /** Общая шкала Y малых кратных и пометка «своя шкала». */
+  yDomain?: readonly [number, number]
+  scaleNote?: string
+  refLines?: ReadonlyArray<FanRefLine>
+  caveat?: ReactNode
 }
 
-/** Строка качества: глиф состояния + «прокси CRPS 6,7 тыс. ₽ · skill −50 % · покрытие 67 %» + «i». */
-export function QualityLine({ q, fmtCrps = money }: { q: FanQuality; fmtCrps?: (v: number) => string }) {
-  const glyph = q.status === 'ok' ? 'glyph-running' : q.status === 'warn' ? 'glyph-setup' : 'glyph-idle'
+/** Качество словами: модель против наивного прогноза и покрытие интервала против номинала. */
+export function qualitySentence(q: FanQuality): string {
+  if (q.sentence) return q.sentence
+  const parts: string[] = []
+  if (q.skill != null && Number.isFinite(q.skill)) {
+    parts.push(q.skill >= 0 ? `точнее наивного прогноза на ${pct(q.skill, 0)}` : `хуже наивного прогноза на ${pct(-q.skill, 0)}`)
+  }
+  if (q.coverage80 != null && Number.isFinite(q.coverage80)) {
+    parts.push(`полоса «8 из 10 исходов» накрыла ${pct(q.coverage80, 0)} фактов при норме 80 %`)
+  }
+  return parts.length ? parts.join('; ') : 'качество не проверено'
+}
+
+/** Строка качества: ▲ только у отклонения + фраза + «i» (мера CRPS и формулы — там). */
+export function QualityLine({ q }: { q: FanQuality; fmtCrps?: (v: number) => string }) {
+  const warn = q.status === 'warn'
   return (
     <span className={`pf-quality is-${q.status}`}>
-      <span className={glyph} aria-hidden="true" />
-      <span className="num">
-        {q.crps != null && `${q.crpsLabel ?? 'CRPS'} ${fmtCrps(q.crps)} · `}
-        {q.skill != null ? `skill ${pct(q.skill, 0)}` : 'без проверки'}
-        {q.coverage80 != null && ` · покрытие ${pct(q.coverage80, 0)}`}
-      </span>
-      {q.info && <InfoTip id={q.info} values={q.infoValues} />}
+      {warn && <span className="glyph-setup" aria-hidden="true" />}
+      <span>{warn ? `Внимание: ${qualitySentence(q)}` : qualitySentence(q)}</span>
+      {q.info && <InfoTip id={q.info} values={{ ...q.infoValues, crps: q.crps ?? q.infoValues?.crps }} />}
     </span>
   )
 }
 
-export function FanChart({ a, b, monthLabel, fmt, quality, title, badges, height = 200, nameA, nameB, showLegend = true }: FanChartProps) {
+export function FanChart({ a, b, monthLabel, fmt, quality, title, badges, height = 200, nameA, nameB, showLegend = true, yDomain, scaleNote, refLines, caveat }: FanChartProps) {
   return (
     <Fan
       a={a}
@@ -73,6 +89,11 @@ export function FanChart({ a, b, monthLabel, fmt, quality, title, badges, height
       nameA={nameA}
       nameB={nameB}
       showLegend={showLegend}
+      yDomain={yDomain}
+      scaleNote={scaleNote}
+      refLines={refLines}
+      caveat={caveat}
+      quality={quality?.status === 'warn' ? 'warn' : 'ok'}
       className="pf-fan"
     />
   )

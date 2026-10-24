@@ -1,8 +1,10 @@
 /**
- * Состояния экранов: skeleton-загрузка, пустое состояние «Кандинский» (схема из src/diagrams или
- * малая композиция ● ■ ▲), баннер ошибки с «Повторить». Цвет никогда не единственный сигнал.
+ * Состояния экранов — один механизм (X2 «честные состояния»): загрузка (skeleton появляется через
+ * 150 мс и держится ≥ 300 мс, высота строк — как у итоговых), пустое состояние трёх видов (первое
+ * использование · ничего не найдено · недоступно), ошибка простыми словами с «Подробнее» (сырой текст)
+ * и «Повторить». Цвет никогда не единственный сигнал.
  */
-import { Component, type CSSProperties, type ReactNode } from 'react'
+import { Component, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Backdrop } from '../../brand/Backdrop'
 import { getDiagram, type DiagramId } from '../../diagrams'
 import { Icon } from '../../shell/icons'
@@ -24,13 +26,14 @@ export function Skeleton({ h = 14, w, radius, className }: SkeletonProps) {
 
 const ROW_WIDTHS = ['38%', '22%', '16%', '12%', '18%', '10%']
 
-/** Скелет таблицы: N строк с колонками разной ширины. */
-export function SkeletonRows({ rows = 4, cols = 4, label = 'Загрузка…' }: { rows?: number; cols?: number; label?: string }) {
+/** Скелет таблицы: N строк высотой итоговой строки (`rowH`, по умолчанию 32 px — плотные реестры); появляется через 150 мс. */
+export function SkeletonRows({ rows = 4, cols = 4, label = 'Загрузка…', rowH }: { rows?: number; cols?: number; label?: string; rowH?: number }) {
+  const rowStyle: CSSProperties | undefined = rowH ? { height: rowH } : undefined
   return (
     <div className="dk-skel-stack" role="status" aria-live="polite" aria-busy="true">
       <span className="dk-vh">{label}</span>
       {Array.from({ length: rows }, (_, r) => (
-        <div key={r} className="dk-skel-row">
+        <div key={r} className="dk-skel-row" style={rowStyle}>
           {Array.from({ length: cols }, (_, c) => (
             <Skeleton key={c} w={ROW_WIDTHS[(c + r) % ROW_WIDTHS.length]} h={c === 0 ? 14 : 12} />
           ))}
@@ -40,12 +43,38 @@ export function SkeletonRows({ rows = 4, cols = 4, label = 'Загрузка…'
   )
 }
 
+/**
+ * Флаг загрузки без мигания: включается через `delay` мс (быстрые ответы скелета не показывают) и,
+ * раз показавшись, держится не меньше `minHold` мс.
+ */
+export function useDelayedFlag(flag: boolean, delay = 150, minHold = 300): boolean {
+  const [shown, setShown] = useState(false)
+  const since = useRef(0)
+  useEffect(() => {
+    if (flag && !shown) {
+      const t = window.setTimeout(() => { since.current = Date.now(); setShown(true) }, delay)
+      return () => window.clearTimeout(t)
+    }
+    if (!flag && shown) {
+      const left = Math.max(0, minHold - (Date.now() - since.current))
+      const t = window.setTimeout(() => setShown(false), left)
+      return () => window.clearTimeout(t)
+    }
+    return undefined
+  }, [flag, shown, delay, minHold])
+  return shown
+}
+
 /* ── Баннер ошибки ────────────────────────────────────────────────────────── */
 type ErrorTone = 'down' | 'setup' | 'bad' | 'warn'
 
 interface ErrorBannerProps {
   title?: ReactNode
   message?: ReactNode
+  /** Исходная ошибка: заголовок — errorText(error), сырой текст — под «Подробнее». */
+  error?: unknown
+  /** Сырой текст для «Подробнее» (если не передан `error`). */
+  detail?: string
   children?: ReactNode
   onRetry?: () => void
   retryLabel?: string
@@ -55,18 +84,27 @@ interface ErrorBannerProps {
   onDismiss?: () => void
 }
 
-/** Баннер ошибки: ■/▲ + заголовок + подробности + «Повторить» (+ закрыть). */
+/** Баннер ошибки: ✕/▲ + что случилось простыми словами + что делать («Повторить») + «Подробнее». */
 export function ErrorBanner({
-  title, message, children, onRetry, retryLabel = 'Повторить', retrying = false, tone = 'down', onDismiss,
+  title, message, error, detail, children, onRetry, retryLabel = 'Повторить', retrying = false, tone = 'down', onDismiss,
 }: ErrorBannerProps) {
   const warn = tone === 'setup' || tone === 'warn'
+  const head = title ?? (error !== undefined ? errorText(error) : undefined)
+  const raw = detail ?? (error !== undefined ? errorDetail(error) : '')
+  const showRaw = raw && raw !== head && raw !== message
   return (
     <div className={`dk-err${warn ? ' dk-err--setup' : ''} dk-rise`} role={warn ? 'status' : 'alert'}>
-      <span className={`${warn ? 'glyph-setup' : 'glyph-down'} dk-err__glyph`} aria-hidden="true" />
+      <span className={`${warn ? 'glyph-setup' : 'glyph-x'} dk-err__glyph`} aria-hidden="true" />
       <div className="dk-err__text">
-        {title && <div className="dk-err__title">{title}</div>}
+        {head && <div className="dk-err__title">{head}</div>}
         {message && <div className="dk-err__detail">{message}</div>}
         {children}
+        {showRaw && (
+          <details className="dk-err__more">
+            <summary>Подробнее</summary>
+            <pre className="dk-err__raw mono">{raw}</pre>
+          </details>
+        )}
       </div>
       {onRetry && (
         <button type="button" className="btn btn--sm" onClick={onRetry} disabled={retrying}>
@@ -85,14 +123,40 @@ export function ErrorBanner({
 /** Прежнее имя из «Плана». */
 export const InlineError = ErrorBanner
 
-/** Сообщение ошибки из unknown (fetch/JSON). */
-export function errorText(e: unknown, fallback = 'Сервер недоступен или вернул ошибку'): string {
-  if (e instanceof Error && e.message) return e.message
+/** Сырой текст ошибки (для «Подробнее»): сообщение и код ответа, без перевода. */
+export function errorDetail(e: unknown): string {
+  const status = typeof e === 'object' && e !== null && 'status' in e ? Number((e as { status: unknown }).status) : NaN
+  const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+  return Number.isFinite(status) && !msg.includes(String(status)) ? `${msg} (HTTP ${status})` : msg
+}
+
+const NETWORK = /failed to fetch|networkerror|network request failed|load failed|err_connection|econnrefused|fetch failed/i
+const HAS_CYRILLIC = /[а-яё]/i
+
+/**
+ * Ошибка простыми словами: что случилось и что делать. Сырой текст («Failed to fetch», «HTTP 401»)
+ * пользователю не показывается — он остаётся в «Подробнее» (errorDetail). Русское сообщение
+ * сервера («Неверный логин или пароль») сохраняется как есть.
+ */
+export function errorText(e: unknown, fallback = 'Не удалось выполнить действие — повторите'): string {
+  const status = typeof e === 'object' && e !== null && 'status' in e ? Number((e as { status: unknown }).status) : NaN
+  const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+  const code = Number.isFinite(status) ? status : Number(/^HTTP (\d{3})/.exec(raw)?.[1] ?? NaN)
+  if (NETWORK.test(raw)) return 'Сервер недоступен — проверьте, что запущен maos-server'
+  if (code === 401) return /логин|пароль/i.test(raw) ? 'Неверный логин или пароль' : 'Сессия истекла — войдите снова'
+  if (code === 403) return /заблок/i.test(raw) ? raw : 'Нет прав на это действие'
+  if (code === 404 || /not found/i.test(raw)) return 'Объект не найден'
+  if (code >= 500 && code < 600) return HAS_CYRILLIC.test(raw) ? raw : 'Ошибка сервера — повторите'
+  if (/unexpected token|json|empty response/i.test(raw)) return 'Сервер вернул неожиданный ответ — повторите'
+  if (raw && HAS_CYRILLIC.test(raw)) return raw
   return fallback
 }
 
 /* ── Пустое состояние ─────────────────────────────────────────────────────── */
 export type MarkVariant = 'table' | 'chart' | 'flow' | 'search' | 'log'
+
+/** Вид пустоты: первое использование (что сделать) · ничего не найдено (сбросить фильтры) · недоступно (почему). */
+export type EmptyKind = 'first-use' | 'no-results' | 'unavailable'
 
 interface EmptyStateProps {
   title: string
@@ -104,27 +168,37 @@ interface EmptyStateProps {
   variant?: MarkVariant
   action?: ReactNode
   size?: 'md' | 'sm'
+  kind?: EmptyKind
+  /** «Сбросить фильтры» у kind='no-results'. */
+  onReset?: () => void
+  /** Тихий вариант без атмосферы (внутри таблиц и карточек). */
+  quiet?: boolean
 }
 
-export function EmptyState({ title, children, text, diagram, variant = 'table', action, size = 'md' }: EmptyStateProps) {
+export function EmptyState({ title, children, text, diagram, variant, action, size = 'md', kind, onReset, quiet = false }: EmptyStateProps) {
   const meta = getDiagram(diagram)
   const body = children ?? text
+  const mark = variant ?? (kind === 'no-results' ? 'search' : 'table')
+  const reset = kind === 'no-results' && onReset
+    ? <button type="button" className="btn" onClick={onReset}>Сбросить фильтры</button>
+    : null
+  const cls = ['dk-empty', `dk-empty--${size}`, kind ? `dk-empty--${kind}` : '', quiet ? 'dk-empty--quiet' : '', 'dk-rise'].filter(Boolean).join(' ')
   return (
-    <div className={`dk-empty dk-empty--${size} dk-rise`}>
-      <Backdrop variant="empty" />
+    <div className={cls} role={kind === 'unavailable' ? 'status' : undefined}>
+      {!quiet && <Backdrop variant="empty" />}
       <div className="dk-empty__art">
         {meta ? (
-          <DiagramGuard fallback={<KandinskyMark variant={variant} />}>
+          <DiagramGuard fallback={<KandinskyMark variant={mark} />}>
             <meta.Component compact />
           </DiagramGuard>
         ) : (
-          <KandinskyMark variant={variant} />
+          <KandinskyMark variant={mark} />
         )}
       </div>
       <div className="dk-empty__body">
         <p className="dk-empty__title">{title}</p>
         {body && <div className="dk-empty__text">{body}</div>}
-        {action && <div className="dk-empty__action">{action}</div>}
+        {(action || reset) && <div className="dk-empty__action">{action}{reset}</div>}
       </div>
     </div>
   )

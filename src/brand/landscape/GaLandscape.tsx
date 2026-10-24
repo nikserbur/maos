@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useTheme } from '../../shell/theme'
+import { useAnimationPaused } from '../../ui/motion'
 import { parseCssColor } from '../../features/plant-scene/themeColors'
 import {
   DEFAULT_GA, initPopulation, makeLandscape, mulberry32, nextSigma, step,
@@ -360,6 +361,8 @@ export default function GaLandscape() {
   const [live, setLive] = useState<GaLiveParams>(DEFAULT_LIVE)
   const [restartKey, setRestartKey] = useState(0)
   const still = useMemo(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, [])
+  // «Пауза анимации» (HUD) — общая для бесконечных анимаций; при «меньше движения» по умолчанию на паузе.
+  const [paused] = useAnimationPaused()
   const [hidden, setHidden] = useState(() => document.hidden)
   useEffect(() => {
     const on = () => setHidden(document.hidden)
@@ -377,7 +380,7 @@ export default function GaLandscape() {
       <Canvas
         className="ga-landscape__canvas"
         dpr={[1, 1.75]}
-        frameloop={still || hidden ? 'demand' : 'always'}
+        frameloop={still || hidden || paused ? 'demand' : 'always'}
         camera={{ position: [2.2, 2.2, 1.6], fov: 42, near: 0.05, far: 28 }}
         gl={{ antialias: true, alpha: false, powerPreference: 'low-power' }}
         onCreated={({ gl }) => gl.setClearColor(pal.bg)}

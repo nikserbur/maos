@@ -125,3 +125,42 @@ export function layoutSankey(model: FlowModel, opts: { rowMin?: number; gap?: nu
   })
   return { nodes: [...src, ...dst], ribbons, height, total, max: links.reduce((m, l) => Math.max(m, l.v), 0) }
 }
+
+/* ── «Главные переходы»: топ лент, матрица «откуда × куда», доля узкого места ── */
+
+/** Самые толстые ленты «откуда → куда» по убыванию числа партий (при равенстве — по порядку переделов). */
+export function topTransitions(model: FlowModel, n = Number.POSITIVE_INFINITY): FlowLink[] {
+  const order = new Map(model.types.map((t, i) => [t, i]))
+  const stage = (t: string) => order.get(t) ?? 0
+  return [...model.links]
+    .filter((l) => l.v > 0)
+    .sort((a, b) => b.v - a.v || stage(a.from) - stage(b.from) || stage(a.to) - stage(b.to))
+    .slice(0, n)
+}
+
+export interface FlowMatrix {
+  /** Источники (строки) и приёмники (столбцы) в порядке переделов. */
+  from: string[]
+  to: string[]
+  /** Партий [строка][столбец]; 0 — перехода нет. */
+  values: number[][]
+  max: number
+}
+
+/** Матрица «откуда × куда» для тепловой карты (только типы, у которых есть исходящий/входящий поток). */
+export function flowMatrix(model: FlowModel): FlowMatrix {
+  const links = model.links.filter((l) => l.v > 0)
+  const from = model.types.filter((t) => links.some((l) => l.from === t))
+  const to = model.types.filter((t) => links.some((l) => l.to === t))
+  const at = new Map(links.map((l) => [`${l.from}\u0000${l.to}`, l.v]))
+  const values = from.map((f) => to.map((t) => at.get(`${f}\u0000${t}`) ?? 0))
+  return { from, to, values, max: links.reduce((m, l) => Math.max(m, l.v), 0) }
+}
+
+/** Доля партий между переделами, которые входят в узкое место или выходят из него (0…1); нет потока — NaN. */
+export function bottleneckShare(model: FlowModel, bnType: string | null | undefined): number {
+  const total = model.links.reduce((s, l) => s + Math.max(0, l.v), 0)
+  if (!bnType || total <= 0) return Number.NaN
+  const through = model.links.filter((l) => l.from === bnType || l.to === bnType).reduce((s, l) => s + Math.max(0, l.v), 0)
+  return through / total
+}

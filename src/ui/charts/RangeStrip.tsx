@@ -1,8 +1,9 @@
 /**
  * Полоса диапазона (из `TailStrip` Плана, X1 §8 «RangeStrip»): одна ось значений, на ней —
- * отметки-глифы состояний (○ детерминированное · ● E · ▲ CVaR · ■ худший) и заштрихованная зона
- * хвоста. Рисуется в пикселях по измеренной ширине (без inline-стилей), подписи — текстовыми
- * токенами; числа у отметок — по желанию (`showValues`), иначе только у выделенных.
+ * отметки-глифы (○ детерминированное · ● E · ▲ CVaR · ■ худший) и зона: `tail` — штриховка хвоста
+ * риска, `ci` — ровная полоса 15 % (доверительный интервал оценки, без штриховки — это не риск).
+ * `domain` — общая шкала нескольких полос (сравнимы между собой); `endpoints` — подписи концов шкалы.
+ * Рисуется в пикселях по измеренной ширине (без inline-стилей), подписи — текстовыми токенами.
  */
 import { useId } from 'react'
 import { useMeasuredWidth } from './hooks'
@@ -25,9 +26,15 @@ export interface RangeMark {
 interface RangeStripProps {
   marks: ReadonlyArray<RangeMark>
   fmt: (v: number) => string
-  /** Заштрихованная зона [от, до] в единицах шкалы (хвост CVaR…худший). */
+  /** Зона [от, до] в единицах шкалы (хвост CVaR…худший или ДИ оценки). */
   zone?: [number, number]
   zoneLabel?: string
+  /** tail — штриховка (хвост риска); ci — ровная полоса 15 % с подписанными концами (ДИ оценки). */
+  zoneKind?: 'tail' | 'ci'
+  /** Общая шкала [мин, макс] (несколько полос рядом сравнимы); по умолчанию — по отметкам и зоне. */
+  domain?: readonly [number, number]
+  /** Подписать концы шкалы (мин и макс). */
+  endpoints?: boolean
   ariaLabel?: string
   className?: string
 }
@@ -44,19 +51,21 @@ function glyphPath(g: RangeGlyph, x: number, y: number, r: number): string {
   }
 }
 
-export function RangeStrip({ marks, fmt, zone, zoneLabel = 'хвост', ariaLabel, className }: RangeStripProps) {
+export function RangeStrip({ marks, fmt, zone, zoneLabel = 'хвост', zoneKind = 'tail', domain, endpoints = false, ariaLabel, className }: RangeStripProps) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>(320)
   const rid = useId()
   const hatchId = svgId(rid, 'rhatch')
   const vals = marks.map((m) => m.value).concat(zone ?? [])
-  const lo = Math.min(...vals)
-  const hi = Math.max(...vals)
+  const lo = domain ? domain[0] : Math.min(...vals)
+  const hi = domain ? domain[1] : Math.max(...vals)
   const span = Math.max(1e-9, hi - lo)
-  const x = (v: number) => PAD + ((v - lo) / span) * (width - PAD * 2)
+  const x = (v: number) => PAD + ((Math.min(hi, Math.max(lo, v)) - lo) / span) * (width - PAD * 2)
+  const ci = zoneKind === 'ci'
+  const h = endpoints ? H + 12 : H
   const label = ariaLabel ?? marks.map((m) => `${m.label} ${fmt(m.value)}`).join(', ')
   return (
     <div ref={ref} className={`ch-range${className ? ` ${className}` : ''}`}>
-      <svg className="ch-svg" width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label={label}>
+      <svg className="ch-svg" width={width} height={h} viewBox={`0 0 ${width} ${h}`} role="img" aria-label={label}>
         <defs>
           <pattern id={hatchId} patternUnits="userSpaceOnUse" width="5" height="5" patternTransform="rotate(45)">
             <rect className="ch-range__hatch" x="0" y="0" width="2" height="5" />
@@ -64,11 +73,19 @@ export function RangeStrip({ marks, fmt, zone, zoneLabel = 'хвост', ariaLab
         </defs>
         <line className="ch-range__track" x1={PAD} x2={width - PAD} y1={TRACK_Y} y2={TRACK_Y} />
         {zone && zone[1] > zone[0] && (
-          <g className="ch-range__zone">
-            <rect x={x(zone[0])} y={TRACK_Y - 7} width={Math.max(2, x(zone[1]) - x(zone[0]))} height={14} rx={2} fill={`url(#${hatchId})`} />
-            <title>{zoneLabel}</title>
+          <g className={`ch-range__zone${ci ? ' ch-range__zone--ci' : ''}`}>
+            <rect x={x(zone[0])} y={TRACK_Y - 7} width={Math.max(2, x(zone[1]) - x(zone[0]))} height={14} rx={2} fill={ci ? undefined : `url(#${hatchId})`} />
+            <title>{`${zoneLabel}: ${fmt(zone[0])} … ${fmt(zone[1])}`}</title>
+            {ci && <>
+              <text className="ch-range__value" x={x(zone[0])} y={TRACK_Y + 22} textAnchor="end">{fmt(zone[0])}</text>
+              <text className="ch-range__value" x={x(zone[1])} y={TRACK_Y + 22} textAnchor="start">{fmt(zone[1])}</text>
+            </>}
           </g>
         )}
+        {endpoints && <>
+          <text className="ch-range__end" x={PAD} y={h - 2} textAnchor="start">{fmt(lo)}</text>
+          <text className="ch-range__end" x={width - PAD} y={h - 2} textAnchor="end">{fmt(hi)}</text>
+        </>}
         {marks.map((m) => {
           const mx = x(m.value)
           const cls = `ch-range__mark ch-range__mark--${m.tone ?? 'idle'}`

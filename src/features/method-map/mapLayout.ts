@@ -5,7 +5,7 @@
  * Чистые функции без DOM — проверяются тестом.
  */
 import { BLOCKS } from './blocks'
-import { L0_EDGES } from './edges'
+import { BACKBONE_EDGES, L0_EDGES } from './edges'
 import type { BlockId, MapEdge } from './types'
 
 export const GRID = 8
@@ -32,8 +32,11 @@ export interface Point {
 export interface EdgePath {
   edge: MapEdge
   d: string
-  /** Точка для подписи: середина кривой, сдвинутая вдоль неё, если подписи пересекаются (G2). */
-  label: Point
+  /**
+   * Точка для подписи: на кривой, свободная от других подписей, блоков и чужих рёбер (X2 P-125);
+   * null — свободного места нет, подпись не рисуется (смысл — в подсказке ребра и в панели).
+   */
+  label: Point | null
   from: Point
   to: Point
   loop: boolean
@@ -52,26 +55,42 @@ const labelBox = (p: Point, text: string): Box => ({ x: p.x - labelWidth(text) /
 /** Кандидаты позиции подписи вдоль кривой: середина, затем всё дальше от неё к обоим концам. */
 const LABEL_TS = [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78, 0.15, 0.85]
 
+/** Точки кривых через шаг 1/20 — для проверки «подпись не лежит на чужом ребре». */
+const SAMPLE_STEPS = 20
+function samplePath(p: EdgePath): Point[] {
+  if (p.loop) return [p.from, p.to]
+  return Array.from({ length: SAMPLE_STEPS + 1 }, (_, i) => p.at(i / SAMPLE_STEPS))
+}
+const containsPoint = (b: Box, q: Point): boolean => q.x > b.x && q.x < b.x + b.w && q.y > b.y && q.y < b.y + b.h
+
 /**
- * Размещение подписей без наложений (UX-V2 §3.5, замечание G1 при 1440 px): жадно, в порядке
- * рёбер; подпись сдвигается вдоль своей кривой к первой позиции, свободной от уже поставленных
- * подписей и от прямоугольников блоков; если свободной нет — остаётся середина.
+ * Размещение подписей без наложений (UX-V2 §3.5, X2 P-125): жадно, сначала основной ход [1]→…→[5],
+ * затем остальные. Позиция — вдоль своей кривой, свободная от уже поставленных подписей, блоков и
+ * точек чужих рёбер. Нет такой позиции → `label: null` (подпись не рисуется). Основному ходу
+ * разрешено лежать на чужом ребре (подложка подписи его закрывает), но не на подписи и не на блоке.
  */
 export function placeLabels(paths: readonly EdgePath[], rects: readonly Rect[]): EdgePath[] {
   const placed: Box[] = []
   const blocks: Box[] = rects.map((r) => ({ x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 }))
-  return paths.map((p) => {
+  const samples = new Map(paths.map((p) => [p.edge.id, samplePath(p)]))
+  const order = [...paths].sort((a, b) => Number(BACKBONE_EDGES.has(b.edge.id)) - Number(BACKBONE_EDGES.has(a.edge.id)))
+  const result = new Map<string, EdgePath>()
+  for (const p of order) {
     const text = p.edge.label ?? ''
-    if (!text) return p
-    const freeOfLabels = (pt: Point) => !placed.some((o) => boxesOverlap(o, labelBox(pt, text)))
-    const freeOfBlocks = (pt: Point) => !blocks.some((o) => boxesOverlap(o, labelBox(pt, text)))
-    const candidates = p.loop ? [p.label] : LABEL_TS.map((t) => p.at(t))
-    // Жёстко — не накладываться на другие подписи; мягко — не заезжать на блоки (длинная подпись
-    // между соседними блоками может не поместиться в зазор — тогда остаётся на кривой).
-    const pick = candidates.find((pt) => freeOfLabels(pt) && freeOfBlocks(pt)) ?? candidates.find(freeOfLabels) ?? p.label
-    placed.push(labelBox(pick, text))
-    return pick === p.label ? p : { ...p, label: pick }
-  })
+    if (!text) { result.set(p.edge.id, p); continue }
+    const box = (pt: Point) => labelBox(pt, text)
+    const freeOfLabels = (pt: Point) => !placed.some((o) => boxesOverlap(o, box(pt)))
+    const freeOfBlocks = (pt: Point) => p.loop || !blocks.some((o) => boxesOverlap(o, box(pt)))
+    const freeOfEdges = (pt: Point) => ![...samples.entries()].some(([id, pts]) => id !== p.edge.id && pts.some((q) => containsPoint(box(pt), q)))
+    const candidates = p.loop ? (p.label ? [p.label] : []) : LABEL_TS.map((t) => p.at(t))
+    const strict = candidates.find((pt) => freeOfLabels(pt) && freeOfBlocks(pt) && freeOfEdges(pt))
+    const main = BACKBONE_EDGES.has(p.edge.id) || p.loop
+    const pick = strict ?? (main ? candidates.find((pt) => freeOfLabels(pt) && freeOfBlocks(pt)) ?? candidates.find(freeOfLabels) : undefined) ?? null
+    if (pick) placed.push(box(pick))
+    const same = pick && p.label && pick.x === p.label.x && pick.y === p.label.y
+    result.set(p.edge.id, same ? p : { ...p, label: pick })
+  }
+  return paths.map((p) => result.get(p.edge.id) ?? p)
 }
 
 export interface Layout {
@@ -136,6 +155,21 @@ function bezier(p1: Point, p2: Point, s1: Side): { d: string; mid: Point; at: (t
   return { d: `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`, mid: at(0.5), at }
 }
 
+/**
+ * Управление между блоками одного ряда ([5] → [4]) — дугой сверху, от верхней стороны к верхней
+ * (как управляющий вход C в IDEF0): не накладывается на поток данных [4] → [5] по бокам.
+ */
+function arcAbove(a: Rect, b: Rect): { d: string; from: Point; to: Point; at: (t: number) => Point } {
+  const from = { x: a.x + a.w * 0.2, y: a.y }
+  const to = { x: b.x + b.w * 0.85, y: b.y }
+  const top = Math.min(a.y, b.y) - LOOP_RISE
+  const c1 = { x: from.x, y: top }
+  const c2 = { x: to.x, y: top }
+  return { d: `M ${from.x} ${from.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${to.x} ${to.y}`, from, to, at: cubicAt(from, c1, c2, to) }
+}
+
+const isSameRowControl = (e: MapEdge, a: Rect, b: Rect): boolean => e.kind === 'control' && sides(a, b)[0] !== 'top' && sides(a, b)[0] !== 'bottom'
+
 /** Петля «Стадия 1 → Стадия 2» над блоком. */
 function loopPath(r: Rect): { d: string; mid: Point; from: Point; to: Point; at: (t: number) => Point } {
   const from = { x: r.x + r.w * 0.62, y: r.y }
@@ -158,7 +192,7 @@ export function routeEdges(rects: readonly Rect[], edges: readonly MapEdge[] = L
   for (const e of edges) {
     const a = byId.get(e.from as BlockId)
     const b = byId.get(e.to as BlockId)
-    if (!a || !b || a === b) continue
+    if (!a || !b || a === b || isSameRowControl(e, a, b)) continue
     const [s1, s2] = sides(a, b)
     plan.set(e.id, { s1, s2 })
     const ca = center(a)
@@ -187,6 +221,11 @@ export function routeEdges(rects: readonly Rect[], edges: readonly MapEdge[] = L
     if (a === b) {
       const l = loopPath(a)
       out.push({ edge: e, d: l.d, label: l.mid, from: l.from, to: l.to, loop: true, at: l.at })
+      continue
+    }
+    if (isSameRowControl(e, a, b)) {
+      const c = arcAbove(a, b)
+      out.push({ edge: e, d: c.d, label: c.at(0.5), from: c.from, to: c.to, loop: false, at: c.at })
       continue
     }
     const p = plan.get(e.id)!

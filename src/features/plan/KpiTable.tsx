@@ -10,7 +10,7 @@ import type { ScheduleResult } from '../../lib/api'
 import { hours, money, num, pct } from '../../explain/format'
 import { InfoTip, type InfoTipValues } from '../../ui/InfoTip'
 import { FundBar, type FundParts } from './kpiParts'
-import { Chip } from '../../ui/kit'
+import { Chip, DataTable, type DataColumn } from '../../ui/kit'
 import { kpiOf, loadsOf, machineBusyHours, machineFundHours, type Tone } from './types'
 
 const WAIT_WARN = 0.5
@@ -74,6 +74,14 @@ export function kpiRows(r: ScheduleResult): Row[] {
   ]
 }
 
+const COLS: DataColumn<Row>[] = [
+  { key: 'label', title: 'Показатель', rowHeader: true, sortable: false,
+    render: (row) => <span className="pl-kpitable__label">{row.label}<InfoTip id={row.metric} values={row.values} /></span> },
+  { key: 'value', title: 'Значение', num: true, sortable: false, className: 'pl-kpitable__v',
+    render: (row) => (row.tone === 'bad' || row.tone === 'warn' ? <Chip tone={row.tone}>{row.value}</Chip> : row.value) },
+  { key: 'ctx', title: 'Контекст', sortable: false, className: 'pl-kpitable__ctx', render: (row) => row.context },
+]
+
 export function KpiTable({ result }: { result: ScheduleResult }) {
   const rows = kpiRows(result)
   return (
@@ -83,18 +91,9 @@ export function KpiTable({ result }: { result: ScheduleResult }) {
         Остальные показатели <span className="num">{rows.length}</span>
         <span className="pl-more__hint">просрочка · загрузка и фонд · переналадки · поток · затраты · ТО</span>
       </summary>
-      <table className="pl-table pl-table--tight pl-kpitable">
-        <thead><tr><th scope="col">Показатель</th><th scope="col" className="num">Значение</th><th scope="col">Контекст</th></tr></thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td className="pl-td-name"><span className="pl-kpitable__label">{row.label}<InfoTip id={row.metric} values={row.values} /></span></td>
-              <td className="num pl-kpitable__v">{row.tone ? <Chip tone={row.tone}>{row.value}</Chip> : row.value}</td>
-              <td className="pl-kpitable__ctx">{row.context}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="pl-kpitable">
+        <DataTable columns={COLS} rows={rows} rowKey={(r) => r.id} tight caption="Остальные показатели плана" />
+      </div>
     </details>
   )
 }

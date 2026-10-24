@@ -1,102 +1,135 @@
-/* «Оптимизация» (Стадия 2): герой робастного портфеля, распределение прибыли (CVaR), Парето, точная LP. */
+/*
+ * «Портфель» (Стадия 2): спокойная поверхность без подложек-градиентов страницы; числа — --text,
+ * состояние — глифом и словом; охра ▲ — только «выбрано» и плитка оптимизируемой метрики;
+ * данные — --chart-*: E — --chart-1, хвост/CVaR/худший — --chart-4, «макс. E» — нейтральный ■/пунктир.
+ */
 .opt2 {
   height: 100%;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-6) var(--space-8);
+  padding: var(--space-4) var(--space-6) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  background:
-    radial-gradient(50% 32% at 100% 0%, color-mix(in oklch, var(--ochre) 7%, transparent), transparent 70%),
-    radial-gradient(40% 30% at 0% 0%, color-mix(in oklch, var(--ultramarine) 9%, transparent), transparent 70%),
-    var(--bg-app);
+  gap: var(--space-4);
+  background: var(--bg-app);
+  scroll-padding-top: var(--space-4);
 }
 .opt2 > * { flex-shrink: 0; min-width: 0; }
+.opt2-lineage { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52ch; }
+.opt2-lineage__stale { color: var(--text-secondary); }
+.opt2-refresh { margin: 0; font-size: var(--fs-12); color: var(--text-muted); }
 
-/* ── Параметры ──────────────────────────────────────────────────────────── */
+/* ── Параметры: строка-сводка и карточка ───────────────────────────────── */
+.opt2-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-4); }
+.opt2-summary__text { flex: 1 1 auto; min-width: 0; font-size: var(--fs-13); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .opt2-params { display: flex; flex-direction: column; gap: var(--space-3); }
-/* Шесть параметров — ParamField size="md" в сетке (X1 §4 п. 2); второй ряд — переключатель, подсказка, одна primary */
+.opt2-params:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.opt2-params__top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.opt2-params__prov { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; font-size: var(--fs-12); color: var(--text-secondary); }
+/* Бейдж происхождения — только у переопределённого поля; остальные описывает строка выше. */
+.opt2-params .pf-field:not(.is-changed) .pf-badge { display: none; }
 .opt2-params__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); align-items: start; }
-/* Первый ряд — сценарий и критерий (по две колонки), второй — четыре числа */
 .opt2-params__grid > .pf-field:nth-child(-n + 2) { grid-column: span 2; }
 @media (max-width: 720px) { .opt2-params__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .opt2-params__grid > .pf-field:first-child { grid-column: 1 / -1; } }
 .opt2-params__grid .dk-select { height: 32px; }
 .opt2-params__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
 .opt2-params__hint { font-size: var(--fs-12); color: var(--text-muted); }
-.opt2-run { margin-left: auto; height: 36px; padding: 0 var(--space-5); font-weight: 600; }
+.opt2-lp { margin: 0; padding: 0; border: 0; min-width: 0; }
+.opt2-lp:disabled { opacity: 0.55; }
+.opt2-stale { font-size: var(--fs-12); color: var(--text-secondary); }
+.opt2-run { margin-left: auto; height: 32px; padding: 0 var(--space-5); font-weight: 600; }
 
-/* ── Bento ─────────────────────────────────────────────────────────────── */
-.opt2-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-4); }
+/* ── Сетка результата ──────────────────────────────────────────────────── */
+.opt2-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-4); transition: opacity var(--dur-fast, 150ms) ease; }
+.opt2-grid.is-refetching { opacity: 0.6; }
+@media (prefers-reduced-motion: reduce) { .opt2-grid { transition: none; } }
 .opt2-col-4 { grid-column: span 4; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .opt2-span-12 { grid-column: span 12; }
 .opt2-span-6 { grid-column: span 6; min-width: 0; }
-@media (max-width: 1180px) { .opt2-col-4, .opt2-span-6 { grid-column: span 12; } .dk-span-8 { grid-column: span 12 !important; } }
+.opt2-chartcard { display: flex; flex-direction: column; }
+.opt2-chartcard > :last-child { flex: 1 1 auto; }
+@media (max-width: 1180px) { .opt2-col-4, .opt2-span-6 { grid-column: span 12; } .opt2-grid > .dk-span-8 { grid-column: span 12; } }
 
 /* ── Герой: устойчивый портфель ─────────────────────────────────────────── */
 .opt-hero { display: flex; flex-direction: column; gap: var(--space-4); }
-.opt-hero__top { display: flex; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; }
-.opt-hero__id { max-width: 46ch; }
-.opt-hero__eyebrow { display: flex; align-items: center; gap: var(--space-2); color: var(--ochre); }
-.opt-hero__title { font-family: var(--font-display); font-weight: 500; font-size: var(--fs-24); margin: var(--space-1) 0 var(--space-2); }
-.opt-hero__lead { font-size: var(--fs-13); line-height: 1.55; color: var(--text-secondary); margin: 0; }
-.opt-hero__kpis { display: flex; gap: var(--space-6); align-items: flex-start; }
+.opt-hero__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3); }
+.opt-hero__eyebrow { font-size: var(--fs-11); color: var(--text-muted); }
+.opt-hero__title { font-family: var(--font-display); font-weight: 500; font-size: var(--fs-20); margin: 0; }
+.opt-sel { color: var(--chart-2); margin-right: var(--space-1); }
+.opt-hero__verdict { margin: calc(var(--space-2) * -1) 0 0; font-size: var(--fs-14); line-height: 1.5; color: var(--text); max-width: 96ch; }
+.opt-hero__kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+@media (max-width: 720px) { .opt-hero__kpis { grid-template-columns: 1fr; } }
+/* Цвет точки у подписи связывает плитку с гистограммой: E — ряд 1, CVaR — ряд 4 (хвост). */
+.opt-kpi--e .dk-kpitile__label::before,
+.opt-kpi--tail .dk-kpitile__label::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.opt-kpi--e .dk-kpitile__label::before { background: var(--chart-1); }
+.opt-kpi--tail .dk-kpitile__label::before { background: var(--chart-4); }
+.opt-obj { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-11); color: var(--text-secondary); }
+.opt-obj > [aria-hidden] { color: var(--chart-2); }
 .opt-hero__chart { margin: 0 calc(var(--space-2) * -1); }
-.opt-hero__tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3);
+.opt-hero__chart .ch-frame { gap: var(--space-3); }
+.opt-hero__tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3);
   padding-top: var(--space-3); border-top: 1px solid color-mix(in oklch, var(--border) 50%, transparent); }
 @media (max-width: 900px) { .opt-hero__tiles { grid-template-columns: repeat(2, 1fr); } }
-.opt-hero__foot { padding-top: var(--space-3); border-top: 1px solid color-mix(in oklch, var(--border) 50%, transparent); }
 
-/* Состав портфеля в герое */
+/* Передача в «План» */
+.opt-handoff { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0;
+  border-top: 1px solid color-mix(in oklch, var(--border) 50%, transparent); border-bottom: 1px solid color-mix(in oklch, var(--border) 50%, transparent); }
+.opt-handoff__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.opt-handoff__name { flex: 1 1 260px; min-width: 0; height: 32px; }
+.opt-handoff__status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }
+.opt-handoff__status:empty { display: none; }
+.opt-link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.opt-link:hover { text-decoration-thickness: 2px; }
+.opt-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+
+/* Состав портфеля — таблица кита */
 .opt-pf { display: flex; flex-direction: column; gap: var(--space-2); }
 .opt-pf__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.opt-pf .pf-items { max-height: 220px; overflow-y: auto; }
-.opt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; }
-.opt-dot--u { background: var(--ultramarine); }
-.opt-dot--r { background: var(--cinnabar); }
+.opt-pf__chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.opt-pf__chip { display: inline-flex; align-items: center; gap: 2px; }
+.opt-pf__limit { margin-left: var(--space-1); }
+.opt-pf__th { display: inline-flex; align-items: center; gap: 2px; }
+.opt-pf__money { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-2); width: 100%; }
+.opt-pf__money .opt-pf__bar { width: 56px; flex: none; }
+
 .opt-eyebrow { display: flex; align-items: center; gap: 4px; color: var(--text-muted); margin: 0; }
 .opt-note { font-size: var(--fs-12); color: var(--text-muted); line-height: 1.5; margin: 0 0 var(--space-2); }
+.opt-subhead { margin: var(--space-4) 0 var(--space-2); font-size: var(--fs-13); font-weight: 600; color: var(--text); }
 
-/* «Максимум ожидания»: строки с дельтами */
+/* «Для сравнения» и проверка вне выборки: строки показателей */
+.opt-sq { display: inline-block; width: 9px; height: 9px; margin-right: 6px; background: var(--chart-other); border-radius: 1px; }
 .opt-drows { display: flex; flex-direction: column; }
-.opt-drow { display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-3); align-items: center;
+.opt-drow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-3); align-items: center;
   padding: 8px 0; border-bottom: 1px solid color-mix(in oklch, var(--border) 45%, transparent); font-size: var(--fs-13); }
+.opt-drow--2 { grid-template-columns: minmax(0, 1fr) auto; }
 .opt-drow:last-child { border-bottom: 0; }
 .opt-drow__label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); }
-.opt-drow__value { color: var(--text); }
+.opt-drow__value { display: inline-flex; flex-direction: column; align-items: flex-end; color: var(--text); text-align: right; }
+.opt-drow--2 .opt-drow__value { display: inline; }
+.opt-drow__sub, .opt-drow__word { font-size: var(--fs-11); color: var(--text-muted); }
+.opt-drow__word { font-size: var(--fs-12); color: var(--text-secondary); }
+.opt-flip { margin: var(--space-3) 0 0; font-size: var(--fs-12); line-height: 1.5; color: var(--text-secondary); }
 
-/* Цена робастности */
-.opt-por { display: flex; flex-direction: column; gap: var(--space-2);
-  background:
-    radial-gradient(90% 70% at 100% 0%, color-mix(in oklch, var(--ochre) 12%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-card) 96%, white 2%), var(--bg-card)) !important; }
-.opt-por__value { color: var(--ochre); margin: 0; }
-.opt-por__text { font-size: var(--fs-12); line-height: 1.6; color: var(--text-secondary); margin: 0; }
-.opt-por__text b { color: var(--text); font-weight: 600; }
+/* Цена робастности — одна строка */
+.opt-por { display: flex; flex-direction: column; gap: var(--space-2); }
+.opt-por__value { margin: 0; color: var(--text); }
+.opt-por__text { font-size: var(--fs-12); line-height: 1.5; color: var(--text-secondary); margin: 0; }
 
-/* ── Распределение прибыли и Парето — Histogram/Scatter chart-системы ───── */
-.opt-hero__chart .ch-frame { gap: var(--space-3); }
+/* ── Графики: Histogram/Scatter chart-системы, точечные переопределения цвета ── */
 .pf-sw-tri { width: 0 !important; height: 0 !important; border-radius: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 11px solid var(--chart-2); }
-.pf-sw-sq { background: var(--chart-4); border-radius: 1px; }
+.pf-sw-sq { background: var(--chart-other); border-radius: 1px; }
+/* «Макс. E» — нейтральный пунктир (не охра): охра на экране только у выбранного портфеля. */
+.pd .ch-hist__outline { stroke: var(--text-secondary); }
+.pf .ch-dot--alt .ch-marker { fill: var(--chart-other); stroke: var(--text-secondary); stroke-width: 1.5; }
+/* Загрузка: подписи типов оборудования шире, без обрезки. */
+.opt-load .ch-bars--compact .ch-bar { grid-template-columns: minmax(180px, 4fr) 3fr minmax(56px, auto); }
 
-/* ── Точная LP-модель и вне-выборочная проверка ─────────────────────────── */
+/* ── Точная LP-модель ───────────────────────────────────────────────────── */
 .opt2-exact__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }
 @media (max-width: 900px) { .opt2-exact__grid { grid-template-columns: repeat(2, 1fr); } }
-.opt2-gain { font-family: var(--font-display); font-size: var(--fs-32); font-weight: 300; color: var(--verdigris); line-height: 1; }
-.opt2-gain small { font-size: var(--fs-16); color: var(--text-muted); margin-left: 4px; }
-.opt2-table { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
-.opt2-table th { text-align: right; padding: var(--space-2) var(--space-3); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-.opt2-table td { text-align: right; padding: 7px var(--space-3); border-bottom: 1px solid color-mix(in oklch, var(--border) 45%, transparent); font-variant-numeric: tabular-nums; }
-.opt2-table th:first-child, .opt2-table td:first-child { text-align: left; }
-.opt2-table tr:last-child td { border-bottom: 0; }
-.opt2-table tbody tr:hover { background: var(--bg-hover); }
-.opt2-bar { display: inline-block; height: 6px; border-radius: var(--radius-pill); background: linear-gradient(90deg, color-mix(in oklch, var(--cinnabar) 50%, transparent), var(--cinnabar)); vertical-align: middle; margin-right: 6px; }
+.opt-gap { font-family: var(--font-sans); color: var(--text); }
+.opt-gap__glyph { margin-right: 6px; font-size: var(--fs-14); }
+.opt-gap__glyph--up { color: var(--status-running); }
+.opt-gap__glyph--down { color: var(--status-down); }
+.opt-gap__glyph--zero { color: var(--text-muted); }
 .opt2-meta { font-size: var(--fs-11); color: var(--text-muted); }
-
-/* Загрузка ресурсов из портфеля — BarList chart-системы */
-
-.opt2-save { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-.opt2-save input { flex: 1; min-width: 220px; height: 32px; padding: 0 10px; background: var(--bg-input); color: var(--text);
-  border: 1px solid var(--border-control); border-radius: var(--radius); font-size: var(--fs-13); }
-.opt2-save__msg { font-size: var(--fs-12); color: var(--status-running); }
-

@@ -1,8 +1,9 @@
 /**
- * Панель «Структурные ходы агента» (UX-V2 §4.7.2) на результате плана: итог пакета («до → после»
- * по CVaR прибыли и кассы, P(разрыв), E[Cmax], OTD, доля выигрышных сценариев с ДИ), фильтр по виду
- * и статусу, «Принять все безопасные», строки ходов по вкладу в цель, обоснование по раскрытию.
- * Без RL — честное пустое состояние с причиной и пример на фикстурах с пометкой «пример».
+ * Панель «Ходы агента» (UX-V2 §4.7.2) на результате плана: итог пакета («до → после» по CVaR прибыли
+ * и кассы, разрыв кассы, E[Cmax], OTD, доля выигрышных сценариев с ДИ), фильтр по виду и статусу,
+ * «Принять все безопасные», строки ходов по вкладу в цель, обоснование по раскрытию.
+ * Пример на фикстурах (без RL) открывается только из MovesNone и помечен «пример» в строке итога;
+ * его деньги иллюстративные — без цвета «выигрыша».
  */
 import { useState } from 'react'
 import type { MoveStatus, ScheduleResult } from '../../../lib/api'
@@ -11,7 +12,6 @@ import { InfoTip } from '../../../ui/InfoTip'
 import { Chip, EmptyState, Segmented } from '../../../ui/kit'
 import { disabledKinds } from '../../agents/guardrails'
 import { useGuardrails } from '../../agents/guardrailsStore'
-import { rlReason, useRlStatus } from '../../agents/rlStatusStore'
 import { movesActions, useMovesSession } from './decisionsStore'
 import { MoveJustification } from './MoveJustification'
 import { MoveRow } from './MoveRow'
@@ -32,7 +32,6 @@ interface Props {
 }
 
 export function MovesPanel({ result, source }: Props) {
-  const rl = useRlStatus()
   const guard = useGuardrails()
   const session = useMovesSession(source.runKey)
   const [filter, setFilter] = useState<MoveFilter>({ kind: 'all', status: 'all' })
@@ -68,34 +67,31 @@ export function MovesPanel({ result, source }: Props) {
   return (
     <div className={`mv${demo ? ' mv--demo' : ''}`}>
       {demo && (
-        <div className="mv-demo" role="note">
-          <Chip tone="setup">пример</Chip>
-          <p className="mv-demo__text">
-            <b>Правило «RL» в этом прогоне не работало</b> — {rlReason(rl)}. Ниже — пример пакета на фикстурах поверх вашего Ганта:
-            цели настоящие (заказы, операции, станки этого плана), деньги — иллюстративные. Решения меняют только диф ниже и живут в этой сессии — в полномочия проекта пример не пишет.
-          </p>
-          <a className="btn btn--sm" href="#/agents">Почему — «Агенты»</a>
-        </div>
+        <p className="mv-demo" role="note">
+          Пример пакета на фикстурах поверх вашего Ганта: цели настоящие (заказы, операции, станки этого плана), деньги — иллюстративные.
+          Решения живут только в этой сессии и в полномочия проекта не пишутся.
+        </p>
       )}
 
       <div className="mv-total">
         <p className="mv-total__eyebrow text-caps">
+          {demo && <Chip size="sm">пример</Chip>}
           {level} · {policy} · {sum.proposed} предложено · {sum.accepted} принято · {sum.frozen} заморожено
           <InfoTip id="agent.move_gain" values={{ cvar_after: t.profit.cvar_after, cvar_before: t.profit.cvar_before, gain: t.profit.cvar_after - t.profit.cvar_before, ci_lo: t.ci95[0], ci_hi: t.ci95[1], alpha: guard.value.alpha, n }} />
         </p>
         <dl className="mv-total__grid">
-          <div><dt>CVaR прибыли</dt><dd className="num">{pair(t.profit.cvar_before, t.profit.cvar_after)} <b className="mv-good">({signed(t.profit.cvar_after - t.profit.cvar_before, '₽')})</b></dd></div>
+          <div><dt>CVaR прибыли</dt><dd className="num">{pair(t.profit.cvar_before, t.profit.cvar_after)} <b className="mv-gain">({signed(t.profit.cvar_after - t.profit.cvar_before, '₽')})</b></dd></div>
           <div><dt>CVaR кассы</dt><dd className="num">{pair(t.cash.min_cash_cvar_before, t.cash.min_cash_cvar_after)}</dd></div>
-          <div><dt>P(разрыв)</dt><dd className="num">{pct(t.cash.p_gap_before, 0)} → {pct(t.cash.p_gap_after, 0)}</dd></div>
+          <div><dt>Разрыв кассы</dt><dd className="num">{pct(t.cash.p_gap_before, 0)} → {pct(t.cash.p_gap_after, 0)} сценариев</dd></div>
           <div><dt>E[Cmax] · OTD</dt><dd className="num">{signed(t.schedule.cmax_e_delta_h, 'ч')} · OTD {signed(t.schedule.otd_delta, '%')}</dd></div>
           <div><dt>Выигрыш <InfoTip id="agent.win_share" values={{ win: t.win_share }} /></dt><dd className="num">в {pct(t.win_share, 0)}{n ? ` из ${num(n, 0)} сценариев` : ''} · {ciText(t)}</dd></div>
         </dl>
-        <p className="pl-note">Атрибуция — на пакет: «до → после» строк ходов не складываются в итог (A1 §6). Σ принятых: {signed(sum.gainAccepted, '₽')} по CVaR прибыли.</p>
+        <p className="pl-note">Итог — на пакет: «до → после» отдельных ходов в него не складываются. Σ принятых: {signed(sum.gainAccepted, '₽')} по CVaR прибыли.</p>
       </div>
 
       <div className="mv-tools">
         <label className="mv-tools__kind">вид:
-          <select className="plan__select" value={filter.kind} onChange={(e) => setFilter((f) => ({ ...f, kind: e.target.value }))} aria-label="Фильтр по виду хода">
+          <select className="pl-select pl-select--sm" value={filter.kind} onChange={(e) => setFilter((f) => ({ ...f, kind: e.target.value }))} aria-label="Фильтр по виду хода">
             <option value="all">все виды</option>
             {kinds.map((k) => <option key={k} value={k}>{moveLabel(k)}</option>)}
           </select>

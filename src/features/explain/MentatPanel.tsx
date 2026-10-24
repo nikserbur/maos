@@ -1,10 +1,11 @@
 /**
- * Панель MENTAT (UX-V2 §7 G4, блок [8]; METHODOLOGY-V2 §9): вопрос → контекст графа расчёта → промпт →
- * локальная модель (через POST /api/mentat/ask) → проверка верности ответа по узлам → ответ со ссылками на
- * карту. Модель подключает владелец; пока её нет, ответов нет и они не имитируются — «Показать промпт»
- * даёт точный запрос. Открывается из верхней панели, палитры, Cmd/Ctrl+J и «Спросить MENTAT» узла/«i».
+ * Панель MENTAT (UX-V2 §7 G4, блок [8]; METHODOLOGY-V2 §9; X2 P-130): вопрос → контекст графа расчёта →
+ * промпт → локальная модель (POST /api/mentat/ask) → проверка верности по узлам → ответ со ссылками на карту.
+ * Модель подключает владелец; пока её нет, ответов нет и они не имитируются — «Показать промпт» даёт
+ * точный запрос. Запрос можно остановить (AbortController отменяет fetch). Esc закрывает панель через
+ * стек слоёв оболочки (AppShell регистрирует слой «mentat») — своего слушателя на window у панели нет.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../shell/icons'
 import { overlayActions, useOverlays } from '../../shell/overlays'
 import { Chip, Segmented } from '../../ui/kit'
@@ -12,10 +13,11 @@ import { getNode } from '../method-map/registry'
 import { AskTab, type AnswerState, type AskPhase } from './AskTab'
 import { buildContext } from './context'
 import { HistoryTab } from './HistoryTab'
+import { EMPTY_REPORT } from './llm/history'
 import { DEFAULT_SETTINGS } from './llm/settings'
-import { isNotConnected, mentatApi } from './llm/mentatApi'
+import { isAborted, isNotConnected, mentatApi } from './llm/mentatApi'
 import { PromptTab } from './PromptTab'
-import { askedNodeFor, buildPrompt, getTemplate, missingNeeds, templateForFocus, templatesFor } from './prompts'
+import { askedNodeFor, buildPrompt, getTemplate, missingNeeds, splitTemplates, templateForFocus } from './prompts'
 import { SettingsTab } from './SettingsTab'
 import { useMentatHistory, useMentatSources, useMentatStatus } from './useMentat'
 import { verifyAnswer } from './verify'
@@ -28,16 +30,31 @@ interface Props {
   onClose: () => void
 }
 
+/** Секундомер ожидания ответа: тикает, пока `on`. */
+function useElapsed(on: boolean): number {
+  const [s, setS] = useState(0)
+  useEffect(() => {
+    if (!on) return undefined
+    setS(0)
+    const started = Date.now()
+    const t = window.setInterval(() => setS(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => window.clearInterval(t)
+  }, [on])
+  return s
+}
+
 export function MentatPanel({ screenId, onClose }: Props) {
   const { mentatFocus: focus } = useOverlays()
-  const templates = useMemo(() => templatesFor(screenId), [screenId])
+  const { own, more } = useMemo(() => splitTemplates(screenId), [screenId])
   const [tab, setTab] = useState<Tab>('ask')
-  const [templateId, setTemplateId] = useState(() => (focus ? templateForFocus(focus, getNode(focus)?.kind) : templates[0].id))
+  const [templateId, setTemplateId] = useState(() => (focus ? templateForFocus(focus, getNode(focus)?.kind) : (own[0] ?? more[0]).id))
   const [question, setQuestion] = useState('')
   const [compareRunId, setCompareRunId] = useState('')
   const [phase, setPhase] = useState<AskPhase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [answer, setAnswer] = useState<AnswerState | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const elapsed = useElapsed(phase === 'asking')
   const st = useMentatStatus()
   const history = useMentatHistory()
   const { sources, available, runs } = useMentatSources(compareRunId)
@@ -49,11 +66,8 @@ export function MentatPanel({ screenId, onClose }: Props) {
     setTab('ask'); setPhase('idle'); setAnswer(null)
   }, [focus])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // Закрытие панели или уход со страницы — незавершённый запрос отменяется.
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const template = getTemplate(templateId)
   const asked = askedNodeFor(template, focus)
@@ -67,33 +81,47 @@ export function MentatPanel({ screenId, onClose }: Props) {
   const anchors = useMemo(() => Object.fromEntries(context.nodes.map((n) => [n.id, n.mapNode])), [context])
 
   const pickTemplate = (id: string) => { setTemplateId(id); setQuestion(''); setPhase('idle'); setAnswer(null) }
+  const entryBase = () => ({
+    id: `${Date.now()}-${template.id}`, at: new Date().toISOString(), templateId: template.id, question: prompt.question,
+    asked, promptVersion: prompt.version,
+  })
 
   const ask = async () => {
     // Модель заведомо не задана — запрос не нужен: честное пустое состояние сразу.
     if (st.status && !st.status.configured) { setPhase('not_connected'); setAnswer(null); return }
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
     setPhase('asking'); setError(null); setAnswer(null)
     try {
       const r = await mentatApi.ask({
         messages: prompt.messages, template_id: template.id, prompt_version: prompt.version, asked,
         context: { nodes: context.nodes.length, tokens: context.truncated.usedTokens },
-      })
+      }, ctrl.signal)
       const report = verifyAnswer(r.text, context)
       setAnswer({ report, model: r.model, ms: r.ms })
       setPhase('answered')
       history.add({
-        id: `${Date.now()}-${template.id}`, at: new Date().toISOString(), templateId: template.id, question: prompt.question,
-        asked, promptVersion: prompt.version, model: r.model, answer: r.text, report,
+        ...entryBase(), model: r.model, answer: r.text, report, outcome: 'answered',
         cited: Object.fromEntries(report.claims.flatMap((c) => c.citations)
           .filter((id) => titles[id]).map((id) => [id, { title: titles[id], mapNode: anchors[id] }])),
       })
     } catch (e) {
+      if (isAborted(e)) {
+        setPhase('stopped')
+        history.add({ ...entryBase(), model: st.status?.model ?? '', answer: '', report: EMPTY_REPORT, outcome: 'stopped' })
+        return
+      }
       if (isNotConnected(e)) { setPhase('not_connected'); return }
       setPhase('error')
       setError(e instanceof Error ? e.message : 'Сбой запроса к MENTAT-API')
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null
     }
   }
+  const stop = () => abortRef.current?.abort()
 
-  const connected = st.status?.configured
+  const connected = st.status ? st.status.configured : null
   const tabs = [
     { id: 'ask' as const, label: 'Вопрос' },
     { id: 'prompt' as const, label: 'Промпт' },
@@ -110,7 +138,7 @@ export function MentatPanel({ screenId, onClose }: Props) {
         </div>
         <div className="mt-head__right">
           <Chip size="sm" tone={connected ? 'good' : 'idle'} title={connected ? `${st.status?.model} · ${st.status?.base_url}` : 'Локальная модель не подключена'}>
-            {connected ? st.status?.model : 'модель не подключена'}
+            {connected ? `${st.status?.model} · локально` : 'модель не подключена'}
           </Chip>
           <button type="button" className="btn btn--ghost btn--icon" onClick={onClose} aria-label="Закрыть панель MENTAT" title="Закрыть (Esc)">
             <Icon name="close" size={16} />
@@ -122,10 +150,11 @@ export function MentatPanel({ screenId, onClose }: Props) {
 
       <div className="mt-body" role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
         {tab === 'ask' && (
-          <AskTab templates={templates} template={template} onTemplate={pickTemplate} asked={asked} focus={focus}
+          <AskTab own={own} more={more} template={template} onTemplate={pickTemplate} asked={asked} focus={focus}
             onClearFocus={overlayActions.clearMentatFocus} question={question} placeholder={defaultQuestion} onQuestion={setQuestion}
             missing={missingNeeds(template, available)} runs={runs} compareRunId={compareRunId} onCompare={setCompareRunId}
-            phase={phase} error={error} answer={answer} titles={titles} anchors={anchors} onAsk={() => { void ask() }}
+            context={context} connected={connected} phase={phase} elapsed={elapsed} error={error} answer={answer}
+            titles={titles} anchors={anchors} onAsk={() => { void ask() }} onStop={stop}
             onShowPrompt={() => setTab('prompt')} onSettings={() => setTab('settings')} />
         )}
         {tab === 'prompt' && <PromptTab prompt={prompt} context={context} />}

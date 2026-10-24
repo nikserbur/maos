@@ -79,3 +79,53 @@ export function setDecisionContext(patch: Partial<DecisionContext>): void {
   persist(next)
   listeners.forEach((l) => l())
 }
+
+/* ── Когда менялись входы (X2 «устарело ▲»): сценарий, справочники ─────────
+ * Экран, сохранивший сценарий или НСИ, отмечает время; полоса методологии сравнивает его со
+ * временем расчёта портфеля/плана и показывает «портфель ▲ устарело». Переживает перезагрузку. */
+
+export type InputKind = 'scenario' | 'nsi'
+export type InputsChanged = Readonly<Partial<Record<InputKind, number>>>
+
+const CHANGED_KEY = 'maos.inputs-changed'
+
+function readChanged(): InputsChanged {
+  try {
+    const raw = localStorage.getItem(CHANGED_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : {}
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: Partial<Record<InputKind, number>> = {}
+    for (const k of ['scenario', 'nsi'] as const) {
+      const v = (parsed as Record<string, unknown>)[k]
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+let changed: InputsChanged = typeof localStorage === 'undefined' ? {} : readChanged()
+const changedListeners = new Set<() => void>()
+
+/** Отметить изменение входа (после сохранения сценария или записи НСИ). */
+export function markInputsChanged(kind: InputKind, at: number = Date.now()): void {
+  changed = { ...changed, [kind]: at }
+  try { localStorage.setItem(CHANGED_KEY, JSON.stringify(changed)) } catch { /* приватный режим */ }
+  changedListeners.forEach((l) => l())
+}
+
+function subscribeChanged(l: () => void): () => void {
+  changedListeners.add(l)
+  return () => { changedListeners.delete(l) }
+}
+const changedSnapshot = (): InputsChanged => changed
+
+export function useInputsChanged(): InputsChanged {
+  return useSyncExternalStore(subscribeChanged, changedSnapshot, changedSnapshot)
+}
+
+/** Устарел ли результат: вход изменился позже расчёта. */
+export function isStale(resultAt: number | null | undefined, inputAt: number | null | undefined): boolean {
+  return typeof resultAt === 'number' && typeof inputAt === 'number' && inputAt > resultAt
+}
