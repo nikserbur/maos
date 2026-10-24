@@ -54,13 +54,13 @@ export function OrdersTable({ orders, products, start, editable, manual, canAdd,
   }
 
   const cols: DataColumn<WizardOrder>[] = [
-    { key: 'prod', title: 'Изделие', rowHeader: true, get: (o) => prodName(o.product_id), clip: true, render: (o) => prodName(o.product_id) },
-    { key: 'qty', title: 'Кол-во', num: true, sortable: false,
+    { key: 'prod', title: 'Изделие', rowHeader: true, primary: true, get: (o) => prodName(o.product_id), render: (o) => prodName(o.product_id) },
+    { key: 'qty', title: 'Количество, шт', num: true, sortable: false,
       render: (o) => (editable
         ? <input className="plan__cell" type="number" min="1" defaultValue={Math.round(o.qty)} aria-label="Количество"
             onBlur={(e) => Number(e.target.value) !== o.qty && onUpdate(o, { qty: Number(e.target.value) || 1 })} />
         : num(o.qty, 0)) },
-    { key: 'due', title: 'Срок', sortable: false, hint: 'Срок исполнения датой; часы от начала горизонта — в подсказке',
+    { key: 'due', title: 'Срок исполнения', width: 'fit', sortable: false, hint: 'Срок исполнения датой; часы от начала горизонта — в подсказке',
       render: (o) => (editable
         ? <DateHoursInput start={start} dueHours={o.due_hours} onChange={(h) => onUpdate(o, { due_hours: h })} compact />
         : <span title={`${num(o.due_hours, 0)} ч от начала горизонта`}>{fmtDay(dueDateFromHours(start, o.due_hours))}</span>) },
@@ -69,7 +69,7 @@ export function OrdersTable({ orders, products, start, editable, manual, canAdd,
         ? <input className="plan__cell" type="number" min="1" max="9" defaultValue={o.priority} aria-label="Приоритет"
             onBlur={(e) => Number(e.target.value) !== o.priority && onUpdate(o, { priority: Number(e.target.value) || 5 })} />
         : num(o.priority, 0)) },
-    ...(editable ? [{ key: 'del', title: <span className="dk-vh">Удалить</span>, sortable: false,
+    ...(editable ? [{ key: 'del', title: <span className="dk-vh">Удалить</span>, sortable: false, width: 'fit' as const,
       render: (o: WizardOrder) => (
         <button type="button" className="btn btn--ghost btn--sm btn--icon" onClick={() => remove(o)} aria-label={`Удалить заказ «${prodName(o.product_id)}»`} title="Удалить заказ">
           <Icon name="close" size={12} />

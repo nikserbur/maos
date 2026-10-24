@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { AreaChart, BarList, ColumnChart, Fan, Forest, Heatmap, Histogram, LineChart, Meter, RangeStrip, Sankey, Scatter, Sparkline, StackBar, fanLegend, fanTicks, heatStep } from './index'
+import { AreaChart, BarList, ColumnChart, DataTwin, Fan, Forest, Heatmap, Histogram, LineChart, Meter, RangeStrip, Sankey, Scatter, Sparkline, StackBar, fanLegend, fanTicks, heatStep } from './index'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { num } from '../../explain/format'
@@ -24,7 +24,7 @@ describe('cartesian charts', () => {
     expect(hasImgRole(html)).toBe(true)
     expect(html).toContain('ch-legend')
     expect(html).toContain('Загрузка')
-    expect(html).toContain('Таблица')
+    expect(html).toContain('Действия графика')
     expect(html).not.toContain('stroke-dasharray="2 4"')
     expect(html).toContain('class="ch-grid"')
   })
@@ -172,7 +172,7 @@ describe('G3c extensions', () => {
     expect(html).toContain('ch-heat__c--0')
     expect(html).toContain('ch-heat__c--5')
     expect(html).toContain('ch-heat__c--10')
-    expect(html).toContain('Таблица')
+    expect(html).toContain('Действия графика')
     expect(html).toContain('Токарный станок')
     expect(renderToStaticMarkup(<Heatmap rows={[]} columns={[]} />)).toContain('ch-empty')
   })
@@ -214,7 +214,7 @@ describe('histogram window (domain)', () => {
     expect(html).toContain('ch-hist__beyond')
     expect(html).toContain('→ до 100')
     expect((html.match(/<g class="ch-col/g) ?? []).length).toBe(4)
-    expect(html).toContain('Таблица')
+    expect(html).toContain('Действия графика')
     expect((html.match(/ch-hist__lanemark/g) ?? []).length).toBe(3)
   })
 })
@@ -239,9 +239,25 @@ describe('честные состояния (X2)', () => {
 
 describe('грамматика веера', () => {
   const fan = { p10: [8, 7, 6], p50: [10, 10, 10], p90: [12, 13, 14], p25: [9, 9, 8], p75: [11, 11, 12], history: [9, 10, 11, 10], trend: [10, 10.5, 11] }
-  it('легенда называет P50, P25–P75, P10–P90 с покрытием и каждый элемент', () => {
+  it('легенда называет каждый элемент словами: коридоры с покрытием, без кодов P10/P50 и без глифа в тексте', () => {
     const labelsOf = fanLegend({ hasHistory: true, hasTrend: true, hasInner: true, backtestK: 2 }).map((i) => i.label)
-    expect(labelsOf).toEqual(expect.arrayContaining(['медиана (P50)', 'P25–P75 · 5 из 10 исходов', 'P10–P90 · 8 из 10 исходов', '◆ факт проверки', 'окно проверки 2 мес', 'тренд', 'история (факт)']))
+    expect(labelsOf).toEqual(expect.arrayContaining(['медиана', 'коридор: 5 из 10 исходов', 'коридор: 8 из 10 исходов', 'факт проверки', 'окно проверки 2 мес', 'тренд', 'история (факт)']))
+    expect(labelsOf.join(' ')).not.toMatch(/P\d0|◆/)
+    expect(labelsOf.some((l) => l.includes('штриховка'))).toBe(false)
+  })
+  it('штриховка в легенде — если хоть одна карточка заштрихована (качество warn/bad)', () => {
+    expect(fanLegend({ hatched: true }).map((i) => i.label)).toContain('штриховка — коридору доверять осторожно')
+    const html = renderToStaticMarkup(<Fan a={fan} quality="warn" title="В" />)
+    expect(html).toContain('штриховка — коридору доверять осторожно')
+  })
+  it('общая шкала уже данных: марки обрезаны рамкой плота, выход за край подписан «↑ до …»', () => {
+    const html = renderToStaticMarkup(<Fan a={fan} yDomain={[5, 12]} fmt={(v) => num(v, 0)} title="В" />)
+    expect(html).toMatch(/<clipPath id="[^"]+"><rect/)
+    expect(html).toMatch(/class="ch-fan__marks" clip-path="url\(#[^)]+\)"/)
+    expect(html).toContain('ch-fan__over')
+    expect(html).toContain('↑ до 14')
+    const inside = renderToStaticMarkup(<Fan a={fan} yDomain={[0, 20]} title="В" />)
+    expect(inside).not.toContain('ch-fan__over')
   })
   it('ось Y — не меньше трёх делений', () => {
     expect(fanTicks(0, 1).length).toBeGreaterThanOrEqual(3)
@@ -279,7 +295,23 @@ describe('примитивы вердикта (P-19)', () => {
     expect(html).toContain('0 — как база')
     expect(html).toContain('ch-forest__thr')
     expect(html).toContain('62 из 100')
-    expect(html).toContain('Таблица')
+    expect(html).toContain('Действия графика')
+  })
+  it('BarList: переход «откуда → куда» — двумя строками; подпись без многоточия и обрезки', () => {
+    const html = renderToStaticMarkup(<BarList rows={[{ key: 'a', label: 'Токарный с ЧПУ → Фрезерный обрабатывающий центр', value: 12 }]} fmt={(v) => num(v, 0)} />)
+    expect(html).toContain('<span class="ch-bar__from">Токарный с ЧПУ</span><span class="ch-bar__to">→ Фрезерный обрабатывающий центр</span>')
+    const css = readFileSync(fileURLToPath(new URL('./charts.css', import.meta.url)), 'utf8')
+    const name = css.slice(css.indexOf('.ch-bar__name {'), css.indexOf('}', css.indexOf('.ch-bar__name {')))
+    expect(name).not.toMatch(/line-clamp|ellipsis|overflow: hidden/)
+  })
+  it('Heatmap: много подписанных столбцов — номера на оси, ключ с полными именами, тот же номер у строки', () => {
+    const cols = ['Токарный', 'Фрезерный', 'Сверлильный', 'Шлифовальный', 'Сварочный', 'Покрасочный', 'Сборка', 'Контроль']
+    const html = renderToStaticMarkup(<Heatmap rows={[{ key: 'f', label: 'Фрезерный', values: cols.map(() => 0.3) }]} columns={cols} axis={cols} />)
+    expect(html).toContain('ch-heat__axis--numbered')
+    expect(html).toContain('ch-heat__key')
+    expect(html).toContain('<span class="ch-heat__no">2</span>Фрезерный')
+    const few = renderToStaticMarkup(<Heatmap rows={[{ key: 'f', label: 'А', values: [0.1, 0.2] }]} columns={['а', 'б']} axis={['а', 'б']} />)
+    expect(few).not.toContain('ch-heat__key')
   })
   it('BarList: отметка цели на дорожке и в легенде, «Все N» при лимите', () => {
     const rows = Array.from({ length: 6 }, (_, i) => ({ key: String(i), label: `Станок ${i}`, value: i * 10 }))
@@ -295,5 +327,60 @@ describe('примитивы вердикта (P-19)', () => {
     expect(html).not.toContain('…')
     expect(html).toContain('is-other')
     expect(html).toContain('Потоки партий')
+  })
+})
+
+describe('шапка рамки (владелец: «надписи странно отрисовались»)', () => {
+  const a = { history: [10, 11, 12], p10: [11, 10, 9], p50: [12, 12.5, 13], p90: [13, 15, 17] }
+  it('заголовок и действия — в первой строке, бейджи и предупреждение — в мета-строке на всю ширину', () => {
+    const html = renderToStaticMarkup(<Fan a={a} title="Пруток нержавеющий" badges={<span>+8,6 %</span>} subtitle="веер не откалиброван" />)
+    const top = html.slice(html.indexOf('ch-head__top'), html.indexOf('ch-head__meta'))
+    expect(top).toContain('Пруток нержавеющий')
+    expect(top).toContain('Действия графика')
+    expect(top).not.toContain('+8,6 %')
+    const meta = html.slice(html.indexOf('ch-head__meta'), html.indexOf('ch-body'))
+    expect(meta).toContain('+8,6 %')
+    expect(meta).toContain('веер не откалиброван')
+  })
+
+  it('малые кратные — без «⋯»; заголовок-действие — кнопка и видимая иконка «Открыть веер»; ось месяцев — через XAxis', () => {
+    const html = renderToStaticMarkup(<Fan a={a} title="Ряд" variant="multiple" onTitleClick={() => {}} titleActionLabel="Открыть веер" />)
+    expect(html).not.toContain('Действия графика')
+    expect(html).toContain('class="ch-title-btn"')
+    expect(html).toContain('aria-label="Открыть веер"')
+    expect(html).toContain('ch-frame--clickable')
+    expect(html).toContain('ch-axis--x')
+  })
+
+  it('мета — колонкой: строка бейджей, под ней подзаголовок во всю ширину', () => {
+    const html = renderToStaticMarkup(<Fan a={a} title="Ставка" badges={<span>14 % → 13 %</span>} subtitle="проверено на отложенных данных" />)
+    const meta = html.slice(html.indexOf('ch-head__meta'), html.indexOf('ch-body'))
+    expect(meta.indexOf('ch-head__badges')).toBeGreaterThan(-1)
+    expect(meta.indexOf('ch-head__badges')).toBeLessThan(meta.indexOf('ch-sub'))
+    const css = readFileSync(fileURLToPath(new URL('./charts.css', import.meta.url)), 'utf8')
+    const rule = css.slice(css.indexOf('.ch-head__meta {'), css.indexOf('}', css.indexOf('.ch-head__meta {')))
+    expect(rule).toContain('flex-direction: column')
+    expect(css).toMatch(/\.ch-actions \.btn--icon \{ width: 28px; height: 28px/)
+    expect(css).toContain('grid-template-rows: subgrid')
+  })
+
+  it('подписи осей Scatter не обрезаются: Y — от левого края над делениями, X — строкой под делениями', () => {
+    const pts = [{ key: 'a', x: 1e8, y: 2e8 }, { key: 'b', x: 5e8, y: 4e8 }]
+    const html = renderToStaticMarkup(<Scatter points={pts} xLabel="риск (разброс прибыли), ₽" yLabel="ожидаемая прибыль, ₽ ↑" height={260} />)
+    const yUnit = html.match(/<text x="(-?[\d.]+)" y="([\d.]+)" text-anchor="(\w+)" class="ch-tick ch-tick--unit">ожидаемая/)
+    expect(yUnit?.[1]).toBe('0')
+    expect(yUnit?.[3]).toBe('start')
+    const xTitle = html.match(/<text class="ch-tick ch-tick--unit" x="[\d.]+" y="([\d.]+)"[^>]*>риск/)
+    const tickYs = [...html.matchAll(/<text x="[\d.]+" y="([\d.]+)" text-anchor="middle" class="ch-tick"/g)].map((m) => Number(m[1]))
+    expect(tickYs.length).toBeGreaterThan(0)
+    expect(Number(xTitle?.[1])).toBeGreaterThanOrEqual(Math.max(...tickYs) + 20)
+    expect(Number(xTitle?.[1])).toBeLessThanOrEqual(260)
+  })
+
+  it('таблица-двойник — на классах таблицы кита, первая колонка всегда с заголовком', () => {
+    const html = renderToStaticMarkup(<DataTwin table={{ columns: ['', 'Значение'], rows: [['Токарный', '52 %']] }} />)
+    expect(html).toContain('dk-table')
+    expect(html).toContain('dk-col-primary')
+    expect(html).toContain('Показатель')
   })
 })

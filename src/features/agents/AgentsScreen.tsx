@@ -8,10 +8,10 @@
 import { useEffect } from 'react'
 import { num } from '../../explain/format'
 import { BlockChips } from '../../ui/BlockChip'
-import { Chip, PillTabs, ScreenHeader, Section, Segmented } from '../../ui/kit'
+import { Chip, ScreenHeader, Section, Tabs } from '../../ui/kit'
 import { ErrorBoundary } from '../../shell/ErrorBoundary'
 import { setCrumbTitle } from '../../shell/crumbs'
-import { navigateTo, useHashParams, useHashRoute } from '../../shell/router'
+import { buildHash, navigateTo, useHashParams, useHashRoute } from '../../shell/router'
 import { usePlanStore } from '../plan/planStore'
 import { V5, snapDay } from './benchData'
 import { GuardrailsCard } from './GuardrailsCard'
@@ -28,7 +28,8 @@ import './agents.css'
 export function AgentsScreen() {
   const { anchor } = useHashRoute()
   const tab = agentsTab(anchor)
-  const label = AGENTS_TABS.find((t) => t.id === tab)?.label ?? ''
+  const found = AGENTS_TABS.find((t) => t.id === tab)?.label
+  const label = typeof found === 'string' ? found : ''
   useEffect(() => {
     setCrumbTitle('agents', tab, label)
     return () => setCrumbTitle('agents', tab, null)
@@ -42,9 +43,9 @@ export function AgentsScreen() {
         blocks={['agents']}
         provenance={<Chip size="sm" title={`${V5.source} · ${A4S.source}`}>стенд rl/ · {num(V5.instances.length, 0)} + {num(A4S.a4.n_instances, 0)} экземпляров · снимок {snapDay(A4S.snapshot_date)}</Chip>}
         subtitle="Агент предлагает — человек утверждает. Выигрыш засчитывается только с ДИ на отложенных сценариях."
-        actions={<PillTabs tabs={AGENTS_TABS} value={tab} onChange={(id) => navigateTo('agents', id)} ariaLabel="Разделы экрана «Агенты»" idBase="ag" />}
       />
-      <div className="ag-panel" role="tabpanel" id={`ag-panel-${tab}`} aria-labelledby={`ag-tab-${tab}`}>
+      <Tabs label="Разделы экрана «Агенты»" value={tab} items={AGENTS_TABS} onChange={(id) => navigateTo('agents', id)} />
+      <div className="ag-panel" role="region" aria-label={label}>
         <ErrorBoundary key={tab} variant="inline" label={`Агенты · ${label}`}>
           {tab === 'verdict' && <VerdictTab />}
           {tab === 'evidence' && <EvidenceTab />}
@@ -68,19 +69,23 @@ function VerdictTab() {
 
 type EvidenceView = 'rl' | 'v4'
 
+/** Подразделы «Доказательств» — разные таблицы и источники, поэтому вкладки (адрес `?view=`), а не переключатель. */
+const EVIDENCE_TABS = [
+  { id: 'rl' as const, label: 'RL против правил', href: buildHash('agents', 'evidence') },
+  { id: 'v4' as const, label: 'Расписание против эталона (BKS)', href: buildHash('agents', 'evidence', { view: 'v4' }) },
+]
+
 function EvidenceTab() {
   const [params, setParams] = useHashParams()
   const view: EvidenceView = params.view === 'v4' ? 'v4' : 'rl'
   return (
     <>
-      <Segmented label="Что доказываем" size="sm" fit value={view}
+      <Tabs label="Что доказываем" size="panel" value={view}
         onChange={(id) => setParams({ view: id === 'rl' ? null : id, stress: null, vs: null, rows: null, cmax: null })}
-        options={[
-          { id: 'rl', label: 'RL против правил · V5, A3, A4' },
-          { id: 'v4', label: 'Расписание против BKS · V4, A2' },
-        ]} />
+        items={EVIDENCE_TABS}
+        end={<span className="ag-snap">{view === 'rl' ? 'запуски V5, A3, A4' : 'запуски V4, A2'}</span>} />
       {view === 'rl' ? <RlEvidence /> : (
-        <Section id="ag-v4" title="Расписание без неопределённости: правила, ГА и CP-SAT против эталона"
+        <Section id="ag-v4" title="Расписание без неопределённости: правила, генетический алгоритм и CP-SAT против эталона"
           meta="Taillard 15×15, Brandimarte и 12 экземпляров MAOS · эталон детерминированной задачи — точный солвер, не RL">
           <V4Bench />
         </Section>

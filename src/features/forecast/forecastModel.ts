@@ -1,11 +1,11 @@
 /**
- * Модель прогноза — общая для «Сценарии › Прогноз и проверка» и «Мониторинга» (X2 «честная
+ * Модель прогноза — общая для «Сценарии › Прогноз цен» и «Мониторинга» (X2 «честная
  * неопределённость»): один `qualityOf` на весь код, качество словами с частотами («попадание 5 из 6
  * мес · лучше «как вчера» на 39 %»), Δ медианы — от «сейчас» (последней точки истории), а не от базы
  * справочника; индекс «сейчас = 100» для сравнимых малых кратных; отбор «требуют внимания».
  * Чистые функции — vitest. Числа — только через src/explain/format.ts.
  */
-import type { ForecastFit, ForecastProduct, ForecastResult } from '../../lib/api'
+import type { ForecastFit, ForecastProduct } from '../../lib/api'
 import { DASH, NBSP, money, num, pct, plural, pp } from '../../explain/format'
 import { fitLabel } from '../../explain/labels'
 import type { FanRefLine, FanSeries } from '../../ui/charts'
@@ -51,13 +51,10 @@ export function hitsText(coverage: number, k: number): string {
 
 export function qualitySentence(level: QualityLevel, ratio: number | null, coverage: number | null, k: number): string {
   if (level === 'none' || ratio === null || coverage === null) return 'качество не проверено'
-  const skill = 1 - ratio
-  const vsNaive = ratio > 1 ? `хуже прогноза «как вчера» ${timesText(ratio)}` : `лучше «как вчера» на ${pct(skill, 0)}`
-  if (coverage < COVERAGE_WARN) {
-    const expected = Math.round(COVERAGE_NOMINAL * k)
-    return `веер не откалиброван: в бэктесте внутри полосы ${hitsText(coverage, k)} (ожидалось ≈ ${num(expected, 0)} из ${num(k, 0)}); ${vsNaive}`
-  }
-  return `попадание ${hitsText(coverage, k)} · ${vsNaive}`
+  // Одна строка ≤ 60 знаков (карточка малых кратных): попадание и сторона «как вчера»; во сколько раз — в «i».
+  const vsNaive = ratio > 1 ? 'хуже «как вчера»' : 'точнее «как вчера»'
+  if (coverage < COVERAGE_WARN) return `факт в полосе ${hitsText(coverage, k)} (норма ${num(Math.round(COVERAGE_NOMINAL * k), 0)}) · ${vsNaive}`
+  return `факт в полосе ${hitsText(coverage, k)} · ${vsNaive}`
 }
 
 /** Качество ряда по бэктесту: bad — skill < −0,5 или покрытие < 50 %; warn — skill < 0 или покрытие < 70 %. */
@@ -71,14 +68,19 @@ export function qualityOf(p: Pick<ForecastProduct, 'backtest'>): SeriesQuality {
   return { level, skill, ratio, coverage80: cov, backtestK: b.k, crps: (b.pinball10 + b.pinball90) / 2, sentence: qualitySentence(level, ratio, cov, b.k) }
 }
 
-/** Глиф и слово состояния качества (цвет — только у отклонения, на глифе). */
+/**
+ * Один словарь надёжности веера (таблица, карточки, «Внешние условия», сводки): ✕ ненадёжен ·
+ * ▲ осторожно · ● надёжен · ○ не проверен. Цвет — только у отклонения, на глифе.
+ */
+export const QUALITY_MARK: Readonly<Record<QualityLevel, { glyph: '✕' | '▲' | '●' | '○'; word: string }>> = {
+  bad: { glyph: '✕', word: 'ненадёжен' },
+  warn: { glyph: '▲', word: 'осторожно' },
+  ok: { glyph: '●', word: 'надёжен' },
+  none: { glyph: '○', word: 'не проверен' },
+}
+
 export function qualityMark(level: QualityLevel): { glyph: string; word: string } {
-  switch (level) {
-    case 'bad': return { glyph: '▲', word: 'не откалиброван' }
-    case 'warn': return { glyph: '▲', word: 'осторожно' }
-    case 'ok': return { glyph: '●', word: 'надёжен' }
-    default: return { glyph: '○', word: 'не проверен' }
-  }
+  return QUALITY_MARK[level]
 }
 
 /** Подпись подобранного распределения — из общего словаря. */
@@ -155,13 +157,29 @@ export function indexTo100(p: ForecastProduct): FanSeries {
   return { p10: sc(p.p10) ?? [], p50: sc(p.p50) ?? [], p90: sc(p.p90) ?? [], history: sc(p.history), trend: sc(p.trend) }
 }
 
-/** Общая шкала Y малых кратных (с полем 4 %). */
+/** Границы общей шкалы индекса «сейчас = 100»: низ — не выше 80, верх — от 120 до 200. */
+export const SHARED_LO_MAX = 80
+export const SHARED_HI_MIN = 120
+export const SHARED_HI_MAX = 200
+/** Доля карточек, чей верх целиком помещается в шкалу (верх — их 75-й перцентиль). */
+const SHARED_HI_Q = 0.75
+
+const finiteOf = (s: FanSeries): number[] => [...s.p10, ...s.p90, ...(s.history ?? []), ...(s.trend ?? [])].filter(Number.isFinite)
+
+/**
+ * Общая шкала Y малых кратных (индекс «сейчас = 100»), устойчивая к выбросу: низ — min(80, min P10 и
+ * истории), верх — 75-й перцентиль верхов карточек в пределах 120…200 (поле 4 %). Один ряд с полосой
+ * до 480 больше не сжимает остальные веера в плоские линии внизу: его полоса обрезается рамкой, а
+ * «↑ до 480» подписывает рисунок (Fan).
+ */
 export function sharedDomain(series: readonly FanSeries[]): readonly [number, number] {
-  const vals = series.flatMap((s) => [...s.p10, ...s.p90, ...(s.history ?? []), ...(s.trend ?? [])]).filter(Number.isFinite)
-  if (vals.length === 0) return [0, 1]
-  const lo = Math.min(...vals)
-  const hi = Math.max(...vals)
-  const pad = (hi - lo || Math.abs(hi) || 1) * 0.04
+  const per = series.map(finiteOf).filter((v) => v.length > 0)
+  if (per.length === 0) return [0, 1]
+  const lo = Math.min(SHARED_LO_MAX, ...per.map((v) => Math.min(...v)))
+  const tops = per.map((v) => Math.max(...v)).sort((a, b) => a - b)
+  const q = tops[Math.min(tops.length - 1, Math.ceil(SHARED_HI_Q * tops.length) - 1)]
+  const hi = Math.min(SHARED_HI_MAX, Math.max(SHARED_HI_MIN, q))
+  const pad = (hi - lo) * 0.04
   return [lo - pad, hi + pad]
 }
 
@@ -214,33 +232,32 @@ export function qualitySummary(products: readonly ForecastProduct[]): QualitySum
   }
 }
 
+export interface ReliabilityCounts { ok: number; warn: number; bad: number; none: number; total: number }
+
+/** Сколько рядов в каждой ступени надёжности (`qualityOf`) — одна сводка на весь код. */
+export function reliabilityCounts(products: readonly Pick<ForecastProduct, 'backtest'>[]): ReliabilityCounts {
+  const c: ReliabilityCounts = { ok: 0, warn: 0, bad: 0, none: 0, total: products.length }
+  for (const p of products) c[qualityOf(p).level] += 1
+  return c
+}
+
+/**
+ * Надёжность одной формулировкой везде (главная фраза, сигнал, карта, «Сценарии»):
+ * «надёжен 25 · осторожно 39 · ненадёжен 12 из 76»; «не проверен N» — только если такие есть.
+ */
+export function reliabilityText(products: readonly Pick<ForecastProduct, 'backtest'>[]): string {
+  const c = reliabilityCounts(products)
+  const parts = (['ok', 'warn', 'bad'] as const).map((l) => `${QUALITY_MARK[l].word} ${num(c[l], 0)}`)
+  if (c.none > 0) parts.push(`${QUALITY_MARK.none.word} ${num(c.none, 0)}`)
+  return `${parts.join(' · ')} из ${num(c.total, 0)}`
+}
+
 /** Медиана набора чисел (пусто → null). */
 export function median(xs: readonly number[]): number | null {
   const v = xs.filter(Number.isFinite).sort((a, b) => a - b)
   if (v.length === 0) return null
   const m = Math.floor(v.length / 2)
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
-}
-
-/**
- * Вердикт «Мониторинга» одной строкой: «Цены сбыта за 6 мес: медиана +4 %, 7 из 76 рядов вне
- * P10–P90 бэктеста; ставка ЦБ 13,5 % [11,4; 18,1]».
- */
-export function verdictText(res: Pick<ForecastResult, 'months' | 'products' | 'rate'>): string {
-  const goods = res.products.filter((p) => p.role === 'product')
-  const all = res.products
-  const deltas = goods.map((p) => forecastDelta(p)?.value).filter((v): v is number => typeof v === 'number')
-  const med = median(deltas)
-  const s = qualitySummary(all)
-  const parts: string[] = []
-  if (med !== null) parts.push(`Цены сбыта за ${num(res.months, 0)} мес: медиана ${signedPct(med, Math.abs(med) >= 0.1 ? 0 : 1)}`)
-  if (s.total) parts.push(`${num(s.outside, 0)} из ${num(s.total, 0)} рядов вне P10–P90 бэктеста`)
-  const head = parts.join(', ')
-  const r = res.rate
-  if (!r || r.p50.length === 0) return head || 'Прогноз рассчитан'
-  const last = r.p50.length - 1
-  const rate = `ставка ЦБ ${pct(r.p50[last] / 100, 1)} [${num(r.p10[last], 1)}; ${num(r.p90[last], 1)}]`
-  return head ? `${head}; ${rate}` : rate
 }
 
 export const FORECAST_ETA_S = 6

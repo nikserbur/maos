@@ -49,6 +49,29 @@ describe('placeXLabels', () => {
     expect(new Set(gaps).size).toBe(1)
   })
 
+  it('«сейчас» не пропадает в узкой карточке (плот 240 px): уступает крайняя подпись', () => {
+    // Веер 3 колонки при 1440: 24 мес истории + 12 мес прогноза, подписи — начало · сейчас · горизонт.
+    const labels = ['окт. 2024', 'сейчас · сент. 2026', 'окт. 2027']
+    const x0 = 40
+    const x1 = 280
+    const xs = [x0, x0 + (24 / 36) * (x1 - x0), x1]
+    const plain = placeXLabels(labels, xs, x0, x1).map((p) => p.i)
+    expect(plain).not.toContain(1)
+    const kept = placeXLabels(labels, xs, x0, x1, TICK_CHAR_W, TICK_GAP, 1, [1])
+    expect(kept.map((p) => p.i)).toContain(1)
+    noOverlap(kept)
+    for (const p of kept) {
+      expect(p.tx - p.half).toBeGreaterThanOrEqual(x0 - 1e-9)
+      expect(p.tx + p.half).toBeLessThanOrEqual(x1 + 1e-9)
+    }
+  })
+
+  it('обязательная подпись не мешает остальным, если места хватает', () => {
+    const labels = ['янв', 'сейчас', 'дек']
+    const placed = placeXLabels(labels, [0, 400, 800], 0, 800, TICK_CHAR_W, TICK_GAP, 1, [1])
+    expect(placed.map((p) => p.i)).toEqual([0, 1, 2])
+  })
+
   it('пустой и одиночный ряд', () => {
     expect(placeXLabels([], [], 0, 100)).toEqual([])
     const one = placeXLabels(['x'], [50], 0, 100)

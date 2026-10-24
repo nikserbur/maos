@@ -1,6 +1,6 @@
 /**
  * «Виды ходов агента» — единственный список ходов на экране (X2 «таблицы, а не стены карточек»):
- * Ход · Уровень · Что меняется · Жёсткая маска · Разрешить · Доступность. Переключатель заблокирован
+ * Ход · Уровень хода (словами, не L0/L2) · Что меняется · Жёсткая маска · Разрешить · Доступность. Переключатель заблокирован
  * с причиной (запланировано / нет данных Справочников) — через `fieldset disabled`, без правки кита.
  * Нормальное «доступно» — простой текст, без чипа; отклонения — глиф + слово из AVAILABILITY.
  */
@@ -12,6 +12,9 @@ interface Props {
   onToggle: (row: GuardrailRow, on: boolean) => void
 }
 
+/** Уровень хода словами: L0 — порядок внутри плана, L2 — структура плана (код — в подсказке). */
+const LEVEL_WORDS: Readonly<Record<string, string>> = { L0: 'порядок операций', L2: 'структура плана' }
+
 function Availability({ r }: { r: GuardrailRow }) {
   const a = AVAILABILITY[r.availability]
   if (!a.glyph) return <span className="ag-muted">{a.word}</span>
@@ -21,12 +24,13 @@ function Availability({ r }: { r: GuardrailRow }) {
 
 export function MoveKindsTable({ rows, onToggle }: Props) {
   const cols: ReadonlyArray<DataColumn<GuardrailRow>> = [
-    { key: 'label', title: 'Ход', rowHeader: true, sortable: false, get: (r) => r.meta.label },
-    { key: 'level', title: 'Уровень', sortable: false, className: 'mono', get: (r) => r.meta.level },
-    { key: 'what', title: 'Что меняется', sortable: false, get: (r) => r.meta.what, className: 'ag-muted' },
-    { key: 'mask', title: 'Жёсткая маска', hint: 'ограничение, которое агент не может нарушить: недопустимый ход ему даже не показывается', sortable: false, get: (r) => r.meta.mask, className: 'ag-muted' },
+    { key: 'label', title: 'Ход', rowHeader: true, primary: true, sortable: false, get: (r) => r.meta.label },
+    { key: 'level', title: 'Уровень хода', sortable: false, width: 'fit', get: (r) => r.meta.level,
+      render: (r) => <span title={`Уровень ${r.meta.level}`}>{LEVEL_WORDS[r.meta.level] ?? r.meta.level}</span> },
+    { key: 'what', title: 'Что меняется', sortable: false, minWidth: 16, get: (r) => r.meta.what, className: 'ag-muted' },
+    { key: 'mask', title: 'Жёсткая маска', hint: 'ограничение, которое агент не может нарушить: недопустимый ход ему даже не показывается', sortable: false, minWidth: 16, get: (r) => r.meta.mask, className: 'ag-muted' },
     {
-      key: 'on', title: 'Разрешить', sortable: false,
+      key: 'on', title: 'Разрешить', sortable: false, width: 'fit',
       render: (r) => (
         <fieldset className="ag-fs" disabled={r.locked} title={r.reason}>
           <legend className="dk-vh">Разрешить ход «{r.meta.label}»</legend>
@@ -36,7 +40,7 @@ export function MoveKindsTable({ rows, onToggle }: Props) {
         </fieldset>
       ),
     },
-    { key: 'avail', title: 'Доступность', sortable: false, render: (r) => <Availability r={r} /> },
+    { key: 'avail', title: 'Доступность', sortable: false, width: 'fit', render: (r) => <Availability r={r} /> },
   ]
   return <DataTable columns={cols} rows={rows} rowKey={(r) => r.meta.kind} tight caption="Виды ходов агента: что меняется, жёсткая маска, разрешение и доступность" />
 }

@@ -6,6 +6,7 @@
 import { NBSP, countText, num, pct, signed } from '../../explain/format'
 import { METRIC_LIST } from '../../explain/metrics'
 import type { ForecastResult } from '../../lib/api'
+import { reliabilityText } from '../forecast/forecastModel'
 import type { DeriveInput } from './deriveInput'
 import { W, iso, type Live } from './mapText'
 import type { NodeLive } from './types'
@@ -19,7 +20,10 @@ const median = (xs: readonly number[]): number => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-/** [7] прогноз: «покрытие 67 % · хуже наивного у 5 из 76» по опубликованному прогнозу «Мониторинга». */
+/**
+ * [7] прогноз по опубликованному прогнозу «Мониторинга»: надёжность — той же формулировкой, что на
+ * «Мониторинге» и в «Сценариях» («надёжен 25 · осторожно 39 · ненадёжен 12 из 76»), покрытие — в деталях.
+ */
 export function forecastLive(f: ForecastResult | null | undefined, at?: number | null): NodeLive {
   if (!f) return { state: 'default', badge: 'прогноз не запрошен', detail: 'откройте «Мониторинг» — прогноз появится здесь' }
   const bt = f.products.map((p) => p.backtest).filter((b): b is NonNullable<typeof b> => Boolean(b))
@@ -32,8 +36,8 @@ export function forecastLive(f: ForecastResult | null | undefined, at?: number |
   return {
     updatedAt: iso(at),
     state: mostlyWorse ? 'stale' : 'estimated',
-    badge: `покрытие ${pct(coverage, 0)} · хуже наивного у ${num(worse, 0)} из ${num(bt.length, 0)}`,
-    detail: `номинал покрытия ${pct(NOMINAL_COVERAGE, 0)} · медиана MAPE ${pct(median(bt.map((b) => b.mape)), 1)} против ${pct(median(bt.map((b) => b.mape_naive)), 1)} у наивного`,
+    badge: reliabilityText(f.products),
+    detail: `покрытие ${pct(coverage, 0)} при норме ${pct(NOMINAL_COVERAGE, 0)} · медиана MAPE ${pct(median(bt.map((b) => b.mape)), 1)} против ${pct(median(bt.map((b) => b.mape_naive)), 1)} у наивного`,
     reason: mostlyWorse ? 'прогноз хуже наивного у большинства изделий — упростите модель или переоцените' : undefined,
   }
 }

@@ -1,10 +1,12 @@
 /**
- * Шапка сценария (X2 «ответ сначала», «один главный шаг»): крошки «Сценарии › Базовый › Условия»;
- * строка заголовка — имя (ввод), тип режима нейтральным чипом «● прогноз / ◆ стресс», «Сохранено»
- * и действия: главное — следующий шаг конвейера «Найти робастный портфель →», тихое «Построить
- * план →», «Сделать рабочим» (просмотр рабочий не меняет), редкое — в «⋯» (копия, удаление).
- * Строка меты: горизонт (дата начала · месяцы → конец выводится), сводка критерия-чип
- * «CVaR · α 10 % · ≤ 60 % ✎» (раскрывает три поля), «изменено N полей · вернуть все», описание.
+ * Шапка сценария (X2 «ответ сначала», «один главный шаг»; путь «Сценарии › Базовый › Условия» — только в
+ * крошках верхней панели, без второго ряда крошек на странице): строка заголовка — имя (ввод), пресет
+ * нейтральным чипом «● Базовый · прогноз» / «◆ Базовый + 2 правки · что если», «Сохранено» и действия:
+ * главное — следующий шаг конвейера «Найти робастный портфель →», тихое «Построить план →», «Сделать
+ * рабочим» (просмотр рабочий не меняет), редкое — в «⋯» (копия, удаление).
+ * Строка меты: горизонт («Начало: сегодня (окт. 2026) · указать дату» · месяцы → конец), сводка
+ * критерия-чип «Критерий CVaR · хвост 10 % · доля изделия до 60 % ▾» (раскрывает три поля), «изменено N
+ * полей · вернуть все», описание.
  */
 import { useState } from 'react'
 import type { MacroRegimes, PriceScenario } from '../../lib/api'
@@ -12,12 +14,13 @@ import { countText, dateTime, pct } from '../../explain/format'
 import { objectiveLabel } from '../../explain/labels'
 import { InfoTip } from '../../ui/InfoTip'
 import { ParamField } from '../../ui/ParamField'
-import { Breadcrumbs, Chip, Menu, ScreenHeader, Segmented, showUndo } from '../../ui/kit'
+import { Chip, Menu, ScreenHeader, Segmented, showUndo } from '../../ui/kit'
 import { OBJECTIVES } from '../optimization/optTypes'
 import { usePassport } from '../passport/passportStore'
-import { fromMacroMode, regimeChip, regimeLabel } from './regimeMenu'
+import { monthShort } from './monthText'
+import { presetEdits, presetOf, scenarioViewOf, viewTitle, type PresetValueKey } from './scenarioPresets'
 import {
-  CONDITION_KEYS, CRITERION_KEYS, SCENARIO_DEFAULTS, changedKeys, effectiveScenario, endDateOf, fieldBadge, resetPatch,
+  CRITERION_KEYS, SCENARIO_DEFAULTS, changedKeys, effectiveScenario, endDateOf, fieldBadge, resetPatch,
   type NumericKey,
 } from './scenarioDefaults'
 import type { ScenarioTab } from './scenarioRoute'
@@ -29,14 +32,23 @@ const SAVE: Record<SaveStatus, { text: string; tone?: 'bad' }> = {
   saved: { text: 'Сохранено' },
   error: { text: '✕ не сохранено — нет связи', tone: 'bad' },
 }
-const TAB_TITLE: Record<ScenarioTab, string> = { conditions: 'Условия', distributions: 'Распределения', forecast: 'Прогноз и проверка' }
+/** Текущий месяц «YYYY-MM» (начало горизонта без даты — сегодня). */
+function todayMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Критерий словами в чипе: формула «E − λ·σ» — только в подсказке. */
+const OBJECTIVE_WORDS: Readonly<Record<string, string>> = { meanvariance: 'прибыль минус риск' }
+const objectiveWords = (id: string): string => OBJECTIVE_WORDS[id] ?? objectiveLabel(id)
 const MONTHS_MIN = 1
 const FIELD_FORMS = ['поле', 'поля', 'полей'] as const
 const MONTHS_MAX = 36
 
 interface Props {
   sc: PriceScenario
-  tab: ScenarioTab
+  /** Открытая вкладка (путь показывают крошки верхней панели). */
+  tab?: ScenarioTab
   saveStatus?: SaveStatus
   regimes: MacroRegimes | null
   isWorking: boolean
@@ -48,23 +60,16 @@ interface Props {
   onRemove: () => void
 }
 
-export function ScenarioHeader({ sc, tab, saveStatus, regimes, isWorking, onPatch, onMakeWorking, onFindPortfolio, onBuildPlan, onClone, onRemove }: Props) {
+export function ScenarioHeader({ sc, saveStatus, regimes, isWorking, onPatch, onMakeWorking, onFindPortfolio, onBuildPlan, onClone, onRemove }: Props) {
   const [critOpen, setCritOpen] = useState(false)
-  const state = fromMacroMode(sc.macro_mode)
-  const chip = regimeChip(state)
-  const regime = regimeLabel(state, regimes?.regimes.map((r) => r.label))
+  const view = scenarioViewOf(sc, regimes?.regimes.map((r) => r.label), { lastObs: regimes?.last_obs })
   return (
     <>
-      <Breadcrumbs className="sc2-crumbs" items={[
-        { label: 'Сценарии', href: '#/scenarios' },
-        { label: sc.name || 'Без названия', href: `#/scenarios/${encodeURIComponent(sc.id)}` },
-        { label: TAB_TITLE[tab] },
-      ]} />
       <ScreenHeader
         className="sc2-head"
         title={<input className="sc2-head__name" value={sc.name} aria-label="Название сценария" onChange={(e) => onPatch(sc, { name: e.target.value })} />}
-        provenance={<Chip size="sm" title={regime.text}><span aria-hidden="true">{chip.glyph}</span> {chip.word}</Chip>}
-        subtitle={<MetaLine sc={sc} critOpen={critOpen} onToggleCrit={() => setCritOpen((v) => !v)} onPatch={onPatch} />}
+        provenance={<Chip size="sm" title={`${view.name}: ${view.mode}`}><span aria-hidden="true">{view.glyph}</span> {viewTitle(view)} · {view.kind}</Chip>}
+        subtitle={<MetaLine sc={sc} regimes={regimes} critOpen={critOpen} onToggleCrit={() => setCritOpen((v) => !v)} onPatch={onPatch} />}
         actions={
           <>
             {saveStatus && <Chip tone={SAVE[saveStatus].tone} size="sm" title="Поля сохраняются через 400 мс после правки">{SAVE[saveStatus].text}</Chip>}
@@ -86,12 +91,16 @@ export function ScenarioHeader({ sc, tab, saveStatus, regimes, isWorking, onPatc
 }
 
 /** Строка меты: горизонт · сводка критерия · «изменено N полей · вернуть все» · описание. */
-function MetaLine({ sc, critOpen, onToggleCrit, onPatch }: { sc: PriceScenario; critOpen: boolean; onToggleCrit: () => void; onPatch: Props['onPatch'] }) {
-  const eff = effectiveScenario(sc)
+function MetaLine({ sc, regimes, critOpen, onToggleCrit, onPatch }: { sc: PriceScenario; regimes: MacroRegimes | null; critOpen: boolean; onToggleCrit: () => void; onPatch: Props['onPatch'] }) {
+  const ctx = { lastObs: regimes?.last_obs }
+  const eff = effectiveScenario(sc, ctx)
   const end = endDateOf(sc.start_date, eff.months)
-  const changed = changedKeys(sc, [...CONDITION_KEYS, ...CRITERION_KEYS])
+  // Правки — поверх пресета (его значения правками не считаются) + критерий.
+  const preset = presetOf(sc.macro_mode)
+  const changed: NumericKey[] = [...presetEdits(sc, ctx), ...changedKeys(sc, CRITERION_KEYS, ctx)]
   const objChanged = !eff.isDefault.objective
   const nChanged = changed.length + (objChanged ? 1 : 0)
+  const [dateOpen, setDateOpen] = useState(false)
   const setStart = (start: string) => onPatch(sc, { start_date: start, end_date: endDateOf(start, eff.months) })
   const setMonths = (v: number) => {
     const months = Math.min(MONTHS_MAX, Math.max(MONTHS_MIN, Math.round(v)))
@@ -99,23 +108,36 @@ function MetaLine({ sc, critOpen, onToggleCrit, onPatch }: { sc: PriceScenario; 
   }
   const revertAll = () => {
     const prev: Partial<PriceScenario> = Object.fromEntries([...changed.map((k: NumericKey) => [k, sc[k] ?? '']), ...(objChanged ? [['objective', sc.objective ?? '']] : [])])
-    onPatch(sc, { ...resetPatch(changed), ...(objChanged ? { objective: SCENARIO_DEFAULTS.objective } : {}) })
+    const back = Object.fromEntries(changed.map((k) => {
+      const pv = preset?.values[k as PresetValueKey]
+      return [k, pv !== undefined ? String(pv) : resetPatch([k], ctx)[k] ?? '']
+    }))
+    onPatch(sc, { ...back, ...(objChanged ? { objective: SCENARIO_DEFAULTS.objective } : {}) })
     showUndo({ message: `Возвращено к умолчанию: ${countText(nChanged, FIELD_FORMS)}`, onUndo: () => onPatch(sc, prev) })
   }
   return (
     <span className="sc2-meta">
       <span className="sc2-meta__item">
-        <label className="sc2-inline">Горизонт
-          <input className="sc2-date" type="date" value={sc.start_date || ''} aria-label="Дата начала горизонта" onChange={(e) => setStart(e.target.value)} />
-        </label>
-        <span aria-hidden="true">·</span>
+        <span>Горизонт</span>
         <input className="sc2-months num" type="number" min={MONTHS_MIN} max={MONTHS_MAX} step={1} value={eff.months} aria-label="Горизонт, месяцев"
           onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && e.target.value !== '') setMonths(v) }} />
         <span>мес{end ? <> → до {dateTime(end, { time: false })}</> : null}</span>
-        {!sc.start_date && <span className="sc2-hint">▲ без даты — сроки от сегодня</span>}
+        <span aria-hidden="true">·</span>
+        {sc.start_date || dateOpen ? (
+          <label className="sc2-inline">Начало
+            <input className="sc2-date" type="date" value={sc.start_date || ''} aria-label="Дата начала горизонта" autoFocus={dateOpen && !sc.start_date}
+              onChange={(e) => setStart(e.target.value)} />
+          </label>
+        ) : (
+          <span className="sc2-start">
+            Начало: сегодня ({monthShort(todayMonth())})
+            <button type="button" className="pf-link" onClick={() => setDateOpen(true)}>указать дату</button>
+          </span>
+        )}
       </span>
-      <button type="button" className="sc2-critchip" aria-expanded={critOpen} onClick={onToggleCrit} title="Критерий портфеля и плана — изменить">
-        <span>{objectiveLabel(eff.objective)}</span> · <span className="pf-nocaps">α</span> <span className="num">{pct(eff.alpha, 0)}</span> · ≤ <span className="num">{pct(eff.max_share, 0)}</span> <span aria-hidden="true">✎</span>
+      <button type="button" className="sc2-critchip" aria-expanded={critOpen} onClick={onToggleCrit} title={`Критерий портфеля и плана — ${objectiveLabel(eff.objective, 'long')}; нажмите, чтобы изменить`}>
+        <span>Критерий: {objectiveWords(eff.objective)}</span> · хвост <span className="num">{pct(eff.alpha, 0)}</span> · доля изделия до <span className="num">{pct(eff.max_share, 0)}</span>
+        <svg className="sc2-critchip__chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
       {nChanged > 0 && (
         <span className="sc2-meta__item sc2-changed">

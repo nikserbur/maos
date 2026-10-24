@@ -10,7 +10,7 @@
   {"regime": h}             — режим h навязан на весь горизонт (стресс, не прогноз);
   {"quantile_t": q}         — квантильный стресс: инновации = q-квантиль Student-t MLE (детерминированный путь);
   {"episode": "YYYY-MM", "months": 12} — блоки только из окна истории.
-Базовая траектория (ref): {"cpi": "flat"|"nodes"|[...], "key": "flat"|[...]} — [НОРМ].
+Базовая траектория (ref): {"cpi": "flat"|"nodes"|[...], "key": "flat"|[...], "fx": 1.3} — [НОРМ]; ставка ≥ KEY_FLOOR_PP.
 """
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ NODES_PATH = Path(__file__).resolve().parent / "params" / "reference_nodes.json"
 WEEKS_PER_MONTH = 52.0 / 12.0
 MAX_WEEKS = 520                       # 2·520 равномерных на id в потоке моста [seed, 872]
 BRIDGE_STREAM = 872
+KEY_FLOOR_PP = 4.25                   # ставка в путях не ниже исторического минимума ЦБ РФ 2013–2026 (= C++ kKeyFloorPp)
+FX_SHIFT_MIN, FX_SHIFT_MAX = 0.2, 5.0  # ref.fx — сдвиг уровня курса («что если»)
 
 
 def load_params(path: Path | str = PARAMS_PATH) -> dict:
@@ -209,7 +211,9 @@ class Sampler:
             key += [key[-1]] * (H - len(key))
         else:
             key = [float(lo["key_pp"])] * H
-        return {"cpi": cpi, "key": key}
+        fx = ref.get("fx", 1.0)
+        fx = min(FX_SHIFT_MAX, max(FX_SHIFT_MIN, float(fx))) if isinstance(fx, (int, float)) and math.isfinite(fx) else 1.0
+        return {"cpi": cpi, "key": key, "fx": fx}
 
     # ── перевод в уровни (§2.6а, RJMF §6.1, §6.3) ──────────────────────────────────
     def to_levels(self, z, Ez, ref):
@@ -226,10 +230,12 @@ class Sampler:
                 e_s = float(z[i, t, 2]) - Ez[t][2]
                 p = (100.0 + ref["cpi"][t]) * math.exp(e_pi / 100.0) - 100.0
                 pi[i, t] = p
-                key[i, t] = ref["key"][t] + e_i + (p - ref["cpi"][t])
+                key[i, t] = max(KEY_FLOOR_PP, ref["key"][t] + e_i + (p - ref["cpi"][t]))
                 P = levels[-12] * (1.0 + p / 100.0)
                 levels.append(P)
                 fx[i, t] = s0 * P / (1.0 + usd) ** ((t + 1) / 12.0) * math.exp(e_s / 100.0)
+                if ref.get("fx", 1.0) != 1.0:
+                    fx[i, t] *= ref["fx"]
         return {"cpi": pi, "key": key, "fx": fx}
 
     # ── месяц → неделя (§2.3) ───────────────────────────────────────────────────

@@ -10,21 +10,15 @@
  */
 
 /** Единицы измерения реестра метрик. `%` — значение передаётся ДОЛЕЙ (0,934 → «93,4 %»). */
-export type Unit =
-  | 'ч'
-  | 'мин'
-  | 'мес'
-  | '%'
-  | '₽'
-  | '₽/мес'
-  | 'ед.'
-  | 'ед./сут'
-  | 'шт'
-  | 'заказов'
-  | 'заказ/сут'
-  | 'чел.'
-  | 'нед'
-  | '—'
+export type Unit = 'ч' | 'мин' | 'мес' | '%' | '₽' | '₽/мес' | 'ед.' | 'ед./сут' | 'шт' | 'заказов' | 'заказ/сут' | 'чел.' | 'нед' | '—'
+
+/** Ключ единицы → слова в интерфейсе (владелец: «сокращения — нечитаемо»): «111 единиц в сутки», а не «ед./сут». */
+const UNIT_WORDS: Partial<Record<Unit, { forms: PluralForms; tail?: string }>> = {
+  'ед.': { forms: ['единица', 'единицы', 'единиц'] }, 'ед./сут': { forms: ['единица', 'единицы', 'единиц'], tail: 'в сутки' },
+  'заказ/сут': { forms: ['заказ', 'заказа', 'заказов'], tail: 'в сутки' }, 'чел.': { forms: ['человек', 'человека', 'человек'] },
+}
+/** Строка num() обратно в число: «1 234,5» → 1234.5, «−3» → −3. */
+const parseNum = (t: string): number => Number(t.replace(/[\s ]/g, '').replace(',', '.').replace(MINUS, '-'))
 
 /** Значение для подстановки: число, готовая строка или «нет данных». */
 export type FormatInput = number | string | null | undefined
@@ -90,7 +84,7 @@ export function hours(v: number | null | undefined, digits = 1): string {
   return `${withSign(v, digits)}${NBSP}ч`
 }
 
-const MONEY_TIERS = [
+export const MONEY_TIERS = [
   { factor: 1, suffix: '' },
   { factor: 1e3, suffix: 'тыс.' },
   { factor: 1e6, suffix: 'млн' },
@@ -153,11 +147,10 @@ export function fmtValue(value: FormatInput, unit?: Unit): string {
       const digits = 1
       return `${num(value, digits)}${NBSP}${ordersWord(value, digits)}`
     }
-    case 'ед.':
-    case 'ед./сут':
-    case 'заказ/сут':
-    case 'чел.':
-      return `${num(value)}${NBSP}${unit}`
+    case 'ед.': case 'ед./сут': case 'заказ/сут': case 'чел.': {
+      const w = UNIT_WORDS[unit], text = num(value)
+      return `${text}${NBSP}${w ? `${plural(parseNum(text), w.forms)}${w.tail ? ` ${w.tail}` : ''}` : unit}`
+    }
     case '—':
     case undefined:
       return num(value)
@@ -331,14 +324,22 @@ export function rangeText(lo: number | null | undefined, hi: number | null | und
   return `${ta}–${tb}${tail}`
 }
 
+/** Деньги разных порядков («664 ₽» и «7,76 тыс. ₽») — в одном, большем: ["0,66", "7,76", "тыс. ₽"]; не деньги — null. */
+function oneMoneyTier(na: string, ua: string, nb: string, ub: string): [string, string, string] | null {
+  const tier = (u: string) => MONEY_TIERS.findIndex((t) => `${t.suffix ? t.suffix + NBSP : ''}₽` === u)
+  return tier(ua) < 0 || tier(ub) < 0 ? null : moneyPair(parseNum(na) * MONEY_TIERS[tier(ua)].factor, parseNum(nb) * MONEY_TIERS[tier(ub)].factor)
+}
+
 /**
- * Диапазон из двух готовых строк форматтера: общая единица — один раз, со знаком — словами.
- * joinRange('54 тыс. ₽', '86,7 тыс. ₽') = «54–86,7 тыс. ₽»; разные единицы — «950 ₽ – 1,2 тыс. ₽».
+ * Диапазон из двух готовых строк форматтера: общая единица — один раз, со знаком — словами; деньги разных
+ * порядков — в большем: joinRange('664 ₽', '7,76 тыс. ₽') = «0,66–7,76 тыс. ₽»; разные единицы — «2 ч – 5 %».
  */
 export function joinRange(a: string, b: string): string {
   if (a === DASH || b === DASH) return DASH
-  const [na, ua] = splitNumUnit(a)
-  const [nb, ub] = splitNumUnit(b)
+  let [na, ua] = splitNumUnit(a)
+  let [nb, ub] = splitNumUnit(b)
+  const same = ua !== ub ? oneMoneyTier(na, ua, nb, ub) : null
+  if (same) [na, nb, ua, ub] = [same[0], same[1], same[2], same[2]]
   const neg = na.startsWith(MINUS)
   if (ua !== ub) return neg ? `от ${a} до ${b}` : `${a} – ${b}`
   const tail = ua ? `${NBSP}${ua}` : ''

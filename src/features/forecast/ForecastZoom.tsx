@@ -12,6 +12,7 @@ import { InfoTip } from '../../ui/InfoTip'
 import { SidePanel } from '../../ui/kit'
 import { ForecastFan } from './ForecastGrid'
 import { aicTitle, fitText, fmtFor, forecastDelta, monthLabel } from './forecastModel'
+import { calendarLabel } from './monitorModel'
 import './forecast.css'
 
 interface ZoomProps {
@@ -19,28 +20,31 @@ interface ZoomProps {
   /** Сценарий, по которому построен веер — для ссылки «править распределение». */
   scenarioId?: string | null
   synthetic?: boolean
+  /** Месяц «сейчас» (`YYYY-MM`) — ось и таблица в календарных месяцах. */
+  anchor?: string | null
   onClose: () => void
 }
 
-export function ForecastZoom({ p, scenarioId, synthetic = false, onClose }: ZoomProps) {
+export function ForecastZoom({ p, scenarioId, synthetic = false, anchor, onClose }: ZoomProps) {
   return (
     <div className="fz" role="presentation">
       <ErrorBoundary variant="panel" label={p.name} onClose={onClose} message="Веер не открылся — закройте панель или повторите.">
         <SidePanel className="fz__panel" title={p.name} onClose={onClose}>
-          <ZoomBody p={p} scenarioId={scenarioId} synthetic={synthetic} />
+          <ZoomBody p={p} scenarioId={scenarioId} synthetic={synthetic} anchor={anchor} />
         </SidePanel>
       </ErrorBoundary>
     </div>
   )
 }
 
-function ZoomBody({ p, scenarioId, synthetic }: { p: ForecastProduct; scenarioId?: string | null; synthetic: boolean }) {
+function ZoomBody({ p, scenarioId, synthetic, anchor }: { p: ForecastProduct; scenarioId?: string | null; synthetic: boolean; anchor?: string | null }) {
   const fmt = fmtFor(p)
+  const rowLabel = anchor ? calendarLabel(anchor) : monthLabel
   const d = forecastDelta(p)
   const n = p.p50.length
   return (
     <div className="fz__body">
-      <ForecastFan p={p} height={240} showLegend caveat={synthetic ? 'История цен демонстрационная — веер ориентировочный.' : undefined} />
+      <ForecastFan p={p} height={240} showLegend title={null} anchor={anchor} caveat={synthetic ? 'История цен демонстрационная — веер ориентировочный.' : undefined} />
       <dl className="fz__facts">
         {d && <><dt>Медиана</dt><dd className="num">{d.label}</dd></>}
         {p.fit?.data_driven && (
@@ -53,11 +57,19 @@ function ZoomBody({ p, scenarioId, synthetic }: { p: ForecastProduct; scenarioId
       )}
       <table className="dk-table dk-table--tight fz__vtable">
         <caption className="dk-vh">{p.name}: квантили по месяцам</caption>
-        <thead><tr><th scope="col">Месяц</th><th scope="col" className="num">P10</th><th scope="col" className="num">Медиана</th><th scope="col" className="num">P90</th><th scope="col" className="num">Тренд</th></tr></thead>
+        <thead>
+          <tr>
+            <th scope="col">Месяц</th>
+            <th scope="col" className="num" title="10-й процентиль: ниже — 1 из 10 исходов">Нижняя граница</th>
+            <th scope="col" className="num" title="50-й процентиль: половина исходов выше, половина ниже">Медиана</th>
+            <th scope="col" className="num" title="90-й процентиль: выше — 1 из 10 исходов">Верхняя граница</th>
+            <th scope="col" className="num">Тренд</th>
+          </tr>
+        </thead>
         <tbody>
           {Array.from({ length: n }, (_, t) => (
             <tr key={t}>
-              <th scope="row">{monthLabel(t)}</th>
+              <th scope="row">{rowLabel(t)}</th>
               <td className="num">{fmt(p.p10[t])}</td>
               <td className="num"><b>{fmt(p.p50[t])}</b></td>
               <td className="num">{fmt(p.p90[t])}</td>

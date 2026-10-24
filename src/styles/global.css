@@ -150,6 +150,8 @@ button:disabled {
   line-height: 1;
   white-space: nowrap;
   color: var(--text);
+  /* <a class="btn"> выглядит как <button>: без подчёркивания ссылки. */
+  text-decoration: none;
   background: var(--bg-input);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);

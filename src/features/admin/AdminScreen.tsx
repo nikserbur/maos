@@ -64,8 +64,9 @@ export function AdminScreen() {
             <UsersSection users={users} orgUnits={orgUnits.data} openId={openUser?.id ?? null}
                           onOpen={(u: User) => open({ user: u.id })}
                           onCreate={() => { setCreateError(null); setCreating(true) }} />
-            <RolesMatrix roles={roles} users={users.data} />
           </div>
+          {/* Матрица ролей — во всю ширину под журналом: в правой колонке её роли не помещались. */}
+          <div className="adm__roles"><RolesMatrix roles={roles} users={users.data} /></div>
         </div>
       </div>
 

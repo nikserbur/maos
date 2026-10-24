@@ -1,15 +1,16 @@
 /*
  * Компоненты паспорта и мастера (UX-V2 §6.2): бейдж происхождения, поле с паспортом,
  * карточка паспорта, степпер, дифф, дата+часы, прогресс, полоса режимов, веер, плотность.
- * Иерархия масштабом (§6.4): значение 20 px, единица меньше и muted, происхождение 11 px caps.
+ * Иерархия масштабом (§6.4): значение 20 px, единица меньше и muted, происхождение — глиф и слово 12 px.
  * Цвет — только семантика состояния/блока; бренд-акцент — для действий. Токены только из tokens.css.
  */
 
 /* ── Бейдж происхождения ─────────────────────────────────────────────────── */
+/* Пилюля — для таблиц и паспорта; обычный регистр, без капители. Пунктир — только «в плане». */
 .pf-badge {
-  display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 7px;
-  border-radius: var(--radius-pill); border: 1px solid var(--border-strong);
-  font: 600 var(--fs-11) var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px;
+  border-radius: var(--radius-pill); border: 1px solid var(--border);
+  font: 500 var(--fs-12) var(--font-sans); letter-spacing: 0;
   color: var(--text-muted); white-space: nowrap; line-height: 1;
 }
 .pf-badge__glyph { font-size: var(--fs-11); line-height: 1; }
@@ -19,16 +20,31 @@
 .pf-badge--neutral { color: var(--text-secondary); }
 .pf-badge--warn { color: var(--status-setup); border-color: color-mix(in oklch, var(--status-setup) 55%, var(--border)); }
 .pf-badge--bad { color: var(--cinnabar); border-color: color-mix(in oklch, var(--cinnabar) 55%, var(--border)); }
-.pf-badge--muted { color: var(--text-muted); border-style: dashed; }
-.pf-badge--planned { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.pf-badge--muted { color: var(--text-muted); }
+.pf-badge--planned { border-style: dashed; border-color: var(--border-strong); }
 .pf-badge--manual { color: var(--text); border-color: var(--border-control); }
 [data-theme='light'] .pf-badge--warn { color: var(--status-setup); }
 
+/* Происхождение в строку (поля): маленький глиф + слово/источник, без рамки и капители.
+   Несёт и класс .pf-badge (экраны прячут происхождение по нему) — пилюлю снимаем здесь. */
+.pf-badge.pf-prov { height: auto; padding: 0; border: 0; border-radius: 0; white-space: normal; }
+.pf-prov { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; font-size: var(--fs-12); line-height: 1.35; color: var(--text-muted); }
+.pf-prov__glyph { flex: none; font-size: var(--fs-11); line-height: 1; }
+.pf-prov--good .pf-prov__glyph { color: var(--verdigris); }
+.pf-prov--neutral { color: var(--text-secondary); }
+.pf-prov--warn, .pf-prov--warn .pf-prov__glyph { color: var(--status-setup); }
+.pf-prov--bad, .pf-prov--bad .pf-prov__glyph { color: var(--cinnabar); }
+.pf-prov--manual { color: var(--text); }
+.pf-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
 /* ── Поле с паспортом ────────────────────────────────────────────────────── */
+/* Подпись (обычный регистр, «i» в строке) · значение+единица · эффект · мета (происхождение, владелец).
+   align-self: stretch — карточки в ряду сетки одной высоты, даже если сетка выравнивает по началу. */
 .pf-field {
-  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 10px 14px;
+  position: relative; display: flex; flex-direction: column; gap: 6px; align-self: stretch; min-width: 0;
+  padding: 10px 12px 10px 14px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-  border-left: 3px solid var(--border-strong);
+  border-left: 3px solid var(--border);
   transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 .pf-field:focus-within { border-color: var(--focus); box-shadow: var(--halo); }
@@ -36,21 +52,29 @@
 .pf-field.is-warn { border-left-color: var(--status-setup); }
 .pf-field.is-deprecated { border-left-style: dashed; opacity: 0.86; }
 .pf-field.is-deprecated .pf-field__value, .pf-field.is-deprecated .pf-field__input { color: var(--text-muted); text-decoration: line-through solid color-mix(in oklch, var(--text-muted) 60%, transparent); }
-.pf-field__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.pf-field__label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
-.pf-field__row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pf-field__label {
+  display: block; min-width: 0; font-size: var(--fs-13); font-weight: 500; line-height: 1.35;
+  color: var(--text-secondary); text-wrap: pretty; overflow-wrap: anywhere;
+}
+.pf-field__label .infotip { margin-left: 1px; vertical-align: -2px; }
+.pf-field__row { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; min-width: 0; }
 .pf-field__value { font-size: var(--fs-20); font-weight: 300; line-height: 1.1; color: var(--text); }
 .pf-field--lg .pf-field__value { font-size: var(--fs-24); }
-.pf-field--md { min-width: 0; }
-.pf-field--md .pf-field__label { min-width: 0; flex-wrap: wrap; }
-.pf-field__unit { margin-left: 5px; font-size: var(--fs-13); font-weight: 400; color: var(--text-muted); }
-.pf-field__input-wrap { display: inline-flex; align-items: baseline; gap: 6px; }
+.pf-field__unit { margin-left: 5px; font-size: var(--fs-13); font-weight: 400; color: var(--text-muted); white-space: nowrap; }
+.pf-field__input-wrap { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.pf-field__input-wrap .pf-field__unit { margin-left: 0; }
+/* Ввод — по ширине числа (6–12 знаков), не пустая коробка на полкарточки. */
 .pf-field__input {
-  width: 9ch; height: var(--control); padding: 0 8px; background: var(--bg-input); color: var(--text);
+  width: 8ch; min-width: 6ch; max-width: 12ch; height: var(--control); padding: 0 8px;
+  background: var(--bg-input); color: var(--text);
   border: 1px solid var(--border-control); border-radius: var(--radius-sm);
-  font: 300 var(--fs-20) var(--font-sans); font-variant-numeric: tabular-nums;
+  font: 500 var(--fs-16) var(--font-sans); font-variant-numeric: tabular-nums;
+}
+@supports (field-sizing: content) {
+  .pf-field__input { field-sizing: content; width: auto; }
 }
 .pf-field__input:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-color: var(--focus); }
+.pf-field__effect { min-width: 0; font-size: var(--fs-12); line-height: 1.35; color: var(--text-secondary); overflow-wrap: anywhere; }
 .pf-field__slider { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
 /* Свёрнутый ползунок (X1 §3.1): лежит в нижнем поле карточки и проявляется по фокусу
    или намерению навести; высота карточки не меняется, Tab на ползунок тоже его открывает. */
@@ -65,16 +89,21 @@
 .pf-field--collapsed:focus-within .pf-field__slider, .pf-field--collapsed.is-peek .pf-field__slider { pointer-events: auto; }
 /* Греческие буквы в caps-подписях не переводятся в верхний регистр («α хвоста», а не «Α ХВОСТА»). */
 .pf-nocaps { text-transform: none; }
-.pf-field__changed {
-  display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase; color: var(--accent-text);
+.pf-field__changed { display: inline-flex; align-items: baseline; gap: 5px; font-size: var(--fs-12); font-weight: 500; color: var(--text); }
+.pf-field__changed-glyph { font-size: var(--fs-11); color: var(--accent-text); }
+.pf-field__revert {
+  min-height: 24px; margin: -6px 0; padding: 0 2px; background: none; border: 0; color: var(--accent-text);
+  font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px;
 }
-.pf-field__revert { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
 .pf-field__revert:hover { color: var(--accent-hover); }
+/* «✎ изменено · вернуть к 0,50 (норматив)»: разделитель не подчёркивается вместе со ссылкой. */
+.pf-field__changed + .pf-field__revert::before { content: '·'; display: inline-block; margin-right: 6px; color: var(--text-muted); text-decoration: none; }
+.pf-field__changed + .pf-field__revert { margin-left: -4px; }
+.pf-field__revert:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-radius: var(--radius-sm); }
 .pf-field__warn { font-size: var(--fs-12); color: var(--status-setup); }
-.pf-field__meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-muted); }
+/* Мета-строка прижата к низу карточки: в ряду равной высоты она стоит на одной линии. */
+.pf-field__meta { display: flex; align-items: baseline; gap: 2px 10px; flex-wrap: wrap; margin-top: auto; font-size: var(--fs-12); color: var(--text-muted); }
 .pf-field__owner::before { content: '↳ '; opacity: 0.7; }
-.pf-field__effect { color: var(--text-secondary); }
 .pf-field__note { margin: 0; font-size: var(--fs-12); color: var(--text-muted); line-height: 1.4; }
 .pf-field__actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .pf-field__control { flex: 1; min-width: 0; }
@@ -144,12 +173,9 @@
 .pf-diff__empty { margin: 0; color: var(--text-muted); font-size: var(--fs-13); }
 .pf-link { background: none; border: 0; padding: 0; color: var(--accent-text); font: inherit; cursor: pointer; text-decoration: underline dotted; }
 .pf-link:hover { color: var(--accent-hover); }
-.pf-dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
-.pf-dtable caption { text-align: left; color: var(--text-muted); padding: 0 0 6px; }
-.pf-dtable th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: var(--fs-12); padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
-.pf-dtable th:not(:first-child), .pf-dtable td:not(:first-child) { text-align: right; }
-.pf-dtable td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.pf-dtable__label { color: var(--text-secondary); }
+/* Таблица отличий — на классах таблицы кита (.dk-table): подпись — гибкая колонка, значения — по содержимому. */
+.pf-dtable__caption { caption-side: top; padding: 0 var(--space-3) 6px; text-align: left; font-size: var(--fs-12); font-weight: 600; color: var(--text-muted); }
+.dk-table tbody th.pf-dtable__label { color: var(--text-secondary); font-weight: 500; }
 .pf-dtable__cell { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
 
 /* ── Дата + часы ─────────────────────────────────────────────────────────── */

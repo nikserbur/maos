@@ -129,6 +129,7 @@ export function NsiScreen() {
               <h2 className="nsi__reg-title" id="nsi-reg-title">{active.title}</h2>
               <span className="nsi__count num" aria-live="polite">
                 {list.loaded ? countLabel(rows.length, scoped.length) : list.error ? '' : 'загрузка…'}
+                {list.loaded && view.note?.(rows) ? ` · ${view.note(rows)}` : ''}
               </span>
               <span className="nsi__saved" role="status">{status}</span>
             </span>
@@ -174,6 +175,7 @@ export function NsiScreen() {
             className="nsi__table-wrap"
             framed
             tight
+            hideEmptyColumns
             columns={view.columns}
             rows={rows}
             rowKey={(row, i) => String(row.id ?? row.tab_no ?? i)}

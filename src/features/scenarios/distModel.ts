@@ -78,6 +78,21 @@ export function firstPart(name: string): string {
   return head || name
 }
 
+/**
+ * Имя изделия в две строки таблицы: суть (до запятой или скобки) и уточнение приглушённо —
+ * «Прокат сортовой круглый» / «сталь 40Х, 45, 40ХН — заготовки валов, штоков, пальцев».
+ */
+export function nameParts(name: string): { head: string; tail: string } {
+  const head = firstPart(name)
+  const tail = name.slice(head.length).replace(/^\s*[,(]\s*/, '').replace(/\)\s*—/, ' —').replace(/\)\s*$/, '').trim()
+  return { head, tail }
+}
+
+/** Короткое имя формы распределения: «Стьюдента (тяжёлые хвосты)» → «Стьюдента»; полное — в подсказке. */
+export function distShort(type: DistType): string {
+  return DIST_TYPE_LABEL[type].replace(/\s*\(.*\)\s*$/, '')
+}
+
 /** Подпись группы таблицы: «Изделия (сбыт) · 64», «Сырьё · 12». */
 export function distGroupLabel(key: string, count: number): string {
   return `${key === 'raw' ? 'Сырьё' : 'Изделия (сбыт)'} · ${num(count, 0)}`

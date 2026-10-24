@@ -8,7 +8,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../shell/icons'
 import { overlayActions, useOverlays } from '../../shell/overlays'
-import { Chip, Segmented } from '../../ui/kit'
+import { countText } from '../../explain/format'
+import { Chip, TabPanel, Tabs } from '../../ui/kit'
 import { getNode } from '../method-map/registry'
 import { AskTab, type AnswerState, type AskPhase } from './AskTab'
 import { buildContext } from './context'
@@ -42,6 +43,8 @@ function useElapsed(on: boolean): number {
   }, [on])
   return s
 }
+
+const QUESTION_FORMS = ['вопрос', 'вопроса', 'вопросов'] as const
 
 export function MentatPanel({ screenId, onClose }: Props) {
   const { mentatFocus: focus } = useOverlays()
@@ -125,7 +128,8 @@ export function MentatPanel({ screenId, onClose }: Props) {
   const tabs = [
     { id: 'ask' as const, label: 'Вопрос' },
     { id: 'prompt' as const, label: 'Промпт' },
-    { id: 'history' as const, label: 'История', count: history.entries.length || undefined },
+    { id: 'history' as const, label: 'История', count: history.entries.length,
+      countLabel: `${countText(history.entries.length, QUESTION_FORMS)} в истории` },
     { id: 'settings' as const, label: 'Подключение' },
   ]
 
@@ -146,9 +150,9 @@ export function MentatPanel({ screenId, onClose }: Props) {
         </div>
       </header>
 
-      <Segmented<Tab> options={tabs} value={tab} onChange={setTab} label="Разделы MENTAT" kind="tab" size="sm" idBase="mt" />
+      <Tabs<Tab> items={tabs} value={tab} onChange={setTab} label="Разделы MENTAT" size="panel" idBase="mt" />
 
-      <div className="mt-body" role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+      <TabPanel idBase="mt" id={tab} className="mt-body">
         {tab === 'ask' && (
           <AskTab own={own} more={more} template={template} onTemplate={pickTemplate} asked={asked} focus={focus}
             onClearFocus={overlayActions.clearMentatFocus} question={question} placeholder={defaultQuestion} onQuestion={setQuestion}
@@ -160,7 +164,7 @@ export function MentatPanel({ screenId, onClose }: Props) {
         {tab === 'prompt' && <PromptTab prompt={prompt} context={context} />}
         {tab === 'history' && <HistoryTab entries={history.entries} onClear={history.clear} />}
         {tab === 'settings' && <SettingsTab st={st} />}
-      </div>
+      </TabPanel>
     </aside>
   )
 }

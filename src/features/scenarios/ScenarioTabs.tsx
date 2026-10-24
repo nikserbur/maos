@@ -1,22 +1,24 @@
 /**
- * Сценарий (UX-V2 §5.1): шапка — `ScenarioHeader`; три вкладки без номеров блоков — «Условия» ·
- * «Распределения · 2 из 76 вручную» · «Прогноз и проверка». Вкладка — в адресе
- * `#/scenarios/<id>/<вкладка>`; переключатель липкий (top 0 внутри .scn__main, под ним — липкая
- * шапка таблиц), смена вкладки возвращает прокрутку к переключателю. Легенда происхождения — в «i».
+ * Сценарий (UX-V2 §5.1): шапка — `ScenarioHeader`; три вкладки-ссылки (`Tabs`, не «пилюли») —
+ * «Условия» · «Распределения [2]» (счётчик: 2 из 76 рядов заданы вручную) · «Прогноз цен» — одно имя у
+ * любого сценария и в крошках (SCENARIO_TAB_TITLES); прогноз это или «что если» — чипом внутри вкладки. Вкладка — в адресе
+ * `#/scenarios/<id>/<вкладка>`; полоса вкладок липкая (top 0 внутри .scn__main, под ней — липкая
+ * шапка таблиц), смена вкладки возвращает прокрутку к ней. Легенда происхождения — в «i».
  */
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { MacroRegimes, MacroSummary, PriceDistribution, PriceScenario, Product } from '../../lib/api'
 import { num } from '../../explain/format'
+import { buildHash } from '../../shell/router'
 import { ErrorBoundary } from '../../shell/ErrorBoundary'
 import { NoteTip } from '../../ui/NoteTip'
 import { StateLegend } from '../../ui/StateLegend'
-import { Segmented } from '../../ui/kit'
+import { Tabs } from '../../ui/kit'
 import { ConditionsTab } from './ConditionsTab'
 import { DistributionsTab } from './DistributionsTab'
 import { ForecastTab } from './ForecastTab'
 import { ScenarioHeader } from './ScenarioHeader'
 import { distRow, isCustomDist } from './distModel'
-import type { ScenarioTab } from './scenarioRoute'
+import { SCENARIO_TAB_TITLES, scenarioAnchor, type ScenarioTab } from './scenarioRoute'
 import type { SaveStatus } from './useScenarioData'
 import './scenarios-v2.css'
 
@@ -56,7 +58,7 @@ export function ScenarioTabs(props: Props) {
     if (main.scrollTop > top) main.scrollTop = top
   }, [tab])
 
-  const distLabel = products.length ? `Распределения · ${num(manual, 0)} из ${num(products.length, 0)} вручную` : 'Распределения'
+  const href = (t: ScenarioTab) => buildHash('scenarios', scenarioAnchor(sc.id, t))
   return (
     <div className="sc2">
       <ScenarioHeader sc={sc} tab={tab} saveStatus={props.saveStatus} regimes={regimes} isWorking={props.isWorking} onPatch={onPatch}
@@ -65,21 +67,26 @@ export function ScenarioTabs(props: Props) {
 
       <div ref={anchorRef} className="sc2-tabs-anchor" aria-hidden="true" />
       <div className="sc2-tabs">
-        <Segmented label="Вкладки сценария" kind="nav" size="md" value={tab} onChange={onTab}
-          options={[
-            { id: 'conditions', label: 'Условия' },
-            { id: 'distributions', label: distLabel },
-            { id: 'forecast', label: 'Прогноз и проверка' },
-          ]} />
-        <NoteTip title="Обозначения происхождения">
-          <StateLegend compact states={['estimated', 'manual', 'normative', 'default', 'stale']} />
-        </NoteTip>
+        <Tabs label="Разделы сценария" size="page" value={tab} onChange={onTab}
+          items={[
+            { id: 'conditions', label: SCENARIO_TAB_TITLES.conditions, href: href('conditions') },
+            {
+              id: 'distributions', label: SCENARIO_TAB_TITLES.distributions, href: href('distributions'), count: products.length ? manual : undefined,
+              countLabel: products.length ? `${num(manual, 0)} из ${num(products.length, 0)} рядов заданы вручную` : undefined,
+            },
+            { id: 'forecast', label: SCENARIO_TAB_TITLES.forecast, href: href('forecast') },
+          ]}
+          end={(
+            <NoteTip title="Обозначения происхождения">
+              <StateLegend compact states={['estimated', 'manual', 'normative', 'default', 'stale']} />
+            </NoteTip>
+          )} />
       </div>
 
       <TabBoundary tab={tab}>
         {tab === 'conditions' && <ConditionsTab sc={sc} regimes={regimes} macro={macro} onPatch={onPatch} />}
         {tab === 'distributions' && <DistributionsTab sc={sc} products={products} productsFailed={productsFailed} onSetDist={onSetDist} onSetDists={onSetDists} />}
-        {tab === 'forecast' && <ForecastTab sc={sc} />}
+        {tab === 'forecast' && <ForecastTab sc={sc} anchor={regimes?.last_obs.month} />}
       </TabBoundary>
     </div>
   )

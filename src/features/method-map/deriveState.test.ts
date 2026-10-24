@@ -223,7 +223,8 @@ describe('deriveState', () => {
     const bt = (coverage80: number, skill: number) => ({ k: 6, mape: 0.1, mape_naive: 0.12, skill, pinball10: 0, pinball90: 0, coverage80 })
     const prod = (backtest?: ReturnType<typeof bt>) => ({ id: 'p', name: 'Вал', role: 'product', base: 1, p10: [1], p50: [1], p90: [1], mean: [1], ...(backtest ? { backtest } : {}) })
     const f = { months: 12, inflation_index: [1, 1.01], products: [prod(bt(0.6, 0.1)), prod(bt(0.74, -0.2)), prod(bt(0.67, 0.3)), prod()] } as unknown as ForecastResult
-    expect(forecastLive(f)).toMatchObject({ state: 'estimated', badge: `покрытие 67${NB}% · хуже наивного у 1 из 3` })
+    expect(forecastLive(f)).toMatchObject({ state: 'estimated', badge: 'надёжен 1 · осторожно 2 · ненадёжен 0 · не проверен 1 из 4' })
+    expect(forecastLive(f).detail).toContain(`покрытие 67${NB}%`)
     expect(forecastLive(null).badge).toBe('прогноз не запрошен')
     const s = deriveState({ ...filled(), forecast: f })
     expect(s.nodes['mon.forecast'].badge).not.toBe('прогноз не запрошен')

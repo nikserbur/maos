@@ -55,8 +55,8 @@ describe('V5 snapshot', () => {
   })
 
   it('labels the 0-move candidate «совпал с EDD» and counts wins as «N из 12»', () => {
-    expect(candidateLabel(V5, 'L2_edd_seed3')).toBe('L2 поверх EDD · сид 3 — 0 ходов, совпал с EDD')
-    expect(candidateLabel(V5, 'L0_seed1')).toBe('L0 · сид 1')
+    expect(candidateLabel(V5, 'L2_edd_seed3')).toBe('Агент поверх правила «по ближайшему сроку» · запуск 3 — 0 ходов, совпал с правилом «по ближайшему сроку»')
+    expect(candidateLabel(V5, 'L0_seed1')).toBe('Агент с нуля · запуск 1')
     const best = gateSummary(V5).best!
     expect(winCount(V5, best.win)).toBe(5)
   })
@@ -92,8 +92,8 @@ describe('V5 snapshot', () => {
   })
 
   it('labels policies in Russian', () => {
-    expect(policyLabel('L0_seed2')).toBe('L0 · сид 2')
-    expect(policyLabel('L2_edd_seed1')).toBe('L2 поверх EDD · сид 1')
-    expect(policyLabel('GA')).toBe('ГА по ключам')
+    expect(policyLabel('L0_seed2')).toBe('Агент с нуля · запуск 2')
+    expect(policyLabel('L2_edd_seed1')).toBe('Агент поверх правила «по ближайшему сроку» · запуск 1')
+    expect(policyLabel('GA')).toBe('Генетический алгоритм по ключам')
   })
 })

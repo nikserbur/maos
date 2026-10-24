@@ -41,7 +41,7 @@ export const POOL_LABEL: Readonly<Record<string, string>> = {
   'C*': 'C* — эвристика + казначейское правило',
   best_rule: 'лучшее правило',
   'LA*': 'просмотр последствий ходов',
-  GA: 'ГА от CP-SAT',
+  GA: 'генетический алгоритм со стартом от CP-SAT',
   CPSAT: 'CP-SAT',
 }
 
@@ -127,16 +127,19 @@ export function ledgerRows(g: GateView, a3: A3Snapshot = A4S.a3): LedgerRow[] {
     {
       id: 'auto_repay',
       rule: 'Излишек кассы сверх буфера гасит кредитную линию — каждую неделю',
-      origin: `A3 · ${a3.seeds_converged} сида из ${a3.seeds} сошлись бит-в-бит`,
+      origin: a3.seeds_converged === a3.seeds
+        ? `волна A3 · результаты всех ${a3.seeds} запусков совпали`
+        : `волна A3 · совпали результаты ${a3.seeds_converged} запусков из ${a3.seeds}`,
       effect: `${pctV(a3.vs_best_rule.iqm)} ${pctVci(g.ruleCi).replace(`${NBSP}%`, '')}`,
       effectNote: `лучше в ${wins} из ${a3.n_instances}`,
-      check: { text: `выведено RL · G1 ${g.g1 ? '✓' : '✕'} · строгий контроль ${strict}`, kind: 'derived' },
-      status: { text: 'поведение по умолчанию', code: 'fin.auto_repay [НОРМ]', href: '#/map/int.finance' },
+      check: { text: `выведено RL · первая проверка ${g.g1 ? '✓' : '✕'} · строгий контроль ${strict}`, kind: 'derived' },
+      // Ключ настройки — в подсказке ссылки, не в тексте ячейки.
+      status: { text: 'включено по умолчанию: «Гасить кредитную линию излишком кассы»', code: 'fin.auto_repay [НОРМ]', href: '#/map/int.finance' },
     },
     {
       id: 'overtime',
       rule: 'Сверхурочные вместо покупки станка в неделю 0',
-      origin: `A3 · вариант ${a3.candidate_overtime.variant}, сид ${a3.candidate_overtime.seed}`,
+      origin: `волна A3 · вариант ${a3.candidate_overtime.variant}, запуск ${a3.candidate_overtime.seed}`,
       effect: `от ${pctV(c.lo)} до ${pctV(c.hi)}`,
       effectNote: `отличается в ${c.n} из ${c.of} · лучше в ${c.better} из ${c.n} · ДИ не заявлен`,
       check: { text: 'кандидат · не проверено', kind: 'candidate' },

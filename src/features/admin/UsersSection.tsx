@@ -1,6 +1,7 @@
 /**
  * Пользователи (X2 P-141, P-143): таблица только для чтения — правка в боковой панели по клику на
- * строку; «активен» нейтрально, «заблокирован» — чип ■; неудачные входы подряд — числом.
+ * строку; «активен» нейтрально, «заблокирован» — чип ■; неудачные входы подряд — числом (колонка
+ * скрывается первой в узкой панели), а если они есть — предупреждение ▲ в «Статусе».
  * Ошибка загрузки — баннер с «Повторить», а не «Нет пользователей».
  */
 import type { OrgUnit, User } from '../../lib/api'
@@ -15,7 +16,7 @@ export const isBuiltinAdmin = (u: Pick<User, 'login'>): boolean => u.login === '
 function columns(orgUnits: ReadonlyArray<OrgUnit>): DataColumn<User>[] {
   const unitName = (id?: string | null) => (id ? orgUnits.find((o) => o.id === id)?.name ?? '' : '')
   return [
-    { key: 'login', title: 'Пользователь', rowHeader: true },
+    { key: 'login', title: 'Пользователь', rowHeader: true, primary: true },
     { key: 'role_name', title: 'Роль', get: (u) => u.role_name, render: (u) => (
       <span className="adm__role-cell">
         <span>{u.role_name || '—'}</span>
@@ -23,13 +24,22 @@ function columns(orgUnits: ReadonlyArray<OrgUnit>): DataColumn<User>[] {
         {isBuiltinAdmin(u) && <span className="adm__sub">нельзя изменить</span>}
       </span>
     ) },
-    { key: 'failed_attempts', title: 'Неудачных входов', num: true, className: 'adm__wrap-th',
+    { key: 'failed_attempts', title: 'Неудачных входов', num: true, priority: 3,
       hint: 'Подряд с последнего успешного входа; после 5 вход закрывается на 5 минут',
       get: (u) => Number(u.failed_attempts) || 0, render: (u) => num(Number(u.failed_attempts) || 0, 0) },
-    { key: 'status', title: 'Статус', get: (u) => userStatusLabel(u.status), render: (u) => (
-      isActiveStatus(u.status) ? <span className="adm__muted">{userStatusLabel(u.status)}</span> : <Chip tone="down" size="sm">{userStatusLabel(u.status)}</Chip>
-    ) },
+    { key: 'status', title: 'Статус', width: 'fit', get: (u) => userStatusLabel(u.status), render: (u) => <StatusCell u={u} /> },
   ]
+}
+
+/** Статус и, если были неудачные входы подряд, предупреждение ▲ — видно и без колонки «Неудачных входов». */
+function StatusCell({ u }: { u: User }) {
+  const failed = Number(u.failed_attempts) || 0
+  return (
+    <span className="adm__active">
+      {isActiveStatus(u.status) ? <span className="adm__muted">{userStatusLabel(u.status)}</span> : <Chip tone="down" size="sm">{userStatusLabel(u.status)}</Chip>}
+      {failed > 0 && <Chip tone="setup" size="sm" title="Неудачных входов подряд с последнего успешного">неудачных входов: {num(failed, 0)}</Chip>}
+    </span>
+  )
 }
 
 interface UsersSectionProps {
@@ -61,6 +71,7 @@ export function UsersSection({ users, orgUnits, openId, onOpen, onCreate }: User
           rowTitle={() => 'Открыть: роль, цех, блокировка, пароль'}
           loading={users.status === 'loading'}
           tight
+          className="adm__users-table"
           caption="Пользователи"
           empty="Пользователей пока нет — создайте первого"
           emptyKind="first-use"

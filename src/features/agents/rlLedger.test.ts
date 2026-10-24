@@ -35,7 +35,9 @@ describe('A4 champion and the RL-found rules ledger', () => {
   it('row 1 is the treasury rule in product; row 2 is the unchecked overtime candidate', () => {
     const rows = ledgerRows(gateView(null))
     expect(rows).toHaveLength(2)
-    expect(rows[0].check).toEqual({ text: 'выведено RL · G1 ✓ · строгий контроль ≈ 0', kind: 'derived' })
+    expect(rows[0].check).toEqual({ text: 'выведено RL · первая проверка ✓ · строгий контроль ≈ 0', kind: 'derived' })
+    expect(rows[0].origin).not.toMatch(/сид|бит-в-бит/)
+    expect(rows[0].status.text).toContain('включено по умолчанию')
     expect(rows[0].status).toMatchObject({ code: 'fin.auto_repay [НОРМ]', href: '#/map/int.finance' })
     expect(rows[0].effectNote).toBe('лучше в 29 из 30')
     expect(rows[1].check.kind).toBe('candidate')

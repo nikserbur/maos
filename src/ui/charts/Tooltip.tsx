@@ -2,7 +2,8 @@
  * Единая подсказка графиков (из `tc__tip` Аналитики — самой зрелой): карточка на `--bg-elevated`,
  * заголовок X, строки «ключ-штрих ряда · имя · значение» — значение главное (жирное, `--text`),
  * имя вторичное. Рисуется внутри SVG через <foreignObject> в пиксельных координатах —
- * без inline-стилей и без масштабирования текста; у правого края переворачивается влево.
+ * без inline-стилей и без масштабирования текста; ширина — по графику (в малых кратных не
+ * закрывает весь плот), у правого края переворачивается влево, иначе прижимается к краю.
  */
 import type { ReactNode } from 'react'
 
@@ -26,13 +27,29 @@ interface ChartTooltipProps {
 }
 
 export const TIP_W = 212
+const TIP_MIN = 132
 const TIP_GAP = 12
 
+/** Ширина подсказки: ≤ 212 px и не больше ~половины графика (малые кратные), но не уже 132 px. */
+export function tipWidth(svgWidth: number): number {
+  return Math.max(TIP_MIN, Math.min(TIP_W, Math.round(svgWidth * 0.48)))
+}
+
+/**
+ * Левый край подсказки: справа от якоря; не помещается — слева; не помещается нигде — со стороны,
+ * где места больше, прижатая к краю (не на нуле поверх перекрестия).
+ */
+export function tipLeft(x: number, svgWidth: number, w: number): number {
+  if (x + TIP_GAP + w <= svgWidth) return x + TIP_GAP
+  if (x - TIP_GAP - w >= 0) return x - TIP_GAP - w
+  return svgWidth - x >= x ? Math.max(0, Math.min(x + TIP_GAP, svgWidth - w)) : Math.max(0, Math.min(x - TIP_GAP - w, svgWidth - w))
+}
+
 export function ChartTooltip({ x, y, width, height, title, rows }: ChartTooltipProps) {
-  const flip = x + TIP_GAP + TIP_W > width
-  const left = flip ? Math.max(0, x - TIP_GAP - TIP_W) : x + TIP_GAP
+  const w = tipWidth(width)
+  const left = tipLeft(x, width, w)
   return (
-    <foreignObject x={left} y={y} width={TIP_W} height={Math.max(40, height)} className="ch-tipbox" aria-hidden="true">
+    <foreignObject x={left} y={y} width={w} height={Math.max(40, height)} className="ch-tipbox" aria-hidden="true">
       <div className="ch-tip">
         {title !== undefined && <div className="ch-tip__x">{title}</div>}
         {rows.map((r) => (

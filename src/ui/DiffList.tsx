@@ -5,7 +5,11 @@
  */
 import type { ReactNode } from 'react'
 import { DeltaChip } from './kit/DeltaChip'
+import { headWidth } from './kit/columnLayout'
+import './kit/kit.css'
 import './fields.css'
+
+const NUM_FIT = { fit: true, right: true, primary: false } as const
 
 export type DiffOrigin = 'inherited' | 'changed' | 'unset'
 
@@ -104,32 +108,42 @@ export function DiffTable<T>({ columns, rows, caption, emptyText = 'Отличи
   if (visible.length === 0) return <p className="pf-diff__empty">{emptyText}</p>
   const base = columns[0]?.title
   return (
-    <table className="pf-dtable">
-      {caption && <caption className="text-caps">{caption}</caption>}
-      <thead>
-        <tr><th>Показатель</th>{columns.map((c, i) => <th key={c.id}>{i === 0 ? `${c.title} (база)` : c.title}</th>)}</tr>
-      </thead>
-      <tbody>
-        {visible.map(({ r, vals, texts }) => {
-          const b = vals[0]
-          return (
-            <tr key={r.key}>
-              <td className="pf-dtable__label">{r.label}</td>
-              {vals.map((v, i) => {
-                const delta = i > 0 && typeof v === 'number' && typeof b === 'number' && Number.isFinite(v) && Number.isFinite(b) && texts[i] !== texts[0] ? v - b : null
-                return (
-                  <td key={columns[i].id} className="num">
-                    <span className="pf-dtable__cell">
-                      {texts[i]}
-                      {delta !== null && <DeltaChip value={delta} fmt={(d) => signedText(d, r.fmtDelta ?? r.fmt)} better={r.better} base={base} />}
-                    </span>
-                  </td>
-                )
-              })}
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
+    <div className="dk-table-wrap pf-dtable-wrap">
+      <table className="dk-table dk-table--tight pf-dtable">
+        {caption && <caption className="pf-dtable__caption">{caption}</caption>}
+        <thead>
+          <tr>
+            <th scope="col" className="dk-col-primary"><span className="dk-th__label">Показатель</span></th>
+            {columns.map((c, i) => {
+              // Шапка узкой колонки — по ширине своего заголовка (1–2 строки), как в DataTable.
+              const title = i === 0 ? `${c.title} (база)` : c.title
+              const hw = headWidth(title, NUM_FIT)
+              return <th key={c.id} scope="col" className={`num dk-col-fit${hw ? ` dk-thw-${hw}` : ''}`}><span className="dk-th__label">{title}</span></th>
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map(({ r, vals, texts }) => {
+            const b = vals[0]
+            return (
+              <tr key={r.key}>
+                <th scope="row" className="dk-col-primary pf-dtable__label"><span className="dk-cell-block">{r.label}</span></th>
+                {vals.map((v, i) => {
+                  const delta = i > 0 && typeof v === 'number' && typeof b === 'number' && Number.isFinite(v) && Number.isFinite(b) && texts[i] !== texts[0] ? v - b : null
+                  return (
+                    <td key={columns[i].id} className="num dk-col-fit">
+                      <span className="pf-dtable__cell">
+                        {texts[i]}
+                        {delta !== null && <DeltaChip value={delta} fmt={(d) => signedText(d, r.fmtDelta ?? r.fmt)} better={r.better} base={base} />}
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

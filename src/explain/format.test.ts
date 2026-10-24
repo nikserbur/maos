@@ -6,6 +6,7 @@ import {
   dateTime,
   dateTimeShort,
   freqText,
+  joinRange,
   plural,
   pp,
   rangeText,
@@ -117,7 +118,10 @@ describe('fmtValue', () => {
     expect(fmtValue(0.5, '%')).toBe(`50${NBSP}%`)
     expect(fmtValue(42, 'ч')).toBe(`42${NBSP}ч`)
     expect(fmtValue(1_200_000, '₽/мес')).toBe(`1,2${NBSP}млн${NBSP}₽/мес`)
-    expect(fmtValue(3.456, 'ед./сут')).toBe(`3,46${NBSP}ед./сут`)
+    expect(fmtValue(3.456, 'ед./сут')).toBe(`3,46${NBSP}единицы в сутки`)
+    expect(fmtValue(111, 'ед./сут')).toBe(`111${NBSP}единиц в сутки`)
+    expect(fmtValue(21, 'заказ/сут')).toBe(`21${NBSP}заказ в сутки`)
+    expect(fmtValue(3, 'чел.')).toBe(`3${NBSP}человека`)
     expect(fmtValue(7.25, 'мес')).toBe(`7,3${NBSP}мес`)
   })
 
@@ -256,5 +260,14 @@ describe('runLabel', () => {
     expect(runLabel({ id: 'a3f9c2e1b7', rule: 'CR' })).toBe('План · CR')
     expect(runLabel({ id: '27' })).toBe('План №27')
     expect(runLabel({ seq: 3, kind: 'Портфель' })).toBe('Портфель №3')
+  })
+})
+
+describe('joinRange — один порядок денег в диапазоне', () => {
+  it('концы разных порядков — в большем; общая единица — один раз', () => {
+    expect(joinRange(`664${NBSP}₽`, `7,76${NBSP}тыс.${NBSP}₽`)).toBe(`0,66–7,76${NBSP}тыс.${NBSP}₽`)
+    expect(joinRange(`54${NBSP}тыс.${NBSP}₽`, `86,7${NBSP}тыс.${NBSP}₽`)).toBe(`54–86,7${NBSP}тыс.${NBSP}₽`)
+    expect(joinRange(`478${NBSP}тыс.${NBSP}₽`, `1,28${NBSP}млн${NBSP}₽`)).toBe(`0,48–1,28${NBSP}млн${NBSP}₽`)
+    expect(joinRange(`2${NBSP}ч`, `5${NBSP}%`)).toBe(`2${NBSP}ч – 5${NBSP}%`)
   })
 })

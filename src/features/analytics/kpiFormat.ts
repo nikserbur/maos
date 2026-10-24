@@ -2,7 +2,7 @@
  * Отображение KPI: число и единица раздельно (крупная цифра + приглушённая
  * единица), светофор → статус-глиф. Числа — общие форматтеры src/explain/format.ts.
  */
-import { DASH, NBSP, fmtValue, money, num, signed } from '../../explain/format'
+import { DASH, NBSP, fmtValue, money, num, plural, signed } from '../../explain/format'
 import type { KpiDef, KpiDir, KpiStatus, KpiUnit } from './kpiCatalog'
 
 export interface ValueParts { value: string; unit: string }
@@ -30,7 +30,11 @@ export function kpiText(v: number, unit: KpiUnit): string {
 /** Разность A − B с единицей KPI; для долей — в процентных пунктах. */
 export function kpiDeltaText(d: number, unit: KpiUnit): string {
   if (!Number.isFinite(d)) return DASH
-  if (unit === '%') return `${signed(d * 100)}${NBSP}п. п.`
+  if (unit === '%') {
+    // Процентные пункты словом: «+1,2 пункта» (без «п. п.»).
+    const t = signed(d * 100)
+    return `${t}${NBSP}${plural(Math.abs(Number(t.replace(/[+−\s ]/g, '').replace(',', '.'))), ['пункт', 'пункта', 'пунктов'])}`
+  }
   if (unit === 'ч') return signed(d, 'ч')
   if (unit === '₽') return signed(d, '₽')
   return signed(d, unit)

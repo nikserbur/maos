@@ -67,26 +67,26 @@ export function KpiRegistry({ bundle, baseBundle, baseRef, loads, refs, planId, 
 /* ── Реестр: таблица с группами каталога ───────────────────────────────────── */
 function RegistryTable({ bundle, ctx }: { bundle: KpiBundle; ctx: KpiContext }) {
   const columns = useMemo<DataColumn<KpiDef>[]>(() => [
-    { key: 'status', title: <span className="dk-vh">Отклонение</span>, sortable: false, className: 'an-td-status',
+    { key: 'status', title: <span className="dk-vh">Отклонение</span>, sortable: false, width: 'fit', className: 'an-td-status',
       render: (k) => {
         const dev = kpiDeviation(k, k.value(bundle, ctx), bundle)
         return dev ? <span className={DEV_GLYPH[dev]} title={STATUS_LABEL[dev]} aria-label={STATUS_LABEL[dev]} /> : null
       } },
-    { key: 'name', title: 'Показатель', rowHeader: true, get: (k) => k.name,
+    { key: 'name', title: 'Показатель', rowHeader: true, primary: true, get: (k) => k.name,
       render: (k) => {
         const { estimate } = readKpi(k, bundle, ctx)
         return <>{k.name}{estimate && <Chip size="sm" tone="idle" title="оценка по старому набору полей плана">оценка</Chip>}</>
       } },
     { key: 'value', title: 'Значение', num: true, get: (k) => k.value(bundle, ctx),
       render: (k) => kpiText(k.value(bundle, ctx), k.unit) },
-    { key: 'dir', title: 'Лучше', get: (k) => k.dir, className: 'an-td-dir',
+    { key: 'dir', title: 'Лучше', width: 'fit', get: (k) => k.dir, className: 'an-td-dir',
       render: (k) => <span title={DIR_TITLE[k.dir]} aria-label={DIR_TITLE[k.dir]}>{DIR_ARROW[k.dir]} {k.dir === 'up' ? 'больше' : k.dir === 'down' ? 'меньше' : 'по контексту'}</span> },
-    { key: 'info', title: <span className="dk-vh">Как считается</span>, sortable: false, className: 'an-td-info',
+    { key: 'info', title: <span className="dk-vh">Как считается</span>, sortable: false, width: 'fit', className: 'an-td-info',
       render: (k) => <InfoTip id={k.info} values={k.infoValues?.(bundle, ctx)} /> },
   ], [bundle, ctx])
   return (
     <DataTable<KpiDef> columns={columns} rows={KPI_CATALOG} rowKey={(k) => k.code} groupBy={(k) => k.category}
-      rowTitle={(k) => `${k.nameEn} · ${k.formula}`} caption="Реестр KPI выбранного построения по категориям" tight />
+      rowTitle={(k) => `${k.nameEn} · ${k.formula}`} caption="Реестр KPI выбранного построения по категориям" tight width="content" />
   )
 }
 
@@ -114,10 +114,10 @@ function PlanCompare({ bundle, baseBundle, baseRef, refs, planId, ctx, onBase }:
   }, [bundle, baseBundle, ctx])
 
   const columns: DataColumn<CompareRow>[] = [
-    { key: 'name', title: 'Показатель', rowHeader: true, get: (r) => r.def.name },
+    { key: 'name', title: 'Показатель', rowHeader: true, primary: true, get: (r) => r.def.name },
     { key: 'a', title: 'Это построение', num: true, get: (r) => r.a, render: (r) => kpiText(r.a, r.def.unit) },
     { key: 'b', title: baseRef ? planNo(baseRef.seq) : 'База', num: true, get: (r) => r.b, render: (r) => kpiText(r.b, r.def.unit) },
-    { key: 'd', title: 'Δ к базе', num: true, get: (r) => r.a - r.b,
+    { key: 'd', title: 'Разница с базой', num: true, get: (r) => r.a - r.b,
       render: (r) => <DeltaChip value={r.a - r.b} better={deltaBetter(r.def.dir)} fmt={(x) => kpiDeltaText(x, r.def.unit)} /> },
   ]
   const tools = others.length > 0 && (
@@ -139,7 +139,7 @@ function PlanCompare({ bundle, baseBundle, baseRef, refs, planId, ctx, onBase }:
       ) : rows.length === 0 ? (
         <p className="an-muted">У {planNo(baseRef.seq)} нет сохранённых показателей — выберите другое построение в списке «База».</p>
       ) : (
-        <DataTable<CompareRow> columns={columns} rows={rows} rowKey={(r) => r.def.code} tight framed caption={`Сравнение построения с ${baseName || 'базой'}`} />
+        <DataTable<CompareRow> columns={columns} rows={rows} rowKey={(r) => r.def.code} tight framed width="content" caption={`Сравнение построения с ${baseName || 'базой'}`} />
       )}
     </Section>
   )

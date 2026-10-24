@@ -29,8 +29,7 @@
   font-weight: 600;
   color: var(--text);
 }
-.sim-col__tabs { padding: var(--space-3) var(--space-4) 0; }
-.sim-col__tabs .dk-seg { width: 100%; }
+.sim-col__tabs { padding: var(--space-2) var(--space-4) 0; }
 .sim-col__body { flex: 1; min-height: 0; padding: var(--space-3) var(--space-4) var(--space-4); overflow-y: auto; overflow-x: hidden; }
 .sim__stack { gap: var(--space-3); }
 
@@ -91,6 +90,10 @@
 .sim__note { margin: 0; font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-muted); text-wrap: pretty; }
 .sim__label { display: flex; align-items: center; gap: var(--space-1); color: var(--text-muted); }
 .sim__muted { color: var(--text-muted); }
+/* Калибровка в узкой колонке: операция — гибкая колонка (минимум 10rem), изделие — второй строкой. */
+.sim__calib-table { --dk-primary-min: 10rem; }
+.sim__opcell { display: flex; flex-direction: column; gap: 2px; }
+.sim__opcell-sub { font-size: var(--fs-11); font-weight: 400; color: var(--text-muted); overflow-wrap: anywhere; }
 
 /* Список подтверждения калибровки: «операция · было → станет, мин». */
 .sim__calib-list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; margin: var(--space-2) 0 0; padding: 0; overflow-y: auto; list-style: none; }

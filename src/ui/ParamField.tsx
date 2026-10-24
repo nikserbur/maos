@@ -1,8 +1,13 @@
 /**
- * Поле с паспортом (UX-V2 §4.3, §5.1): значение крупно (20 px), единица на шаг меньше и
- * приглушённо, происхождение — бейдж 11 px caps, подпись владельца («из сценария «Базовый»»,
- * «этот прогон»); изменённое в потоке значение получает рамку и чип «изменено · вернуть»;
- * вне разумного диапазона — ▲ с подсказкой; «накопленный эффект за горизонт» — рядом с полем.
+ * Поле с паспортом (UX-V2 §4.3, §5.1; владелец: «карточки параметров — ужасно»). Сверху вниз:
+ *  подпись обычным регистром на всю ширину, «i» — в строке текста (переносится с последним словом);
+ *  значение + единица одной группой по базовой линии (ввод — по ширине числа);
+ *  эффект — одна строка («≈ 0,51 %/мес · за 6 мес прогноза +3,1 %»);
+ *  мета-строка: происхождение маленьким глифом и словом/источником («● ЦБ РФ, сент. 2026»),
+ *  у изменённого — «✎ изменено · вернуть к 0,50 (норматив)» (к чему и откуда — словами, а не «■ вернуть»,
+ *  похожее на пустой флажок), подпись владельца («из сценария «Базовый»»).
+ * Никаких CAPS-пилюль в шапке; вне разумного диапазона — «▲ обычно от −20 до +30 %» (знак у
+ * границ и единица), карточки в ряду — равной высоты.
  * Ввод — число всегда; ползунок — по желанию (дебаунс делает вызывающий код).
  * Режим `collapsedSlider` (X1 §3.1): ползунок спрятан и появляется только при фокусе или
  * намерении навести курсор — поле остаётся компактным в сетке 4 колонок; длинные заметки
@@ -10,7 +15,7 @@
  */
 import { useId, useRef, useState, type ReactNode } from 'react'
 import type { Provenance, Stage } from '../features/method-map/types'
-import { num } from '../explain/format'
+import { NBSP, num } from '../explain/format'
 import { InfoTip } from './InfoTip'
 import { NoteTip } from './NoteTip'
 import { ProvenanceBadge } from './ProvenanceBadge'
@@ -29,11 +34,19 @@ export interface ParamFieldProps {
   status?: string
   deprecated?: boolean
   stage?: Stage
+  /** Источник значения словами — вместо короткого слова бейджа: «ЦБ РФ, сент. 2026», «НСИ», «история ряда». */
+  source?: string
+  /** Не показывать происхождение (оно уже названо рядом, например в заголовке группы). */
+  hideProvenance?: boolean
   /** Подпись владельца: «из НСИ», «из сценария «Базовый»», «из портфеля 10-21», «этот прогон». */
   owner?: string
   /** Значение изменено в этом потоке относительно унаследованного. */
   changed?: boolean
   onRevert?: () => void
+  /** К чему вернёт «вернуть»: исходное значение (в единицах поля) — «вернуть к 0,50». */
+  revertTo?: number | string
+  /** Откуда исходное значение: «норматив», «генератор», «НСИ» — «вернуть к 0,50 (норматив)». */
+  revertSource?: string
   /** Разумный диапазон — предупреждение, не запрет. */
   range?: [number, number]
   step?: number
@@ -61,7 +74,7 @@ export interface ParamFieldProps {
 }
 
 export function ParamField({
-  label, value, unit, provenance, status, deprecated, stage, owner, changed, onRevert, range, step, min, max,
+  label, value, unit, provenance, status, deprecated, stage, source, hideProvenance = false, owner, changed, onRevert, revertTo, revertSource, range, step, min, max,
   effect, note, hint, info, infoValues, onChange, slider = false, collapsedSlider = false, readOnly = false, actions, size = 'md', children,
 }: ParamFieldProps) {
   const id = useId()
@@ -99,13 +112,10 @@ export function ParamField({
 
   return (
     <div className={cls} role="group" aria-labelledby={`${id}-l`} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <div className="pf-field__head">
-        <label className="pf-field__label text-caps" id={`${id}-l`} htmlFor={editable ? id : undefined}>
-          <CapsLabel text={label} />
-          {info ? <InfoTip id={info} values={infoValues} note={hint} /> : hint ? <NoteTip title={label}>{hint}</NoteTip> : null}
-        </label>
-        <ProvenanceBadge provenance={provenance} status={status} deprecated={deprecated} stage={stage} />
-      </div>
+      <label className="pf-field__label" id={`${id}-l`} htmlFor={editable ? id : undefined}>
+        {label}
+        {info ? <>{'\u00A0'}<InfoTip id={info} values={infoValues} note={hint} /></> : hint ? <>{'\u00A0'}<NoteTip title={label}>{hint}</NoteTip></> : null}
+      </label>
       <div className="pf-field__row">
         {children ? (
           <div className="pf-field__control">{children}</div>
@@ -129,18 +139,13 @@ export function ParamField({
             {unit && value !== null && <span className="pf-field__unit">{unit}</span>}
           </span>
         )}
-        {changed && (
-          <span className="pf-field__changed">
-            изменено
-            {onRevert && <button type="button" className="pf-field__revert" onClick={onRevert}>· вернуть</button>}
-          </span>
-        )}
         {outOfRange && range && (
-          <span className="pf-field__warn glyph-setup" title={`разумный диапазон ${formatNum(range[0])}–${formatNum(range[1])}`}>
-            вне диапазона {formatNum(range[0])}–{formatNum(range[1])}
+          <span className="pf-field__warn glyph-setup" title={`Значение вне обычного диапазона: ${rangeText(range, unit)}. Это предупреждение, не запрет.`}>
+            обычно {rangeText(range, unit)}
           </span>
         )}
       </div>
+      {effect && <div className="pf-field__effect">{effect}</div>}
       {hasSlider && (
         <input
           className="pf-field__slider"
@@ -153,10 +158,17 @@ export function ParamField({
           onChange={(e) => onChange?.(Number(e.target.value))}
         />
       )}
-      {(owner || effect) && (
+      {(changed || owner || !hideProvenance) && (
         <div className="pf-field__meta">
+          {changed ? (
+            <span className="pf-field__changed" data-key="manual"><span className="pf-field__changed-glyph" aria-hidden="true">✎</span>изменено</span>
+          ) : !hideProvenance && (
+            <ProvenanceBadge provenance={provenance} status={status} deprecated={deprecated} stage={stage} source={source} variant="inline" />
+          )}
+          {changed && onRevert && (
+            <button type="button" className="pf-field__revert" onClick={onRevert}>{revertText(revertTo, unit, revertSource)}</button>
+          )}
           {owner && <span className="pf-field__owner">{owner}</span>}
-          {effect && <span className="pf-field__effect">{effect}</span>}
         </div>
       )}
       {note && <p className="pf-field__note">{note}</p>}
@@ -165,7 +177,7 @@ export function ParamField({
   )
 }
 
-/** Подпись в капителях: греческие буквы (α, σ, ρ…) не переводятся в верхний регистр. */
+/** @deprecated Подписи полей — обычным регистром. Капители: греческие буквы (α, σ, ρ…) не переводятся в верхний регистр. */
 export function CapsLabel({ text }: { text: string }) {
   return <>{splitGreek(text).map((p, i) => (p.greek ? <span key={i} className="pf-nocaps">{p.text}</span> : p.text))}</>
 }
@@ -174,4 +186,22 @@ function formatNum(v: number): string {
   const abs = Math.abs(v)
   const digits = abs >= 1000 ? 0 : abs >= 100 ? 1 : abs >= 1 ? 2 : 3
   return num(v, digits)
+}
+
+/** Граница со знаком, если диапазон переходит через ноль: «−20» и «+30» (а не «−20–30» = «от −20 до −30»). */
+function signedBound(v: number, signed: boolean): string {
+  return signed && v > 0 ? `+${formatNum(v)}` : formatNum(v)
+}
+
+/** «от −20 до +30 %»: знак у границ, когда диапазон переходит через ноль, единица — в конце. */
+export function rangeText(range: readonly [number, number], unit?: string): string {
+  const signed = range[0] < 0
+  return `от ${signedBound(range[0], signed)} до ${signedBound(range[1], signed)}${unit ? `${NBSP}${unit}` : ''}`
+}
+
+/** «вернуть к 0,50 (норматив)» · «вернуть исходное» — к чему вернёт кнопка, словами. */
+export function revertText(to: number | string | undefined, unit?: string, source?: string): string {
+  if (to === undefined || to === '') return source ? `вернуть исходное (${source})` : 'вернуть исходное'
+  const v = typeof to === 'number' ? formatNum(to) : to
+  return `вернуть к ${v}${unit ? `${NBSP}${unit}` : ''}${source ? ` (${source})` : ''}`
 }

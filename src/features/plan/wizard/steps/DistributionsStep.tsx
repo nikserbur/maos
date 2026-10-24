@@ -20,12 +20,12 @@ import { effectiveFields, isChanged, useWizard, wizardActions } from '../wizardS
 const DIST_SHOWN = 8
 
 const CALIB_COLS: DataColumn<CalibRow>[] = [
-  { key: 'op', title: 'Операция', rowHeader: true, clip: true, get: (r) => r.op_name },
-  { key: 'prod', title: 'Изделие', clip: true, get: (r) => r.product_name },
+  { key: 'op', title: 'Операция', rowHeader: true, primary: true, get: (r) => r.op_name },
+  { key: 'prod', title: 'Изделие', minWidth: 14, get: (r) => r.product_name },
   { key: 'norm', title: 'Норма, ч', num: true, get: (r) => r.t_norm, render: (r) => num(r.t_norm, 1) },
   { key: 'fact', title: 'Факт симуляции, ч', num: true, get: (r) => r.realized_mean, render: (r) => num(r.realized_mean, 1) },
   { key: 'n', title: 'Наблюдений', num: true, get: (r) => r.n, render: (r) => num(r.n, 0) },
-  { key: 'd', title: 'Отклонение', num: true, get: (r) => r.delta_pct, render: (r) => `${r.delta_pct > 0 ? '+' : ''}${num(r.delta_pct, 1)} %` },
+  { key: 'd', title: 'Отклонение, %', num: true, get: (r) => r.delta_pct, render: (r) => `${r.delta_pct > 0 ? '+' : ''}${num(r.delta_pct, 1)}` },
 ]
 
 export function DistributionsStep({ data }: { data: WizardData }) {

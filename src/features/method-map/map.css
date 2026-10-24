@@ -213,7 +213,8 @@
 
 /* ── Таблица параметров ─────────────────────────────────────────────────── */
 .mm-ptable { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
-.mm-ptable th { padding: 4px 6px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); text-align: left; border-bottom: 1px solid var(--border); }
+.mm-ptable th { padding: 4px 6px; font-size: var(--fs-12); font-weight: 600; line-height: 1.25; text-wrap: balance; vertical-align: bottom; color: var(--text-muted); text-align: left; border-bottom: 1px solid var(--border); }
+.mm-ptable td:first-child { min-width: 10rem; overflow-wrap: anywhere; }
 .mm-ptable th.num, .mm-ptable td.num { text-align: right; }
 .mm-ptable td { padding: 5px 6px; border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent); vertical-align: middle; }
 .mm-ptable__warn { color: var(--text-secondary); }

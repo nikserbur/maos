@@ -1,0 +1,186 @@
+/*
+ * Вкладки разделов (.dk-tabs) и карточки выбора (.dk-cards). Вкладки — подчёркивание акцентом
+ * 2 px на общей базовой линии, без «таблетки»; при наведении — тихая подложка только у неактивных
+ * (активная под курсором после клика не превращается в «пилюлю»). Никогда не переносятся, не
+ * обрезаются и не сокращаются: при нехватке ширины полоса прокручивается, край с невидимыми
+ * вкладками гаснет и получает шеврон.
+ */
+.dk-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+.dk-tabs__viewport { position: relative; display: flex; flex: 1 1 auto; min-width: 0; }
+.dk-tabs__list {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.dk-tabs__list::-webkit-scrollbar { display: none; }
+/* Есть вкладки за краем — край гаснет (маска), поверх — шеврон прокрутки. */
+.dk-tabs__list[data-overflow-end] { -webkit-mask-image: linear-gradient(90deg, var(--text) calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, var(--text) calc(100% - 48px), transparent); }
+.dk-tabs__list[data-overflow-start] { -webkit-mask-image: linear-gradient(90deg, transparent, var(--text) 48px); mask-image: linear-gradient(90deg, transparent, var(--text) 48px); }
+.dk-tabs__list[data-overflow-start][data-overflow-end] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, var(--text) 48px, var(--text) calc(100% - 48px), transparent);
+  mask-image: linear-gradient(90deg, transparent, var(--text) 48px, var(--text) calc(100% - 48px), transparent);
+}
+.dk-tabs__scroll {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font: 600 var(--fs-16) / 1 var(--font-sans);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+.dk-tabs__scroll:hover { color: var(--text); border-color: var(--border-strong); }
+.dk-tabs__scroll--start { left: 0; }
+.dk-tabs__scroll--end { right: 0; }
+.dk-tabs__end { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; align-self: center; }
+.dk-tab {
+  --tab-h: var(--control-large);
+  --tab-px: var(--space-3);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: var(--tab-h);
+  padding: 0 var(--tab-px);
+  font: 500 var(--fs-14) var(--font-sans);
+  white-space: nowrap;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.dk-tabs--panel .dk-tab { --tab-h: 32px; --tab-px: var(--space-2); font-size: var(--fs-13); }
+/* Подложка наведения/фокуса: внутри вкладки, поэтому прокрутка полосы её не обрезает. */
+.dk-tab::before {
+  content: '';
+  position: absolute;
+  inset: 6px 2px;
+  z-index: -1;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.dk-tab { isolation: isolate; }
+.dk-tab:hover:not(:disabled):not([aria-disabled='true']):not(.is-on) { color: var(--text-secondary); }
+.dk-tab:hover:not(:disabled):not([aria-disabled='true']):not(.is-on)::before { background: var(--bg-hover); }
+/* Активная под курсором (сразу после клика) — без подложки: только подчёркивание и цвет текста. */
+.dk-tab.is-on:hover::before { background: transparent; }
+.dk-tab:focus-visible { outline: 2px solid transparent; }
+.dk-tab:focus-visible::before { box-shadow: var(--halo); }
+/* Активная: текст, жирнее (ширина зарезервирована), подчёркивание акцентом на базовой линии. */
+.dk-tab.is-on { color: var(--text); font-weight: 600; }
+.dk-tab::after {
+  content: '';
+  position: absolute;
+  left: var(--tab-px);
+  right: var(--tab-px);
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform var(--dur) var(--ease-out);
+}
+.dk-tab.is-on::after { transform: scaleX(1); }
+.dk-tab > svg { flex: none; color: var(--text-muted); }
+.dk-tab.is-on > svg { color: var(--accent-text); }
+.dk-tab:disabled, .dk-tab[aria-disabled='true'] { color: var(--text-disabled); cursor: not-allowed; }
+/* Текст и невидимый жирный двойник — в одной ячейке сетки: подпись-узел с глифом остаётся одной строкой. */
+.dk-tab__label { display: inline-grid; align-items: center; }
+.dk-tab__text, .dk-tab__label::after { grid-area: 1 / 1; white-space: nowrap; }
+.dk-tab__label::after { content: attr(data-label); height: 0; overflow: hidden; visibility: hidden; font-weight: 600; pointer-events: none; }
+.dk-tab__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  font: 600 var(--fs-11) / 16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.dk-tab.is-on .dk-tab__count {
+  color: var(--text);
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+}
+.dk-tab__status { display: inline-flex; align-items: center; flex: none; font-size: var(--fs-12); }
+
+@media (forced-colors: active) {
+  .dk-tab.is-on::after { background: Highlight; }
+  .dk-tab:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dk-tab::after, .dk-tab::before { transition: none; }
+}
+
+/* ── Карточки выбора ────────────────────────────────────────────────────── */
+.dk-cards { --card-min: 200px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--card-min), 100%), 1fr)); gap: var(--space-2); }
+.dk-cards--sm { --card-min: 168px; }
+.dk-cards--lg { --card-min: 260px; }
+.dk-card-opt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+  font: inherit;
+  text-align: left;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.dk-card-opt:hover:not(.is-disabled) { background: var(--bg-hover); border-color: var(--border-strong); }
+.dk-card-opt:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
+.dk-card-opt.is-on {
+  background: color-mix(in oklch, var(--accent) 10%, var(--bg-card));
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 0.5px var(--accent);
+}
+.dk-card-opt.is-on:focus-visible { box-shadow: inset 0 0 0 0.5px var(--accent), var(--halo); }
+.dk-card-opt.is-disabled { color: var(--text-disabled); border-style: dashed; cursor: not-allowed; }
+.dk-card-opt__head { display: flex; align-items: flex-start; gap: var(--space-2); }
+.dk-card-opt__head > svg { flex: none; margin-top: 1px; color: var(--text-muted); }
+.dk-card-opt.is-on .dk-card-opt__head > svg { color: var(--accent-text); }
+.dk-card-opt__title { flex: 1 1 auto; min-width: 0; font: 600 var(--fs-13) / 1.3 var(--font-sans); color: var(--text); text-wrap: balance; }
+.dk-card-opt.is-disabled .dk-card-opt__title { color: var(--text-disabled); }
+.dk-card-opt__check { flex: none; font-size: var(--fs-14); line-height: 1; color: var(--accent-text); }
+.dk-card-opt__desc { font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-muted); text-wrap: pretty; }
+.dk-card-opt__meta { font: 400 var(--fs-11) var(--font-mono); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dk-card-opt__reason { font-size: var(--fs-12); color: var(--text-secondary); }
+@media (forced-colors: active) {
+  .dk-card-opt.is-on { outline: 2px solid Highlight; }
+}

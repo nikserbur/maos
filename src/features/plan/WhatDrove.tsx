@@ -1,16 +1,16 @@
 /**
  * «Почему так» (UX-V2 §4.2 шаг 7; X2 — внутри секции «Узкое место»): 3–5 узлов карты с наибольшим вкладом —
  * хвост длительностей (CVaR − E), календарь (фонд против 24×7), труд (операторов меньше станков),
- * ГА (принят/отклонён), ручные пины, узкое место. Каждый — с переходом на узел карты.
+ * генетический алгоритм (принят/отклонён), ручные пины, узкое место. Каждый — с переходом на узел карты.
  * Чистая функция `driversOf` — вклад оценивается по полям ответа /api/schedule, без догадок.
  */
 import { useState } from 'react'
 import type { ScheduleResult } from '../../lib/api'
 import { hours, num, pct, plural } from '../../explain/format'
-import { ruleLabel } from '../../explain/labels'
 import { Meter, type MeterTone } from '../../ui/charts'
 import { DataTable, type DataColumn } from '../../ui/kit'
 import { GaImproverCard } from './GaImproverCard'
+import { ruleWords } from './ruleWords'
 import './plan-screen.css'
 
 /** Сила драйвера — метр: отклонение — предупреждающий тон; выигрыш и норма — нейтрально (цвет — только у отклонений). */
@@ -32,7 +32,7 @@ export function driversOf(r: ScheduleResult, pins: number): Driver[] {
   const tail = k.makespan_mean > 0 ? k.makespan_cvar / k.makespan_mean - 1 : 0
   out.push({
     id: 'tail', title: 'Хвост длительностей', weight: Math.min(1, tail / 0.5),
-    detail: `CVaR на ${pct(tail, 0)} выше E[Cmax]`, mapNode: 'dist.durations', tone: tail > 0.25 ? 'warn' : 'neutral',
+    detail: `в худших сценариях план на ${pct(tail, 0)} длиннее среднего`, mapNode: 'dist.durations', tone: tail > 0.25 ? 'warn' : 'neutral',
   })
   if (r.calendar.enabled && r.calendar.work_fond_hours > 0 && r.n_machines > 0) {
     const full = r.n_machines * k.makespan
@@ -55,8 +55,9 @@ export function driversOf(r: ScheduleResult, pins: number): Driver[] {
   if (r.improver) {
     const imp = r.improver.validation?.improvement_pct ?? r.improver.improvement_pct
     out.push({
-      id: 'ga', title: r.improver.adopted ? 'ГА принят' : 'ГА отклонён (нет выигрыша вне выборки)', weight: Math.min(1, Math.abs(imp) / 10),
-      detail: `${imp >= 0 ? '+' : ''}${num(imp, 1)} % к цели F вне выборки · правило ${ruleLabel(r.rule)}`, mapNode: 'dec.schedule', tone: r.improver.adopted ? 'good' : 'neutral',
+      id: 'ga', title: r.improver.adopted ? 'Генетический алгоритм принят' : 'Генетический алгоритм отклонён (нет выигрыша вне выборки)',
+      weight: Math.min(1, Math.abs(imp) / 10),
+      detail: `${imp >= 0 ? '+' : ''}${num(imp, 1)} % к целевой функции вне выборки · правило «${ruleWords(r.rule)}»`, mapNode: 'dec.schedule', tone: r.improver.adopted ? 'good' : 'neutral',
     })
   }
   if (pins > 0) out.push({ id: 'pins', title: 'Ручные правки Ганта', weight: Math.min(1, pins / 10), detail: `${num(pins, 0)} ${plural(pins, 'правка', 'правки', 'правок')} «не раньше»`, mapNode: 'dec.schedule', tone: 'neutral' })
@@ -72,11 +73,11 @@ export function WhatDrove({ result, pins }: { result: ScheduleResult; pins: numb
   const [gaOpen, setGaOpen] = useState(false)
   const hasGa = Boolean(result.improver && result.improver.method === 'ga' && result.improver.validation)
   const cols: DataColumn<Driver>[] = [
-    { key: 'title', title: 'Почему так', rowHeader: true, sortable: false,
+    { key: 'title', title: 'Почему так', rowHeader: true, primary: true, sortable: false,
       render: (d) => <a className="pl-drove__title" href={`#/map/${d.mapNode}`} title="Узел на карте методологии">{d.title} ↗</a> },
     { key: 'weight', title: 'Сила', sortable: false, className: 'pl-drove__bar',
       render: (d) => <Meter value={Math.max(0.04, d.weight)} tone={DRIVER_TONE[d.tone]} label={`Относительная сила: ${pct(d.weight, 0)}`} /> },
-    { key: 'detail', title: 'Что это значит', sortable: false,
+    { key: 'detail', title: 'Что это значит', sortable: false, minWidth: 20,
       render: (d) => (
         <span className="pl-drove__detail">
           {d.tone === 'warn' && <span className="glyph-setup" aria-hidden="true" />}{d.detail}

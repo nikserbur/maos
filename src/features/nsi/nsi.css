@@ -64,13 +64,15 @@
 .nsi__count { font-size: var(--fs-12); color: var(--text-muted); white-space: nowrap; }
 .nsi__saved { font-size: var(--fs-12); color: var(--text-secondary); white-space: nowrap; }
 .nsi__saved:empty { display: none; }
-.nsi__toolbar { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
+/* Поиск и «Создать …» — в одной строке, без переноса (поиск сжимается первым). */
+.nsi__toolbar { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: nowrap; justify-content: flex-end; min-width: 0; }
+.nsi__toolbar > .btn { flex: none; white-space: nowrap; }
 .nsi__search-wrap {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  flex: 0 1 260px;
-  min-width: 180px;
+  flex: 1 1 16rem;
+  min-width: 160px;
   height: var(--control);
   padding: 0 10px;
   color: var(--text-muted);
@@ -96,38 +98,29 @@
 }
 .nsi__search::placeholder { color: var(--text-muted); opacity: 1; }
 .nsi__table-wrap { flex: 1 1 auto; }
+/* Реестры с 8–9 числовыми колонками (типы оборудования, станки) при 1440 px: имя — минимум 11rem, иначе таблица шире области на 10–20 px и уходит в горизонтальную прокрутку. */
+.nsi__table-wrap .dk-table { --dk-primary-min: 11rem; }
 
 /* ── Ячейки реестров ─────────────────────────────────────────────────────── */
 .nsi-muted { color: var(--text-muted); }
 /* Отклонение: ▲ окрашен статусом, слово — нейтральное. */
 .nsi-flag { display: inline-flex; align-items: center; font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); white-space: nowrap; }
-.nsi-cell-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.nsi-cell-clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dk-table .nsi-td-name { max-width: 0; width: 34%; }
-.dk-table .nsi-td-menu { width: 40px; padding-top: 0; padding-bottom: 0; text-align: right; }
+/* Ширины колонок задаёт кит (primary/fit/minWidth в колонках) — здесь только содержимое ячеек:
+   имя и пометка второй строкой, переносы вместо многоточий. */
+.nsi-cell-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.nsi-cell-name { overflow-wrap: anywhere; }
+.nsi-num-stack { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.dk-table .nsi-td-menu { padding-top: 0; padding-bottom: 0; text-align: right; }
 .nsi-rowmenu { display: inline-flex; }
-.nsi-item { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; overflow: hidden; white-space: nowrap; }
+/* Изделие: код и имя — первая строка, уточнение в скобках — второй строкой, приглушённо. */
+.nsi-item { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); row-gap: 2px; min-width: 0; }
 .nsi-code { flex: none; font-size: var(--fs-12); font-weight: 400; color: var(--text-muted); }
-.nsi-item__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.nsi-item__tail { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: var(--text-muted); }
-.nsi-item--variant { padding-left: var(--space-4); font-weight: 400; color: var(--text-secondary); }
+.nsi-item__name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.nsi-item__tail { flex: 1 0 100%; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-12); font-weight: 400; color: var(--text-muted); }
+.nsi-item--variant { display: block; padding-left: var(--space-4); font-weight: 400; color: var(--text-secondary); }
 .nsi-item--variant::before { content: '↳'; margin-right: var(--space-1); color: var(--text-muted); }
-.nsi-chips { display: flex; gap: var(--space-1); min-width: 0; overflow: hidden; }
-.nsi-chip {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 16ch;
-  padding: 1px 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-12);
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-}
-.nsi-chip--more { flex: none; color: var(--text-muted); }
+/* Допуски рабочего — одной строкой «24 типа станков: … и ещё 23»; полный список — в подсказке. */
+.nsi-perms-line { overflow-wrap: anywhere; }
 .nsi-labor summary { cursor: pointer; font-size: var(--fs-12); color: var(--text-secondary); }
 .nsi-labor summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -177,3 +170,18 @@
 .form__input--year { max-width: 120px; }
 .form__add { align-self: flex-start; margin-top: var(--space-1); }
 .nsi__form-missing { color: var(--text-muted); }
+
+/* ≤ 1200 px: список реестров — вкладками над таблицей (ширина ≈ 216 px отдаётся таблице: «Наладка, мин»
+   и длинные имена операций не уходят за правый край). Панель записи остаётся справа от таблицы. */
+@media (max-width: 1200px) {
+  .nsi { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); }
+  .nsi .nsi__list, .nsi--with-panel .nsi__list {
+    grid-column: 1 / -1; width: auto; padding: var(--space-1) var(--space-3) 0;
+    overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  .nsi__list-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nsi__items { flex-direction: row; gap: var(--space-1); }
+  .nsi__item { min-height: 36px; padding: 0 var(--space-3); font-size: var(--fs-13); white-space: nowrap; border-radius: var(--radius) var(--radius) 0 0; }
+  .nsi__item--active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
+  .nsi__panel { min-height: 0; }
+}

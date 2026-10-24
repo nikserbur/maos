@@ -169,18 +169,20 @@ export interface ScenarioPayload {
   macro_mode?: MacroMode | MacroModeName
   distributions?: PriceDistribution[]
   overrides?: ScenarioOverride[]
+  /** Условия «к умолчанию»: бэкенд пишет NULL (умолчание движка следует за данными). */
+  reset?: ReadonlyArray<'inflation' | 'fx' | 'demand' | 'volatility' | 'start_date' | 'end_date'>
 }
 
 /* ── Волна M: обученный макро-генератор (MacroSampler; rl/macro) ─────────────── */
 export type MacroModeName = 'base' | 'regime' | 'quantile' | 'episode' | 'iid_v063'
-/** Стресс §2.6б: режим навязан | квантиль Student-t | исторический эпизод. null → базовый. */
+/** Стресс §2.6б: режим навязан | квантиль Student-t | исторический эпизод (order: replay — по порядку один раз). null → базовый. */
 export type MacroStress =
   | { regime: number }
   | { quantile_t: number }
-  | { episode: string; months?: number }
+  | { episode: string; months?: number; order?: 'replay' | 'blocks' }
   | null
-/** Базовая траектория [НОРМ]: инфляция flat | узлы ЦБ | пользовательская; ставка flat | пользовательская. */
-export interface MacroRef { cpi?: 'flat' | 'nodes' | number[]; key?: 'flat' | number[] }
+/** Базовая траектория [НОРМ]: инфляция flat | узлы ЦБ | пользовательская; ставка flat | пользовательская; fx — сдвиг уровня курса (×). */
+export interface MacroRef { cpi?: 'flat' | 'nodes' | number[]; key?: 'flat' | number[]; fx?: number }
 export interface MacroMode { mode: MacroModeName; stress?: MacroStress; ref?: MacroRef }
 export interface MacroRegime {
   index: number; label: string; share_of_history: number; n_months: number; stationary_prob: number
@@ -192,6 +194,12 @@ export interface MacroLastObs { month: string; cpi_yoy_pp: number; key_pp: numbe
 export interface MacroRegimes {
   k: number; block_months: number; regimes: MacroRegime[]; transition: number[][]; crisis_index: number
   p_last: number[]; note: string; last_obs: MacroLastObs; stress_quantiles: number[]; episodes_available: [string, string]
+  /** История ЦБ РФ помесячно (для «что было тогда» у пресетов-эпизодов). */
+  history?: { month: string[]; key_pp: number[]; cpi_yoy_pp: number[]; usd_rub: number[] }
+  /** Первый месяц с шоком (эпизод можно начать с него). */
+  episode_first?: string
+  /** Нижняя граница ставки в путях, % годовых (исторический минимум). */
+  key_floor_pp?: number
 }
 export interface MacroHoldoutVar {
   coverage80: number; coverage90: number; mean_CRPS: number; mean_CRPS_persistence: number; mean_CRPS_fixed4?: number

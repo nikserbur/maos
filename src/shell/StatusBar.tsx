@@ -16,7 +16,7 @@ import { countText } from '../explain/format'
 import { AccountMenu } from './AccountMenu'
 import { blockHref } from './blockHome'
 import { checkHealth, useBackendHealth, type Connection } from './health'
-import { PRODUCT_VERSION } from './version'
+import { APP_VERSION, PRODUCT_VERSION, versionMismatch } from './version'
 
 const CONNECTION: Record<Connection, { glyph: string; label: string }> = {
   checking: { glyph: 'statusbar__dot', label: 'Сервер: подключение…' },
@@ -51,14 +51,21 @@ function useWorst(): Worst | null {
 }
 
 export function StatusBar() {
-  const { connection } = useBackendHealth()
+  const { connection, serverVersion } = useBackendHealth()
   const conn = CONNECTION[connection]
+  const mismatch = versionMismatch(APP_VERSION, serverVersion)
   const jobs = useJobs()
   const worst = useWorst()
 
   return (
     <footer className="statusbar">
       <span className="statusbar__version num">{PRODUCT_VERSION}</span>
+      {mismatch && (
+        <span className="statusbar__vwarn glyph-setup" role="status"
+          title={`Интерфейс v${APP_VERSION}, ${mismatch}: версии расходятся — перезапустите сервер разработки или пересоберите сервер`}>
+          {mismatch}
+        </span>
+      )}
       <span className="statusbar__sep" aria-hidden="true" />
       <span className={`statusbar__conn statusbar__conn--${connection}`} role="status">
         <span className={conn.glyph} aria-hidden="true" />

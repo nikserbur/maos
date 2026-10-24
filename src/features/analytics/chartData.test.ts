@@ -111,7 +111,7 @@ describe('ровный ряд и заголовок-утверждение', () 
     const flat = [bundle(1, 900, 1), bundle(2, 1000, 1), bundle(3, 800, 1)]
     const d = buildChartData('plans', ['OTD'], flat, null)
     const info = flatInfo('plans', d)
-    expect(info?.text).toBe(`Доля заказов в срок (OTD) 100${NBSP}% во всех 3 построениях`)
+    expect(info?.text).toBe(`Доля заказов в срок 100${NBSP}% во всех 3 построениях`)
     expect(flatInfo('plans', buildChartData('plans', ['MAKESPAN'], flat, null))).toBeNull()
   })
 
@@ -127,7 +127,7 @@ describe('ровный ряд и заголовок-утверждение', () 
   it('утверждение: диапазон последних построений', () => {
     const series = [bundle(1, 900, 0.9), bundle(2, 1000, 0.95), bundle(3, 800, 1)]
     const d = buildChartData('plans', ['MAKESPAN', 'MK_CVAR'], series, null)
-    expect(statementTitle('plans', d, [])).toBe(`Длина расписания · E[Cmax] по построениям: все 3 — в пределах 800–1${NBSP}000${NBSP}ч`)
+    expect(statementTitle('plans', d, [])).toBe(`Длина расписания (среднее) по построениям: все 3 — в пределах 800–1${NBSP}000${NBSP}ч`)
     const t = buildChartData('timeline', ['util'], [], res, 'all')
     expect(statementTitle('timeline', t, [])).toBe(`Загрузка оборудования по часам: пик 90${NBSP}% на 48${NBSP}ч`)
   })

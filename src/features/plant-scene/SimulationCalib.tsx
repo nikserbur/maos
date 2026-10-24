@@ -21,14 +21,21 @@ const OP_FORMS = ['операция', 'операции', 'операций'] as
 
 const minutes = (v: number): string => `${num(v, 0)} мин`
 
+/** Узкая колонка панели: операция (изделие — второй строкой) забирает ширину, числа — по содержимому, единицы — в заголовках. */
 const COLUMNS: ReadonlyArray<DataColumn<CalibRow>> = [
-  { key: 'op_name', title: 'Операция', rowHeader: true, clip: true, get: (r) => r.op_name },
-  { key: 't_norm', title: 'Норматив', num: true, get: (r) => r.t_norm, render: (r) => minutes(r.t_norm) },
-  { key: 'realized_mean', title: 'Факт', num: true, get: (r) => r.realized_mean, render: (r) => minutes(r.realized_mean) },
-  { key: 'delta_pct', title: 'Δ', num: true, get: (r) => r.delta_pct,
+  { key: 'op_name', title: 'Операция', rowHeader: true, primary: true, get: (r) => r.op_name,
+    render: (r) => (
+      <span className="sim__opcell">
+        <span>{r.op_name}</span>
+        {r.product_name && <span className="sim__opcell-sub">{r.product_name}</span>}
+      </span>
+    ) },
+  { key: 't_norm', title: 'Норматив, мин', num: true, get: (r) => r.t_norm, render: (r) => num(r.t_norm, 0) },
+  { key: 'realized_mean', title: 'Факт, мин', num: true, get: (r) => r.realized_mean, render: (r) => num(r.realized_mean, 0) },
+  { key: 'delta_pct', title: 'Отклонение, %', num: true, get: (r) => r.delta_pct,
     render: (r) => (Math.abs(r.delta_pct) > ALERT_PCT
-      ? <span className="glyph-setup">{signed(r.delta_pct / 100, '%')}</span>
-      : <span className="sim__muted">{signed(r.delta_pct / 100, '%')}</span>) },
+      ? <span className="glyph-setup">{signed(r.delta_pct)}</span>
+      : <span className="sim__muted">{signed(r.delta_pct)}</span>) },
 ]
 
 /** Худшие по |Δ| строки калибровки. */
@@ -83,13 +90,12 @@ export function SimulationCalib({ rows, loadError, onReload }: SimulationCalibPr
       <div className="sim__label text-caps">
         Отклонения от нормативов
         <NoteTip title="Калибровка нормативов">
-          Наблюдаемая в прогоне длительность (обработка + наладки + ТО) против норматива справочника. Запись
-          обновит t_norm; t_opt и t_pess изменятся пропорционально.
+          Наблюдаемая в прогоне длительность (обработка, наладки и техобслуживание) против норматива справочника.
+          Запись обновит норму времени; оптимистичная и пессимистичная оценки изменятся пропорционально.
         </NoteTip>
       </div>
       {error !== null && <ErrorBanner title="Не удалось записать нормативы" error={error} onRetry={() => setConfirm(true)} onDismiss={() => setError(null)} />}
-      <DataTable columns={COLUMNS} rows={worst} rowKey={(r) => r.op_id} tight caption="Отклонения норм"
-                 rowTitle={(r) => r.product_name} />
+      <DataTable className="sim__calib-table" columns={COLUMNS} rows={worst} rowKey={(r) => r.op_id} tight caption="Отклонения норм" />
       {toApply.length === 0 ? (
         <p className="sim__note">Отклонений больше {num(APPLY_PCT, 0)} % нет — записывать нечего.</p>
       ) : (
@@ -99,7 +105,7 @@ export function SimulationCalib({ rows, loadError, onReload }: SimulationCalibPr
       )}
       {confirm && (
         <ConfirmDialog title="Записать нормативы в справочники?" objectName={`Операции — ${countText(toApply.length, OP_FORMS)}`}
-                       consequence="Нормативы t_norm будут заменены наблюдаемыми; сразу после записи их можно вернуть кнопкой «Отменить»."
+                       consequence="Нормы времени будут заменены наблюдаемыми; сразу после записи их можно вернуть кнопкой «Отменить»."
                        confirmLabel="Записать" busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => { void apply() }}>
           <ul className="sim__calib-list">
             {toApply.map((r) => (

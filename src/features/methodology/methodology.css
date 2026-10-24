@@ -196,7 +196,8 @@
 .mth-table th, .mth-matrix th {
   position: sticky; top: 0;
   text-align: left;
-  font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  /* Заголовки — как у таблиц кита: обычный регистр, 12 px, переносятся по словам. */
+  font-size: var(--fs-12); font-weight: 600; line-height: 1.25; text-wrap: balance; vertical-align: bottom;
   color: var(--text-muted);
   background: var(--bg-panel);
   padding: var(--space-2) var(--space-3);

@@ -10,7 +10,7 @@ import { setDecisionContext, useDecisionContext } from '../../shell/context'
 import { setCrumbTitle } from '../../shell/crumbs'
 import { navigateTo, replaceRoute, useHashRoute } from '../../shell/router'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { EmptyState, ErrorBanner, Skeleton, errorDetail, showUndo } from '../../ui/kit'
+import { ErrorBanner, Skeleton, errorDetail, showUndo } from '../../ui/kit'
 import { useRefs } from '../method-map/useMethodMapState'
 import { ScenarioCompare } from './ScenarioCompare'
 import { ScenarioCreateDialog } from './ScenarioCreateDialog'
@@ -19,7 +19,8 @@ import { ScenarioTabs } from './ScenarioTabs'
 import {
   compareAnchor, initialCompare, parseScenarioAnchor, resolveOpenId, scenarioAnchor, toggleCompare, workingIdOf, type ScenarioTab,
 } from './scenarioRoute'
-import type { ScenarioTemplate } from './scenarioTemplates'
+import { FirstScenario } from './FirstScenario'
+import { scenarioViewOf, type ScenarioPreset } from './scenarioPresets'
 import { useScenarioData } from './useScenarioData'
 import './scenario-compare.css'
 import './scenarios-v2.css'
@@ -42,6 +43,8 @@ export function ScenarioCompareScreen() {
   const workingId = workingIdOf(ctx.scenarioId, ids)
   const openId = resolveOpenId(route.id, ctx.scenarioId, ids)
   const open = data.scenarios.find((s) => s.id === openId) ?? null
+  const baseSc = data.scenarios.find((s) => scenarioViewOf(s, [], { lastObs: data.regimes?.last_obs }).isForecast)
+  const baseForecast = baseSc ? { id: baseSc.id, name: baseSc.name || 'Базовый' } : null
   const lastOpen = useRef('')
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -87,9 +90,9 @@ export function ScenarioCompareScreen() {
       onUndo: () => { void data.restore(sc).then((nid) => { if (nid) openScenario(nid) }) },
     })
   }
-  const createScenario = async (name: string, description: string, tpl: ScenarioTemplate | null) => {
+  const createScenario = async (name: string, description: string, preset: ScenarioPreset) => {
     setCreating(true)
-    const id = await data.create(name, description, tpl)
+    const id = await data.create(name, description, preset)
     setCreating(false)
     setCreateOpen(false)
     if (id) openScenario(id)
@@ -111,7 +114,8 @@ export function ScenarioCompareScreen() {
         )}
         {route.compare ? (
           <ScenarioCompare scenarios={data.scenarios} ids={route.ids} workingId={workingId} products={data.products}
-            regimeNames={data.regimes?.regimes.map((r) => r.label) ?? []} onMakeWorking={makeWorking}
+            regimeNames={data.regimes?.regimes.map((r) => r.label) ?? []} lastObs={data.regimes?.last_obs} crisisIndex={data.regimes?.crisis_index}
+            onMakeWorking={makeWorking}
             onDrop={(id) => replaceAnchor(compareAnchor(route.ids.filter((x) => x !== id)))} />
         ) : open ? (
           <ScenarioTabs key={open.id} sc={open} tab={route.tab} products={data.products} productsFailed={data.productsFailed}
@@ -124,15 +128,15 @@ export function ScenarioCompareScreen() {
             <Skeleton h={16} w="30%" /><Skeleton h={64} /><Skeleton h={48} /><Skeleton h={320} />
           </div>
         ) : data.status === 'ready' ? (
-          <EmptyState kind="first-use" title="Сценариев пока нет"
-            action={<button type="button" className="btn btn--primary" onClick={() => setCreateOpen(true)}>Создать сценарий</button>}>
-            Сценарий — внешние условия: инфляция, курс, спрос, режим генератора ставки и распределения цен. Создайте его из шаблона.
-          </EmptyState>
+          <FirstScenario regimes={data.regimes} busy={creating} existing={data.scenarios.map((s) => s.name)}
+            onCreate={(name, description, preset) => { void createScenario(name, description, preset) }} />
         ) : null}
       </main>
 
       {createOpen && (
-        <ScenarioCreateDialog busy={creating} existing={data.scenarios.map((s) => s.name)} onSubmit={createScenario} onCancel={() => setCreateOpen(false)} />
+        <ScenarioCreateDialog busy={creating} existing={data.scenarios.map((s) => s.name)} regimes={data.regimes} base={baseForecast}
+          onOpenExisting={(id) => { setCreateOpen(false); openScenario(id) }}
+          onSubmit={(name, description, preset) => { void createScenario(name, description, preset) }} onCancel={() => setCreateOpen(false)} />
       )}
       {removing && (
         <ConfirmDialog title="Удалить сценарий?" objectName={removing.name || 'Без названия'} confirmLabel="Удалить" danger

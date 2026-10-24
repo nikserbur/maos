@@ -10,7 +10,7 @@ import { api, type MacroRegimes, type PriceDistribution, type PriceScenario, typ
 import { markInputsChanged } from '../../shell/context'
 import { ensureRefs, invalidateScenario } from '../method-map/useMethodMapState'
 import { payloadOf } from './scenarioPayload'
-import type { ScenarioTemplate } from './scenarioTemplates'
+import { presetPayload, type ScenarioPreset } from './scenarioPresets'
 import { SIGMA_DEFAULT, BETA_DEFAULT } from './distModel'
 
 /** Ползунки сохраняются с задержкой: один PUT на серию движений, а не на каждый тик (UX-V2 §5.1). */
@@ -37,7 +37,7 @@ export interface ScenarioData {
   setDist: (sc: PriceScenario, productId: string, p: Partial<PriceDistribution>) => Promise<void>
   clone: (id: string) => Promise<string | null>
   remove: (id: string) => Promise<boolean>
-  create: (name: string, description: string, tpl: ScenarioTemplate | null) => Promise<string | null>
+  create: (name: string, description: string, preset: ScenarioPreset) => Promise<string | null>
   /** Отмена удаления: сценарий создаётся заново из сохранённой копии (новый id). */
   restore: (sc: PriceScenario) => Promise<string | null>
 }
@@ -168,8 +168,8 @@ export function useScenarioData(): ScenarioData {
     }
   }
 
-  const create = (name: string, description: string, tpl: ScenarioTemplate | null) => createFrom({
-    name, description: description || undefined, ...(tpl?.values ?? {}),
+  const create = (name: string, description: string, preset: ScenarioPreset) => createFrom({
+    name, description: description || undefined, ...presetPayload(preset),
     distributions: productsRef.current.map((p) => distDefault(p.id)),
   }, 'Сценарий не создан')
 

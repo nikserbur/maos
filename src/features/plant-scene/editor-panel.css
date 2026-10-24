@@ -64,7 +64,9 @@
 .ep-objects__n { font-weight: 400; color: var(--text-muted); }
 .ep-objects .editor-panel__tip { margin: var(--space-1) 0 var(--space-3); }
 .sot .dk-table { width: 100%; }
-.sot .dk-table th[scope='row'] { max-width: 150px; }
+/* Узкий инспектор (~330 px): колонка имени — минимум 8rem, статус — второй строкой под именем; иначе таблица шире панели и режет «Очередь, партий». */
+.sot { --dk-primary-min: 8rem; }
+.sot-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .sot .dk-table tr.is-selected td, .sot .dk-table tr.is-selected th[scope='row'] {
   background: color-mix(in oklch, var(--accent) 9%, transparent);
   color: var(--text);

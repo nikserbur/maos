@@ -26,23 +26,72 @@
 .ch-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .ch-scalenote { font-size: var(--fs-11); color: var(--text-muted); }
 .ch-caveat { margin: 0; font-size: var(--fs-12); color: var(--text-muted); line-height: var(--lh-body); }
-/* Сетка: текст (растягивается, переносится) · бейджи · действия — переключатель всегда в первой строке */
-.ch-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: start;
-  gap: var(--space-1) var(--space-3);
+/* Шапка в две строки: [заголовок · действия] и мета-строка на всю ширину (бейджи, пересчёт, подзаголовок).
+   Бейджи и действия никогда не берут колонку у заголовка — он больше не сжимается до одного слова. */
+.ch-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ch-head__top { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.ch-title {
+  flex: 1 1 auto;
   min-width: 0;
+  /* Имя ряда целиком (владелец: «без сокращений»): длинные названия изделий — в 3 строки, без многоточия. */
+  display: block;
+  font: 600 var(--fs-13) / 1.3 var(--font-sans);
+  color: var(--text);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }
-.ch-head__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ch-title { font-size: var(--fs-13); font-weight: 600; color: var(--text); }
-.ch-sub { font-size: var(--fs-12); color: var(--text-muted); line-height: var(--lh-body); }
-.ch-badges { display: inline-flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
-.ch-actions { display: inline-flex; align-items: center; gap: var(--space-1); }
-.ch-table-toggle { height: var(--control-compact); padding: 0 var(--space-2); font-size: var(--fs-12); color: var(--text-muted); }
-.ch-table-toggle[aria-pressed='true'] { color: var(--text); }
+.ch-title--none { display: block; }
+/* Заголовок-действие (открыть веер и т. п.): выглядит как заголовок, ведёт себя как кнопка. */
+.ch-title-btn { flex: 1 1 auto; min-width: 0; padding: 0; font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: var(--radius-sm); cursor: pointer; }
+.ch-title-btn:hover .ch-title { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.ch-title-btn:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
+.ch-actions { flex: none; display: inline-flex; align-items: center; gap: 2px; margin-top: -5px; }
+.ch-actions .btn { white-space: nowrap; }
+/* Иконки шапки (⤢ открыть, ⋯ меню) — тихие, но видимые (--text-secondary), цель нажатия 28 px. */
+.ch-actions .btn--icon { width: 28px; height: 28px; min-height: 28px; }
+.ch-actions .dk-menu > .btn:not(.is-open), .ch-actions > .btn--ghost { color: var(--text-secondary); background: transparent; border-color: transparent; }
+.ch-actions .dk-menu > .btn:hover, .ch-actions > .btn--ghost:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+/* Мета — колонкой: строка бейджей (Δ, «своя шкала», пересчёт), под ней — подзаголовок/качество во всю ширину. */
+.ch-head__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.ch-head__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--space-2); min-width: 0; max-width: 100%; }
+.ch-head__meta .ch-sub { display: block; align-self: stretch; min-width: 0; max-width: 72ch; }
+.ch-sub { font-size: var(--fs-12); color: var(--text-muted); line-height: var(--lh-body); text-wrap: pretty; overflow-wrap: anywhere; }
+.ch-frame--compact .ch-head__top { gap: var(--space-1); }
 .ch-body { position: relative; min-width: 0; }
 .ch-frame--compact .ch-head { gap: var(--space-1) var(--space-2); }
+
+/* Карточка-действие (onTitleClick, «открыть веер»): вся карточка — цель наведения, кромка ярче,
+   фокус заголовка-кнопки подсвечивает карточку целиком. */
+.ch-frame--clickable { cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.ch-frame--clickable:hover { border-color: var(--border-strong); }
+.ch-frame--clickable:has(.ch-title-btn:focus-visible) { box-shadow: var(--halo); }
+.ch-frame--clickable .ch-title-btn:focus-visible { box-shadow: none; }
+.ch-frame--clickable:hover .ch-title { color: var(--accent-text); }
+
+/* Карточки графиков в общей сетке: шапка и график — две строки подсетки родителя, поэтому верх плота
+   и ось X соседних карточек стоят на одной линии, сколько бы строк ни заняла мета. Само — в сетке из
+   одних малых кратных; для сетки обычных рамок — класс родителя `.ch-row-align` (без легенды внутри). */
+@supports (grid-template-rows: subgrid) {
+  :not(:has(> :not(.ch-frame--multiple))) > .ch-frame--multiple:not(:has(> .ch-legend)),
+  .ch-row-align > .ch-frame:not(:has(> .ch-legend)) {
+    display: grid;
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-2);
+    align-content: start;
+  }
+  :not(:has(> :not(.ch-frame--multiple))) > .ch-frame--multiple:not(:has(> .ch-legend)) > .ch-head,
+  .ch-row-align > .ch-frame:not(:has(> .ch-legend)) > .ch-head { align-self: start; }
+}
 
 /* Плот: фокусируемый контейнер, перекрестие по клавиатуре */
 .ch-plot { position: relative; width: 100%; min-width: 0; outline: none; border-radius: var(--radius); }
@@ -119,8 +168,8 @@
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 140px;
-  max-width: 212px;
+  min-width: min(140px, 100%);
+  max-width: 100%;
   padding: var(--space-2) 10px;
   font-family: var(--font-sans);
   background: var(--bg-elevated);
@@ -131,16 +180,13 @@
 .ch-tip__x { margin-bottom: 2px; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-muted); }
 .ch-tip__row { display: flex; align-items: center; gap: 7px; font-size: var(--fs-12); line-height: 1.5; }
 .ch-tip__key { display: inline-flex; flex: none; }
-.ch-tip__n { margin-right: auto; color: var(--text-secondary); white-space: nowrap; }
+.ch-tip__n { margin-right: auto; min-width: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
 .ch-tip__v { font-weight: 600; color: var(--text); white-space: nowrap; }
 
 /* ── Таблица-двойник ─────────────────────────────────────────────────────── */
 .ch-tablewrap { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
-.ch-table { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
-.ch-table th, .ch-table td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--border); }
-.ch-table thead th { position: sticky; top: 0; color: var(--text-muted); font-weight: 600; background: var(--bg-panel); }
-.ch-table tbody th { font-weight: 500; color: var(--text-secondary); }
-.ch-table .num { text-align: right; }
+/* Двойник — на классах таблицы кита (.dk-table); здесь только размер шрифта. */
+.ch-twin { --dk-primary-min: 9rem; font-size: var(--fs-12); }
 
 /* ── Пустое состояние ────────────────────────────────────────────────────── */
 .ch-empty {
@@ -162,29 +208,30 @@
 .ch-bars { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 .ch-bar {
   display: grid;
-  grid-template-columns: minmax(120px, 2fr) 3fr minmax(64px, auto);
+  grid-template-columns: minmax(min(240px, 45%), 2fr) minmax(64px, 3fr) minmax(64px, auto);
   align-items: center;
   gap: var(--space-3);
   min-height: 28px;
 }
 .ch-bar__label { display: flex; flex-direction: column; min-width: 0; }
+/* Подпись целиком: переносится по словам, без многоточия и обрезки (полный текст — тоже в title строки). */
 .ch-bar__name {
   font-size: var(--fs-12);
   line-height: 1.3;
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
 }
+.ch-bar__from, .ch-bar__to { display: block; }
+.ch-bar__to { color: var(--text-muted); }
+.ch-bar.is-marked .ch-bar__to { color: var(--text-secondary); }
 .ch-bar.is-marked .ch-bar__name { color: var(--text); font-weight: 600; }
 .ch-bar__sec { font-size: var(--fs-11); color: var(--text-muted); }
 .ch-bar__track { display: block; width: 100%; height: 8px; border-radius: 2px; background: var(--chart-grid); overflow: hidden; }
 .ch-bar__fill { transition: width var(--dur) var(--ease-out); }
 .ch-bar__zero { stroke: var(--chart-axis); stroke-width: 1; }
 .ch-bar__value { font-size: var(--fs-12); color: var(--text); text-align: right; white-space: nowrap; }
-.ch-bars--compact .ch-bar { grid-template-columns: minmax(150px, 3fr) 3fr minmax(56px, auto); gap: var(--space-2); }
+.ch-bars--compact .ch-bar { grid-template-columns: minmax(min(280px, 50%), 3fr) minmax(64px, 3fr) minmax(56px, auto); gap: var(--space-2); }
 .ch-bar__mark { stroke: var(--text); stroke-width: 1.5; }
 .ch-bars__marklegend { display: inline-flex; align-items: center; gap: 6px; margin: var(--space-1) 0 0; font-size: var(--fs-12); color: var(--text-secondary); }
 .ch-bars__markkey { width: 0; height: 10px; border-left: 1.5px solid var(--text); }
@@ -196,7 +243,7 @@
 .ch-forest--share .ch-forest__row { grid-template-columns: minmax(140px, 2fr) minmax(160px, 4fr) minmax(84px, auto) minmax(76px, auto); }
 .ch-forest__row + .ch-forest__row:not(.ch-forest__row--axis) { border-top: 1px solid color-mix(in oklch, var(--chart-grid) 70%, transparent); }
 .ch-forest__row.is-emph .ch-forest__name { color: var(--text); font-weight: 600; }
-.ch-forest__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-12); color: var(--text-secondary); }
+.ch-forest__name { min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-12); line-height: 1.3; color: var(--text-secondary); }
 .ch-forest__track { min-width: 0; }
 .ch-forest__h { font-size: var(--fs-11); color: var(--text-muted); text-align: right; }
 .ch-forest__v { display: inline-flex; justify-content: flex-end; gap: 4px; font-size: var(--fs-12); color: var(--text); text-align: right; white-space: nowrap; }
@@ -271,6 +318,21 @@
 .ch-heat__c--10 { --ch-heat-mix: 100%; }
 .ch-heat__row--axis { margin-top: 2px; }
 .ch-heat__axis { display: flex; justify-content: space-between; color: var(--text-muted); font-family: var(--font-mono); }
+/* Нумерованные столбцы: номер над каждым столбцом (у узких — каждый второй), полные имена — в ключе. */
+.ch-heat .ch-heat__row .ch-heat__axis--numbered {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px;
+  font-family: var(--font-mono); text-align: center; white-space: nowrap; overflow-wrap: normal;
+}
+.ch-heat .ch-heat__row .ch-heat__axis--sparse > span:nth-child(even) { visibility: hidden; }
+.ch-heat__no {
+  display: inline-block; min-width: 2ch; margin-right: 6px; font-family: var(--font-mono); font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums; text-align: right; color: var(--text-muted);
+}
+.ch-heat__key {
+  margin: var(--space-2) 0 0; padding: 0; list-style: none; columns: 2 14rem; column-gap: var(--space-4);
+  font-size: var(--fs-12); line-height: 1.35; color: var(--text-secondary);
+}
+.ch-heat__key li { break-inside: avoid; padding: 1px 0; }
 .ch-heat__scale { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); color: var(--text-muted); }
 .ch-heat__scale .ch-heat__c { width: 18px; height: 10px; }
 
@@ -292,6 +354,16 @@
 .ch-sw-other { background: repeating-linear-gradient(45deg, var(--chart-other) 0 2px, transparent 2px 4px); border: 1px solid var(--chart-other); }
 .ch-fan__band { fill-opacity: 0.14; }
 .ch-fan__band--inner { fill-opacity: 0.18; }
+/* Выход за общую шкалу: «↑ до 412» у края плота (марки обрезаны рамкой). */
+.ch-fan__over {
+  font-family: var(--font-mono); font-size: var(--fs-11); font-variant-numeric: tabular-nums;
+  fill: var(--text-secondary); paint-order: stroke; stroke: var(--ch-surface); stroke-width: 3px; stroke-linejoin: round;
+}
+.ch-sw-hatch {
+  background:
+    repeating-linear-gradient(45deg, color-mix(in oklch, var(--text-secondary) 55%, transparent) 0 1.5px, transparent 1.5px 4px),
+    color-mix(in oklch, var(--chart-1) 22%, transparent);
+}
 
 /* ── Потоки (Sankey) ─────────────────────────────────────────────────────── */
 .ch-sankey__link path { fill: none; stroke: var(--chart-1); stroke-opacity: 0.32; transition: stroke-opacity var(--dur-fast) var(--ease-out); }

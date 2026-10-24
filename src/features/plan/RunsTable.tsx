@@ -1,7 +1,8 @@
 /**
  * История прогонов Стадии 1 (UX-V2 §4.5, X2 «таблицы, а не стены карточек»): одна строка — один прогон
  * с номером №N и временем сервера (runIndex), правилом и источником (паспорт прогона runMeta),
- * E[Cmax] · CVaR · OTD · узкое место. Строка открывает `#/plan/run/<id>`: полный результат есть для
+ * средняя длина плана · длина в худших сценариях · заказы в срок · узкое место (заголовки — словами,
+ * аббревиатуры E[Cmax], CVaR, OTD — в подсказках). Строка открывает `#/plan/run/<id>`: полный результат есть для
  * прогонов из кэша этой машины, остальные — «только KPI». «Повторить» — в каждой строке; две отметки
  * или «сравнить с текущим» — сравнение бок о бок с Δ к базе (DiffTable).
  */
@@ -11,6 +12,7 @@ import { ruleLabel } from '../../explain/labels'
 import { DiffTable, type DiffTableRow } from '../../ui/DiffList'
 import { Chip, DataTable, ErrorBanner, SkeletonRows, useDelayedFlag, type DataColumn } from '../../ui/kit'
 import { openRun, repeatRun } from './planNav'
+import { ruleWords } from './ruleWords'
 import { kpiOf, refreshRunIndex, useRunIndex, type RunRow } from './runIndex'
 import { browserStorage, runMetaMap, type RunMeta } from './runMeta'
 import type { ProgramSource } from './wizard/wizardStore'
@@ -26,8 +28,12 @@ export const runNo = (r: Pick<RunRow, 'seq'>): string => (r.seq !== null ? `№$
 
 export function ruleText(meta: RunMeta | undefined): string {
   if (!meta) return '—'
-  return `${ruleLabel(meta.rule)}${meta.adopted ? ' + ГА' : ''}`
+  return `${ruleWords(meta.rule)}${meta.adopted ? ' + генетический алгоритм' : ''}`
 }
+
+/** Аббревиатуры правила для подсказки: «EDD + ГА». */
+const ruleAbbr = (meta: RunMeta | undefined): string | undefined =>
+  meta ? `${ruleLabel(meta.rule)}${meta.adopted ? ' + ГА (генетический алгоритм)' : ''}` : undefined
 
 export function sourceText(meta: RunMeta | undefined): string {
   if (!meta) return '—'
@@ -35,11 +41,11 @@ export function sourceText(meta: RunMeta | undefined): string {
 }
 
 const COMPARE_ROWS: ReadonlyArray<DiffTableRow<RunRow>> = [
-  { key: 'mk', label: 'E[Cmax]', get: (r) => kpiOf(r.kpi, 'makespan_mean'), fmt: (v) => hours(v, 1), better: 'low', always: true },
-  { key: 'cvar', label: 'CVaR длины', get: (r) => kpiOf(r.kpi, 'makespan_cvar'), fmt: (v) => hours(v, 1), better: 'low', always: true },
-  { key: 'otd', label: 'OTD', get: (r) => kpiOf(r.kpi, 'otd'), fmt: (v) => pct(v, 0), better: 'high', always: true },
-  { key: 'tard', label: 'Просрочка', get: (r) => kpiOf(r.kpi, 'tardiness'), fmt: (v) => hours(v, 1), better: 'low' },
-  { key: 'util', label: 'Загрузка', get: (r) => kpiOf(r.kpi, 'utilization'), fmt: (v) => pct(v, 0), better: 'high', always: true },
+  { key: 'mk', label: 'Средняя длина плана', get: (r) => kpiOf(r.kpi, 'makespan_mean'), fmt: (v) => hours(v, 1), better: 'low', always: true },
+  { key: 'cvar', label: 'Длина плана в худших сценариях', get: (r) => kpiOf(r.kpi, 'makespan_cvar'), fmt: (v) => hours(v, 1), better: 'low', always: true },
+  { key: 'otd', label: 'Заказов в срок', get: (r) => kpiOf(r.kpi, 'otd'), fmt: (v) => pct(v, 0), better: 'high', always: true },
+  { key: 'tard', label: 'Суммарная просрочка', get: (r) => kpiOf(r.kpi, 'tardiness'), fmt: (v) => hours(v, 1), better: 'low' },
+  { key: 'util', label: 'Загрузка оборудования', get: (r) => kpiOf(r.kpi, 'utilization'), fmt: (v) => pct(v, 0), better: 'high', always: true },
   { key: 'wait', label: 'Доля ожидания', get: (r) => kpiOf(r.kpi, 'wait_share'), fmt: (v) => pct(v, 0), better: 'low' },
   { key: 'cost', label: 'Себестоимость работ', get: (r) => kpiOf(r.kpi, 'cost'), fmt: (v) => money(v), better: 'low' },
   { key: 'setups', label: 'Переналадок', get: (r) => kpiOf(r.kpi, 'n_setups'), fmt: (v) => num(v, 0), better: 'low' },
@@ -79,24 +85,27 @@ export function RunsTable({ currentId = null, canOpen, limit = 12 }: RunsTablePr
   const columns = sel.map((id) => rows.find((r) => r.id === id)).filter((r): r is RunRow => Boolean(r))
     .map((r) => ({ id: r.id, title: `${runNo(r)} · ${dateTimeShort(r.createdAt)}`, item: r }))
   const cols: DataColumn<RunRow>[] = [
-    { key: 'cmp', title: <span className="dk-vh">Сравнить</span>, sortable: false, hint: 'Отметьте два прогона для сравнения', className: 'pl-runs__pick',
+    { key: 'cmp', title: <span className="dk-vh">Сравнить</span>, sortable: false, width: 'fit', hint: 'Отметьте два прогона для сравнения', className: 'pl-runs__pick',
       render: (r) => (
         // Вся ячейка — метка чекбокса; клик по ней не открывает прогон
         <label className="pl-runs__pick-label" onClick={(e) => e.stopPropagation()}>
           <input type="checkbox" aria-label={`сравнить прогон ${runNo(r)}`} checked={sel.includes(r.id)} onChange={() => toggle(r.id)} />
         </label>
       ) },
-    { key: 'no', title: 'Прогон', rowHeader: true, get: (r) => r.seq ?? -1, className: 'dk-td-name',
+    { key: 'no', title: 'Прогон', rowHeader: true, width: 'fit', get: (r) => r.seq ?? -1, className: 'dk-td-name',
       render: (r) => <>{runNo(r)}{r.id === currentId && <Chip size="sm">открыт</Chip>}</> },
-    { key: 'when', title: 'Когда', get: (r) => r.createdAt, render: (r) => dateTimeShort(r.createdAt) },
-    { key: 'rule', title: 'Правило', get: (r) => ruleText(meta.get(r.id)), render: (r) => ruleText(meta.get(r.id)) },
-    { key: 'src', title: 'Источник · сценарий', get: (r) => sourceText(meta.get(r.id)), clip: true, render: (r) => sourceText(meta.get(r.id)) },
-    { key: 'mk', title: 'E[Cmax], ч', num: true, get: (r) => kpiOf(r.kpi, 'makespan_mean'), render: (r) => num(kpiOf(r.kpi, 'makespan_mean'), 1) },
-    { key: 'cvar', title: 'CVaR, ч', num: true, get: (r) => kpiOf(r.kpi, 'makespan_cvar'), render: (r) => num(kpiOf(r.kpi, 'makespan_cvar'), 1) },
-    { key: 'otd', title: 'OTD', num: true, get: (r) => kpiOf(r.kpi, 'otd'),
-      render: (r) => { const otd = kpiOf(r.kpi, 'otd'); return Number.isFinite(otd) && otd < OTD_FULL ? <span className="glyph-setup" title="есть опоздания">{pct(otd, 0)}</span> : pct(otd, 0) } },
-    { key: 'bn', title: 'Узкое место', get: (r) => r.kpi?.bottleneck?.wc_name ?? '', clip: true, render: (r) => r.kpi?.bottleneck?.wc_name ?? '—' },
-    { key: 'act', title: <span className="dk-vh">Действия</span>, sortable: false, className: 'pl-runs__act',
+    { key: 'when', title: 'Когда', width: 'fit', get: (r) => r.createdAt, render: (r) => dateTimeShort(r.createdAt) },
+    { key: 'rule', title: 'Правило', minWidth: 14, get: (r) => ruleText(meta.get(r.id)),
+      render: (r) => <span title={ruleAbbr(meta.get(r.id))}>{ruleText(meta.get(r.id))}</span> },
+    { key: 'src', title: 'Источник и сценарий', primary: true, get: (r) => sourceText(meta.get(r.id)), render: (r) => sourceText(meta.get(r.id)) },
+    { key: 'mk', title: 'Средняя длина плана, ч', num: true, hint: 'E[Cmax] — средняя по сценариям длина расписания',
+      get: (r) => kpiOf(r.kpi, 'makespan_mean'), render: (r) => num(kpiOf(r.kpi, 'makespan_mean'), 1) },
+    { key: 'cvar', title: 'Длина в худших сценариях, ч', num: true, hint: 'CVaR — средняя длина плана в худших α сценариях (обычно 10 %)',
+      get: (r) => kpiOf(r.kpi, 'makespan_cvar'), render: (r) => num(kpiOf(r.kpi, 'makespan_cvar'), 1) },
+    { key: 'otd', title: 'Заказов в срок, %', num: true, hint: 'OTD — доля заказов, выполненных в срок', get: (r) => kpiOf(r.kpi, 'otd'),
+      render: (r) => { const otd = kpiOf(r.kpi, 'otd'); return Number.isFinite(otd) && otd < OTD_FULL ? <span className="glyph-setup" title="есть опоздания">{num(otd * 100, 0)}</span> : num(otd * 100, 0) } },
+    { key: 'bn', title: 'Узкое место', minWidth: 14, get: (r) => r.kpi?.bottleneck?.wc_name ?? '', render: (r) => r.kpi?.bottleneck?.wc_name ?? '—' },
+    { key: 'act', title: <span className="dk-vh">Действия</span>, sortable: false, width: 'fit', className: 'pl-runs__act',
       render: (r) => (
         <span className="pl-runs__acts" onClick={(e) => e.stopPropagation()}>
           {openable(r)
@@ -133,7 +142,7 @@ export function RunsTable({ currentId = null, canOpen, limit = 12 }: RunsTablePr
       />
       {columns.length === 2 && (
         <section ref={cmpRef} className="pl-runs__cmp" aria-label="Сравнение прогонов">
-          <DiffTable columns={columns} rows={COMPARE_ROWS} caption="Сравнение A / B — отличающиеся KPI и Δ к первому" />
+          <DiffTable columns={columns} rows={COMPARE_ROWS} caption="Сравнение двух прогонов — отличающиеся показатели и разница с первым" />
         </section>
       )}
     </div>

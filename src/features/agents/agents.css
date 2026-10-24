@@ -69,6 +69,8 @@
 .ag-snap { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-12); color: var(--text-secondary); }
 .ag-th { display: inline-flex; align-items: center; gap: 2px; }
 .ag-col-ci { min-width: 220px; }
+.ag-bench__group { display: inline-flex; align-items: center; gap: var(--space-2); }
+.ag-bench__cap { font-size: var(--fs-12); color: var(--text-muted); }
 .ag-ci { display: grid; grid-template-columns: minmax(64px, 1fr) auto; align-items: center; gap: var(--space-2); }
 .ag-ci__track { display: block; min-width: 0; height: 12px; }
 .ag-ci__track svg { display: block; }
@@ -76,7 +78,7 @@
 .ag-ci__band { stroke: var(--chart-1); stroke-width: 2; stroke-linecap: round; }
 .ag-ci__dot { fill: var(--chart-1); stroke: var(--bg-card); stroke-width: 1.5; }
 .ag-ci__text { white-space: nowrap; }
-.ag-verdict { display: inline-flex; align-items: baseline; gap: var(--space-1); white-space: nowrap; color: var(--text-secondary); }
+.ag-verdict { display: inline-flex; align-items: baseline; gap: var(--space-1); color: var(--text-secondary); }
 .ag-verdict__g { font-size: 0.8em; color: var(--text-muted); }
 .ag-verdict__g--below { color: var(--status-down); }
 

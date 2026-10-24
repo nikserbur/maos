@@ -7,7 +7,7 @@
  */
 import { useState, type ReactNode } from 'react'
 import { ChartFrame, type ChartTable } from './ChartFrame'
-import { Grid, XAxis, YAxis } from './Axis'
+import { Grid, UNIT_PT, XAxis, YAxis } from './Axis'
 import { ChartTooltip, type TipRow } from './Tooltip'
 import { useMeasuredWidth } from './hooks'
 import type { LegendItem } from './palette'
@@ -50,6 +50,8 @@ interface ScatterProps {
 }
 
 const PT = 14, PB = 30, PR = 16, PL = 52, HIT = 12
+/** Нижний отступ с подписью оси X: строка делений, под ней — строка подписи оси (не налезают), px. */
+const PB_TITLED = 46
 
 function shapePath(shape: PointShape, cx: number, cy: number, r: number): string {
   if (shape === 'square') return `M${cx - r},${cy - r}H${cx + r}V${cy + r}H${cx - r}Z`
@@ -64,15 +66,18 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
   const [yl0, yh0] = extent(points.map((p) => p.y))
   const [xl, xh] = yDomain(xl0, xh0, false, 0.06)
   const [yl, yh] = yDomain(yl0, yh0, false, 0.08)
+  // Подписи осей — отдельными строками: над верхним делением (Y) и под строкой делений (X).
+  const pt = yLabel ? UNIT_PT : PT
+  const pb = xLabel ? PB_TITLED : PB
   const plotW = Math.max(40, width - PL - PR)
-  const plotH = Math.max(40, height - PT - PB)
+  const plotH = Math.max(40, height - pt - pb)
   const xAt = linear(xl, xh, PL, PL + plotW)
-  const yAt = linear(yl, yh, PT + plotH, PT)
+  const yAt = linear(yl, yh, pt + plotH, pt)
   const xT = niceTicks(xl, xh, 5)
   const yT = yTicks(yl, yh, 4)
   const front = points.filter((p) => p.onFront).sort((a, b) => a.x - b.x)
   const frontLine = front.map((p, i) => `${i ? 'L' : 'M'}${svgCoord(xAt(p.x))},${svgCoord(yAt(p.y))}`).join('')
-  const table: ChartTable = { columns: ['', xLabel ?? 'X', yLabel ?? 'Y'], rows: points.map((p) => [p.label ?? p.key, fmtX(p.x), fmtY(p.y)]) }
+  const table: ChartTable = { columns: ['Вариант', xLabel ?? 'По горизонтали', yLabel ?? 'По вертикали'], rows: points.map((p) => [p.label ?? p.key, fmtX(p.x), fmtY(p.y)]) }
   const hp = points.find((p) => p.key === hover) ?? null
 
   return (
@@ -81,11 +86,11 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
       <div ref={ref} className="ch-plot" onPointerLeave={() => setHover(null)}>
         <svg className="ch-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           <Grid ticks={yT} yAt={yAt} x0={PL} x1={width - PR} />
-          <YAxis ticks={yT} yAt={yAt} x={PL - 8} fmt={fmtY} unit={yLabel} top={PT} />
-          <XAxis labels={xT.map(fmtX)} xAt={(i) => xAt(xT[i])} y={PT + plotH} x0={PL} x1={width - PR} />
+          <YAxis ticks={yT} yAt={yAt} x={PL - 8} fmt={fmtY} unit={yLabel} top={pt} />
+          <XAxis labels={xT.map(fmtX)} xAt={(i) => xAt(xT[i])} y={pt + plotH} x0={PL} x1={width - PR} />
           {xLabel && <text className="ch-tick ch-tick--unit" x={width - PR} y={height - 4} textAnchor="end">{xLabel}</text>}
           {frontArea && front.length > 1 && (
-            <path className="ch-area ch-front__area" d={`${frontLine}L${svgCoord(xAt(front[front.length - 1].x))},${PT + plotH}L${svgCoord(xAt(front[0].x))},${PT + plotH}Z`} />
+            <path className="ch-area ch-front__area" d={`${frontLine}L${svgCoord(xAt(front[front.length - 1].x))},${pt + plotH}L${svgCoord(xAt(front[0].x))},${pt + plotH}Z`} />
           )}
           {front.length > 1 && <path className="ch-front" d={frontLine} />}
           {points.map((p) => {
@@ -117,7 +122,7 @@ export function Scatter({ points, fmtX = axisNum, fmtY = axisNum, xLabel, yLabel
             )
           })}
           {hp && (
-            <ChartTooltip x={xAt(hp.x)} y={PT} width={width} height={plotH} title={hp.tipTitle ?? hp.label ?? hp.key}
+            <ChartTooltip x={xAt(hp.x)} y={pt} width={width} height={plotH} title={hp.tipTitle ?? hp.label ?? hp.key}
               rows={hp.tip ?? [{ key: 'x', label: xLabel ?? 'X', value: fmtX(hp.x) }, { key: 'y', label: yLabel ?? 'Y', value: fmtY(hp.y) }]} />
           )}
         </svg>

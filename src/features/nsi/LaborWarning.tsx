@@ -4,11 +4,17 @@ import { countText, num } from '../../explain/format'
 import { DataTable, ErrorBanner, type DataColumn } from '../../ui/kit'
 import { laborBottlenecks, type LaborLoad } from './labor'
 
+/** «3 из 5 станков», «1 из 1 станка». */
+const OF_MACHINES = ['станка', 'станков', 'станков'] as const
+
 const COLUMNS: DataColumn<LaborLoad>[] = [
-  { key: 'typeName', title: 'Тип оборудования', rowHeader: true, clip: true },
+  { key: 'typeName', title: 'Тип оборудования', rowHeader: true, primary: true },
   { key: 'machines', title: 'Станков', num: true, render: (l) => num(l.machines, 0) },
-  { key: 'operators', title: 'Операторов', num: true, render: (l) => num(l.operators, 0) },
-  { key: 'cap', title: 'Параллельно', num: true, render: (l) => `${num(l.cap, 0)} из ${num(l.machines, 0)}` },
+  { key: 'operators', title: 'Операторов с допуском', num: true, render: (l) => num(l.operators, 0) },
+  {
+    key: 'cap', title: 'Работают одновременно', num: true, hint: 'Сколько станков типа может работать сразу — столько, сколько допущенных операторов',
+    render: (l) => `${num(l.cap, 0)} из ${countText(l.machines, OF_MACHINES)}`,
+  },
 ]
 
 const TYPE_FORMS = ['типа', 'типов', 'типов'] as const

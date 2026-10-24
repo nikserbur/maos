@@ -5,7 +5,7 @@
  */
 import { useMemo, useState, type MutableRefObject } from 'react'
 import { api, type CalibRow, type SimResults } from '../../lib/api'
-import { IconButton, Segmented, type SegOption } from '../../ui/kit'
+import { IconButton, TabPanel, Tabs, type TabItem } from '../../ui/kit'
 import { entityLegend, type LegendItem } from '../../ui/charts'
 import type { SceneNode } from './graph/sceneModel'
 import type { SimState } from './SimulationLayer'
@@ -18,7 +18,8 @@ import './simulation.css'
 
 type Tab = 'play' | 'results' | 'calib'
 
-const TABS: ReadonlyArray<SegOption<Tab>> = [
+/** Разделы колонки; «Результаты» и «В справочники» грузят данные — выбор по Enter/Space (activation="manual"). */
+const TABS: ReadonlyArray<TabItem<Tab>> = [
   { id: 'play', label: 'Прогон', icon: 'play' },
   { id: 'results', label: 'Результаты', icon: 'chart' },
   { id: 'calib', label: 'В справочники', icon: 'nsi' },
@@ -87,13 +88,13 @@ export function SimulationPanel({ sim, session, selectedNode, selectedMachines, 
         <IconButton icon="stop" variant="ghost" size="sm" onClick={onExit} title="Выйти из симуляции">Выйти</IconButton>
       </header>
       <div className="sim-col__tabs">
-        <Segmented options={TABS} value={tab} onChange={onTab} label="Разделы симуляции" kind="tab" size="sm" idBase="sim" />
+        <Tabs items={TABS} value={tab} onChange={onTab} label="Разделы симуляции" size="panel" activation="manual" idBase="sim" />
       </div>
-      <div className="sim-col__body" role="tabpanel" id={`sim-panel-${tab}`} aria-labelledby={`sim-tab-${tab}`}>
+      <TabPanel idBase="sim" id={tab} className="sim-col__body">
         {tab === 'play' && <SimulationRuns session={session} nodeInfo={nodeInfo} legend={legend} onResults={() => onTab('results')} />}
         {tab === 'results' && <SimulationResults res={res} error={resError} labor={session.labor} onRetry={loadResults} onCalib={() => onTab('calib')} />}
         {tab === 'calib' && <SimulationCalib rows={rows} loadError={calibError} onReload={loadCalib} />}
-      </div>
+      </TabPanel>
     </aside>
   )
 }

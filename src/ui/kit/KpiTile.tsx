@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from 'react'
 import { InfoTip, type InfoTipValues } from '../InfoTip'
-import { hours, num } from '../../explain/format'
+import { hours, num, pct } from '../../explain/format'
 import { RangeStrip, type RangeMark } from '../charts'
 import { CapsLabel } from './CapsLabel'
 import { DeltaChip, type DeltaBetter } from './DeltaChip'
@@ -83,25 +83,34 @@ export function KpiTile({
 
 /* ── Хвост риска длины расписания ────────────────────────────────────────── */
 
-export interface TailStripProps { det: number; mean: number; cvar: number; worst: number }
+export interface TailStripProps {
+  det: number; mean: number; cvar: number; worst: number
+  /** Доля худших сценариев хвоста (0,1 → «10 % худших»); без неё — «средняя по худшим». */
+  alpha?: number
+}
 
-/** Подписи: E — герой выше; числом только CVaR и худший (X1: ≤ 14 чисел выше сгиба). */
-export function TailStrip({ det, mean, cvar, worst }: TailStripProps) {
+/**
+ * Подписи словами (владелец: «сокращения — нечитаемо»): без сбоев · средняя · средняя по 10 % худших ·
+ * худший прогон; формулы (E[Cmax], CVaR) — только в «i» плитки. Числом — только хвост и худший
+ * (X1: ≤ 14 чисел выше сгиба).
+ */
+export function TailStrip({ det, mean, cvar, worst, alpha }: TailStripProps) {
+  const tail = alpha !== undefined && alpha > 0 && alpha < 1 ? `средняя по ${pct(alpha, 0)} худших` : 'средняя по худшим'
   const marks: RangeMark[] = [
-    { key: 'det', value: det, label: 'детерминированное (Гант)', glyph: 'ring', tone: 'idle' },
-    { key: 'mean', value: mean, label: 'E[Cmax]', glyph: 'dot', tone: 'accent' },
-    { key: 'cvar', value: cvar, label: 'CVaR', glyph: 'triangle', tone: 'warn', showValue: true },
+    { key: 'det', value: det, label: 'без сбоев (по Ганту)', glyph: 'ring', tone: 'idle' },
+    { key: 'mean', value: mean, label: 'средняя', glyph: 'dot', tone: 'accent' },
+    { key: 'cvar', value: cvar, label: tail, glyph: 'triangle', tone: 'warn', showValue: true },
     { key: 'worst', value: worst, label: 'худший прогон', glyph: 'square', tone: 'danger', showValue: true },
   ]
   return (
     <div>
-      <RangeStrip marks={marks} fmt={(v) => num(v, 1)} zone={worst > cvar ? [cvar, worst] : undefined} zoneLabel="хвост CVaR…худший"
-        ariaLabel={`Длина расписания: детерминированная ${hours(det)}, E ${hours(mean)}, CVaR ${hours(cvar)}, худший прогон ${hours(worst)}`} />
+      <RangeStrip marks={marks} fmt={(v) => num(v, 1)} zone={worst > cvar ? [cvar, worst] : undefined} zoneLabel="от средней по худшим до худшего"
+        ariaLabel={`Длина расписания: без сбоев ${hours(det)}, средняя ${hours(mean)}, ${tail} ${hours(cvar)}, худший прогон ${hours(worst)}`} />
       <div className="dk-tail-legend">
-        <span className="glyph-idle" title={`детерминированное (Гант): ${hours(det)}`}>дет.</span>
-        <span className="dk-tail-legend__mean">E[Cmax]</span>
-        <span className="glyph-setup">CVaR</span>
-        <span className="glyph-down">худший, ч</span>
+        <span className="glyph-idle" title={`без сбоев (по Ганту): ${hours(det)}`}>без сбоев</span>
+        <span className="dk-tail-legend__mean">средняя</span>
+        <span className="glyph-setup">{tail}</span>
+        <span className="glyph-down">худший прогон, ч</span>
       </div>
     </div>
   )

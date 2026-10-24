@@ -1,6 +1,7 @@
 import { lazy, type ComponentType } from 'react'
 import type { BlockId } from '../features/method-map/types'
 import { REGISTRIES } from '../features/nsi/registries'
+import { SCENARIO_TAB_TITLES } from '../features/scenarios/scenarioRoute'
 import type { Crumb } from '../ui/kit/Breadcrumbs'
 import { crumbTitle } from './crumbs'
 
@@ -80,7 +81,7 @@ export const SCREENS: ScreenDef[] = [
     anchors: ['run/<id>', 'run/<id>/<раздел>', 'new', 'new/<шаг>'], crumbs: planCrumbs, Component: PlanScreen },
   { id: 'agents', label: 'Агенты', short: 'Агенты', keywords: ['rl', 'агент', 'гейт', 'полномочия'], icon: 'sparkle', group: 'decide', blocks: ['agents'], pipeline: true,
     anchors: ['<вкладка>'], crumbs: (a) => objectCrumbs('agents', a), Component: AgentsScreen },
-  { id: 'monitoring', label: 'Мониторинг', short: 'Монитор', keywords: ['прогноз', 'forecast'], icon: 'monitoring', group: 'observe', blocks: ['monitoring', 'external'], pipeline: true, Component: MonitoringScreen },
+  { id: 'monitoring', label: 'Мониторинг', short: 'Мониторинг', keywords: ['прогноз', 'forecast'], icon: 'monitoring', group: 'observe', blocks: ['monitoring', 'external'], pipeline: true, Component: MonitoringScreen },
   { id: 'analytics', label: 'Аналитика', short: 'Аналитика', keywords: ['kpi', 'отчёт'], icon: 'analytics', group: 'observe', blocks: ['monitoring'], pipeline: true,
     anchors: ['<вкладка>', '<вкладка>/<planId>'], crumbs: (a) => objectCrumbs('analytics', a), Component: AnalyticsScreen },
   { id: 'map', label: 'Карта методологии', short: 'Карта', keywords: ['граф', 'узлы', 'методология'], icon: 'graph', group: 'explain',
@@ -88,7 +89,7 @@ export const SCREENS: ScreenDef[] = [
   { id: 'methodology', label: 'Методика', short: 'Методика', keywords: ['формулы', 'диплом'], icon: 'book', group: 'explain', blocks: ['llm'],
     anchors: ['<раздел>'], crumbs: (a) => objectCrumbs('methodology', a), Component: MethodologyScreen },
   { id: 'aiflow', label: 'AI-воркфлоу', short: 'AI-воркфлоу', keywords: ['конструктор', 'workflow', 'llm', 'ai'], icon: 'workflow', group: 'system', blocks: ['llm'], Component: WorkflowBuilder },
-  { id: 'admin', label: 'Администрирование', short: 'Админ', keywords: ['пользователи', 'аудит', 'журнал', 'admin'], icon: 'admin', group: 'system',
+  { id: 'admin', label: 'Администрирование', short: 'Администрирование', keywords: ['пользователи', 'аудит', 'журнал', 'admin'], icon: 'admin', group: 'system',
     anchors: ['?type=<журнал>&q=<поиск>'], Component: AdminScreen },
 ]
 
@@ -115,7 +116,7 @@ function nsiCrumbs(anchor: string): Crumb[] {
   return [{ label: reg.title }]
 }
 
-const SCENARIO_TABS: Readonly<Record<string, string>> = { conditions: 'Условия', distributions: 'Распределения', forecast: 'Прогноз и проверка' }
+const SCENARIO_TABS: Readonly<Record<string, string>> = SCENARIO_TAB_TITLES
 
 function scenarioCrumbs(anchor: string): Crumb[] {
   const parts = anchor.split('/')

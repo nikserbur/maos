@@ -20,9 +20,9 @@ const OP_FORMS = ['операция', 'операции', 'операций'] as
 const COLUMNS: ReadonlyArray<DataColumn<SimRun>> = [
   { key: 'createdAt', title: 'Когда', rowHeader: true, get: (r) => r.createdAt, render: (r) => fmtRunDate(r.createdAt) },
   { key: 'nTasks', title: 'Операций', num: true, get: (r) => r.nTasks, render: (r) => num(r.nTasks, 0) },
-  { key: 'otd', title: 'В срок', num: true, get: (r) => (Number.isFinite(r.otd) ? r.otd : null), hint: 'Доля заказов в срок (OTD)',
+  { key: 'otd', title: 'Заказов в срок, %', num: true, get: (r) => (Number.isFinite(r.otd) ? r.otd : null), hint: 'Доля заказов в срок (OTD)',
     render: (r) => (!Number.isFinite(r.otd) ? <span className="sim__muted" title="KPI прогона не сохранены">—</span>
-      : r.otd < OTD_RISK ? <Chip size="sm" tone="setup">{pct(r.otd, 0)} под риском</Chip> : pct(r.otd, 0)) },
+      : r.otd < OTD_RISK ? <Chip size="sm" tone="setup">{num(r.otd * 100, 0)} — под риском</Chip> : num(r.otd * 100, 0)) },
 ]
 
 interface SimulationRunsProps {

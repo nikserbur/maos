@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import type { ScheduleResult } from '../../../lib/api'
 import { num } from '../../../explain/format'
 import { Legend, type LegendItem } from '../../../ui/charts'
-import { Segmented, Switch } from '../../../ui/kit'
+import { Segmented, Switch, TabPanel, Tabs } from '../../../ui/kit'
 import { buildPalette } from '../ganttModel'
 import { parseIsoDate } from '../wizard/dates'
 import { movesActions, useMovesSession } from '../moves/decisionsStore'
@@ -27,9 +27,15 @@ import './diff.css'
 
 export type PlanView = 'plan' | DiffMode | 'route' | 'table'
 
-const VIEWS: ReadonlyArray<{ id: PlanView; label: string }> = [
-  { id: 'plan', label: 'План' }, { id: 'diff', label: 'Диф' }, { id: 'before', label: 'До' }, { id: 'after', label: 'После' },
-  { id: 'route', label: 'Маршрут' }, { id: 'table', label: 'Таблица ходов' },
+/** Разделы (другое содержимое) — вкладки; внутри «Изменений» — вид того же Ганта (до · различия · после) — переключатель. */
+type PlanSection = 'plan' | 'changes' | 'route' | 'table'
+
+const SECTIONS: ReadonlyArray<{ id: PlanSection; label: string }> = [
+  { id: 'plan', label: 'План' }, { id: 'changes', label: 'Изменения' }, { id: 'route', label: 'Маршрут' }, { id: 'table', label: 'Таблица ходов' },
+]
+
+const DIFF_MODES: ReadonlyArray<{ id: DiffMode; label: string }> = [
+  { id: 'before', label: 'До' }, { id: 'diff', label: 'Различия' }, { id: 'after', label: 'После' },
 ]
 
 const DIFF_LEGEND: LegendItem[] = [
@@ -102,38 +108,43 @@ export function PlanDiffView({ result, source, startDate, plan }: Props) {
   }
   const s = diff.summary
   const isGantt = view === 'diff' || view === 'before' || view === 'after'
+  const section: PlanSection = isGantt ? 'changes' : (view as PlanSection)
+  const pickSection = (id: PlanSection) => setView(id === 'changes' ? (isGantt ? view : 'diff') : id)
   const cur = diff.changes.findIndex((c) => c.key === current)
 
   return (
     <div className="pdv">
-      <div className="pdv-bar">
-        <Segmented label="Вид Ганта" size="sm" fit value={view} onChange={setView} options={VIEWS} />
-        {view !== 'plan' && view !== 'table' && (
-          <>
-            <span className="pdv-bar__sum num">
-              перенесено {num(s.moved, 0)} · удалено {num(s.removed, 0)} · добавлено {num(s.added, 0)} · заморожено {num(s.frozen, 0)}
-            </span>
-            <Switch checked={showUnchanged} onChange={setShowUnchanged}>без изменений</Switch>
-          </>
-        )}
+      <div className="pdv-tabs">
+        <Tabs label="Разделы плана и ходов" size="panel" idBase="pdv" value={section} onChange={pickSection} items={SECTIONS} />
       </div>
-      {view === 'plan' && plan}
-      {view !== 'plan' && (
-        <div ref={boxRef} className="pdv-box" tabIndex={0} role="group" onKeyDown={onKey}
-          aria-label="Диф плана: j/k — следующее/предыдущее изменение, a — принять, x — отклонить, f — заморозить, Esc — снять выбор">
-          {isGantt && diff.changes.length > 0 && <Legend items={DIFF_LEGEND} className="pdv-legend" />}
-          {isGantt && <GanttDiff diff={diff} mode={view as DiffMode} palette={palette} start={start} showUnchanged={showUnchanged}
-            currentKey={current} selectedMove={session.selectedId} moveName={name}
-            onPick={(key, moveId) => { setCurrent(key); movesActions.select(source.runKey, moveId ?? null); boxRef.current?.focus({ preventScroll: true }) }} />}
-          {view === 'route' && <RouteDiff rows={routes} showUnchanged={showUnchanged} />}
-          {view === 'table' && <MovesTable moves={moves} decisions={session.decisions} gantt={result.gantt} rule={result.rule} demo={false} />}
-          {view !== 'table' && diff.changes.length > 0 && (
-            <p className="pdv-keys mono" aria-hidden="true">
-              <kbd>j</kbd>/<kbd>k</kbd> изменение {cur >= 0 ? `${cur + 1} из ${diff.changes.length}` : `· ${diff.changes.length}`} · <kbd>a</kbd> принять · <kbd>x</kbd> отклонить · <kbd>f</kbd> заморозить · <kbd>Esc</kbd>
-            </p>
-          )}
+      {view !== 'plan' && view !== 'table' && (
+        <div className="pdv-bar">
+          {isGantt && <Segmented label="Вид Ганта" size="sm" value={view as DiffMode} onChange={setView} options={DIFF_MODES} />}
+          <span className="pdv-bar__sum num">
+            перенесено {num(s.moved, 0)} · удалено {num(s.removed, 0)} · добавлено {num(s.added, 0)} · заморожено {num(s.frozen, 0)}
+          </span>
+          <Switch checked={showUnchanged} onChange={setShowUnchanged}>без изменений</Switch>
         </div>
       )}
+      <TabPanel idBase="pdv" id={section}>
+        {view === 'plan' && plan}
+        {view !== 'plan' && (
+          <div ref={boxRef} className="pdv-box" tabIndex={0} role="group" onKeyDown={onKey}
+            aria-label="Изменения плана: j/k — следующее/предыдущее изменение, a — принять, x — отклонить, f — заморозить, Esc — снять выбор">
+            {isGantt && diff.changes.length > 0 && <Legend items={DIFF_LEGEND} className="pdv-legend" />}
+            {isGantt && <GanttDiff diff={diff} mode={view as DiffMode} palette={palette} start={start} showUnchanged={showUnchanged}
+              currentKey={current} selectedMove={session.selectedId} moveName={name}
+              onPick={(key, moveId) => { setCurrent(key); movesActions.select(source.runKey, moveId ?? null); boxRef.current?.focus({ preventScroll: true }) }} />}
+            {view === 'route' && <RouteDiff rows={routes} showUnchanged={showUnchanged} />}
+            {view === 'table' && <MovesTable moves={moves} decisions={session.decisions} gantt={result.gantt} rule={result.rule} demo={false} />}
+            {view !== 'table' && diff.changes.length > 0 && (
+              <p className="pdv-keys mono" aria-hidden="true">
+                <kbd>j</kbd>/<kbd>k</kbd> изменение {cur >= 0 ? `${cur + 1} из ${diff.changes.length}` : `· ${diff.changes.length}`} · <kbd>a</kbd> принять · <kbd>x</kbd> отклонить · <kbd>f</kbd> заморозить · <kbd>Esc</kbd>
+              </p>
+            )}
+          </div>
+        )}
+      </TabPanel>
     </div>
   )
 }

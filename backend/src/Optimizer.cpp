@@ -633,6 +633,13 @@ json run_optimization(Database& db, const OptimizeParams& p) {
           }
         } catch (...) { macroMode = str(sc, "macro_mode"); }
       }
+      // X2: инфляция и сдвиг курса сценария, если заданы вручную, — опора генератора (ref.cpi, ref.fx):
+      // одно число действует и в Портфеле/кассе, и в веере цен; без ручных значений — как было.
+      if (p.macroRef.is_null()) {
+        const std::string si = str(sc, "inflation"), sf = str(sc, "fx");
+        try { if (!si.empty()) macroRef["cpi"] = json::array({ (std::pow(1.0 + std::stod(si), 12.0) - 1.0) * 100.0 }); } catch (...) {}
+        try { if (!sf.empty() && std::fabs(std::stod(sf) - 1.0) > 1e-9) macroRef["fx"] = std::stod(sf); } catch (...) {}
+      }
     } catch (...) { warnings.push_back("Сценарий не найден — берутся базовые цены."); }
   }
   if (horizon <= 0) horizon = 720;

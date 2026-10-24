@@ -10,6 +10,8 @@ import { anchorParts, joinAnchor } from '../../shell/router'
 
 export type ScenarioTab = 'conditions' | 'distributions' | 'forecast'
 export const SCENARIO_TABS: readonly ScenarioTab[] = ['conditions', 'distributions', 'forecast']
+/** Имена вкладок — одни для вкладки, крошек верхней панели и ссылок («Прогноз цен» — у любого сценария; прогноз/что если — чипом внутри). */
+export const SCENARIO_TAB_TITLES: Readonly<Record<ScenarioTab, string>> = { conditions: 'Условия', distributions: 'Распределения', forecast: 'Прогноз цен' }
 export const DEFAULT_TAB: ScenarioTab = 'conditions'
 /** Сравнение — не больше пяти колонок (читаемость и время расчёта портфелей). */
 export const MAX_COMPARE = 5

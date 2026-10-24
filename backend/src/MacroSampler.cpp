@@ -136,6 +136,7 @@ Stress Stress::from_json(const json& j) {
   else if (j.contains("episode") && j["episode"].is_string()) {
     s.mode = "episode"; s.episode = j["episode"].get<std::string>();
     if (j.contains("months") && j["months"].is_number()) s.episodeMonths = j["months"].get<int>();
+    if (j.contains("order") && j["order"].is_string() && j["order"].get<std::string>() == "replay") s.episodeOrder = "replay";
   }
   return s;
 }
@@ -143,6 +144,7 @@ Stress Stress::from_json(const json& j) {
 json Stress::to_json() const {
   if (mode == "regime")   return { {"regime", regime} };
   if (mode == "quantile") return { {"quantile_t", quantile} };
+  if (mode == "episode" && episodeOrder == "replay") return { {"episode", episode}, {"months", episodeMonths}, {"order", "replay"} };
   if (mode == "episode")  return { {"episode", episode}, {"months", episodeMonths} };
   return nullptr;
 }
@@ -157,6 +159,10 @@ Reference Reference::from_json(const json& j) {
   if (j.contains("key")) {
     if (j["key"].is_array()) { r.key = "user"; for (auto& v : j["key"]) r.keyUser.push_back(v.get<double>()); }
     else if (j["key"].is_string()) r.key = j["key"].get<std::string>();
+  }
+  if (j.contains("fx") && j["fx"].is_number()) {
+    const double f = j["fx"].get<double>();
+    if (std::isfinite(f)) r.fx = std::max(kFxShiftMin, std::min(kFxShiftMax, f));
   }
   return r;
 }
@@ -252,6 +258,67 @@ std::vector<int> MacroSampler::episode_pool(const std::string& month, int months
   return pool;
 }
 
+std::pair<int, int> MacroSampler::episode_window(const std::string& month, int months) const {
+  int at = -1;
+  for (size_t i = 0; i < months_.size(); ++i) if (months_[i] == month) { at = (int)i; break; }
+  // Остаток r соответствует месяцу r+1: у первого месяца истории шока нет.
+  if (at < 1) throw std::runtime_error("macro: эпизод " + month + " вне истории (шоки есть с " +
+                                       (months_.size() > 1 ? months_[1] : std::string("—")) + " по " +
+                                       (months_.empty() ? std::string("—") : months_.back()) + ")");
+  const int len = std::max(1, months);
+  if (at - 1 + len > N_)
+    throw std::runtime_error("macro: эпизод с " + month + " на " + std::to_string(len) + " мес выходит за конец истории (" +
+                             months_.back() + "): не больше " + std::to_string(N_ - at + 1) + " мес");
+  return { at - 1, len };
+}
+
+/* Повтор эпизода по порядку (replay): месяцы окна — те же шоки ε в той же последовательности для всех
+ * путей, режим — метка HMM этого месяца; после окна — базовая блочная выборка от режима последнего
+ * повторённого месяца (P на первом шаге, P^b на следующих блоках), равномерные — те же u[t], u[1920+t]. */
+MonthlyPaths MacroSampler::replay_months(int n, int H, uint64_t seed, int startIndex, const Stress& st) const {
+  const auto [lo, len] = episode_window(st.episode, st.episodeMonths);
+  const int L = std::min(len, H);
+  MonthlyPaths out; out.n = n; out.H = H;
+  out.z.assign(n, std::vector<Vec3>(H)); out.regime.assign(n, std::vector<int>(H, 0)); out.blockId.assign(n, std::vector<int>(H, 0));
+  out.innov.assign(n, std::vector<Vec3>(H));
+  NumpyPcg64 rng(NumpyPcg64::entropy(seed, kMacroStream));
+  rng.advance((unsigned __int128)startIndex * kUniformsPerId);
+  std::vector<double> u(kUniformsPerId);
+  const auto labelAt = [&](int idx) { return idx < (int)labels_.size() ? std::max(0, std::min(k_ - 1, labels_[idx])) : 0; };
+  for (int i = 0; i < n; ++i) {
+    for (double& x : u) x = rng.next_double();
+    Vec3 cur = last_;
+    std::vector<double> prob(k_, 0.0);
+    int state = labelAt(lo + L - 1), selected = 0;
+    prob[state] = 1.0;
+    for (int t = 0; t < H; ++t) {
+      int idx;
+      if (t < L) { idx = lo + t; state = labelAt(idx); }
+      else {
+        const int s = t - L;
+        if (s % block_ == 0) {
+          const std::vector<double> prior = vecmat(prob, s == 0 ? P_ : Pb_);
+          double cum = 0.0; int cnt = 0;
+          for (int j = 0; j < k_; ++j) { cum = cum + prior[j]; if (u[t] > cum) ++cnt; }
+          state = std::min(cnt, k_ - 1);
+          const std::vector<int>& pool = pools_[state];
+          selected = pool[std::min((int)(u[kMaxMonths + t] * (double)pool.size()), (int)pool.size() - 1)];
+          for (int j = 0; j < k_; ++j) prob[j] = j == state ? 1.0 : 0.0;
+        }
+        idx = (selected + s % block_) % N_;
+      }
+      const Vec3 nxt = vecmat3(cur, A_);
+      const Vec3& r = resid_[idx];
+      cur = { nxt[0] + r[0], nxt[1] + r[1], nxt[2] + r[2] };
+      out.z[i][t] = { cur[0] * sd_[0] + mean_[0], cur[1] * sd_[1] + mean_[1], cur[2] * sd_[2] + mean_[2] };
+      out.regime[i][t] = state;
+      out.blockId[i][t] = idx;
+      out.innov[i][t] = r;
+    }
+  }
+  return out;
+}
+
 double MacroSampler::t_quantile(int d, double q) const {
   char key[32]; std::snprintf(key, sizeof key, "%g", q);
   const json& tq = p_["student_t"][d]["quantiles"];
@@ -280,6 +347,7 @@ MonthlyPaths MacroSampler::sample_months(int n, int H, uint64_t seed, int startI
   }
   const int forced = st.mode == "regime" ? st.regime : -1;
   if (forced >= k_) throw std::runtime_error("macro: режим " + std::to_string(forced) + " — всего режимов " + std::to_string(k_));
+  if (st.mode == "episode" && st.episodeOrder == "replay") return replay_months(n, H, seed, startIndex, st);
   const bool episode = st.mode == "episode";
   const std::vector<int> epool = episode ? episode_pool(st.episode, st.episodeMonths) : std::vector<int>{};
   NumpyPcg64 rng(NumpyPcg64::entropy(seed, kMacroStream));
@@ -353,7 +421,7 @@ std::pair<std::vector<double>, std::vector<double>> MacroSampler::reference(int 
 
 /* ── перевод в уровни (RJMF §6.1, §6.3) ──────────────────────────────────────── */
 Levels MacroSampler::to_levels(const MonthlyPaths& m, const std::vector<Vec3>& Ez,
-                               const std::vector<double>& cpiRef, const std::vector<double>& keyRef) const {
+                               const std::vector<double>& cpiRef, const std::vector<double>& keyRef, double fxShift) const {
   Levels L;
   L.cpi.assign(m.n, std::vector<double>(m.H)); L.key = L.cpi; L.fx = L.cpi;
   for (int i = 0; i < m.n; ++i) {
@@ -363,10 +431,11 @@ Levels MacroSampler::to_levels(const MonthlyPaths& m, const std::vector<Vec3>& E
       const double ePi = m.z[i][t][0] - Ez[t][0], eI = m.z[i][t][1] - Ez[t][1], eS = m.z[i][t][2] - Ez[t][2];
       const double p = (100.0 + cpiRef[t]) * std::exp(ePi / 100.0) - 100.0;
       L.cpi[i][t] = p;
-      L.key[i][t] = keyRef[t] + eI + (p - cpiRef[t]);
+      L.key[i][t] = std::max(kKeyFloorPp, keyRef[t] + eI + (p - cpiRef[t]));   // ставка не ниже исторического минимума
       const double P = levels[levels.size() - 12] * (1.0 + p / 100.0);
       levels.push_back(P);
       L.fx[i][t] = fx0_ * P / std::pow(1.0 + usdInflation_, (t + 1) / 12.0) * std::exp(eS / 100.0);
+      if (fxShift != 1.0) L.fx[i][t] *= fxShift;                                 // «что если»: сдвиг уровня курса
     }
   }
   return L;
@@ -415,7 +484,7 @@ SampleResult MacroSampler::sample(int n, uint64_t seed, int horizonWeeks, int ho
   r.paths = sample_months(n, H, seed, startIndex, st);
   r.expectedZ = expected_path(H);
   std::tie(r.cpiRef, r.keyRef) = reference(H, ref);
-  r.monthly = to_levels(r.paths, r.expectedZ, r.cpiRef, r.keyRef);
+  r.monthly = to_levels(r.paths, r.expectedZ, r.cpiRef, r.keyRef, ref.fx);
   if (horizonWeeks > 0) r.weekly = to_weeks(r.monthly, horizonWeeks, seed, startIndex, bridge);
   r.sigmaBbFx = bridge ? sigmaBbFx_ : 0.0;
   r.macroStream = { (int64_t)seed, kMacroStream }; r.bridgeStream = { (int64_t)seed, kBridgeStream };
@@ -445,6 +514,11 @@ json MacroSampler::regimes_json() const {
                                                                              months_.empty() ? std::string() : months_.back() }} };
   if (p_.contains("student_t") && !p_["student_t"].empty())
     for (auto& [q, v] : p_["student_t"][0]["quantiles"].items()) out["stress_quantiles"].push_back(std::stod(q));
+  // История ЦБ РФ (месяц, ставка, инфляция г/г, курс) — «что было тогда» у пресетов-эпизодов; шоки — со 2-го месяца.
+  if (p_.contains("history")) out["history"] = p_["history"];
+  out["episode_first"] = months_.size() > 1 ? months_[1] : std::string();
+  out["episode_orders"] = json::array({ "replay", "blocks" });
+  out["key_floor_pp"] = kKeyFloorPp;
   return out;
 }
 
@@ -459,6 +533,7 @@ json MacroSampler::summary_json() const {
                {"holdout", val.value("holdout", json::object())},
                {"tail_diagnostics", p_.value("tail_diagnostics", json::array())},
                {"last_obs", p_.value("last_obs", json::object())}, {"usd_inflation", usdInflation_},
+               {"floors", { {"key_pp", kKeyFloorPp}, {"note", "ставка в путях не ниже исторического минимума ЦБ РФ 2013–2026 [НОРМ]"} }},
                {"status", "О: обучено на cbr.ru с валидацией по CRPS; опора [НОРМ]; стрессы — не прогноз"} };
   return out;
 }

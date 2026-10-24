@@ -54,11 +54,11 @@ export function ActionCell({ code }: { code: string }) {
 }
 
 const COLUMNS: DataColumn<LogRow>[] = [
-  { key: 'ts', title: 'Когда', get: (r) => r.a.ts, render: (r) => time(r.a.ts), className: 'adm__ts', hint: 'Местное время; дата — в подзаголовке дня' },
-  { key: 'who', title: 'Кто', get: (r) => r.who, className: 'adm__who' },
-  { key: 'action', title: 'Действие', get: (r) => actionLabel(r.a.action_type), render: (r) => <ActionCell code={r.a.action_type} /> },
-  { key: 'object', title: 'Объект', rowHeader: true, get: (r) => `${r.obj.label} ${r.obj.name}`, render: (r) => <ObjectCell obj={r.obj} /> },
-  { key: 'summary', title: 'Подробности', get: (r) => r.summary, clip: true, sortable: false },
+  { key: 'ts', title: 'Когда', width: 'fit', get: (r) => r.a.ts, render: (r) => time(r.a.ts), className: 'adm__ts', hint: 'Местное время; дата — в подзаголовке дня' },
+  { key: 'who', title: 'Кто', width: 'fit', get: (r) => r.who, className: 'adm__who' },
+  { key: 'action', title: 'Действие', minWidth: 12, get: (r) => actionLabel(r.a.action_type), render: (r) => <ActionCell code={r.a.action_type} /> },
+  { key: 'object', title: 'Объект', rowHeader: true, minWidth: 16, get: (r) => `${r.obj.label} ${r.obj.name}`, render: (r) => <ObjectCell obj={r.obj} /> },
+  { key: 'summary', title: 'Подробности', primary: true, wrap: 2, get: (r) => r.summary, sortable: false },
 ]
 
 const DEFAULT_SORT: SortState = { key: 'ts', dir: 'desc' }

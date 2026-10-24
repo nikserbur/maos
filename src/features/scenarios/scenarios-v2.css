@@ -1,18 +1,17 @@
 /*
- * Сценарии (X2): крошки → шапка (строка заголовка + строка меты) → липкие вкладки (top 0 внутри
- * .scn__main) → содержимое; шапки таблиц липнут под вкладками. Цвет — одна работа: акцент — только
+ * Сценарии (X2): шапка (строка заголовка + строка меты; путь — в крошках верхней панели) → липкие
+ * вкладки (к самому верху .scn__main, поверх его отступа) → содержимое; шапки таблиц липнут под вкладками. Цвет — одна работа: акцент — только
  * взаимодействие (выбор, фокус); статусные тона — только на глифах (▲ ✕); норма нейтральна, числа —
  * цветом текста; данные — --chart-*. Только токены.
  */
-.sc2 { --sc2-tabs-h: 48px; display: flex; flex-direction: column; gap: var(--space-3); }
+.sc2 { --sc2-tabs-h: 41px; display: flex; flex-direction: column; gap: var(--space-3); }
 .sc2-muted { color: var(--text-muted); font-size: var(--fs-12); font-weight: 400; letter-spacing: 0; text-transform: none; }
 .sc2-inline { display: inline-flex; gap: var(--space-2); align-items: center; font-size: var(--fs-13); color: var(--text-secondary); flex-wrap: wrap; }
 .sc2-inline .form__input, .sc2-inline .form__select { width: auto; min-width: 9ch; }
 .sc2-inline input[type='range'] { width: 180px; accent-color: var(--accent); }
 .sc2-working { font-size: var(--fs-12); color: var(--text-secondary); white-space: nowrap; }
 
-/* ── Крошки и шапка ──────────────────────────────────────────────────────── */
-.sc2-crumbs { margin-bottom: calc(-1 * var(--space-2)); }
+/* ── Шапка ───────────────────────────────────────────────────────────────── */
 .sc2-head { padding-bottom: var(--space-2); }
 .sc2-head .dk-head__text { flex: 1 1 520px; }
 .sc2-head .dk-head__title { flex: 1 1 240px; }
@@ -40,6 +39,9 @@
 }
 .sc2-critchip:hover { background: var(--bg-hover); }
 .sc2-critchip[aria-expanded='true'] { border-color: var(--accent); }
+.sc2-critchip__chev { flex: none; color: var(--text-muted); transition: transform var(--dur-fast) var(--ease-out); }
+.sc2-critchip[aria-expanded='true'] .sc2-critchip__chev { transform: rotate(180deg); }
+.sc2-start { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .sc2-critchip:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 .sc2-changed { color: var(--text-secondary); }
 .sc2-head__desc {
@@ -56,47 +58,61 @@
 .sc2-crit__note { grid-column: 1 / -1; margin: 0; display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-12); color: var(--text-muted); }
 
 /* ── Липкие вкладки ──────────────────────────────────────────────────────── */
+/* Липкий элемент в .scn__main встаёт под его верхний отступ (--space-4), и над вкладками просвечивало
+   прокручиваемое содержимое. Полоса липнет на −отступ и своим фоном (padding-top) закрывает его; в потоке
+   поле −gap съедает только зазор над ней (не рамку блока критерия выше). Прилипшая полоса кончается на
+   --sc2-tabs-h от края содержимого — там и липнут шапки таблиц (--dk-sticky-top). */
 .sc2-tabs-anchor { height: 0; }
 .sc2-tabs {
-  position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: var(--space-2);
-  min-height: var(--sc2-tabs-h); margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2);
-  background: var(--bg-app); border-bottom: 1px solid var(--border);
+  position: sticky; top: calc(-1 * var(--space-4)); z-index: 6; display: flex; align-items: stretch;
+  min-height: calc(var(--sc2-tabs-h) + var(--space-4));
+  margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-2)) 0; padding: var(--space-4) var(--space-2) 0;
+  background: var(--bg-app);
 }
-/* Шапки таблиц вкладок липнут под переключателем (обёртка таблицы не прокручивается сама). */
-.sc2 .sc2-tab .dk-table-wrap { overflow: clip visible; }
-.sc2 .sc2-tab .dk-table-wrap > .dk-table thead th { top: var(--sc2-tabs-h); }
-.sc2 .sc2-tab .dk-table-wrap > .dk-table .dk-table__group th { top: calc(var(--sc2-tabs-h) + 34px); }
+.sc2-tabs > .dk-tabs { flex: 1 1 auto; }
+/* Шапки таблиц вкладок липнут под переключателем — контракт кита `--dk-sticky-top` (обёртка DataTable без
+   рамки не прокручивается сама; таблица шире вкладки получает видимую прокрутку и липкую первую колонку). */
+.sc2 .sc2-tab { --dk-sticky-top: var(--sc2-tabs-h); }
+.sc2 .sc2-tab .dk-side { --dk-sticky-top: 0px; }
 .sc2-tab { display: flex; flex-direction: column; gap: var(--space-4); }
 
 /* ── Условия ─────────────────────────────────────────────────────────────── */
-.sc2-cap { margin: 0; color: var(--text-secondary); display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+/* Подпись группы — обычный регистр 13 px; что затрагивает — тихо рядом. */
+.sc2-cap { margin: 0; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; font: 600 var(--fs-13) var(--font-sans); color: var(--text); }
 .sc2-cap__affects { color: var(--text-muted); font-size: var(--fs-12); font-weight: 400; letter-spacing: 0; text-transform: none; }
-.sc2-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); align-items: start; }
-.sc2-fields > .sc2-cap { grid-column: 1 / -1; margin-top: var(--space-1); }
-@media (max-width: 1180px) { .sc2-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 900px) { .sc2-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.sc2-ro { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
-.sc2-ro b { font-weight: 500; color: var(--text); }
-.sc2-ro__k { color: var(--text-muted); margin-right: var(--space-1); }
+/* Карточки условий по группам: «Цены» — 3 в ряд, «Курс и спрос» — 2, растянутые на ширину ряда (без
+   дыры); на 1024 — по 2, нечётная последняя — во всю ширину; узко — по одной. В ряду — равной высоты. */
+.sc2-fields { display: flex; flex-direction: column; gap: var(--space-4); }
+.sc2-fgroup { display: flex; flex-direction: column; gap: var(--space-2); }
+.sc2-fgroup__grid { display: grid; grid-template-columns: repeat(var(--sc2-cols, 3), minmax(0, 1fr)); gap: var(--space-3); align-items: stretch; }
+.sc2-fgroup--2 { --sc2-cols: 2; }
+@media (max-width: 1180px) {
+  .sc2-fgroup__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sc2-fgroup__grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) { .sc2-fgroup__grid { grid-template-columns: minmax(0, 1fr); } }
 
-.sc2-regime { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--block-1); border-radius: var(--radius-lg); }
-.sc2-regime__head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.sc2-regime__sum { flex: 1 1 240px; min-width: 0; font-size: var(--fs-13); color: var(--text); }
-.sc2-regime__ctl { display: flex; flex-direction: column; gap: var(--space-2); }
+.sc2-regime { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.sc2-fold__hint { font-weight: 400; color: var(--text-muted); }
+.sc2-adv { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-2); }
+.sc2-adv p { margin: 0; }
+.sc2-adv__row { display: flex; align-items: center; gap: var(--space-2) var(--space-4); flex-wrap: wrap; }
+.sc2-adv__cap { margin: 0; font: 600 var(--fs-13) var(--font-sans); color: var(--text); }
+.sc2-adv__kinds .dk-card-opt { min-height: 0; padding: var(--space-2) var(--space-3); }
+.sc2-adv__warn { margin: 0; font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-secondary); text-wrap: pretty; }
+.sc2-adv__warn > span[aria-hidden] { color: var(--status-setup); }
+.sc2-adv__warn .pf-link { margin-left: var(--space-2); }
 .sc2-regime__strip { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px dashed var(--border); transition: opacity var(--dur-fast) var(--ease-out); }
 .sc2-regime__strip p { margin: 0; }
 .sc2-regime__strip.is-refetching { opacity: 0.6; }
 .sc2-fold {
-  display: inline-flex; align-items: center; gap: var(--space-2); align-self: flex-start; min-height: 24px; padding: 0;
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px var(--space-2); align-self: flex-start; min-height: 24px; padding: 0; text-align: left;
   background: none; border: 0; color: var(--text-secondary); font: 500 var(--fs-12) var(--font-sans); cursor: pointer;
 }
 .sc2-fold:hover { color: var(--text); }
 .sc2-fold:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-radius: var(--radius-sm); }
 .sc2-fold__chev { flex: none; color: var(--text-muted); transition: transform var(--dur-fast) var(--ease-out); }
 .sc2-regime.is-open .sc2-fold__chev { transform: rotate(180deg); }
-.sc2-joint { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); }
-.sc2-joint__cell { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-12); color: var(--text-muted); }
-.sc2-joint__cell b { font-size: var(--fs-16); font-weight: 500; color: var(--text); }
 
 /* ── Распределения: таблица + боковая панель редактора ───────────────────── */
 .sc2-dist.has-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 360px); gap: var(--space-4); align-items: start; }
@@ -109,8 +125,11 @@
 }
 .sc2-bulk { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; padding: var(--space-2) var(--space-3); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--fs-13); }
 .sc2-dtable__sel { width: 28px; }
-.sc2-dtable__name { display: inline-block; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .sc2-dtable__code { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-muted); font-weight: 400; }
+/* Изделие: суть строкой 1, уточнение и код — приглушённой строкой 2 (обе — не длиннее строки). */
+.sc2-dtable__name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sc2-dtable__head { font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.sc2-dtable__tail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: var(--fs-12); font-weight: 400; color: var(--text-muted); }
 .sc2-dtable__density { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-12); color: var(--text-secondary); }
 .sc2-dist .dk-table td, .sc2-dist .dk-table th[scope='row'] { height: 40px; padding-top: 0; padding-bottom: 0; }
 .sc2-hi { color: var(--text); font-weight: 500; }
@@ -130,6 +149,10 @@
 .sc2-quality__head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .sc2-quality__head .btn { margin-left: auto; }
 .sc2-quality__sub { margin: 0; }
+/* Подписи плиток проверки — обычным регистром (длинные фразы в капсе не читаются). */
+.sc2-quality .dk-kpitile__label { text-transform: none; letter-spacing: 0; font-size: var(--fs-12); }
+/* Как пользоваться вкладкой «Прогноз цен»: чип вида + одна фраза. */
+.sc2-lead { margin: 0; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; font-size: var(--fs-13); line-height: var(--lh-body); color: var(--text); text-wrap: pretty; }
 .sc2-quality__tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .sc2-badges { display: inline-flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 
@@ -139,26 +162,33 @@
 .sc2-compare__head .btn--primary { margin-left: auto; }
 .sc2-cmp { display: flex; flex-direction: column; gap: var(--space-2); }
 .sc2-cmp__cap { margin: 0; color: var(--text-secondary); }
-.sc2-cmp__wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.sc2-cmp__table th[scope='row'] { color: var(--text-secondary); font-weight: 400; white-space: nowrap; }
-.sc2-cmp__col { min-width: 180px; vertical-align: bottom; text-transform: none; letter-spacing: 0; }
-.sc2-cmp__name { display: block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+.sc2-cmp__wrap { --dk-sticky-top: 0px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+/* Фиксированная раскладка: «Показатель» 14rem (липкая при прокрутке), сценарии делят остальное поровну —
+   не уже 12rem и не шире 280 px (таблица не растягивается на всю ширину при двух сценариях). */
+.sc2-cmp__table { table-layout: fixed; width: 100%; }
+.sc2-cmp__table--n2 { min-width: calc(14rem + 2 * 12rem); max-width: calc(14rem + 2 * 280px); }
+.sc2-cmp__table--n3 { min-width: calc(14rem + 3 * 12rem); max-width: calc(14rem + 3 * 280px); }
+.sc2-cmp__table--n4 { min-width: calc(14rem + 4 * 12rem); max-width: calc(14rem + 4 * 280px); }
+.sc2-cmp__table--n5 { min-width: calc(14rem + 5 * 12rem); max-width: calc(14rem + 5 * 280px); }
+.sc2-cmp__c0 { width: 14rem; }
+.sc2-cmp__table .sc2-cmp__lead { position: sticky; left: 0; z-index: 1; background: var(--bg-panel); box-shadow: 1px 0 0 var(--border); }
+.sc2-cmp__table thead .sc2-cmp__lead { z-index: 3; }
+.sc2-cmp__table th[scope='row'] { color: var(--text-secondary); font-weight: 400; overflow-wrap: break-word; }
+.sc2-cmp__table td.num { white-space: normal; }
+.sc2-cmp__col { vertical-align: bottom; text-transform: none; letter-spacing: 0; }
+/* Имя сценария в шапке колонки — переносится, без многоточия (владелец: «сокращения в таблицах»). */
+.sc2-cmp__name { display: block; overflow-wrap: break-word; font-size: var(--fs-13); font-weight: 600; color: var(--text); text-wrap: balance; }
+.sc2-cmp__mode { display: block; margin-top: 2px; font-size: var(--fs-12); font-weight: 400; color: var(--text-muted); }
 .sc2-cmp__base { font-weight: 400; color: var(--text-muted); }
 .sc2-cmp__acts { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: 2px; font-weight: 400; }
-.sc2-cmp__cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; }
-.sc2-cmp__dflt { font-size: var(--fs-11); color: var(--text-muted); white-space: nowrap; }
+.sc2-cmp__cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-1) var(--space-2); flex-wrap: wrap; }
+.sc2-cmp__v { overflow-wrap: break-word; }
+/* Умолчание — серый глиф источника с подсказкой (а не плашка «○ по умолчанию» в каждой строке). */
+.sc2-cmp__dflt { color: var(--text-muted); font-size: var(--fs-12); cursor: help; }
 
-/* ── Шаблоны в диалоге ───────────────────────────────────────────────────── */
-.sc2-tpl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2); }
-.sc2-tpl__item { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); text-align: left; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-secondary); cursor: pointer; }
-.sc2-tpl__item:hover { background: var(--bg-hover); }
-.sc2-tpl__item.is-on { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 10%, var(--bg-card)); }
-.sc2-tpl__item:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
-.sc2-tpl__name { font-weight: 600; font-size: var(--fs-13); }
-.sc2-tpl__kind { font-size: var(--fs-11); color: var(--text-muted); }
-.sc2-tpl__pass { width: 100%; border-collapse: collapse; font-size: var(--fs-12); margin-top: var(--space-2); }
-.sc2-tpl__pass th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 3px var(--space-2); border-bottom: 1px solid var(--border-strong); }
-.sc2-tpl__pass td { padding: 3px var(--space-2); border-bottom: 1px solid var(--border); vertical-align: top; }
+/* ── Диалог создания ─────────────────────────────────────────────────────── */
+.sc2-exists { margin: 0; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-2) var(--space-3); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--fs-13); color: var(--text); }
+.sc2-dlg-field > span { font-size: var(--fs-13); color: var(--text-secondary); }
 .sc2-field-err { display: inline-flex; align-items: center; gap: var(--space-1); margin-top: var(--space-1); font-size: var(--fs-12); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-secondary); }
 
 @media (max-width: 1100px) { .sc2-crit { grid-template-columns: 1fr; } .sc2-dist.has-panel { grid-template-columns: minmax(0, 1fr) 320px; } }

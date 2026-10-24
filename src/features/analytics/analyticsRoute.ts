@@ -11,7 +11,7 @@ export const ANALYTICS_TABS: readonly AnalyticsTab[] = ['kpi', 'bottleneck', 'in
 
 /** Подписи вкладок — те же в табах, крошках и заголовке вкладки браузера. */
 export const TAB_LABEL: Readonly<Record<AnalyticsTab, string>> = {
-  kpi: 'KPI',
+  kpi: 'Показатели',
   bottleneck: 'Узкие места',
   invest: 'Инвестпроекты',
   flow: 'Потоки',

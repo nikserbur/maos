@@ -1,12 +1,13 @@
 /**
- * Умолчания сценария (P-56): показанное = посчитанное движком; 0 переживает сохранение; изменённое
- * поле подписывается «■ вручную», умолчание — статусом паспорта.
+ * Умолчания сценария (P-56): показанное = посчитанное движком; 0 переживает сохранение; незаданные
+ * условия не записываются в PUT (NULL → умолчание движка); инфляция по умолчанию — последнее
+ * наблюдение ЦБ РФ из генератора; разброс 0,06 = ×1 к истории; изменённое поле — «■ вручную».
  */
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { PriceScenario } from '../../lib/api'
 import { ParamField } from '../../ui/ParamField'
-import { SCENARIO_DEFAULTS, changedKeys, effectiveScenario, endDateOf, fieldBadge, isDefaultValue, numOr, resetPatch } from './scenarioDefaults'
+import { SCENARIO_DEFAULTS, changedKeys, defaultsFor, effectiveScenario, endDateOf, fieldBadge, inflationFromYoy, isDefaultValue, numOr, resetPatch, yoyFromMonthly } from './scenarioDefaults'
 import { payloadOf } from './scenarioPayload'
 
 const sc = (over: Partial<PriceScenario> = {}): PriceScenario => ({ id: 's1', name: 'Базовый', description: '', horizon_hours: '720', created_at: '', ...over })
@@ -35,9 +36,15 @@ describe('payloadOf', () => {
     expect(body.max_share).toBe(eff.max_share)
     expect(body.alpha).toBe(eff.alpha)
     expect(body.market_corr).toBe(eff.market_corr)
-    expect(body.volatility).toBe(eff.volatility)
-    expect(body.months).toBe(eff.months)
     expect(body.objective).toBe(eff.objective)
+  })
+
+  it('незаданные условия не уходят числом, а уходят в `reset` (NULL в БД) — правка α не замораживает умолчание', () => {
+    const body = payloadOf(sc({ alpha: '0.15' }))
+    for (const k of ['inflation', 'fx', 'demand', 'volatility', 'months'] as const) expect(body[k]).toBeUndefined()
+    expect(body.reset).toEqual(['inflation', 'fx', 'demand', 'volatility'])
+    expect(payloadOf(sc({ volatility: '0.12', months: '12' }))).toMatchObject({ volatility: 0.12, months: 12 })
+    expect(payloadOf(sc({ volatility: '0.12', inflation: '0.01' })).reset).toEqual(['fx', 'demand'])
   })
 
   it('возвращает все поля, включая устаревшие (сохранение «туда и обратно»)', () => {
@@ -56,10 +63,26 @@ describe('эффективные значения и изменённые пол
     expect(isDefaultValue('market_corr', 0.25)).toBe(false)
   })
 
-  it('считает изменённые поля и строит патч «вернуть все»', () => {
-    const s = sc({ inflation: '0.01', volatility: '0.05', fx: '1.2' })
-    expect(changedKeys(s)).toEqual(['inflation', 'fx'])
-    expect(resetPatch(['inflation', 'fx'])).toEqual({ inflation: String(SCENARIO_DEFAULTS.inflation), fx: String(SCENARIO_DEFAULTS.fx) })
+  it('считает изменённые поля и строит патч «вернуть все» (инфляция — из генератора)', () => {
+    const lastObs = { month: '2026-09', cpi_yoy_pp: 6.35, key_pp: 14, usd_rub: 84.43 }
+    const s = sc({ inflation: '0', volatility: '0.06', fx: '1.2' })
+    expect(changedKeys(s, undefined, { lastObs })).toEqual(['inflation', 'fx'])
+    // «Вернуть» условие — пустое поле (NULL), а не число умолчания: умолчание дальше следует за данными ЦБ РФ.
+    expect(resetPatch(['inflation', 'fx'], { lastObs })).toEqual({ inflation: '', fx: '' })
+    expect(resetPatch(['alpha', 'market_corr'])).toEqual({ alpha: String(SCENARIO_DEFAULTS.alpha), market_corr: String(SCENARIO_DEFAULTS.market_corr) })
+    expect(changedKeys(sc({ inflation: String(inflationFromYoy(6.35)) }), undefined, { lastObs })).toEqual([])
+  })
+
+  it('инфляция по умолчанию — 6,35 % г/г ЦБ РФ ≈ 0,51 %/мес; незаданная — умолчание, а не 0', () => {
+    const lastObs = { month: '2026-09', cpi_yoy_pp: 6.35, key_pp: 14, usd_rub: 84.43 }
+    const d = defaultsFor({ lastObs }).inflation
+    expect(d).toBeCloseTo(0.005143, 5)
+    expect(yoyFromMonthly(d)).toBeCloseTo(0.0635, 10)
+    const eff = effectiveScenario(sc(), { lastObs })
+    expect(eff.inflation).toBe(d)
+    expect(eff.isDefault.inflation).toBe(true)
+    expect(effectiveScenario(sc()).inflation).toBe(SCENARIO_DEFAULTS.inflation)   // без генератора — как бэкенд: 1 %/мес
+    expect(effectiveScenario(sc()).volatility).toBe(0.06)                          // ×1 к истории, нейтраль движка
   })
 
   it('конец горизонта выводится из начала и числа месяцев', () => {

@@ -1,15 +1,16 @@
 /**
- * Веер прогноза (UX-V2 §5.3, X2 «честная неопределённость»): история → «сейчас» → полосы
- * P10–P90 («8 из 10 исходов») и P25–P75 («5 из 10»), медиана (P50), тренд (нейтральный пунктир),
+ * Веер прогноза (UX-V2 §5.3, X2 «честная неопределённость»): история → «сейчас» → коридоры
+ * «8 из 10 исходов» (P10–P90) и «5 из 10» (P25–P75), медиана, тренд (нейтральный пунктир),
  * окно проверки (нейтральная подложка) с ромбами факта проверки. Легенда называет каждый
- * нарисованный элемент. Ось Y — ≥ 3 деления; `yDomain` — общая шкала малых кратных (иначе
- * «своя шкала» подписывается), `refLines` — подписанные пороги (в легенде и таблице-двойнике),
- * `quality` warn/bad штрихует внешнюю полосу (интервалу доверять осторожно). Качество словами —
- * у обёртки (FanChart), не внутри svg.
+ * нарисованный элемент словами (коды P10/P50 — только в таблице-двойнике, в скобках). Ось Y — ≥ 3
+ * деления; `yDomain` — общая шкала малых кратных (иначе «своя шкала» подписывается): всё, что за
+ * шкалой, обрезается рамкой плота, а выход за край отмечен «↑ до …» / «↓ до …». `refLines` —
+ * подписанные пороги, `quality` warn/bad штрихует внешний коридор (доверять осторожно — пункт
+ * легенды). Подпись «сейчас» на оси не пропадает никогда. Качество словами — у обёртки, не в svg.
  */
 import { useCallback, useId, type ReactNode } from 'react'
-import { ChartFrame, type ChartTable } from './ChartFrame'
-import { Crosshair, Grid, Marker, YAxis } from './Axis'
+import { ChartFrame, type ChartTable, type FrameVariant } from './ChartFrame'
+import { Crosshair, Grid, Marker, XAxis, X_AXIS_H, YAxis } from './Axis'
 import { ChartTooltip } from './Tooltip'
 import { useHoverIndex, useMeasuredWidth } from './hooks'
 import type { LegendItem } from './palette'
@@ -61,9 +62,16 @@ export interface FanProps {
   /** Качество прогноза: warn/bad — внешняя полоса штрихуется. */
   quality?: 'ok' | 'warn' | 'bad'
   loading?: boolean
+  /** multiple — карточка малых кратных (без «⋯»: двойник — общая таблица сетки); nested — вложенный. */
+  variant?: FrameVariant
+  /** Заголовок как главное действие карточки («Открыть веер»). */
+  onTitleClick?: () => void
+  titleActionLabel?: string
 }
 
-const PT = 14, PB = 26, PR = 12
+const PT = 14, PB = X_AXIS_H, PR = 12
+/** Отступ отметки «за шкалой» от края плота, px. */
+const OVER_INSET = 4
 
 function minmax(s: FanSeries): [number, number] {
   return extent([...(s.history ?? []), ...s.p10, ...s.p90, ...(s.trend ?? [])])
@@ -82,10 +90,12 @@ const defaultLabel = (o: number) => (o === 0 ? 'сейчас' : o > 0 ? `+${o} �
 export function Fan({
   a, b, fmt = axisNum, monthLabel = defaultLabel, backtestK = 0, height = 200, title, subtitle, badges, actions, ariaLabel,
   nameA = 'прогноз', nameB = 'сценарий B', className, compact, showLegend = true, yDomain, scaleNote, refLines = [], caveat, quality = 'ok', loading,
+  variant, onTitleClick, titleActionLabel,
 }: FanProps) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
   const rid = useId()
   const hatchId = svgId(rid, 'fanhatch')
+  const clipId = svgId(rid, 'fanclip')
   const hist = a.history ?? []
   const H = hist.length
   const N = a.p50.length - 1
@@ -111,12 +121,19 @@ export function Fan({
 
   const legend: LegendItem[] = fanLegend({
     hasHistory: H > 0, hasTrend: Boolean(a.trend), hasB: Boolean(b), nameA, nameB, hasInner: Boolean(a.p25 && a.p75),
-    backtestK: hasBt ? k : 0, refLines,
+    backtestK: hasBt ? k : 0, refLines, hatched,
   })
+  // Общая шкала уже веера: марки обрезаны рамкой плота, выход за край — подписанной отметкой.
+  const [dataLo, dataHi] = b ? [Math.min(loA, loB), Math.max(hiA, hiB)] : [loA, hiA]
+  const over = yDomain && dataHi > hi + (hi - lo) * 1e-6 ? dataHi : null
+  const under = yDomain && dataLo < lo - (hi - lo) * 1e-6 ? dataLo : null
   const rowLabel = (i: number) => monthLabel(i - fcStart)
+  const axisLabels = Array.from({ length: total }, (_, i) => rowLabel(i))
+  const axisTicks = [...new Set([...(H > 1 ? [0] : []), fcStart, total - 1])]
+  const plotX1 = width - PR
   const atF = (arr: ReadonlyArray<number> | undefined, i: number) => (arr && i >= fcStart && i - fcStart < arr.length ? arr[i - fcStart] : NaN)
   const table: ChartTable = {
-    columns: ['Месяц', 'Факт', 'P10', 'P50', 'P90', ...(a.trend ? ['Тренд'] : []), ...refLines.map((r) => r.label)],
+    columns: ['Месяц', 'Факт', 'Нижняя граница (P10)', 'Медиана (P50)', 'Верхняя граница (P90)', ...(a.trend ? ['Тренд'] : []), ...refLines.map((r) => r.label)],
     rows: Array.from({ length: total }, (_, i) => [
       rowLabel(i), i < H ? fmt(hist[i]) : DASH, f(atF(a.p10, i), fmt), f(atF(a.p50, i), fmt), f(atF(a.p90, i), fmt),
       ...(a.trend ? [f(atF(a.trend, i), fmt)] : []), ...refLines.map((r) => f(r.value, fmt)),
@@ -128,7 +145,8 @@ export function Fan({
 
   return (
     <ChartFrame title={title} subtitle={subtitle} badges={allBadges} actions={actions} legend={showLegend ? legend : undefined} ariaLabel={label}
-      table={isEmpty ? null : table} empty={isEmpty ? 'Нет прогноза' : undefined} className={className} compact={compact} loading={loading} skeletonHeight={height}>
+      table={isEmpty ? null : table} empty={isEmpty ? 'Нет прогноза' : undefined} className={className} compact={compact} loading={loading} skeletonHeight={height}
+      variant={variant} onTitleClick={onTitleClick} titleActionLabel={titleActionLabel}>
       <div ref={ref} className="ch-plot" tabIndex={0} onPointerMove={hoverApi.onPointerMove} onPointerLeave={hoverApi.onPointerLeave}
         onKeyDown={hoverApi.onKeyDown} onBlur={hoverApi.onBlur}>
         <svg className="ch-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
@@ -136,13 +154,14 @@ export function Fan({
             <pattern id={hatchId} patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
               <rect className="ch-fan__hatch" x="0" y="0" width="1.5" height="6" />
             </pattern>
+            <clipPath id={clipId}><rect x={PL} y={PT} width={Math.max(0, plotX1 - PL)} height={plotH} /></clipPath>
           </defs>
           <Grid ticks={ticks} yAt={Y} x0={PL} x1={width - PR} />
           <YAxis ticks={ticks} yAt={Y} x={PL - 8} fmt={fmt} />
           <rect className="ch-fan__future" x={nowX} y={PT} width={Math.max(0, width - PR - nowX)} height={plotH} />
           {hasBt && <rect className="ch-fan__bt" x={X(H - 1 - k)} y={PT} width={X(H - 1) - X(H - 1 - k)} height={plotH} />}
           <line className="ch-fan__now" x1={nowX} x2={nowX} y1={PT} y2={PT + plotH} />
-          <line className="ch-baseline" x1={PL} x2={width - PR} y1={PT + plotH} y2={PT + plotH} />
+          <g className="ch-fan__marks" clipPath={`url(#${clipId})`}>
           {b && <path className="ch-fan__band" fill="var(--chart-2)" d={bandPath(fc(b.p90), fc(b.p10))} />}
           <path className="ch-fan__band" fill="var(--chart-1)" d={bandPath(fc(a.p90), fc(a.p10))} />
           {hatched && <path className="ch-fan__band-hatch" fill={`url(#${hatchId})`} d={bandPath(fc(a.p90), fc(a.p10))} />}
@@ -160,11 +179,11 @@ export function Fan({
           {b && <path className="ch-line" stroke="var(--chart-2)" d={linePath(fc(b.p50))} />}
           <path className="ch-line" stroke="var(--chart-1)" d={linePath(fc(a.p50))} />
           {a.trend && <path className="ch-line ch-line--dashed ch-fan__trend" d={linePath(fc(a.trend))} />}
-          <g className="ch-axis" aria-hidden="true">
-            {H > 1 && <text className="ch-tick" x={PL} y={height - 8}>{monthLabel(-(H - 1))}</text>}
-            <text className="ch-tick" x={nowX} y={height - 8} textAnchor={H > 1 ? 'middle' : 'start'}>{monthLabel(0)}</text>
-            <text className="ch-tick" x={width - PR} y={height - 8} textAnchor="end">{monthLabel(N)}</text>
           </g>
+          {over !== null && <text className="ch-fan__over" x={plotX1 - OVER_INSET} y={PT + 11} textAnchor="end">↑ до {fmt(over)}</text>}
+          {under !== null && <text className="ch-fan__over" x={plotX1 - OVER_INSET} y={PT + plotH - OVER_INSET} textAnchor="end">↓ до {fmt(under)}</text>}
+          {/* Ось месяцев: начало истории · «сейчас» · горизонт; «сейчас» не пропадает никогда — уступают крайние (placeXLabels). */}
+          <XAxis labels={axisLabels} xAt={X} y={PT + plotH} x0={PL} x1={plotX1} tickIndices={axisTicks} keep={[fcStart]} />
           {hover != null && (
             <g>
               <Crosshair x={X(hover)} y0={PT} y1={PT + plotH} />
@@ -173,9 +192,9 @@ export function Fan({
               <ChartTooltip x={X(hover)} y={PT} width={width} height={plotH} title={rowLabel(hover)} rows={[
                 ...(hover < H ? [{ key: 'f', label: hasBt && hover >= H - k ? 'факт проверки' : 'факт', value: fmt(hist[hover]), color: 'var(--text)' }] : []),
                 ...(Number.isFinite(atF(a.p50, hover)) ? [
-                  { key: '90', label: 'P90', value: fmt(atF(a.p90, hover)), color: 'var(--chart-1)' },
-                  { key: '50', label: 'медиана (P50)', value: fmt(atF(a.p50, hover)), color: 'var(--chart-1)' },
-                  { key: '10', label: 'P10', value: fmt(atF(a.p10, hover)), color: 'var(--chart-1)' },
+                  { key: '90', label: 'верх коридора', value: fmt(atF(a.p90, hover)), color: 'var(--chart-1)' },
+                  { key: '50', label: 'медиана', value: fmt(atF(a.p50, hover)), color: 'var(--chart-1)' },
+                  { key: '10', label: 'низ коридора', value: fmt(atF(a.p10, hover)), color: 'var(--chart-1)' },
                 ] : []),
                 ...(a.trend && Number.isFinite(atF(a.trend, hover)) ? [{ key: 't', label: 'тренд', value: fmt(atF(a.trend, hover)), color: 'var(--text-secondary)' }] : []),
                 ...(b && Number.isFinite(atF(b.p50, hover)) ? [{ key: 'b', label: `${nameB} · медиана`, value: fmt(atF(b.p50, hover)), color: 'var(--chart-2)' }] : []),
@@ -189,25 +208,30 @@ export function Fan({
   )
 }
 
-/** Легенда веера — общая для карточки и для сетки малых кратных (одна над всеми); называет каждый элемент. */
-export function fanLegend({ hasHistory = true, hasTrend = false, hasB = false, nameA = 'прогноз', nameB = 'сценарий B', hasInner = false, backtestK = 0, refLines = [] }: {
-  hasHistory?: boolean; hasTrend?: boolean; hasB?: boolean; nameA?: string; nameB?: string; hasInner?: boolean; backtestK?: number; refLines?: ReadonlyArray<FanRefLine>
+/**
+ * Легенда веера — общая для карточки и для сетки малых кратных (одна над всеми); называет каждый
+ * нарисованный элемент словами. `hatched` — хоть одна карточка заштрихована (качество warn/bad):
+ * пункт «штриховка — коридору доверять осторожно».
+ */
+export function fanLegend({ hasHistory = true, hasTrend = false, hasB = false, nameA = 'прогноз', nameB = 'сценарий B', hasInner = false, backtestK = 0, refLines = [], hatched = false }: {
+  hasHistory?: boolean; hasTrend?: boolean; hasB?: boolean; nameA?: string; nameB?: string; hasInner?: boolean; backtestK?: number; refLines?: ReadonlyArray<FanRefLine>; hatched?: boolean
 }): LegendItem[] {
   const pre = hasB ? `${nameA} · ` : ''
   return [
     ...(hasHistory ? [{ key: 'hist', label: 'история (факт)', color: 'var(--text)', shape: 'line' as const }] : []),
-    { key: 'p50', label: `${pre}медиана (P50)`, color: 'var(--chart-1)', shape: 'line' },
-    ...(hasInner ? [{ key: 'inner', label: `${pre}P25–P75 · 5 из 10 исходов`, color: 'var(--chart-1)', shape: 'band' as const, swatchClass: 'ch-sw-band-inner' }] : []),
-    { key: 'band', label: `${pre}P10–P90 · 8 из 10 исходов`, color: 'var(--chart-1)', shape: 'band' },
+    { key: 'p50', label: `${pre}медиана`, color: 'var(--chart-1)', shape: 'line' },
+    ...(hasInner ? [{ key: 'inner', label: `${pre}коридор: 5 из 10 исходов`, color: 'var(--chart-1)', shape: 'band' as const, swatchClass: 'ch-sw-band-inner' }] : []),
+    { key: 'band', label: `${pre}коридор: 8 из 10 исходов`, color: 'var(--chart-1)', shape: 'band' },
+    ...(hatched ? [{ key: 'hatch', label: 'штриховка — коридору доверять осторожно', color: 'var(--chart-1)', shape: 'band' as const, swatchClass: 'ch-sw-hatch' }] : []),
     ...(hasTrend ? [{ key: 'trend', label: 'тренд', color: 'var(--text-secondary)', shape: 'line' as const, dashed: true }] : []),
     ...(backtestK > 0 ? [
-      { key: 'fact', label: '◆ факт проверки', color: 'var(--text)', shape: 'dot' as const, swatchClass: 'ch-sw-fact' },
+      { key: 'fact', label: 'факт проверки', color: 'var(--text)', shape: 'dot' as const, swatchClass: 'ch-sw-fact' },
       { key: 'bt', label: `окно проверки ${backtestK} мес`, color: 'var(--chart-grid)', shape: 'rect' as const, swatchClass: 'ch-sw-bt' },
     ] : []),
     ...refLines.map((r) => ({ key: `ref-${r.key}`, label: r.label, color: 'var(--text-muted)', shape: 'line' as const, dashed: true })),
     ...(hasB ? [
-      { key: 'b50', label: `${nameB} · медиана (P50)`, color: 'var(--chart-2)', shape: 'line' as const },
-      { key: 'b', label: `${nameB} · P10–P90 · 8 из 10 исходов`, color: 'var(--chart-2)', shape: 'band' as const },
+      { key: 'b50', label: `${nameB} · медиана`, color: 'var(--chart-2)', shape: 'line' as const },
+      { key: 'b', label: `${nameB} · коридор: 8 из 10 исходов`, color: 'var(--chart-2)', shape: 'band' as const },
     ] : []),
   ]
 }

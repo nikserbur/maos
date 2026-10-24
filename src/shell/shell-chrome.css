@@ -20,6 +20,8 @@
   color: var(--text-muted);
   font-weight: 500;
 }
+/* Версии интерфейса и сервера расходятся — «▲ сервер v0.75.0» (цвет только у глифа). */
+.statusbar__vwarn { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); white-space: nowrap; }
 .statusbar__sep {
   width: 1px;
   height: 12px;

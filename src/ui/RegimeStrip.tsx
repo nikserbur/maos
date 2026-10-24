@@ -1,10 +1,12 @@
 /**
  * Полоса режимов обученного макро-генератора (UX-V2 §5.4, §6.2 `RegimeStrip`): по месяцам
  * горизонта — доля путей в каждом режиме (цветные сегменты: спокойный — вердигрис, кризис —
- * киноварь), подпись вероятностей перехода за блок. Данные — `POST /api/macro/sample`
+ * киноварь), сколько режим в среднем держится (мес). Подпись — обычным регистром; ось — календарные
+ * месяцы (начало, середина, конец), если передан `monthLabel`. Данные — `POST /api/macro/sample`
  * (`paths[].regime`) и `GET /api/macro/regimes`. Слово «прогноз» — только для базового режима.
  */
 import type { MacroRegime } from '../lib/api'
+import { NBSP, num } from '../explain/format'
 import './fields.css'
 
 interface RegimeStripProps {
@@ -17,6 +19,8 @@ interface RegimeStripProps {
   label?: string
   /** Индекс навязанного режима (стресс) — подсветка. */
   forced?: number | null
+  /** Подпись месяца горизонта по индексу (0 — первый месяц): «окт. 2026». */
+  monthLabel?: (i: number) => string
 }
 
 const COLORS = ['var(--verdigris)', 'var(--cinnabar)', 'var(--ochre)', 'var(--chart-6)']
@@ -34,20 +38,29 @@ export function regimeSharesByMonth(paths: ReadonlyArray<readonly number[]>, k: 
   return out
 }
 
-export function RegimeStrip({ regimes, paths, share, isForecast, label, forced = null }: RegimeStripProps) {
+/** Подписи оси: первый, средний и последний месяц (без повторов). */
+function axisIndices(n: number): number[] {
+  return [...new Set([0, Math.floor((n - 1) / 2), n - 1])].filter((i) => i >= 0)
+}
+
+export function RegimeStrip({ regimes, paths, share, isForecast, label, forced = null, monthLabel }: RegimeStripProps) {
   const k = regimes.length
   const byMonth = regimeSharesByMonth(paths, k)
   if (k === 0) return null
   return (
     <div className={`pf-regimes${isForecast ? '' : ' is-stress'}`} role="img" aria-label={`Режимы генератора по месяцам: ${regimes.map((r, i) => `${r.label} ${Math.round((share?.[i] ?? 0) * 100)} %`).join(', ')}`}>
       <div className="pf-regimes__head">
-        <span className="pf-regimes__title text-caps">{label ?? (isForecast ? 'Режимы · прогноз (базовый)' : 'Режимы · стресс, не прогноз')}</span>
+        <span className="pf-regimes__title">{label ?? (isForecast ? 'Режимы генератора — прогноз' : 'Режимы генератора — проверка «что если», не прогноз')}</span>
         <span className="pf-regimes__legend">
           {regimes.map((r, i) => (
             <span key={r.index} className={`pf-regimes__key${forced === i ? ' is-forced' : ''}`}>
               <i style={{ background: COLORS[i % COLORS.length] }} />
               {r.label} <b className="num">{Math.round((share?.[i] ?? r.share_of_history) * 100)} %</b>
-              <span className="pf-regimes__stay mono" title="вероятность остаться в режиме за блок">· остаться {Math.round(r.stay_prob_block * 100)} %</span>
+              {r.mean_duration_months > 0 && (
+                <span className="pf-regimes__stay" title={`вероятность остаться в режиме за блок — ${Math.round(r.stay_prob_block * 100)} %`}>
+                  · держится в среднем {num(r.mean_duration_months, 0)}{NBSP}мес
+                </span>
+              )}
             </span>
           ))}
         </span>
@@ -66,8 +79,8 @@ export function RegimeStrip({ regimes, paths, share, isForecast, label, forced =
         </div>
       )}
       {byMonth.length > 0 && (
-        <div className="pf-regimes__axis mono" aria-hidden="true">
-          <span>+1 мес</span><span>+{byMonth.length} мес</span>
+        <div className="pf-regimes__axis" aria-hidden="true">
+          {axisIndices(byMonth.length).map((i) => <span key={i}>{monthLabel ? monthLabel(i) : `+${num(i + 1, 0)}${NBSP}мес`}</span>)}
         </div>
       )}
     </div>

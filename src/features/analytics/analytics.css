@@ -150,9 +150,11 @@
 .dk-table td.an-td-info, .dk-table th.an-td-info { width: 36px; text-align: center; }
 .dk-table td.an-td-dir { color: var(--text-muted); white-space: nowrap; }
 .dk-table th[scope='row'] .dk-chip { margin-left: var(--space-2); vertical-align: middle; }
-.dk-table td.an-td-rank, .dk-table th.an-td-rank { width: 44px; }
-.dk-table td.an-td-bar { width: 220px; min-width: 140px; }
-.dk-table td.an-td-act { width: 200px; text-align: right; }
+.dk-table td.an-td-bar { min-width: 200px; }
+.dk-table td.an-td-act { text-align: right; }
+/* Загрузка: полоса и число в одной ячейке («Загрузка, %»), число — справа, полоса забирает остаток. */
+.an-loadcell { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.an-loadcell > :first-child { flex: 1 1 auto; min-width: 72px; }
 .an-rank { font-size: var(--fs-12); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .an-bname { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .an-loadmark { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }

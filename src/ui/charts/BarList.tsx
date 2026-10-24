@@ -1,11 +1,12 @@
 /**
- * Список-бары (загрузка оборудования, вклад факторов): подпись в две строки без обрезки,
- * тонкий бар одного цвета ряда (статусный цвет никогда не кодирует величину), значение справа
+ * Список-бары (загрузка оборудования, вклад факторов): подпись целиком, без многоточия (колонка
+ * подписи — не уже 280 px или половины ширины), переход «откуда → куда» — двумя строками
+ * («откуда» / «→ куда»); тонкий бар одного цвета ряда (статусный цвет никогда не кодирует величину), значение справа
  * текстом `--text`. Бар — SVG с атрибутом width (без inline-стилей). Двуполярный режим —
  * от нулевой отметки посередине вправо/влево.
  */
 import { useState, type ReactNode } from 'react'
-import { ChartFrame, type ChartTable } from './ChartFrame'
+import { ChartFrame, type ChartTable, type FrameVariant } from './ChartFrame'
 import { DASH } from '../../explain/format'
 import './charts.css'
 
@@ -33,7 +34,11 @@ interface BarListProps {
   subtitle?: ReactNode
   ariaLabel?: string
   valueHeader?: string
+  /** Заголовок колонки подписей в таблице-двойнике: «Тип оборудования», «Фактор». */
+  labelHeader?: string
   compact?: boolean
+  /** nested — список внутри другого графика/плитки (без меню «⋯»: двойник — у родителя). */
+  variant?: FrameVariant
   className?: string
   /** Отметка на каждой дорожке (цель, норматив): волосяная линия + подпись в легенде под списком. */
   mark?: { value: number; label: string }
@@ -41,15 +46,28 @@ interface BarListProps {
   limit?: number
 }
 
-export function BarList({ rows, fmt, max, bipolar = false, color = 'var(--chart-1)', title, subtitle, ariaLabel, valueHeader = 'Значение', compact, className, mark, limit }: BarListProps) {
+/** Строка «откуда → куда» рисуется двумя короткими строками; прочие подписи — как есть. */
+function BarLabel({ label }: { label: ReactNode }) {
+  if (typeof label !== 'string') return <>{label}</>
+  const at = label.indexOf(' → ')
+  if (at <= 0) return <>{label}</>
+  return (
+    <>
+      <span className="ch-bar__from">{label.slice(0, at)}</span>
+      <span className="ch-bar__to">→ {label.slice(at + 3)}</span>
+    </>
+  )
+}
+
+export function BarList({ rows, fmt, max, bipolar = false, color = 'var(--chart-1)', title, subtitle, ariaLabel, valueHeader = 'Значение', labelHeader = 'Показатель', compact, variant, className, mark, limit }: BarListProps) {
   const [all, setAll] = useState(false)
   const m = max ?? (Math.max(rows.reduce((a, r) => Math.max(a, Math.abs(r.value)), 0), mark ? Math.abs(mark.value) : 0) || 1)
   const shown = limit && !all && rows.length > limit ? rows.slice(0, limit) : rows
   const markX = mark && Number.isFinite(mark.value) ? (bipolar ? 50 + Math.max(-50, Math.min(50, (mark.value / m) * 50)) : Math.min(100, Math.max(0, (Math.abs(mark.value) / m) * 100))) : null
-  const table: ChartTable = { columns: ['', valueHeader], rows: rows.map((r) => [r.labelText ?? String(r.label), Number.isFinite(r.value) ? fmt(r.value) : DASH]) }
+  const table: ChartTable = { columns: [labelHeader, valueHeader], rows: rows.map((r) => [r.labelText ?? String(r.label), Number.isFinite(r.value) ? fmt(r.value) : DASH]) }
   const label = ariaLabel ?? `Столбцы: ${rows.length} строк`
   return (
-    <ChartFrame title={title} subtitle={subtitle} ariaLabel={label} table={rows.length ? table : null} compact={compact} className={className}
+    <ChartFrame title={title} subtitle={subtitle} ariaLabel={label} table={rows.length ? table : null} compact={compact} variant={variant} className={className}
       empty={rows.length === 0 ? 'Нет данных' : undefined}>
       <ul className={`ch-bars${bipolar ? ' ch-bars--bipolar' : ''}${compact ? ' ch-bars--compact' : ''}`}>
         {shown.map((r) => {
@@ -59,7 +77,7 @@ export function BarList({ rows, fmt, max, bipolar = false, color = 'var(--chart-
           return (
             <li key={r.key} className={`ch-bar${r.marked ? ' is-marked' : ''}`} title={r.labelText}>
               <span className="ch-bar__label">
-                <span className="ch-bar__name">{r.label}</span>
+                <span className="ch-bar__name"><BarLabel label={r.label} /></span>
                 {r.secondary && <span className="ch-bar__sec">{r.secondary}</span>}
               </span>
               <svg className="ch-bar__track" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">

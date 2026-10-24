@@ -1,6 +1,10 @@
 /* Полоса методологии (PipelineStrip) и чип блока (BlockChip) — UX-V2 §2.4, §2.6, X2.
- * Ширина считается по контейнеру полосы (@container pstrip), а не по окну: пристыкованный MENTAT
- * сужает полосу — подписи прячутся по ширине полосы, а не обрезаются многоточием. */
+ * Ячейка — шириной по своей подписи (номер · имя · глиф в отдельных несжимаемых колонках), лишнее место
+ * делится поровну; подпись никогда не наезжает на глиф и на соседа («Распредел◐Внутр◐ние» — больше нет).
+ * Нехватку забирают по очереди: родословная (сжимается и гаснет, ниже 1180 px полосы — скрыта) →
+ * имена обычных ячеек (остаются номер и глиф, имя — в подсказке и для диктора) → имена отклонений →
+ * последняя мера — полоса ячеек прокручивается с гаснущим краем. Ширина — по контейнеру полосы
+ * (@container pstrip), а не по окну: пристыкованный MENTAT сужает полосу — ступени срабатывают по ней. */
 .pstrip-wrap { container: pstrip / inline-size; min-width: 0; }
 .pstrip {
   position: sticky;
@@ -20,11 +24,14 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+.pstrip__cells::-webkit-scrollbar { display: none; }
 .pstrip__cell {
   position: relative;
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 0 auto;
   border-right: 1px solid var(--border);
 }
 .pstrip__link {
@@ -36,6 +43,7 @@
   padding: 0 10px;
   font: inherit;
   text-align: left;
+  white-space: nowrap;
   color: var(--text-muted);
   text-decoration: none;
   background: transparent;
@@ -44,23 +52,26 @@
 }
 .pstrip__link:hover { color: var(--text); background: var(--bg-hover); }
 .pstrip__link:focus-visible { outline: 2px solid transparent; box-shadow: inset var(--halo); }
-/* Текущий блок: нейтральная подложка; цвет блока — только на номере и 2 px подчёркивании. */
-.pstrip__cell.is-current { flex: 2 1 0; }
-.pstrip__cell.is-current .pstrip__link { color: var(--text); background: var(--bg-card); }
+/* Текущий блок: только цвет текста и 2 px подчёркивание цветом блока — без второй «подсвеченной
+   полосы вкладок» над вкладками экрана. */
+.pstrip__cell.is-current { flex-grow: 2; }
+.pstrip__cell.is-current .pstrip__link { color: var(--text); }
 .pstrip__cell.is-current::after {
   content: '';
   position: absolute;
-  left: 0; right: 0; bottom: -1px;
+  left: 0; right: 0; bottom: 0;
   height: 2px;
   background: var(--block);
 }
-/* Отклонение — шире, чтобы «слово: причина» читалась. */
+/* Отклонение — больше свободного места, чтобы «слово: причина» читалась. */
 .pstrip__cell.is-error, .pstrip__cell.is-stale, .pstrip__cell.is-unconfigured { flex-grow: 1.6; }
 .pstrip__n { flex: none; font-size: var(--fs-12); font-weight: 600; color: var(--block); }
-.pstrip__text { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.15; }
-.pstrip__name { flex: none; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
-/* Вторая строка: без многоточия — край гаснет (полный текст в title ячейки); цвет текста нейтрален, состояние несёт глиф. */
+.pstrip__text { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; min-width: max-content; line-height: 1.15; }
+.pstrip__name { flex: none; font-size: var(--fs-12); font-weight: 600; letter-spacing: 0; white-space: nowrap; }
+/* Вторая строка не влияет на ширину ячейки (contain: inline-size): занимает ширину имени и свободное
+   место; без многоточия — край гаснет (полный текст в title ячейки); цвет нейтрален, состояние несёт глиф. */
 .pstrip__badge {
+  contain: inline-size;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -72,41 +83,63 @@
 .pstrip__link > .mm-glyph { flex: none; }
 .pstrip__cell.is-planned .pstrip__badge, .pstrip__cell.is-unconfigured .pstrip__badge { color: var(--text-muted); }
 
-/* Родословная результата: «Базовый · портфель 17:02 · план №28 · 17:38» */
+/* Родословная: видна новейшая часть («план №29 · 20:24 ▲ устарело ▾»), вся цепочка — в списке.
+   Части не сжимаются друг на друга: при нехватке места первой уступает вся кнопка (обрезается её
+   текст, а не выпадающий список — у блока overflow виден). */
 .pstrip__lineage {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 1 auto;
+  flex: 0 1000 auto;
   min-width: 0;
-  max-width: 34%;
-  margin: 0;
-  padding: 0 var(--space-3);
-  overflow: hidden;
+  max-width: 40%;
+  padding: 0 var(--space-2);
   white-space: nowrap;
-  font-size: var(--fs-12);
-  color: var(--text-muted);
   border-left: 1px solid var(--border);
 }
-.pstrip__lin { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-secondary); text-decoration: none; border-radius: var(--radius-sm); }
-.pstrip__lin:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
-.pstrip__lin:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.pstrip__stale { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
-.pstrip__dot { color: var(--text-muted); }
+.pstrip__lineage .dk-menu { min-width: 0; max-width: 100%; }
+.pstrip__lineage .dk-menu > .btn {
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+.pstrip__lineage .dk-menu > .btn:hover, .pstrip__lineage .dk-menu > .btn.is-open { color: var(--text); background: var(--bg-hover); }
+.pstrip__lin { flex: none; }
+.pstrip__caret { flex: none; font-size: var(--fs-11); color: var(--text-muted); }
+.pstrip__item { display: inline-flex; align-items: center; gap: var(--space-2); }
+.pstrip__stale { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--text); }
 .pstrip__map { flex: none; align-self: center; margin: 0 var(--space-1); color: var(--text-secondary); }
 
-@container pstrip (max-width: 1180px) { .pstrip__lineage { max-width: 28%; } }
-@container pstrip (max-width: 1040px) {
-  .pstrip__cell:not(.is-current):not(.is-error):not(.is-stale):not(.is-unconfigured) .pstrip__badge { display: none; }
-  .pstrip__lineage { display: none; }
+/* Ступень 1: родословную (её же называет шапка экрана) прячем — место ячейкам. */
+@container pstrip (max-width: 1240px) { .pstrip__lineage { display: none; } }
+/* Ступень 2: обычные ячейки — номер и глиф, имя уходит в подсказку (и остаётся для диктора). */
+@container pstrip (max-width: 1100px) {
+  .pstrip__cell:not(.is-current):not(.is-error):not(.is-stale):not(.is-unconfigured) .pstrip__text {
+    position: absolute; width: 1px; height: 1px; min-width: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .pstrip__cell:not(.is-current):not(.is-error):not(.is-stale):not(.is-unconfigured) { flex-grow: 0; }
+  .pstrip__cell:not(.is-current):not(.is-error):not(.is-stale):not(.is-unconfigured) .pstrip__link { padding: 0 8px; }
 }
+/* Ступень 3: имя — только у текущих блоков; у отклонений остаются номер и глиф. */
 @container pstrip (max-width: 760px) {
+  .pstrip__cell:not(.is-current) .pstrip__text {
+    position: absolute; width: 1px; height: 1px; min-width: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .pstrip__cell:not(.is-current) { flex-grow: 0; }
+  .pstrip__cell:not(.is-current) .pstrip__link { padding: 0 8px; }
   .pstrip__badge { display: none; }
-  .pstrip__cell.is-current, .pstrip__cell.is-error, .pstrip__cell.is-stale, .pstrip__cell.is-unconfigured { flex-grow: 1.4; }
 }
+/* Последняя мера: всё равно тесно — полоса ячеек прокручивается, край гаснет (подписи не наезжают). */
 @container pstrip (max-width: 560px) {
-  .pstrip__text { display: none; }
-  .pstrip__link { justify-content: center; padding: 0 4px; }
+  .pstrip__cells {
+    -webkit-mask-image: linear-gradient(90deg, var(--text) calc(100% - 32px), transparent);
+    mask-image: linear-gradient(90deg, var(--text) calc(100% - 32px), transparent);
+  }
 }
 
 .block-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }

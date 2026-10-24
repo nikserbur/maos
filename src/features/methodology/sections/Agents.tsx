@@ -85,11 +85,11 @@ export function RlSection() {
           <table className="mth-table">
             <thead><tr><th>Этап</th><th>Содержание</th><th>Чем закончился</th></tr></thead>
             <tbody>
-              <tr><td className="mth-table__name">Ф0</td><td>событийный SimEnv, маски, тесты эквивалентности, nanobind, базовые линии и CP-SAT</td><td>выполнен (A1–A2)</td></tr>
-              <tr><td className="mth-table__name">Ф1–Ф2</td><td>L0: выбор правила, прямой диспетчер; бенчмарки; ONNX → правило «RL»</td><td>выполнены (A1): гейт не пройден</td></tr>
-              <tr><td className="mth-table__name">Ф3</td><td>MARL станков (MAPPO), лагранжиан ограничений, общие шоки</td><td>заменён структурным RL L2/L3 (A3–A4)</td></tr>
-              <tr><td className="mth-table__name">Ф4</td><td>L2: цены и бонусы, сравнение с LP-двойственными, цена анархии</td><td>в плане · волна 3</td></tr>
-              <tr><td className="mth-table__name">Ф5</td><td>гейтированное самоулучшение (self-labelling + PBT)</td><td>заменён протоколом «RL → эвристика»</td></tr>
+              <tr><td className="mth-table__name">Этап 0</td><td>событийный SimEnv, маски, тесты эквивалентности, nanobind, базовые линии и CP-SAT</td><td>выполнен (A1–A2)</td></tr>
+              <tr><td className="mth-table__name">Этапы 1–2</td><td>L0: выбор правила, прямой диспетчер; бенчмарки; ONNX → правило «RL»</td><td>выполнены (A1): гейт не пройден</td></tr>
+              <tr><td className="mth-table__name">Этап 3</td><td>MARL станков (MAPPO), лагранжиан ограничений, общие шоки</td><td>заменён структурным RL L2/L3 (A3–A4)</td></tr>
+              <tr><td className="mth-table__name">Этап 4</td><td>L2: цены и бонусы, сравнение с LP-двойственными, цена анархии</td><td>в плане · волна 3</td></tr>
+              <tr><td className="mth-table__name">Этап 5</td><td>гейтированное самоулучшение (self-labelling + PBT)</td><td>заменён протоколом «RL → эвристика»</td></tr>
             </tbody>
           </table>
         </div>

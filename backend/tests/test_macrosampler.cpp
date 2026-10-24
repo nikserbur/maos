@@ -175,3 +175,77 @@ TEST(MacroSampler, RegimesAndSummaryJsonAndLoadErrors) {
   EXPECT_THROW(MacroSampler::load("/nonexistent/macro_params.json"), std::runtime_error);
   EXPECT_THROW(MacroSampler::from_json(json{ {"schema", "other"} }), std::runtime_error);
 }
+
+// Пресеты «Как 2022» и т. п.: эпизод повторяется ПО ПОРЯДКУ один раз (order=replay) — одинаковые шоки
+// у всех путей, режим — метка HMM месяца; дальше — базовая выборка. Окно за концом истории — ошибка.
+TEST(MacroSampler, EpisodeReplayRepeatsWindowInOrderOnceThenBaseDynamics) {
+  Fixture f;
+  const json& hist = f.s.params()["history"]["month"];
+  const json& labels = f.s.params()["hmm"]["labels"];
+  Stress ep = Stress::from_json(json{ {"episode", hist[10].get<std::string>()}, {"months", 4}, {"order", "replay"} });
+  ASSERT_EQ(ep.episodeOrder, "replay");
+  EXPECT_EQ(ep.to_json()["order"].get<std::string>(), "replay");
+  EXPECT_EQ(Stress::from_json(json{ {"episode", "2020-11"}, {"months", 4} }).episodeOrder, "blocks");   // прежние сценарии — как были
+  const int H = 9, n = 4;
+  const auto r = f.s.sample_months(n, H, f.seed(), 0, ep);
+  for (int t = 0; t < 4; ++t) {
+    EXPECT_EQ(r.blockId[0][t], 9 + t);                                   // остаток r ↔ месяц r+1
+    EXPECT_EQ(r.regime[0][t], labels[9 + t].get<int>());
+    for (int i = 1; i < n; ++i) EXPECT_EQ(r.z[i][t], r.z[0][t]) << "t=" << t;   // шоки окна одинаковы у всех путей
+  }
+  bool differs = false;
+  for (int i = 1; i < n; ++i) differs = differs || r.z[i][H - 1] != r.z[0][H - 1];
+  EXPECT_TRUE(differs) << "после окна пути расходятся (базовая выборка)";
+  for (int i = 0; i < n; ++i) for (int t = 0; t < H; ++t) EXPECT_GE(r.regime[i][t], 0);
+  const auto again = f.s.sample_months(n, H, f.seed(), 0, ep);
+  EXPECT_EQ(again.z, r.z);
+
+  Stress late = ep; late.episode = hist[hist.size() - 3].get<std::string>(); late.episodeMonths = 6;
+  EXPECT_THROW(f.s.sample_months(1, H, 1, 0, late), std::runtime_error);   // не «заворачивает» к началу истории
+  Stress first = ep; first.episode = hist[0].get<std::string>();
+  EXPECT_THROW(f.s.sample_months(1, H, 1, 0, first), std::runtime_error);
+  Stress shortH = ep; shortH.episodeMonths = 30;
+  EXPECT_NO_THROW(f.s.sample_months(1, 2, 1, 0, shortH));                // L = min(окно, горизонт)… окно в истории
+  const json rj = f.s.regimes_json();
+  EXPECT_EQ(rj["history"]["month"].size(), hist.size());
+  EXPECT_EQ(rj["episode_first"].get<std::string>(), hist[1].get<std::string>());
+}
+
+// Ставка в путях не ниже исторического минимума (kKeyFloorPp = 4,25 %) — в базовом режиме, кризисном,
+// на крайних путях и в эпизодах (вперемешку и по порядку); недельная сетка наследует порог.
+TEST(MacroSampler, KeyRateNeverBelowFloorInAnyMode) {
+  Fixture f;
+  const json& hist = f.s.params()["history"]["month"];
+  const int H = 13, W = 40;
+  std::vector<Stress> modes(6);
+  modes[1].mode = "regime"; modes[1].regime = 1;
+  modes[2].mode = "quantile"; modes[2].quantile = 0.05;
+  modes[3].mode = "quantile"; modes[3].quantile = 0.95;
+  modes[4] = Stress::from_json(json{ {"episode", hist[16].get<std::string>()}, {"months", 6} });
+  modes[5] = Stress::from_json(json{ {"episode", hist[16].get<std::string>()}, {"months", 6}, {"order", "replay"} });
+  for (const auto& st : modes) {
+    const auto r = f.s.sample(50, f.seed(), W, H, 0, st);
+    for (const auto& path : r.monthly.key) for (double k : path) EXPECT_GE(k, maos::macro::kKeyFloorPp) << st.mode;
+    for (const auto& path : r.weekly.key) for (double k : path) EXPECT_GE(k, maos::macro::kKeyFloorPp) << st.mode;
+  }
+  EXPECT_DOUBLE_EQ(f.s.summary_json()["floors"]["key_pp"].get<double>(), maos::macro::kKeyFloorPp);
+  EXPECT_DOUBLE_EQ(f.s.regimes_json()["key_floor_pp"].get<double>(), maos::macro::kKeyFloorPp);
+}
+
+// «Что если» по курсу: ref.fx сдвигает уровень курса во всех путях и месяцах, остальное не трогает.
+TEST(MacroSampler, ReferenceFxShiftScalesFxLevelsOnly) {
+  Fixture f;
+  const int H = 8;
+  const auto base = f.s.sample(5, f.seed(), 0, H);
+  const auto ref = maos::macro::Reference::from_json(json{ {"fx", 1.3} });
+  EXPECT_DOUBLE_EQ(ref.fx, 1.3);
+  const auto shifted = f.s.sample(5, f.seed(), 0, H, 0, Stress{}, ref);
+  for (int i = 0; i < 5; ++i)
+    for (int t = 0; t < H; ++t) {
+      EXPECT_NEAR(shifted.monthly.fx[i][t], base.monthly.fx[i][t] * 1.3, 1e-9);
+      EXPECT_EQ(shifted.monthly.key[i][t], base.monthly.key[i][t]);
+      EXPECT_EQ(shifted.monthly.cpi[i][t], base.monthly.cpi[i][t]);
+    }
+  EXPECT_DOUBLE_EQ(maos::macro::Reference::from_json(json{ {"fx", 40.0} }).fx, maos::macro::kFxShiftMax);
+  EXPECT_DOUBLE_EQ(maos::macro::Reference::from_json(json{ {"fx", "x"} }).fx, 1.0);
+}

@@ -1,7 +1,8 @@
 /**
  * Таблица V5 (претенденты RL против базовой линии на отложенных сценариях) на DataTable кита:
- * ≤ 8 колонок без мёртвых — ΔCVaR прибыли в б. п. с ДИ-полосой в ячейке (общая шкала, отметка нуля),
- * «лучше в N из 12», p, ΔCVaR кассы, ΔE[Cmax], вердикт (гейт слит с ним). ΔP(разрыв), если она нулевая
+ * ≤ 8 колонок без мёртвых — изменение прибыли в худших 10 % (CVaR) в базисных пунктах с полосой диапазона
+ * 95 % в ячейке (общая шкала, отметка нуля), «лучше в N из 12», значимость p, изменение кассы и средней
+ * длины плана, вердикт (гейт слит с ним). Заголовки — словами, аббревиатуры — в «i». ΔP(разрыв), если она нулевая
  * везде, — в сноске. У каждого заголовка — «i». Стресс и база сравнения живут в адресе.
  */
 import type { ReactNode } from 'react'
@@ -11,7 +12,7 @@ import { useMeasuredWidth } from '../../ui/charts'
 import { Chip, DataTable, Segmented, type DataColumn } from '../../ui/kit'
 import { useHashParams } from '../../shell/router'
 import {
-  BASELINE_LABEL, STRESS_HINT, STRESS_LABEL, V5, bpCi, bpFine, bpPoint, breachAllZero, candidateLabel, candidateRows, ciDomain, ciVerdict, snapDay, winCount,
+  BASELINE_LABEL, STRESS_HINT, STRESS_LABEL, V5, bpCi, bpNum, bpPoint, breachAllZero, candidateLabel, candidateRows, ciDomain, ciVerdict, snapDay, winCount,
   type V5Comparison, type V5Stress,
 } from './benchData'
 
@@ -48,24 +49,26 @@ function pText(p: number): string {
 
 function Verdict({ r }: { r: V5Comparison }) {
   const v = ciVerdict(r.ci95)
-  if (v === 'below') return <span className="ag-verdict"><span className="ag-verdict__g ag-verdict__g--below" aria-hidden="true">▼</span>ДИ &lt; 0 — хуже, не опубликовано</span>
-  if (v === 'above' && r.gate) return <span className="ag-verdict"><span className="ag-verdict__g" aria-hidden="true">▲</span>ДИ &gt; 0 — прошёл гейт</span>
-  if (v === 'above') return <span className="ag-verdict"><span className="ag-verdict__g" aria-hidden="true">△</span>ДИ &gt; 0, p ≥ {num(P_MAX, 2)} — не опубликовано</span>
-  return <span className="ag-verdict"><span className="glyph-idle" aria-hidden="true" />ДИ ∋ 0 — не опубликовано</span>
+  if (v === 'below') return <span className="ag-verdict"><span className="ag-verdict__g ag-verdict__g--below" aria-hidden="true">▼</span>весь диапазон ниже нуля — хуже, не опубликовано</span>
+  if (v === 'above' && r.gate) return <span className="ag-verdict"><span className="ag-verdict__g" aria-hidden="true">▲</span>весь диапазон выше нуля — прошёл проверку</span>
+  if (v === 'above') return <span className="ag-verdict"><span className="ag-verdict__g" aria-hidden="true">△</span>диапазон выше нуля, но p ≥ {num(P_MAX, 2)} — не опубликовано</span>
+  return <span className="ag-verdict"><span className="glyph-idle" aria-hidden="true" />диапазон включает ноль — не опубликовано</span>
 }
 
 function columns(domain: readonly [number, number], n: number): ReadonlyArray<DataColumn<V5Comparison>> {
   return [
-    { key: 'policy', title: <Head id="agent.candidate">Претендент</Head>, rowHeader: true, sortable: false, get: (r) => candidateLabel(V5, r.policy) },
+    { key: 'policy', title: <Head id="agent.candidate">Претендент</Head>, rowHeader: true, primary: true, sortable: false, get: (r) => candidateLabel(V5, r.policy) },
     {
-      key: 'iqm', title: <Head id="agent.gate_delta">ΔCVaR прибыли, б. п. [95 %-ДИ]</Head>, num: true, sortable: false, className: 'ag-col-ci',
+      key: 'iqm', title: <Head id="agent.gate_delta">Изменение прибыли в худших 10 %, базисных пунктов (диапазон 95 %)</Head>, num: true, sortable: false,
+      width: 'auto', className: 'ag-col-ci',
       render: (r) => <CiCell lo={r.ci95[0]} hi={r.ci95[1]} mid={r.iqm} domain={domain} label={`${bpPoint(r.iqm)} ${bpCi(r.ci95)}`} />,
     },
     { key: 'win', title: <Head id="agent.win_share">Лучше в N из {num(n, 0)}</Head>, num: true, sortable: false, render: (r) => `${num(winCount(V5, r.win), 0)} из ${num(n, 0)}` },
-    { key: 'p', title: <Head id="agent.gate_p">p</Head>, num: true, sortable: false, render: (r) => pText(r.p) },
-    { key: 'cash', title: <Head id="agent.cash_delta">ΔCVaR кассы</Head>, num: true, sortable: false, render: (r) => bpFine(r.d_cash_iqm, { signed: true }) },
-    { key: 'cmax', title: <Head id="agent.makespan_delta">ΔE[Cmax]</Head>, num: true, sortable: false, render: (r) => signed(r.d_makespan_h, 'ч') },
-    { key: 'verdict', title: <Head id="agent.gate_ci">Вердикт</Head>, sortable: false, render: (r) => <Verdict r={r} /> },
+    { key: 'p', title: <Head id="agent.gate_p">Значимость (p)</Head>, num: true, sortable: false, render: (r) => pText(r.p) },
+    { key: 'cash', title: <Head id="agent.cash_delta">Изменение кассы в худших 10 %, базисных пунктов</Head>, num: true, sortable: false,
+      render: (r) => (Number.isFinite(r.d_cash_iqm) ? bpNum(r.d_cash_iqm) : '—') },
+    { key: 'cmax', title: <Head id="agent.makespan_delta">Изменение средней длины плана, ч</Head>, num: true, sortable: false, render: (r) => signed(r.d_makespan_h, 'ч') },
+    { key: 'verdict', title: <Head id="agent.gate_ci">Вердикт</Head>, sortable: false, minWidth: 20, render: (r) => <Verdict r={r} /> },
   ]
 }
 
@@ -79,20 +82,26 @@ export function V5Table() {
   return (
     <div className="ag-bench">
       <div className="ag-bench__bar">
-        <Segmented label="Стресс" size="sm" fit value={stress} onChange={(id) => setParams({ stress: id === 'base' ? null : id })}
-          options={STRESSES.map((id) => ({ id, label: STRESS_LABEL[id], title: STRESS_HINT[id] }))} />
-        <Segmented label="Против чего" size="sm" fit value={vs} onChange={(id) => setParams({ vs: id === 'best_rule' ? null : id })}
-          options={Object.entries(BASELINE_LABEL).map(([id, label]) => ({ id, label: `против: ${label}` }))} />
+        <span className="ag-bench__group">
+          <span id="ag-v5-stress" className="ag-bench__cap">Стресс</span>
+          <Segmented label="Стресс" labelledBy="ag-v5-stress" size="sm" value={stress} onChange={(id) => setParams({ stress: id === 'base' ? null : id })}
+            options={STRESSES.map((id) => ({ id, label: STRESS_LABEL[id], title: STRESS_HINT[id] }))} />
+        </span>
+        <span className="ag-bench__group">
+          <span id="ag-v5-vs" className="ag-bench__cap">Сравнить с</span>
+          <Segmented label="Сравнить с" labelledBy="ag-v5-vs" size="sm" value={vs} onChange={(id) => setParams({ vs: id === 'best_rule' ? null : id })}
+            options={Object.entries(BASELINE_LABEL).map(([id, label]) => ({ id, label }))} />
+        </span>
         <span className="ag-snap">
           <Chip size="sm" title={V5.source}>снимок {snapDay(V5.snapshot_date)}</Chip>
           <span className="glyph-setup">устарело — есть A2–A4</span>
         </span>
       </div>
-      <p className="ag-note">{STRESS_HINT[stress]} · N = {num(V5.n, 0)} сценариев на экземпляр · CVaR при α = {num(0.1, 1)}.</p>
+      <p className="ag-note">{STRESS_HINT[stress]} · {num(V5.n, 0)} сценариев на экземпляр · «худшие 10 %» — CVaR при α = {num(0.1, 1)}.</p>
       <DataTable columns={columns(domain, n)} rows={rows} rowKey={(r) => `${r.policy}-${r.vs}`} tight
         caption={`V5: претенденты RL против базовой линии «${BASELINE_LABEL[vs]}», стресс «${STRESS_LABEL[stress]}»`} />
       <p className="ag-note ag-note--foot">
-        Гейт: весь 95 %-ДИ правее нуля и p &lt; {num(P_MAX, 2)} против лучшего правила.
+        Проверка (гейт): весь диапазон 95 % правее нуля и p &lt; {num(P_MAX, 2)} против лучшего правила.
         {breachAllZero(V5) && <> Изменение вероятности кассового разрыва — ноль у всех претендентов во всех стрессах, поэтому отдельной колонки нет.</>}
       </p>
     </div>

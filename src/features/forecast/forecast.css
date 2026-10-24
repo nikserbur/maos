@@ -1,6 +1,7 @@
 /*
- * «Мониторинг» и общие части прогноза (веер, сетка «требуют внимания», таблица рядов, панель веера).
- * Цвет — одна работа: статусный тон только на глифе (▲ ✕), норма нейтральна, данные — --chart-*.
+ * Общие части прогноза (веер, сетка «требуют внимания», таблица рядов, панель веера); раскладка
+ * «Мониторинга» — monitor.css.
+ * Цвет — одна работа: статусный тон только на глифе (✕ ненадёжен · ▲ осторожно), норма нейтральна, данные — --chart-*.
  * Только токены (--fs-*, --space-*, --chart-*).
  */
 .forecast { padding: var(--space-4) var(--space-6) var(--space-6); overflow-y: auto; height: 100%; display: flex; flex-direction: column; gap: var(--space-4); }
@@ -10,7 +11,8 @@
 /* ── Качество веера словами ──────────────────────────────────────────────── */
 .fc-q { display: inline-flex; align-items: baseline; gap: var(--space-1); font-size: var(--fs-12); color: var(--text-secondary); }
 .fc-q__g { flex: none; color: var(--text-secondary); }
-.fc-q--warn .fc-q__g, .fc-q--bad .fc-q__g { color: var(--status-setup); }
+.fc-q--warn .fc-q__g { color: var(--status-setup); }
+.fc-q--bad .fc-q__g { color: var(--status-down); }
 .fc-q--none .fc-q__g { color: var(--text-muted); }
 
 /* ── Малые кратные «требуют внимания» ────────────────────────────────────── */
@@ -20,9 +22,16 @@
 .fc-fan { padding: var(--space-3); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 
 /* ── Таблица рядов ───────────────────────────────────────────────────────── */
+.fc-table { --dk-primary-min: 16rem; }
+@media (max-width: 1200px) { .fc-table { --dk-primary-min: 13rem; } }
 .fc-table .dk-table td { vertical-align: middle; }
-.fc-t__ratio { min-width: 140px; }
-.fc-t__meter { display: inline-grid; grid-template-columns: 64px auto; align-items: center; gap: var(--space-2); }
+/* Имя ряда: название — строка 1, марка и назначение — приглушённо строка 2 (без многоточия). */
+.fc-t__name { display: flex; flex-direction: column; gap: 1px; }
+.fc-t__detail { font-size: var(--fs-12); font-weight: 400; color: var(--text-muted); }
+.fc-t__med { white-space: nowrap; }
+.fc-t__delta { color: var(--text-secondary); }
+.fc-t__chev { display: inline-block; color: var(--text-muted); font-size: var(--fs-16); line-height: 1; transition: transform var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.fc-table tr:hover .fc-t__chev, .fc-table tr:focus-within .fc-t__chev { color: var(--text); transform: translateX(2px); }
 
 /* ── Панель веера (справа, поверх экрана) ────────────────────────────────── */
 .fz {
@@ -38,43 +47,5 @@
 .fz__vtable { font-size: var(--fs-12); }
 .fz__trend { color: var(--text-secondary); }
 
-/* ── Мониторинг ──────────────────────────────────────────────────────────── */
-.mon.is-refetching .mon-row, .mon.is-refetching .mon-top, .mon.is-refetching .mon-exc { opacity: 0.6; transition: opacity var(--dur-fast) var(--ease-out); }
-.mon-src { display: flex; flex-direction: column; gap: var(--space-2); }
-.mon-src__sum { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
-.mon-src__manual > summary { display: inline-flex; align-items: center; min-height: 24px; cursor: pointer; font-size: var(--fs-12); color: var(--text-secondary); }
-.mon-src__manual > summary:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); border-radius: var(--radius-sm); }
-.mon-manual { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-2); padding: var(--space-3); background: var(--bg-card); border: 1px solid var(--border-control); border-radius: var(--radius-lg); }
-.mon-manual__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-3); }
-.mon-manual__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); flex-wrap: wrap; }
-.mon-stale { margin-right: auto; font-size: var(--fs-12); color: var(--text-secondary); }
-.mon-stale > span { color: var(--status-setup); }
-
-.mon-verdict { margin: 0; font-size: var(--fs-16); line-height: var(--lh-body); color: var(--text); }
-.mon-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
-@media (max-width: 1280px) { .mon-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.mon-nc { font-size: var(--fs-12); color: var(--text-muted); }
-
-.mon-ok { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
-.mon-exc { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-3); }
-.mon-exc__g { padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.mon-exc__t { margin: 0 0 var(--space-2); color: var(--text-secondary); }
-.mon-exc__glyph { color: var(--text-secondary); }
-.mon-exc__g.is-crit .mon-exc__glyph { color: var(--status-down); }
-.mon-exc__g.is-warn .mon-exc__glyph { color: var(--status-setup); }
-.mon-exc__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-13); }
-.mon-exc__list .pf-link { color: var(--text); text-align: left; }
-
-.mon-row { display: grid; grid-template-columns: minmax(0, 8fr) minmax(240px, 4fr); gap: var(--space-3); align-items: stretch; }
-@media (max-width: 1100px) { .mon-row { grid-template-columns: 1fr; } }
-.mon-rate { min-width: 0; padding: var(--space-3); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.mon-infl { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.mon-infl__k { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-muted); }
-.mon-infl__v { font-size: var(--fs-32); font-weight: 300; color: var(--text); }
-
-.mon-top { display: flex; flex-direction: column; gap: var(--space-2); }
-.mon-top__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-.mon-h { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); }
-
-@media (prefers-reduced-motion: reduce) { .mon.is-refetching .mon-row, .mon.is-refetching .mon-top, .mon.is-refetching .mon-exc { transition: none; } }
-@media (forced-colors: active) { .fc-q__g, .mon-exc__glyph { color: CanvasText; } }
+@media (prefers-reduced-motion: reduce) { .fc-t__chev { transition: none; } }
+@media (forced-colors: active) { .fc-q__g { color: CanvasText; } }

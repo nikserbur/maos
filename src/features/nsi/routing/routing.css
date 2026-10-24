@@ -77,6 +77,8 @@
   background: var(--bg-panel);
 }
 .rt-tools__spacer { flex: 1 1 auto; }
+.rt-tools__group { display: inline-flex; align-items: center; gap: var(--space-2); }
+.rt-tools__cap { font-size: var(--fs-12); color: var(--text-muted); }
 .rt-muted { color: var(--text-muted); font-size: var(--fs-12); }
 
 /* ── Тело ────────────────────────────────────────────────────────────────── */
@@ -181,19 +183,12 @@
 /* ── Таблица-двойник ─────────────────────────────────────────────────────── */
 .rt-tablebox { display: flex; flex-direction: column; gap: var(--space-2); }
 .rt-tablebox__toggle { align-self: flex-end; }
-.rt-tablewrap { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: auto; background: var(--bg-card); }
-.rt-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
-.rt-table th, .rt-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
-.rt-table thead th { position: sticky; top: 0; color: var(--text-muted); font-weight: 600; font-size: var(--fs-12); background: var(--bg-panel); white-space: nowrap; }
-.rt-table tbody th { font-weight: 600; color: var(--text); }
-.rt-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rt-table__row { cursor: pointer; }
-.rt-table__row:hover td, .rt-table__row:hover th { background: var(--bg-hover); }
-.rt-table__row.is-selected td, .rt-table__row.is-selected th { background: color-mix(in oklch, var(--accent) 12%, transparent); }
-.rt-table__row:focus-visible { outline: 2px solid transparent; box-shadow: inset 0 0 0 2px var(--focus); }
+/* Таблица — классы кита (.dk-table); здесь только фон рамки, итоговая строка и пометка «узкое место». */
+.rt-tablebox__note { margin: 0; font-size: var(--fs-12); color: var(--text-muted); }
+.rt-tablewrap { background: var(--bg-card); }
 .rt-table__bn { display: block; margin-top: 2px; font-size: var(--fs-11); font-weight: 400; color: var(--text-secondary); }
-.rt-table__empty { padding: var(--space-6); text-align: center; color: var(--text-muted); }
-.rt-table tfoot th, .rt-table tfoot td { color: var(--text-secondary); border-bottom: 0; }
+.rt-table__foot th, .rt-table__foot td { padding: 6px var(--space-3); font-size: var(--fs-13); font-weight: 500; text-align: left; color: var(--text-secondary); border-top: 1px solid var(--border); }
+.rt-table__foot td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ── Мини-полоса маршрута: номера «1 ▸ 2 ▸ …», Σ справа ─────────────────── */
 .rt-strip {

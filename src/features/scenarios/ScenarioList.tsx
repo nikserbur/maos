@@ -1,5 +1,7 @@
 /**
- * Реестр сценариев (левая колонка экрана «Сценарии»): имя, критерий и тип режима одной строкой,
+ * Реестр сценариев (левая колонка экрана «Сценарии»): имя и пресет одной строкой («◆ Как 2022 · что если»,
+ * «◆ Базовый · что если · изменено 2», «◆ Кризисный режим весь срок · что если» — до ~28 знаков, полный
+ * режим — в подсказке),
  * «● рабочий» у сценария, с которым считают Портфель и План. Просмотр рабочий не меняет — для этого
  * в шапке есть «Сделать рабочим». «Сравнить» переводит список в режим отметок (2–5 сценариев).
  * Создание — тихая кнопка «Новый» (главное действие экрана — следующий шаг конвейера, в шапке).
@@ -9,7 +11,7 @@ import { num, pct } from '../../explain/format'
 import { objectiveLabel } from '../../explain/labels'
 import { Icon } from '../../shell/icons'
 import { ErrorBanner, IconButton, Skeleton } from '../../ui/kit'
-import { fromMacroMode, regimeChip } from './regimeMenu'
+import { scenarioViewOf } from './scenarioPresets'
 import { effectiveScenario } from './scenarioDefaults'
 import { MAX_COMPARE } from './scenarioRoute'
 import type { LoadStatus } from './useScenarioData'
@@ -33,7 +35,7 @@ interface Props {
 }
 
 export function ScenarioList({
-  scenarios, status, loadError, openId, workingId, compareMode, compareIds, collapsed,
+  scenarios, regimes, status, loadError, openId, workingId, compareMode, compareIds, collapsed,
   onToggleCollapsed, onOpen, onToggleCompare, onCompareMode, onCreate, onRetry,
 }: Props) {
   return (
@@ -45,7 +47,7 @@ export function ScenarioList({
           <Icon name={collapsed ? 'expand' : 'minus'} size={14} />
         </button>
         <span className="scn__side-title">Сценарии</span>
-        <IconButton icon="plus" variant="ghost" size="sm" title="Создать сценарий из шаблона" onClick={onCreate}>Новый</IconButton>
+        <IconButton icon="plus" variant="ghost" size="sm" title="Создать сценарий из пресета: Базовый, как в истории, стресс-тест" onClick={onCreate}>Новый</IconButton>
       </div>
       <div className="scn__cmpwrap">
         <IconButton icon="shuffle" size="sm" pressed={compareMode} title="Сравнить 2–5 сценариев бок о бок" onClick={() => onCompareMode(!compareMode)}>
@@ -65,7 +67,7 @@ export function ScenarioList({
           <ul className="scn__ul">
             {scenarios.map((sc) => (
               <li key={sc.id}>
-                <ScenarioItem sc={sc} active={compareMode ? compareIds.includes(sc.id) : sc.id === openId}
+                <ScenarioItem sc={sc} regimes={regimes} active={compareMode ? compareIds.includes(sc.id) : sc.id === openId}
                   working={sc.id === workingId} compareMode={compareMode} checked={compareIds.includes(sc.id)}
                   full={compareMode && compareIds.length >= MAX_COMPARE && !compareIds.includes(sc.id)}
                   onClick={() => (compareMode ? onToggleCompare(sc.id) : onOpen(sc.id))} />
@@ -74,7 +76,7 @@ export function ScenarioList({
           </ul>
         )}
         {status === 'ready' && scenarios.length === 0 && (
-          <p className="scn__empty">Сценариев пока нет. «Новый» — создать из шаблона.</p>
+          <p className="scn__empty">Сценариев пока нет. «Новый» — создать из пресета.</p>
         )}
       </div>
     </aside>
@@ -83,6 +85,7 @@ export function ScenarioList({
 
 interface ItemProps {
   sc: PriceScenario
+  regimes: MacroRegimes | null
   active: boolean
   working: boolean
   compareMode: boolean
@@ -91,14 +94,15 @@ interface ItemProps {
   onClick: () => void
 }
 
-function ScenarioItem({ sc, active, working, compareMode, checked, full, onClick }: ItemProps) {
+function ScenarioItem({ sc, regimes, active, working, compareMode, checked, full, onClick }: ItemProps) {
   const eff = effectiveScenario(sc)
-  const chip = regimeChip(fromMacroMode(sc.macro_mode))
-  const sub = `${objectiveLabel(eff.objective)} · α ${pct(eff.alpha, 0)} · ${chip.glyph} ${chip.word}`
+  const view = scenarioViewOf(sc, regimes?.regimes.map((r) => r.label) ?? [], { lastObs: regimes?.last_obs })
+  const sub = `${view.glyph} ${view.short} · ${view.kind}${view.edits > 0 ? ` · изменено ${num(view.edits, 0)}` : ''}`
+  const tip = `${sc.name} — ${view.name}${view.edits > 0 ? ` · изменено условий: ${num(view.edits, 0)}` : ''}; критерий ${objectiveLabel(eff.objective)}, хвост ${pct(eff.alpha, 0)}`
   return (
     <button type="button" className={`scn__item${active ? ' scn__item--active' : ''}`} onClick={onClick}
       aria-current={!compareMode && active ? 'true' : undefined} aria-pressed={compareMode ? checked : undefined}
-      title={full ? `В сравнении уже ${num(MAX_COMPARE, 0)} сценариев — снимите отметку с одного` : sc.name}>
+      title={full ? `В сравнении уже ${num(MAX_COMPARE, 0)} сценариев — снимите отметку с одного` : tip}>
       {compareMode && <span className={`scn__check${checked ? ' scn__check--on' : ''}`} aria-hidden="true">{checked && <Icon name="check" size={12} />}</span>}
       <span className="scn__item-main">
         <span className="scn__item-name">{sc.name || 'Без названия'}</span>

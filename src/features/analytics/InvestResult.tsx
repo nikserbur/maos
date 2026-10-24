@@ -77,20 +77,24 @@ function CrnHero({ c, crn }: { c: InvestCrnCandidate; crn: InvestCrn }) {
 const verdictWord = (r: InvestRow) => (r.apply === null ? 'база' : r.apply ? 'применять' : 'не применять')
 
 const COLUMNS: DataColumn<InvestRow>[] = [
-  { key: 'label', title: 'Вариант', rowHeader: true, get: (r) => r.label,
+  { key: 'label', title: 'Вариант', rowHeader: true, primary: true, get: (r) => r.label,
     render: (r) => (
       <span className="an-cand">
         {r.chosen && <span className="an-chosen" role="img" aria-label="оцениваемый вариант" title="оцениваемый вариант" />}
         <span>{r.label}<span className="an-cand__src">{r.source}</span></span>
       </span>
     ) },
-  { key: 'capex', title: 'CAPEX', num: true, get: (r) => r.capex, render: (r) => money(r.capex) },
-  { key: 'npv', title: 'E[ЧДД]', num: true, get: (r) => r.npvMean, render: (r) => (r.baseline ? money(0) : money(r.npvMean)) },
-  { key: 'ci', title: '95 %-ДИ', num: true, sortable: false, render: (r) => (r.baseline ? DASH : rangeText(r.npvLo, r.npvHi, '₽')) },
-  { key: 'neg', title: 'ЧДД < 0', num: true, get: (r) => r.pNpvNeg, render: (r) => freqShort(r.pNpvNeg) },
-  { key: 'gap', title: 'Разрыв кассы', num: true, get: (r) => r.pGap, render: (r) => freqShort(r.pGap) },
-  { key: 'cash', title: 'CVaR мин. кассы', num: true, get: (r) => r.cashMinCvar, render: (r) => money(r.cashMinCvar) },
-  { key: 'verdict', title: 'Вердикт', get: (r) => verdictWord(r), render: (r) => <span title={r.reason ?? undefined}>{verdictWord(r)}</span> },
+  { key: 'capex', title: 'Вложения', num: true, hint: 'Капитальные затраты (CAPEX), ₽', get: (r) => r.capex, render: (r) => money(r.capex) },
+  { key: 'npv', title: 'Чистый дисконтированный доход, в среднем', num: true, hint: 'E[ЧДД] — среднее по сценариям, ₽',
+    get: (r) => r.npvMean, render: (r) => (r.baseline ? money(0) : money(r.npvMean)) },
+  { key: 'ci', title: 'Диапазон дохода (95 %)', num: true, sortable: false, hint: 'Доход лежит в этом диапазоне с вероятностью 95 % (доверительный интервал)',
+    render: (r) => (r.baseline ? DASH : rangeText(r.npvLo, r.npvHi, '₽')) },
+  { key: 'neg', title: 'Сценариев с убытком', num: true, hint: 'Доля сценариев, где чистый дисконтированный доход меньше нуля',
+    get: (r) => r.pNpvNeg, render: (r) => freqShort(r.pNpvNeg) },
+  { key: 'gap', title: 'Сценариев с разрывом кассы', num: true, get: (r) => r.pGap, render: (r) => freqShort(r.pGap) },
+  { key: 'cash', title: 'Минимум кассы в худших сценариях', num: true, hint: 'CVaR минимума кассы — среднее по худшим α сценариям (по умолчанию 5 %), ₽',
+    get: (r) => r.cashMinCvar, render: (r) => money(r.cashMinCvar) },
+  { key: 'verdict', title: 'Вердикт', width: 'fit', get: (r) => verdictWord(r), render: (r) => <span title={r.reason ?? undefined}>{verdictWord(r)}</span> },
 ]
 
 export function InvestCandidates({ crn, chosen, nameOfType }: { crn: InvestCrn; chosen: InvestCrnCandidate | null; nameOfType: (id: string) => string }) {

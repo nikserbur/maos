@@ -59,7 +59,7 @@ export const V4: V4Snapshot = v4raw as unknown as V4Snapshot
 export const V5: V5Snapshot = v5raw as unknown as V5Snapshot
 
 export const STRESS_LABEL: Readonly<Record<V5Stress, string>> = {
-  base: 'базовый', crisis: 'кризисный режим', quantile: 'хвост 1 из 100', joint: 'совместный шок',
+  base: 'Базовый', crisis: 'Кризисный режим', quantile: 'Хвост 1 из 100', joint: 'Совместный шок',
 }
 
 export const STRESS_HINT: Readonly<Record<V5Stress, string>> = {
@@ -70,7 +70,7 @@ export const STRESS_HINT: Readonly<Record<V5Stress, string>> = {
 }
 
 /** Против чего сравнивать претендентов (базовые линии снимка V5). */
-export const BASELINE_LABEL: Readonly<Record<string, string>> = { best_rule: 'лучшее правило', GA: 'ГА', EDD: 'EDD' }
+export const BASELINE_LABEL: Readonly<Record<string, string>> = { best_rule: 'Лучшее правило', GA: 'Генетический алгоритм', EDD: 'По ближайшему сроку (EDD)' }
 
 /** Относительный разрыв к эталону: (x − ref) / ref; null без эталона. */
 export function gap(x: number, ref: number | null | undefined): number | null {
@@ -119,11 +119,19 @@ export function gateSummary(snap: V5Snapshot): GateSummary {
   return { candidates: rows.length, passed: rows.filter((c) => c.gate).length, best, champion: snap.champion.policy }
 }
 
-/** «L0_seed2» → «L0 · сид 2», «L2_edd_seed1» → «L2 поверх EDD · сид 1». */
+/** Правило EDD словами — для подписей претендентов (код — только в подсказках): «поверх …» и «совпал с …». */
+const EDD_WORDS = 'правила «по ближайшему сроку»'
+const EDD_WITH = 'правилом «по ближайшему сроку»'
+
+/**
+ * Претендент словами (владелец: «L0 · сид 1» — жаргон): «L0_seed2» → «Агент с нуля · запуск 2»,
+ * «L2_edd_seed1» → «Агент поверх правила «по ближайшему сроку» · запуск 1», «GA» → «Генетический алгоритм по ключам».
+ */
 export function policyLabel(p: string): string {
   const m = /^(L0|L2)(_edd)?_seed(\d+)$/.exec(p)
-  if (!m) return p === 'GA' ? 'ГА по ключам' : p
-  return `${m[1]}${m[2] ? ' поверх EDD' : ''} · сид ${m[3]}`
+  if (!m) return p === 'GA' ? 'Генетический алгоритм по ключам' : p
+  const who = m[1] === 'L0' ? 'Агент с нуля' : m[2] ? `Агент поверх ${EDD_WORDS}` : 'Агент поверх правила'
+  return `${who} · запуск ${m[3]}`
 }
 
 /** Ходов за эпизод у политики L2 (null — у L0 структурных ходов нет). */
@@ -139,7 +147,7 @@ export function isIdle(snap: V5Snapshot, policy: string): boolean {
 
 /** Подпись претендента с пометкой «совпал с EDD» для политики без ходов. */
 export function candidateLabel(snap: V5Snapshot, policy: string): string {
-  return isIdle(snap, policy) ? `${policyLabel(policy)} — 0 ходов, совпал с EDD` : policyLabel(policy)
+  return isIdle(snap, policy) ? `${policyLabel(policy)} — 0 ходов, совпал с ${EDD_WITH}` : policyLabel(policy)
 }
 
 /** «лучше в 5 из 12»: доля выигрышных экземпляров → целое число из числа экземпляров. */

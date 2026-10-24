@@ -2,14 +2,16 @@
  * Состав портфеля — таблица кита (X2 «таблицы, а не стены карточек»): изделие · объём · вклад в
  * прибыль · доля в риске, у каждого числа — заголовок с единицей; один бар в ячейке (вклад в
  * прибыль, цвет данных --chart-1); первые 3 строки + «Показать все». Над таблицей — чипы
- * диверсификации: число изделий, HHI с «i», макс. доля против предела (▲ — только на пределе).
+ * диверсификации: число изделий, концентрация (индекс Херфиндаля — Хиршмана) с «i», наибольшая доля
+ * против предела (▲ — только на пределе). Вклад — в одном порядке на колонку (единица в заголовке).
  * Данные и логика не меняются: те же items/diversification результата.
  */
 import type { OptPortfolio } from '../../lib/api'
 import { countText, num, pct } from '../../explain/format'
+import { columnScale } from '../../explain/columnScale'
 import { InfoTip } from '../../ui/InfoTip'
 import { CapsLabel, Chip, DataTable, type DataColumn } from '../../ui/kit'
-import { Meter, axisMoney } from '../../ui/charts'
+import { Meter } from '../../ui/charts'
 import { compositionValues } from './optTips'
 
 interface Row { id: string; name: string; qty: number; contribution: number; rc: number }
@@ -36,16 +38,17 @@ export function PortfolioComposition({ pf, nameOf, limit }: CompositionProps) {
   const lo = Math.min(0, ...rows.map((r) => r.contribution))
   const hi = Math.max(EPS, ...rows.map((r) => r.contribution))
   const atLimit = d.concentration >= limit - EPS
+  const scale = columnScale(rows.map((r) => r.contribution))
 
   const columns: ReadonlyArray<DataColumn<Row>> = [
-    { key: 'name', title: 'Изделие', rowHeader: true, clip: true },
+    { key: 'name', title: 'Изделие', rowHeader: true, primary: true },
     { key: 'qty', title: 'Объём, шт', num: true, render: (r) => num(r.qty, 0) },
     {
-      key: 'contribution', title: 'Вклад в прибыль, ₽', num: true,
+      key: 'contribution', title: `Вклад в прибыль, ${scale.unit}`, num: true,
       render: (r) => (
         <span className="opt-pf__money">
           <Meter value={r.contribution} min={lo} max={hi} tone="accent" className="opt-pf__bar" />
-          <span>{axisMoney(r.contribution)}</span>
+          <span>{scale.fmt(r.contribution)}</span>
         </span>
       ),
     },
@@ -63,19 +66,19 @@ export function PortfolioComposition({ pf, nameOf, limit }: CompositionProps) {
         <div className="opt-pf__chips">
           <Chip size="sm">{countText(d.n_products, PRODUCTS)}</Chip>
           <span className="opt-pf__chip">
-            <Chip size="sm" title="Индекс Херфиндаля — Хиршмана по долям выручки">HHI {num(d.hhi, 2)}</Chip>
+            <Chip size="sm" title="Индекс Херфиндаля — Хиршмана по долям выручки: 0 — выручка размазана, 1 — одно изделие">концентрация {num(d.hhi, 2)}</Chip>
             <InfoTip id="opt.hhi" values={tips['opt.hhi']} />
           </span>
           <span className="opt-pf__chip">
             <Chip size="sm" title={`Доля крупнейшего изделия в выручке; предел прогона — ${pct(limit, 0)}`}>
-              {`макс. доля ${pct(d.concentration, 0)} из ≤ ${pct(limit, 0)}`}
+              {`наибольшая доля ${pct(d.concentration, 0)} (предел ${pct(limit, 0)})`}
               {atLimit && <span className="glyph-setup opt-pf__limit">на пределе</span>}
             </Chip>
             <InfoTip id="opt.max_share" values={tips['opt.max_share']} />
           </span>
         </div>
       </div>
-      <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} tight limit={TOP}
+      <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} tight limit={TOP} width="content"
         defaultSort={{ key: 'contribution', dir: 'desc' }} caption="Состав устойчивого портфеля" />
     </div>
   )

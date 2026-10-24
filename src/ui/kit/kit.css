@@ -6,6 +6,8 @@
 @import './surfaces.css';
 @import './table.css';
 @import './panels.css';
+@import './segmented.css';
+@import './tabs.css';
 
 /* ── Появление секций: fade + 4px, stagger 40 мс через --i ──────────────── */
 .dk-rise {
@@ -69,63 +71,7 @@
   opacity: 0.7;
 }
 
-/* ── Сегментный переключатель / табы-пилюли (индикатор = clip-path, измеряется) ── */
-.dk-seg {
-  --pad: 3px;
-  position: relative;
-  display: inline-grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  flex: none;
-  padding: var(--pad);
-  max-width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  isolation: isolate;
-}
-/* fit — ширина по содержимому (табы с разной длиной подписей, счётчики). */
-.dk-seg--fit { display: inline-flex; gap: 2px; }
-.dk-seg__ind {
-  position: absolute;
-  inset: var(--pad);
-  z-index: 0;
-  pointer-events: none;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border-strong);
-  clip-path: inset(0 var(--r, 100%) 0 var(--l, 0) round var(--radius-pill));
-  transition: clip-path var(--dur) var(--ease-out);
-}
-[data-theme='light'] .dk-seg__ind { box-shadow: var(--shadow-2), inset 0 0 0 1px var(--border); }
-.dk-seg__opt {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 var(--space-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-12);
-  font-weight: 600;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-pill);
-  transition: color var(--dur-fast) var(--ease-out);
-}
-.dk-seg--sm .dk-seg__opt { height: 22px; padding: 0 var(--space-2); font-size: var(--fs-11); }
-.dk-seg--lg .dk-seg__opt { height: 30px; padding: 0 var(--space-4); font-size: var(--fs-13); font-weight: 500; }
-.dk-seg__opt:hover:not(:disabled) { color: var(--text-secondary); }
-.dk-seg__opt.is-on { color: var(--text); }
-.dk-seg__opt.is-on > svg { color: var(--accent-text); }
-.dk-seg__opt:disabled { color: var(--text-disabled); }
-.dk-seg__opt:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
-.dk-seg__count { font-size: var(--fs-11); font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Сегментный переключатель — segmented.css; вкладки и карточки выбора — tabs.css. */
 
 /* ── Переключатель ──────────────────────────────────────────────────────── */
 .dk-switch {
@@ -313,7 +259,7 @@
 @media (prefers-reduced-motion: reduce) {
   .dk-rise, .dk-tip { animation: none; }
   .dk-skel::after { animation: none; display: none; }
-  .dk-seg__ind, .dk-switch__knob { transition: none; }
+  .dk-switch__knob { transition: none; }
 }
 
 /* ── Плитка показателя (KpiTile) и Δ к базе (DeltaChip) ────────────────── */
@@ -342,3 +288,4 @@
 .dk-delta--bad .dk-delta__arrow { color: var(--status-down); }
 .dk-delta__v { color: var(--text); font-variant-numeric: tabular-nums; }
 .dk-delta__base { color: var(--text-muted); }
+.dk-delta--zero { color: var(--text-muted); font-style: normal; }

@@ -18,6 +18,10 @@
 .adm__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .adm__side { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; min-height: 0; }
 .adm__side > .adm__panel { flex: none; }
+/* «Роли и права» — полноширинным рядом под журналом и пользователями (все роли видны на 1440). */
+.adm__roles { grid-column: 1 / -1; min-width: 0; }
+/* Пользователи в узкой правой колонке: имя не уже 8rem, «Неудачных входов» скрывается первой. */
+.adm__users-table { --dk-primary-min: 8rem; }
 /* Узкий контейнер: страница прокручивается целиком, журнал — ограниченной высоты. */
 .adm__log-table { max-height: 70vh; }
 
@@ -25,10 +29,10 @@
    прокрутка), справа — стопка «Пользователи» и «Роли и права» без зазора. */
 @container adm (min-width: 860px) {
   .adm__grid {
-    flex: 1 1 auto;
+    flex: 1 0 auto;
     min-height: 0;
     grid-template-columns: minmax(0, 1fr) clamp(340px, 34%, 440px);
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: minmax(28rem, 1fr) auto;
     align-items: stretch;
   }
   .adm__log { min-height: 0; }
@@ -66,8 +70,6 @@
 /* ── Пользователи и права ─────────────────────────────────────────────── */
 .adm__role-cell { display: inline-flex; flex-direction: column; gap: 1px; }
 .adm__sub { font-size: var(--fs-11); font-weight: 400; color: var(--text-muted); }
-.dk-table th.adm__wrap-th { white-space: normal; line-height: 1.2; }
-.dk-table th.adm__wrap-th .dk-table__sort { text-align: right; }
 .adm__muted { color: var(--text-muted); }
 .adm__matrix thead th { text-transform: none; letter-spacing: 0; font-feature-settings: normal; white-space: normal; vertical-align: bottom; }
 .adm__matrix thead th:not(:first-child) { text-align: center; }

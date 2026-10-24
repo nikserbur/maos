@@ -184,11 +184,15 @@
 .rail__item--active .rail__icon {
   color: var(--accent-text);
 }
-/* Подпись пункта: без многоточия — длинное сокращение («AI-воркфлоу») переносится по дефису, максимум 2 строки. */
+/* Подпись пункта — полное имя экрана без сокращений («Мониторинг», «Администрирование»): длинное слово
+   переносится по слогам (hyphens, lang="ru"), до 3 строк, без многоточия. */
 .rail__label {
   max-width: 100%;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-align: center;

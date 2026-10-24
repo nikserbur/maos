@@ -5,9 +5,9 @@
  * `?wc=`, окно графиков — `?period=`, база сравнения — `?vs=`. Выбор построения — в шапке.
  */
 import { useEffect, useMemo } from 'react'
-import { EmptyState, ErrorBanner, ScreenHeader, Segmented, Skeleton, SkeletonRows, type SegOption } from '../../ui/kit'
+import { EmptyState, ErrorBanner, ScreenHeader, Skeleton, SkeletonRows, Tabs, type TabItem } from '../../ui/kit'
 import type { BlockId } from '../method-map/types'
-import { navigateTo, setHashParams, useHashRoute } from '../../shell/router'
+import { buildHash, navigateTo, setHashParams, useHashRoute } from '../../shell/router'
 import { setCrumbTitle } from '../../shell/crumbs'
 import { computeTypeLoads } from './analyticsModel'
 import { TAB_LABEL, analyticsAnchor, analyticsCrumb, parseAnalyticsAnchor, type AnalyticsTab } from './analyticsRoute'
@@ -23,12 +23,14 @@ import { InvestPanel } from './InvestPanel'
 import { FlowsSection } from './FlowsSection'
 import './analytics.css'
 
-const TABS: ReadonlyArray<SegOption<AnalyticsTab>> = [
-  { id: 'kpi', label: TAB_LABEL.kpi, icon: 'chart' },
-  { id: 'bottleneck', label: TAB_LABEL.bottleneck, icon: 'link' },
-  { id: 'invest', label: TAB_LABEL.invest, icon: 'money' },
-  { id: 'flow', label: TAB_LABEL.flow, icon: 'shuffle' },
-]
+const TAB_ICONS = { kpi: 'chart', bottleneck: 'link', invest: 'money', flow: 'shuffle' } as const
+
+/** Вкладки — ссылки на тот же адрес с другой вкладкой (построение и параметры сохраняются): стрелки не грузят данные. */
+function tabItems(planId: string | null, params: Readonly<Record<string, string>>): ReadonlyArray<TabItem<AnalyticsTab>> {
+  return (Object.keys(TAB_ICONS) as AnalyticsTab[]).map((id) => ({
+    id, label: TAB_LABEL[id], icon: TAB_ICONS[id], href: buildHash('analytics', analyticsAnchor(id, planId), params),
+  }))
+}
 
 const SUBTITLE = 'Показатели выбранного построения плана: сроки, загрузка, узкие места, окупаемость'
 
@@ -99,15 +101,15 @@ export function AnalyticsScreen() {
       ) : (
         <>
           <AnalyticsVerdict verdict={data.loading ? null : verdict} loading={data.loading || !numbersReady || data.planLoading} onInvest={goInvest} />
-          <Segmented<AnalyticsTab> options={TABS} value={tab} onChange={setTab} label="Разделы аналитики" kind="tab" size="lg" fit idBase="an" />
+          <Tabs label="Разделы аналитики" value={tab} items={tabItems(route.planId, params)} onChange={setTab} />
           {data.refsError ? (
             <ErrorBanner tone="setup" error={data.refsError} message="Справочники прочитаны не полностью — узкие места и потоки могут быть неполными." onRetry={data.retry} />
           ) : null}
           {data.planError ? <ErrorBanner error={data.planError} message="Результаты построения не прочитаны." onRetry={data.retry} /> : null}
 
           {/* Смена построения: прежний кадр приглушён, пока не пришли новые KPI (не «нет данных»). */}
-          <div className={`an-body${data.planLoading && data.bundle ? ' is-refetching' : ''}`} id={`an-panel-${tab}`} role="tabpanel"
-               aria-labelledby={`an-tab-${tab}`} aria-busy={data.planLoading || undefined}>
+          <div className={`an-body${data.planLoading && data.bundle ? ' is-refetching' : ''}`} role="region"
+               aria-label={TAB_LABEL[tab]} aria-busy={data.planLoading || undefined}>
             {data.loading ? <SkeletonRows rows={4} cols={5} label="Загрузка аналитики…" /> : (
               <>
                 {tab === 'kpi' && (

@@ -33,6 +33,12 @@ constexpr int kMaxMonths     = 1920;
 constexpr int kMaxWeeks      = 520;
 constexpr int kMacroStream   = 871;
 constexpr int kBridgeStream  = 872;
+/** Нижняя граница ключевой ставки в путях, % годовых [НОРМ]: исторический минимум выборки ЦБ РФ
+ *  2013–2026 (4,25 % в 2020–2021). Стрессы (кризисный режим, крайний путь, эпизоды) иначе давали
+ *  отрицательную ставку; тот же порог — в rl/macro/sample.py (KEY_FLOOR_PP). */
+constexpr double kKeyFloorPp = 4.25;
+/** Допустимый сдвиг уровня курса («что если»: ref.fx), множитель. */
+constexpr double kFxShiftMin = 0.2, kFxShiftMax = 5.0;
 
 /** numpy-совместимый PCG64 (XSL-RR, 128-битный LCG) с посевом через SeedSequence(entropy). */
 class NumpyPcg64 {
@@ -54,6 +60,10 @@ struct Stress {
   double      quantile = 0.95;
   std::string episode;                // "YYYY-MM"
   int         episodeMonths = 12;
+  /** Эпизод: blocks — блоки из окна вперемешку (как rl/macro/sample.py, побитово);
+   *  replay — шоки окна по порядку один раз от сегодняшней точки, дальше базовая динамика
+   *  (пресеты «Как 2022» и т. п.; JSON {"order":"replay"}). */
+  std::string episodeOrder = "blocks";
   static Stress from_json(const json& j);
   json to_json() const;
 };
@@ -64,6 +74,8 @@ struct Reference {
   std::vector<double> cpiUser;
   std::string key = "flat";
   std::vector<double> keyUser;
+  /** Сдвиг уровня курса на всём горизонте («что если»: доллар +30 % → 1,3); 1 — без сдвига. */
+  double fx = 1.0;
   static Reference from_json(const json& j);
 };
 
@@ -107,8 +119,9 @@ public:
   std::vector<Vec3> expected_path(int H) const;
   MonthlyPaths sample_months(int n, int H, uint64_t seed, int startIndex = 0, const Stress& st = {}) const;
   std::pair<std::vector<double>, std::vector<double>> reference(int H, const Reference& ref) const;
+  /** Уровни путей; ставка не ниже kKeyFloorPp; курс × fxShift (ref.fx). */
   Levels to_levels(const MonthlyPaths& m, const std::vector<Vec3>& Ez,
-                   const std::vector<double>& cpiRef, const std::vector<double>& keyRef) const;
+                   const std::vector<double>& cpiRef, const std::vector<double>& keyRef, double fxShift = 1.0) const;
   Levels to_weeks(const Levels& monthly, int W, uint64_t seed, int startIndex, bool bridge) const;
   SampleResult sample(int n, uint64_t seed, int horizonWeeks, int horizonMonths = 0, int startIndex = 0,
                       const Stress& st = {}, const Reference& ref = {}, bool bridge = true) const;
@@ -138,6 +151,9 @@ private:
   std::string lastMonth_;
   std::string nodesPath_;                           // reference_nodes.json рядом с параметрами
   std::vector<int> episode_pool(const std::string& month, int months) const;
+  /** Окно повтора: индекс первого остатка и длина; окно за концом истории — понятная ошибка. */
+  std::pair<int, int> episode_window(const std::string& month, int months) const;
+  MonthlyPaths replay_months(int n, int H, uint64_t seed, int startIndex, const Stress& st) const;
   double t_quantile(int d, double q) const;
 };
 

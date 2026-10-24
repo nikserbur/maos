@@ -68,7 +68,7 @@ function GapValue({ label, v }: { label: string; v: number | null | undefined })
 }
 
 const DUAL_COLUMNS = (nameOf: (id: string) => string, maxPrice: number): ReadonlyArray<DataColumn<OptExactDual>> => [
-  { key: 'wc_type', title: 'Тип оборудования', rowHeader: true, clip: true, get: (d) => nameOf(d.wc_type), render: (d) => nameOf(d.wc_type) },
+  { key: 'wc_type', title: 'Тип оборудования', rowHeader: true, primary: true, get: (d) => nameOf(d.wc_type), render: (d) => nameOf(d.wc_type) },
   {
     key: 'shadow_price', title: 'Теневая цена, ₽/ч', num: true,
     render: (d) => (

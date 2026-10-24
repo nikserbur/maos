@@ -5,11 +5,15 @@
  * точность на меру: часы — целые, как в карточке блока), и компактная таблица для панели блока.
  */
 import { buildHash } from '../../shell/router'
-import { NBSP, fmtValue, hours, joinRange, num, pct } from '../../explain/format'
+import { NBSP, fmtValue, hours, joinRange, num, pct, plural } from '../../explain/format'
 import { objectiveLabel, ruleLabel } from '../../explain/labels'
 import { PassportCard as SharedPassportCard } from '../../ui/PassportCard'
 import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import type { ParameterPassport } from './types'
+
+/** Единицы словами, без сокращений: «3 дня», «1,5 процентного пункта». */
+const DAY_FORMS = ['день', 'дня', 'дней'] as const
+const PP_FORMS = ['процентный пункт', 'процентных пункта', 'процентных пунктов'] as const
 
 /** Значение параметра для людей: имена вместо id, единица — через общий форматтер. */
 export function valueText(p: ParameterPassport): string {
@@ -23,7 +27,9 @@ export function valueText(p: ParameterPassport): string {
     case '%': return pct(p.value, p.id === 'scenario.alpha' ? 0 : 1)
     case 'ч': return hours(p.value, 0)
     case '×': return `×${num(p.value)}`
-    case '%/год': case '%/мес': case 'п.п.': case 'дн': case 'прогонов': return `${num(p.value)}${NBSP}${p.unit}`
+    case 'дн': return `${num(p.value)}${NBSP}${plural(p.value, DAY_FORMS)}`
+    case 'п.п.': return `${num(p.value)}${NBSP}${plural(p.value, PP_FORMS)}`
+    case '%/год': case '%/мес': case 'прогонов': return `${num(p.value)}${NBSP}${p.unit}`
     default: return fmtValue(p.value, p.unit)
   }
 }
@@ -66,12 +72,12 @@ export function PassportTable({ passports, onPick }: { passports: readonly Param
             </td>
             <td className="num">
               {valueText(p)}
-              {p.outOfRange && <span className="mm-ptable__warn" title="вне разумного диапазона"> ▲ вне</span>}
+              {p.outOfRange && <span className="mm-ptable__warn"> ▲ вне диапазона</span>}
             </td>
             <td><ProvenanceBadge provenance={p.provenance} status={p.status} deprecated={p.deprecated} stage={p.stage} title={p.note} /></td>
             <td>
               {p.screen && p.editable && (
-                <a className="mm-link" href={buildHash(p.screen.id, p.screen.anchor)} title="Изменить на экране">изм.</a>
+                <a className="mm-link" href={buildHash(p.screen.id, p.screen.anchor)} title="Изменить на экране">изменить</a>
               )}
             </td>
           </tr>

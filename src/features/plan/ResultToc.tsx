@@ -4,8 +4,10 @@
  * видимая в порядке документа. Клик — активна сразу, наблюдатель молчит до конца прокрутки
  * (scrollend или запасной таймер), раздел пишется в адрес (replaceState). Высота оглавления —
  * переменная `--pl-toc-h` контейнера: на ней держатся scroll-padding и отступ наблюдателя.
+ * Вид — вкладки кита (подчёркивание, aria-current="location"), как и у разделов других экранов.
  */
 import { useEffect, useRef, useState } from 'react'
+import { Tabs } from '../../ui/kit'
 import { revealPlanSection } from './usePlanSelection'
 import './plan-screen.css'
 
@@ -23,7 +25,7 @@ interface ResultTocProps {
 }
 
 export function ResultToc({ items, initial = null, onSection }: ResultTocProps) {
-  const navRef = useRef<HTMLElement>(null)
+  const navRef = useRef<HTMLDivElement>(null)
   const start = items.find((it) => it.slug === initial) ?? items[0]
   const [active, setActive] = useState<string>(start?.id ?? '')
   const activeRef = useRef(active)
@@ -46,6 +48,9 @@ export function ResultToc({ items, initial = null, onSection }: ResultTocProps) 
     const root = nav.closest<HTMLElement>('.plan')
     const h = nav.offsetHeight
     root?.style.setProperty('--pl-toc-h', `${h}px`)
+    // Высота оглавления меняется (перенос вкладок на узком экране) — шапки таблиц (--dk-sticky-top) следуют за ней.
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => root?.style.setProperty('--pl-toc-h', `${nav.offsetHeight}px`))
+    ro?.observe(nav)
     const visible = new Map<string, boolean>()
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) visible.set(e.target.id, e.isIntersecting)
@@ -57,7 +62,7 @@ export function ResultToc({ items, initial = null, onSection }: ResultTocProps) 
       report.current?.(first.slug)
     }, { root, rootMargin: `-${h + TOC_GAP}px 0px -55% 0px`, threshold: 0 })
     for (const it of items) { const el = document.getElementById(it.id); if (el) io.observe(el) }
-    return () => io.disconnect()
+    return () => { io.disconnect(); ro?.disconnect() }
   }, [items])
 
   const go = (it: TocItem) => {
@@ -74,13 +79,10 @@ export function ResultToc({ items, initial = null, onSection }: ResultTocProps) 
   }
 
   return (
-    <nav ref={navRef} className="pl-toc" aria-label="Разделы результата">
-      {items.map((it) => (
-        <button key={it.id} type="button" className={`pl-toc__item${active === it.id ? ' is-active' : ''}`}
-                aria-current={active === it.id ? 'location' : undefined} onClick={() => go(it)}>
-          {it.label}
-        </button>
-      ))}
-    </nav>
+    <div ref={navRef} className="pl-toc">
+      <Tabs label="Разделы результата" kind="nav" current="location" size="panel" value={active}
+        items={items.map((it) => ({ id: it.id, label: it.label }))}
+        onChange={(id) => { const it = items.find((x) => x.id === id); if (it) go(it) }} />
+    </div>
   )
 }

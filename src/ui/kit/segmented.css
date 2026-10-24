@@ -1,0 +1,167 @@
+/*
+ * Сегментный переключатель (режим/вид/фильтр): скруглённый прямоугольник по содержимому,
+ * sm 24 px (= --control-compact) · md 30 px (= --control). Бегунок — акцентный оттенок + кромка
+ * (язык «выбрано» общий с .dk-choice.is-on), разделители между невыбранными соседями.
+ * Подписи не обрезаются никогда: строка с сегментом переносится раньше, чем он сожмётся; не
+ * помещается даже одна — выпадающий список той же высоты (.dk-seg-select, крайний случай).
+ * Подпись группы (.dk-seg-cap) — слева, обычным регистром; пояснение выбранного (.dk-seg-hint) — под ним.
+ */
+
+/* Строка, в которой стоит сегмент, переносится, а не сжимает его до выпадающего списка
+   (одинаковый вид при 1440 и 1024). :where — нулевая специфичность: явный nowrap экрана побеждает. */
+:where(:has(> .dk-seg, > .dk-seg-field, > .dk-seg-select)) { flex-wrap: wrap; }
+.dk-seg {
+  --seg-h: var(--control);
+  --seg-inset: 3px;
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 1 auto;
+  align-self: flex-start;
+  justify-self: start;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  height: var(--seg-h);
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  isolation: isolate;
+}
+.dk-seg--sm { --seg-h: var(--control-compact); --seg-inset: 2px; }
+/* Равные колонки — только ≤ 3 вариантов близкой длины. */
+.dk-seg--equal { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.dk-seg[aria-disabled='true'] { opacity: 0.6; }
+.dk-seg__ind {
+  position: absolute;
+  top: var(--seg-inset);
+  bottom: var(--seg-inset);
+  left: 0;
+  z-index: 0;
+  width: calc(var(--w, 0px) - var(--seg-inset) * 2);
+  transform: translateX(calc(var(--l, 0px) + var(--seg-inset)));
+  pointer-events: none;
+  background: color-mix(in oklch, var(--accent) 22%, var(--bg-elevated));
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 60%, transparent), var(--shadow-1);
+  transition: transform var(--dur) var(--ease-out), width var(--dur) var(--ease-out);
+}
+.dk-seg__opt {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: 100%;
+  padding: 0 var(--space-3);
+  overflow: visible;
+  white-space: nowrap;
+  font: 500 var(--fs-13) var(--font-sans);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.dk-seg--sm .dk-seg__opt { padding: 0 10px; font-size: var(--fs-12); }
+/* Разделитель между невыбранными соседями; рядом с выбранным — скрыт. */
+.dk-seg__opt + .dk-seg__opt::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--border);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.dk-seg__opt.is-on::before, .dk-seg__opt.is-on + .dk-seg__opt::before { opacity: 0; }
+/* Ширина под жирное начертание зарезервирована: текст и невидимый жирный двойник лежат в одной
+   ячейке сетки (а не столбиком) — подпись-узел из нескольких частей остаётся одной строкой. */
+.dk-seg__label { display: inline-grid; justify-items: center; align-items: center; }
+.dk-seg__text, .dk-seg__label::after { grid-area: 1 / 1; white-space: nowrap; }
+.dk-seg__label::after { content: attr(data-label); height: 0; overflow: hidden; visibility: hidden; font-weight: 600; pointer-events: none; }
+.dk-seg__opt:hover:not(:disabled):not(.is-on) { color: var(--text); background: color-mix(in oklch, var(--bg-hover) 70%, transparent); }
+.dk-seg__opt.is-on { color: var(--text); font-weight: 600; }
+.dk-seg__opt.is-on > svg { color: var(--accent-text); }
+.dk-seg__opt:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.dk-seg__opt:focus-visible { z-index: 2; outline: 2px solid transparent; box-shadow: inset 0 0 0 2px var(--focus); }
+/* Счётчик — тот же бейдж, что у вкладок (.dk-tab__count), тише: без рамки, на тихой подложке. */
+.dk-seg__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font: 600 var(--fs-11) / 16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: color-mix(in oklch, var(--text-muted) 14%, transparent);
+  border-radius: var(--radius-pill);
+}
+.dk-seg--sm .dk-seg__count { min-width: 16px; height: 16px; padding: 0 4px; line-height: 14px; }
+.dk-seg__opt.is-on .dk-seg__count { color: var(--text); background: color-mix(in oklch, var(--accent) 22%, transparent); }
+.dk-seg__status { display: inline-flex; align-items: center; flex: none; font-size: var(--fs-12); }
+
+/* Подпись группы слева и пояснение выбранного под сегментом. */
+.dk-seg-field {
+  display: inline-grid;
+  grid-template-columns: minmax(0, max-content);
+  align-items: center;
+  justify-items: start;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: middle;
+}
+.dk-seg-field--cap { grid-template-columns: auto minmax(0, max-content); }
+.dk-seg-field > .dk-seg, .dk-seg-field > .dk-seg-select { align-self: center; }
+.dk-seg-cap { font-size: var(--fs-12); font-weight: 500; line-height: 1.3; color: var(--text-secondary); white-space: nowrap; }
+.dk-seg-hint { grid-column: -2 / -1; max-width: 60ch; font-size: var(--fs-12); line-height: 1.35; color: var(--text-muted); text-wrap: pretty; }
+
+/* Не поместился даже на своей строке — тот же выбор выпадающим списком той же высоты, в теме кита:
+   свой шеврон из токенов, системный список — в цветовой схеме темы (color-scheme). */
+.dk-seg-select {
+  align-self: flex-start;
+  max-width: 100%;
+  height: var(--control);
+  padding: 0 var(--space-6) 0 var(--space-3);
+  font: 500 var(--fs-13) var(--font-sans);
+  color: var(--text);
+  color-scheme: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg-input);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.dk-seg-select:hover:not(:disabled) { border-color: var(--text-muted); }
+.dk-seg-select--sm { height: var(--control-compact); padding-left: 10px; font-size: var(--fs-12); }
+.dk-seg-select:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
+
+/* Светлая тема: кромка бегунка плотнее — граница выбранного ≥ 3:1 к полю на #f8f5ef. */
+[data-theme='light'] .dk-seg__ind { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 78%, transparent), var(--shadow-1); }
+
+@media (forced-colors: active) {
+  .dk-seg__opt.is-on { outline: 1px solid CanvasText; }
+  .dk-seg__opt:focus-visible { outline: 2px solid Highlight; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dk-seg__ind { transition: none; }
+}

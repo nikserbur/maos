@@ -14,11 +14,12 @@ import { LEAVE_MESSAGE } from '../../shell/router'
 import { Heatmap } from '../../ui/charts'
 import { DIST_TYPE_LABEL, DensityMini } from '../../ui/DensityMini'
 import { InfoTip } from '../../ui/InfoTip'
-import { CapsLabel, ChoiceChip, DataTable, EmptyState, type DataColumn } from '../../ui/kit'
+import { NoteTip } from '../../ui/NoteTip'
+import { ChoiceChip, DataTable, EmptyState, type DataColumn } from '../../ui/kit'
 import { ProvenanceBadge } from '../../ui/ProvenanceBadge'
 import { DistributionEditor } from './DistributionEditor'
 import {
-  BETA_DEFAULT, SIGMA_DEFAULT, betaSpread, corrMatrix, distGroupLabel, distRow, firstPart, isCustomDist, tailsLabel, type DistRow,
+  BETA_DEFAULT, SIGMA_DEFAULT, betaSpread, corrMatrix, distGroupLabel, distRow, distShort, firstPart, isCustomDist, nameParts, tailsLabel, type DistRow,
 } from './distModel'
 import './scenarios-v2.css'
 
@@ -61,30 +62,39 @@ export function DistributionsTab({ sc, products, productsFailed, onSetDist, onSe
 
   const columns = useMemo<ReadonlyArray<DataColumn<DistRow>>>(() => [
     {
-      key: 'sel', sortable: false, className: 'sc2-dtable__sel',
+      key: 'sel', sortable: false, className: 'sc2-dtable__sel', width: 'fit',
       title: <input type="checkbox" checked={all} aria-label="выбрать все" onChange={() => setSel(all ? new Set() : new Set(shown.map((r) => r.p.id)))} />,
       render: (r) => <input type="checkbox" checked={sel.has(r.p.id)} aria-label={`выбрать ${r.p.name}`} onClick={(e) => e.stopPropagation()} onChange={() => toggle(r.p.id)} />,
     },
     {
-      key: 'name', title: 'Изделие', rowHeader: true, get: (r) => r.p.name,
-      render: (r) => <span className="sc2-dtable__name" title={r.p.name}>{firstPart(r.p.name)} <span className="sc2-dtable__code">{r.p.code}</span></span>,
+      key: 'name', title: 'Изделие', rowHeader: true, primary: true, get: (r) => r.p.name,
+      render: (r) => {
+        const n = nameParts(r.p.name)
+        return (
+          <span className="sc2-dtable__name" title={r.p.name}>
+            <span className="sc2-dtable__head">{n.head}</span>
+            <span className="sc2-dtable__tail">{n.tail ? `${n.tail} · ` : ''}<span className="sc2-dtable__code">{r.p.code}</span></span>
+          </span>
+        )
+      },
     },
     {
-      key: 'dist', title: 'Распределение', get: (r) => DIST_TYPE_LABEL[r.type],
+      key: 'dist', title: 'Распределение', width: 'fit', get: (r) => DIST_TYPE_LABEL[r.type],
       render: (r) => (manualIds.has(r.p.id)
-        ? <span className="sc2-dtable__density"><DensityMini type={r.type} rel={r.rel} width={72} height={22} /><span>{DIST_TYPE_LABEL[r.type]}</span></span>
-        : <span className="sc2-muted">{DIST_TYPE_LABEL[r.type]}</span>),
+        ? <span className="sc2-dtable__density" title={DIST_TYPE_LABEL[r.type]}><DensityMini type={r.type} rel={r.rel} width={40} height={18} /><span>{distShort(r.type)}</span></span>
+        : <span className="sc2-muted" title={DIST_TYPE_LABEL[r.type]}>{distShort(r.type)}</span>),
     },
-    { key: 'center', title: 'Центр', num: true, get: (r) => r.center, render: (r) => <>{money(r.center)}{r.hasOverride && <span className="sc2-muted" title="точечная цена задана в сценарии"> · точечно</span>}</> },
+    { key: 'center', title: 'Центр цены, ₽', num: true, minWidth: 12, hint: 'Середина распределения цены; по умолчанию — базовая цена справочника', get: (r) => r.center, render: (r) => <>{money(r.center)}{r.hasOverride && <span className="sc2-muted" title="точечная цена задана в сценарии"> · точечно</span>}</> },
     {
-      key: 'rel', title: <>Разброс <CapsLabel text="σ" /></>, num: true, get: (r) => r.rel,
+      key: 'rel', title: 'Разброс, % от центра', num: true, minWidth: 12, hint: 'Стандартное отклонение цены σ в процентах от центра', get: (r) => r.rel,
       render: (r) => <span className={r.rel > REL_HIGH ? 'sc2-hi' : undefined} title={`σ = ${money(r.sd)}`}>{r.rel > REL_HIGH && <span aria-hidden="true">▲ </span>}{pct(r.rel, 0)}</span>,
     },
-    { key: 'tails', title: 'Хвосты', sortable: false, render: (r) => <span className="sc2-muted num">{tailsLabel(r)}</span> },
-    { key: 'beta', title: <CapsLabel text="β" />, num: true, hint: 'связь с рынком: 0 — независимо, 1 — вместе с рынком', get: (r) => r.beta, render: (r) => num(r.beta, 2) },
+    { key: 'tails', title: 'Границы и хвосты', sortable: false, priority: 3, render: (r) => <span className="sc2-muted num">{tailsLabel(r)}</span> },
+    { key: 'beta', title: 'Зависимость от рынка (β)', num: true, minWidth: 14, hint: 'Коэффициент β: 0 — цена независима от рынка, 1 — движется вместе с рынком; связь пары изделий в Портфеле ≈ β·β', get: (r) => r.beta, render: (r) => num(r.beta, 2) },
     ...(manualIds.size > 0 ? [{
-      key: 'prov', title: 'Происхождение', get: (r: DistRow) => (manualIds.has(r.p.id) ? 1 : 0),
-      render: (r: DistRow) => <ProvenanceBadge provenance={manualIds.has(r.p.id) ? 'manual' : 'default'} />,
+      // Только отклонения: «■ вручную» строчным глифом; «по умолчанию» — в счётчике над таблицей, не в каждой строке.
+      key: 'prov', title: 'Происхождение', width: 'fit' as const, get: (r: DistRow) => (manualIds.has(r.p.id) ? 1 : 0),
+      render: (r: DistRow) => (manualIds.has(r.p.id) ? <ProvenanceBadge provenance="manual" variant="inline" /> : ''),
     }] : []),
   ], [shown, sel, all, manualIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,14 +146,18 @@ function Correlation({ rows }: { rows: readonly DistRow[] }) {
   if (spread.uniform) {
     return (
       <p className="sc2-muted sc2-corr-line">
-        Корреляция цен: <b className="num">ρ ≈ {num(spread.rho, 2)}</b> для всех пар (у всех изделий β = {num(spread.beta, 2)}) <InfoTip id="opt.hhi" />
+        Связь цен между изделиями в Портфеле: <b className="num">ρ ≈ {num(spread.rho, 2)}</b> для всех пар (у всех изделий связь с рынком β = {num(spread.beta, 2)}, ρ ≈ β·β)
+        <NoteTip title="Связь цен между изделиями">
+          В Портфеле цены изделий связаны через общий рыночный фактор: корреляция пары ρ ≈ β₁·β₂. Чтобы изделие меньше зависело от рынка,
+          уменьшите его «Связь с рынком» в редакторе распределения. Поле «Связь цен между изделиями» во «Условиях» действует на веер цен и сырьё.
+        </NoteTip>
       </p>
     )
   }
   const top = rows.slice(0, CORR_TOP)
   const m = corrMatrix(top)
   return (
-    <Heatmap className="sc2-corr" title="Корреляция цен из β" subtitle={`ρ ≈ β·β, первые ${num(top.length, 0)} изделий сбыта`}
+    <Heatmap className="sc2-corr" title="Связь цен изделий в Портфеле" subtitle={`ρ ≈ β·β по «Связи с рынком», первые ${num(top.length, 0)} изделий сбыта`} rowHeader="Изделие"
       rows={top.map((r, i) => ({ key: r.p.id, label: firstPart(r.p.name), values: m[i] }))} columns={top.map((r) => firstPart(r.p.name))}
       fmt={(v) => num(v, 2)} legendLow="ρ 0 — независимы" legendHigh="ρ 1 — вместе" ariaLabel="Корреляция цен изделий" />
   )

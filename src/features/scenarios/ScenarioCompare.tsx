@@ -1,17 +1,21 @@
 /**
  * Сравнение 2–5 сценариев (UX-V2 §5.3, X2 «сравнение — явная Δ к названной базе»): первая колонка —
  * рабочий (или первый отмеченный) сценарий «· база»; ячейки других — значение и Δ к базе с
- * направлением «лучше». Условия — эффективные значения (умолчание — «○ по умолчанию»), «только
- * отличающиеся» действует и на результаты. «Рассчитать портфели» не выключается заранее: при < 2
+ * направлением «лучше». Условия — эффективные значения (умолчание — серый глиф ○/●/◆ с подсказкой
+ * источника), «только отличающиеся» действует и на результаты. Таблица — фиксированная раскладка:
+ * «Показатель» 14rem и липкая, сценарии делят остальное поровну (не уже 12rem, не шире 280 px);
+ * в шапке — короткое имя пресета, месяцы — полностью. «Рассчитать портфели» не выключается заранее: при < 2
  * отмеченных объясняет по нажатию. У каждой колонки — «Сделать рабочим» и «убрать из сравнения».
  */
 import { useMemo, useState } from 'react'
-import { api, type OptResult, type PriceScenario, type Product } from '../../lib/api'
+import { api, type MacroLastObs, type OptResult, type PriceScenario, type Product } from '../../lib/api'
 import { num } from '../../explain/format'
 import { Icon } from '../../shell/icons'
 import { DeltaChip, EmptyState, ErrorBanner, Switch } from '../../ui/kit'
 import { buildLines, conditionRows, resultRows, visibleLines, type CompareLine } from './compareModel'
 import { effectiveScenario } from './scenarioDefaults'
+import { fullMonths } from './monthWords'
+import { scenarioView } from './scenarioPresets'
 import { MAX_COMPARE } from './scenarioRoute'
 import './scenarios-v2.css'
 
@@ -21,6 +25,10 @@ interface Props {
   workingId: string
   products: readonly Product[]
   regimeNames: readonly string[]
+  /** Точка старта генератора (ЦБ РФ) — умолчание инфляции. */
+  lastObs?: MacroLastObs | null
+  /** Индекс кризисного режима генератора. */
+  crisisIndex?: number
   onMakeWorking: (id: string) => void
   onDrop: (id: string) => void
 }
@@ -32,7 +40,7 @@ function orderColumns(scenarios: readonly PriceScenario[], ids: readonly string[
   return w > 0 ? [cols[w], ...cols.filter((_, i) => i !== w)] : cols
 }
 
-export function ScenarioCompare({ scenarios, ids, workingId, products, regimeNames, onMakeWorking, onDrop }: Props) {
+export function ScenarioCompare({ scenarios, ids, workingId, products, regimeNames, lastObs, crisisIndex = 1, onMakeWorking, onDrop }: Props) {
   const [results, setResults] = useState<Record<string, OptResult>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
@@ -58,10 +66,12 @@ export function ScenarioCompare({ scenarios, ids, workingId, products, regimeNam
     }
   }
 
-  const condLines = visibleLines(buildLines(conditionRows(regimeNames), cols), onlyDiff)
+  const condLines = visibleLines(buildLines(conditionRows(regimeNames, lastObs), cols), onlyDiff)
   const ready = cols.every((c) => results[c.id]) ? cols : []
   const baseAlpha = cols[0] ? effectiveScenario(cols[0]).alpha : 0.1
-  const resLines = ready.length >= 2 ? visibleLines(buildLines(resultRows(baseAlpha, nameOf), ready.map((c) => results[c.id])), onlyDiff) : []
+  const resLines = ready.length >= 2 ? visibleLines(buildLines(resultRows(baseAlpha, nameOf, crisisIndex), ready.map((c) => results[c.id])), onlyDiff) : []
+  const months = cols.map((c) => effectiveScenario(c).months)
+  const mixedHorizon = months.some((m) => m !== months[0])
 
   return (
     <div className="sc2-compare">
@@ -72,6 +82,10 @@ export function ScenarioCompare({ scenarios, ids, workingId, products, regimeNam
           {busy ? 'Считаем портфели…' : `Рассчитать портфели (${num(cols.length, 0)})`}
         </button>
       </div>
+      {mixedHorizon && cols.length >= 2 && (
+        <ErrorBanner tone="setup" title="У сценариев разный горизонт прогноза"
+          message={`Горизонты: ${cols.map((c, i) => `«${c.name || 'Без названия'}» — ${num(months[i], 0)} мес`).join(', ')}. Разницы условий и портфелей читайте с поправкой на срок.`} />
+      )}
       {tooFew && <ErrorBanner tone="setup" title="Нужно минимум два сценария" message="Отметьте в списке слева 2–5 сценариев и нажмите ещё раз." onDismiss={() => setTooFew(false)} />}
       {error !== null && <ErrorBanner title="Портфели не рассчитаны" error={error} onRetry={() => { void run() }} />}
       {cols.length < 2 ? (
@@ -80,10 +94,10 @@ export function ScenarioCompare({ scenarios, ids, workingId, products, regimeNam
         </EmptyState>
       ) : (
         <>
-          <CompareTable caption="Условия" cols={cols} workingId={workingId} lines={condLines} onMakeWorking={onMakeWorking} onDrop={onDrop}
+          <CompareTable caption="Условия" cols={cols} workingId={workingId} lines={condLines} regimeNames={regimeNames} onMakeWorking={onMakeWorking} onDrop={onDrop}
             emptyText="Условия сценариев совпадают" />
           {resLines.length > 0 && (
-            <CompareTable caption="Результаты робастной оптимизации" cols={ready} workingId={workingId} lines={resLines} onMakeWorking={onMakeWorking} onDrop={onDrop}
+            <CompareTable caption="Результаты робастной оптимизации" cols={ready} workingId={workingId} lines={resLines} regimeNames={regimeNames} onMakeWorking={onMakeWorking} onDrop={onDrop}
               emptyText="Результаты совпадают" />
           )}
         </>
@@ -97,46 +111,72 @@ interface TableProps {
   cols: readonly PriceScenario[]
   workingId: string
   lines: readonly CompareLine[]
+  regimeNames: readonly string[]
   emptyText: string
   onMakeWorking: (id: string) => void
   onDrop: (id: string) => void
 }
 
-function CompareTable({ caption, cols, workingId, lines, emptyText, onMakeWorking, onDrop }: TableProps) {
-  const base = cols[0]?.name || 'база'
+/** Глиф происхождения умолчания: «● ЦБ РФ, сентябрь 2026» → «●»; без источника — «○». */
+const originGlyph = (origin: string | undefined): string => (origin && /^[●◆○]/.test(origin) ? origin[0] : '○')
+
+function DefaultMark({ origin }: { origin?: string }) {
+  const source = origin ? fullMonths(origin.replace(/^[●◆○]\s*/, '')) : 'значение движка'
+  const tip = `Не задано в сценарии — по умолчанию: ${source}`
+  return <span className="sc2-cmp__dflt" title={tip} aria-label={tip}>{originGlyph(origin)}</span>
+}
+
+function ColumnHead({ c, isBase, workingId, regimeNames, onMakeWorking, onDrop }: {
+  c: PriceScenario; isBase: boolean; workingId: string; regimeNames: readonly string[]; onMakeWorking: (id: string) => void; onDrop: (id: string) => void
+}) {
+  const v = scenarioView(c.macro_mode, regimeNames)
+  return (
+    <th scope="col" className="sc2-cmp__col">
+      <span className="sc2-cmp__name">{c.name || 'Без названия'}{isBase && <span className="sc2-cmp__base"> · база</span>}</span>
+      <span className="sc2-cmp__mode" title={fullMonths(v.mode)}>{v.preset ? v.preset.short : 'Своя настройка'} · {v.kind}</span>
+      <span className="sc2-cmp__acts">
+        {c.id === workingId
+          ? <span className="sc2-working">● рабочий</span>
+          : <button type="button" className="pf-link" onClick={() => onMakeWorking(c.id)}>Сделать рабочим</button>}
+        <button type="button" className="btn btn--ghost btn--icon btn--sm" onClick={() => onDrop(c.id)} aria-label={`Убрать «${c.name}» из сравнения`} title="Убрать из сравнения">
+          <Icon name="close" size={12} />
+        </button>
+      </span>
+    </th>
+  )
+}
+
+function CompareTable({ caption, cols, workingId, lines, regimeNames, emptyText, onMakeWorking, onDrop }: TableProps) {
+  // «+0,35 к базе»: имя в именительном падеже после «к» читается с ошибкой («к Базовый»); база названа в шапке колонки.
+  const base = 'базе'
+  const n = Math.min(5, Math.max(2, cols.length))
   return (
     <section className="sc2-cmp" aria-label={caption}>
-      <h3 className="sc2-cmp__cap text-caps">{caption}</h3>
+      <h3 className="sc2-cmp__cap">{caption}</h3>
       {lines.length === 0 ? <p className="sc2-muted">{emptyText}</p> : (
         <div className="sc2-cmp__wrap">
-          <table className="dk-table sc2-cmp__table">
+          <table className={`dk-table sc2-cmp__table sc2-cmp__table--n${n}`}>
+            <colgroup>
+              <col className="sc2-cmp__c0" />
+              {cols.map((c) => <col key={c.id} />)}
+            </colgroup>
             <thead>
               <tr>
-                <th scope="col">Показатель</th>
+                <th scope="col" className="sc2-cmp__lead">Показатель</th>
                 {cols.map((c, i) => (
-                  <th key={c.id} scope="col" className="sc2-cmp__col">
-                    <span className="sc2-cmp__name" title={c.name}>{c.name || 'Без названия'}{i === 0 && <span className="sc2-cmp__base"> · база</span>}</span>
-                    <span className="sc2-cmp__acts">
-                      {c.id === workingId
-                        ? <span className="sc2-working">● рабочий</span>
-                        : <button type="button" className="pf-link" onClick={() => onMakeWorking(c.id)}>Сделать рабочим</button>}
-                      <button type="button" className="btn btn--ghost btn--icon btn--sm" onClick={() => onDrop(c.id)} aria-label={`Убрать «${c.name}» из сравнения`} title="Убрать из сравнения">
-                        <Icon name="close" size={12} />
-                      </button>
-                    </span>
-                  </th>
+                  <ColumnHead key={c.id} c={c} isBase={i === 0} workingId={workingId} regimeNames={regimeNames} onMakeWorking={onMakeWorking} onDrop={onDrop} />
                 ))}
               </tr>
             </thead>
             <tbody>
               {lines.map((l) => (
                 <tr key={l.key}>
-                  <th scope="row">{l.label}</th>
+                  <th scope="row" className="sc2-cmp__lead">{l.label}</th>
                   {l.cells.map((cell, i) => (
                     <td key={cols[i]?.id ?? i} className="num">
                       <span className="sc2-cmp__cell">
-                        <span>{cell.text}</span>
-                        {cell.isDefault && <span className="sc2-cmp__dflt" title="Не задано в сценарии — действует значение по умолчанию">○ по умолчанию</span>}
+                        <span className="sc2-cmp__v">{fullMonths(cell.text)}</span>
+                        {cell.isDefault && <DefaultMark origin={cell.origin} />}
                         {cell.delta !== null && <DeltaChip value={cell.delta} fmt={l.deltaFmt} better={l.better} base={base} />}
                       </span>
                     </td>

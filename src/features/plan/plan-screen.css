@@ -155,10 +155,12 @@
 
 /* ── История прогонов: строка открывает прогон ───────────────────────────── */
 .pl-runs { display: flex; flex-direction: column; gap: var(--space-2); }
-.pl-runs__table td, .pl-runs__table th { white-space: nowrap; }
+/* Ширины — колонки кита (источник — гибкая, числа и действия — по содержимому); переносы не запрещаем. */
 .pl-runs__table .dk-chip { margin-left: 6px; }
-.pl-runs__act { width: 1%; }
-.pl-runs__acts { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+/* Действия переносятся между ссылками (каждая — целиком): «только KPI · сравнить с текущим · повторить» в одну строку
+   делали таблицу шире области при 1440 px. */
+.pl-runs__acts { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px var(--space-2); max-width: 14rem; }
+.pl-runs__acts > * { white-space: nowrap; }
 .pl-runs__acts .dk-chip { margin-left: 0; }
 .pl-runs__cmp { padding: var(--space-3); background: var(--bg-panel); border-radius: var(--radius); }
 .pl-history { margin-top: var(--space-2); }
@@ -166,20 +168,14 @@
 /* ── Результат: липкое оглавление top:0 внутри скролл-контейнера .plan (X2 P-93) ── */
 .pl-result { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
 .pl-result__body { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+/* Оглавление — вкладки кита (.dk-tabs, подчёркивание у видимого раздела) на липкой подложке. */
 .pl-toc {
-  position: sticky; top: calc(var(--space-5) * -1); z-index: 20; display: flex; gap: 2px; flex-wrap: wrap;
-  margin: 0 calc(var(--space-6) * -1); padding: var(--space-2) var(--space-6);
-  background: var(--bg-app); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 20;
+  margin: 0 calc(var(--space-6) * -1); padding: var(--space-1) var(--space-6) 0;
+  background: var(--bg-app);
 }
-.pl-toc__item {
-  min-height: 28px; padding: 0 12px; border: 0; border-radius: var(--radius-pill); background: none; color: var(--text-secondary);
-  font: 500 var(--fs-12) var(--font-sans); cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.pl-toc__item:hover { background: var(--bg-hover); color: var(--text); }
-.pl-toc__item:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
-.pl-toc__item.is-active { background: var(--bg-card); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
-@media (forced-colors: active) { .pl-toc__item:focus-visible { outline: 2px solid Highlight; } .pl-toc__item.is-active { outline: 1px solid CanvasText; } }
+/* Подложка закрывает и верхнее поле контейнера: над липким оглавлением не просвечивает прокручиваемое. */
+.pl-toc::before { content: ''; position: absolute; inset: auto 0 100% 0; height: var(--space-5); background: var(--bg-app); }
 
 /* «Почему так» — таблица причин внутри секции «Узкое место» */
 .pl-drove { margin-top: var(--space-3); }
@@ -221,6 +217,9 @@
 .pl-more > .pl-card, .pl-more > .pl-kpitable { margin: 0 var(--space-3) var(--space-3); }
 .pl-more > .pl-card { border-color: transparent; box-shadow: none; background: transparent; padding: 0 var(--space-1) var(--space-1); }
 .pl-tables { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Шапки таблиц «Сравнение правил» и «Планы по рабочим» липнут под оглавлением — контракт кита
+   `--dk-sticky-top` (высоту ставит ResultToc). Только здесь: у других секций свои прокручиваемые карточки. */
+.pl-tables { --dk-sticky-top: var(--pl-toc-h, 40px); }
 
 /* Таблица KPI «показатель · значение · контекст» */
 .pl-kpitable { width: calc(100% - var(--space-3) * 2); }
@@ -252,3 +251,7 @@
 .pl-pick:hover { color: var(--accent-text); }
 .pl-pick:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
 .pl-pick[aria-pressed='true'] { color: var(--text); font-weight: 600; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+
+/* ── Ячейки таблиц результата: правило словами + аббревиатура приглушённо; пометка второй строкой ── */
+.pl-rule-cell { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-2); row-gap: 2px; }
+.pl-rule-cell--stack { flex-direction: column; align-items: flex-start; }

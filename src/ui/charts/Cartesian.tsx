@@ -8,12 +8,12 @@
  * вертикальная отметка), дополнительные строки подсказки (`tipRows`).
  */
 import { useCallback, type ReactNode } from 'react'
-import { ChartFrame, type ChartTable } from './ChartFrame'
-import { Crosshair, Grid, Marker, XAxis, YAxis } from './Axis'
+import { ChartFrame, type ChartTable, type FrameVariant } from './ChartFrame'
+import { Crosshair, Grid, Marker, UNIT_PT, XAxis, YAxis } from './Axis'
 import { ChartTooltip, type TipRow } from './Tooltip'
 import { useHoverIndex, useMeasuredWidth } from './hooks'
 import { colorOf, type LegendItem } from './palette'
-import { areaPath, axisNum, bandPath, extent, labelStep, linePath, segments, yDomain, yTicks, type XY } from './scale'
+import { areaPath, axisNum, bandPath, extent, labelStep, linePath, segments, wrapLabel, yDomain, yTicks, type XY } from './scale'
 import { DASH } from '../../explain/format'
 
 /** Ряд: значения выровнены с `labels` по индексу; NaN — разрыв линии. */
@@ -70,11 +70,17 @@ export interface CartesianProps {
   /** Подписывать на оси X только эти индексы (даты: начало месяца/квартала). */
   tickIndices?: ReadonlyArray<number>
   className?: string
+  /** nested — график внутри плитки/другого графика (без меню «⋯»). */
+  variant?: FrameVariant
 }
 
 const PT = 12
 const PB = 28
 const PR = 14
+/** Ширина символа подписи 11 px (sans) для оценки длины без DOM, px. */
+const LABEL_CHAR_W = 6.4
+/** Высота строки подписей вертикальных отметок, px. */
+const VMARK_ROW = 13
 const MAX_COL = 24
 const GAP = 2
 
@@ -85,9 +91,11 @@ function leftPad(ticks: ReadonlyArray<number>, fmt: (v: number) => string): numb
 
 export function Cartesian({
   kind, labels, series, height = 240, fmtY = axisNum, unit, title, subtitle, badges, actions, ariaLabel,
-  emptyTitle = 'Нет данных', emptyText, loading, endLabels = false, annotations = [], tipRows, compact, xHeader = '', tickIndices, className,
+  emptyTitle = 'Нет данных', emptyText, loading, endLabels = false, annotations = [], tipRows, compact, xHeader = '', tickIndices, className, variant,
 }: CartesianProps & { kind: CartesianKind }) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
+  // Подпись оси Y стоит строкой над верхним делением — плоту нужен отступ сверху.
+  const pt = unit ? UNIT_PT : PT
   const n = labels.length
   const all = series.flatMap((s) => [...s.values, ...(s.band?.lo ?? []), ...(s.band?.hi ?? [])]).filter(Number.isFinite)
   const isEmpty = n === 0 || series.length === 0 || all.length === 0
@@ -96,9 +104,17 @@ export function Cartesian({
   const [lo, hi] = yDomain(lo0, hi0, kind !== 'line')
   const ticks = yTicks(lo, hi, 4)
   const PL = leftPad(ticks, fmtY)
-  const plotW = Math.max(40, width - PL - PR)
-  const plotH = Math.max(40, height - PT - PB)
-  const yAt = (v: number) => PT + (1 - (v - lo) / (hi - lo)) * plotH
+  const fmtOf = (s: Series) => s.fmt ?? fmtY
+  // Подписи значений у конца рядов не вылезают за правый край: место под них резервируется.
+  const showEnd = endLabels && series.length <= 4
+  const endChars = showEnd ? series.reduce((m, s) => {
+    const li = lastFinite(s.values)
+    return li >= 0 ? Math.max(m, fmtOf(s)(s.values[li]).length) : m
+  }, 0) : 0
+  const PRr = showEnd && endChars > 0 ? Math.max(PR, 12 + endChars * LABEL_CHAR_W) : PR
+  const plotW = Math.max(40, width - PL - PRr)
+  const plotH = Math.max(40, height - pt - PB)
+  const yAt = (v: number) => pt + (1 - (v - lo) / (hi - lo)) * plotH
   const band = n > 0 ? plotW / n : plotW
   const xAt = useCallback((i: number) => {
     if (kind === 'column') return PL + (i + 0.5) * band
@@ -107,7 +123,11 @@ export function Cartesian({
   const hoverApi = useHoverIndex(n, xAt)
   const hover = hoverApi.hover
   const yBase = yAt(Math.max(lo, 0))
+  // Подписи оси X — всегда у нижнего края плота; ноль внутри диапазона — отдельная волосяная линия.
+  const yAxis = pt + plotH
+  const crossesZero = lo < 0 && hi > 0
   const step = labelStep(labels, kind === 'column' ? plotW - band : plotW)
+  const vmarks = placeVmarkLabels(annotations.filter((a) => a.kind === 'line' && a.index >= 0 && a.index < n), xAt, PL, width - PRr)
 
   const legend: LegendItem[] = series.flatMap((s, i) => {
     const color = colorOf(i, s.color)
@@ -115,7 +135,6 @@ export function Cartesian({
     if (s.band) items.push({ key: `${s.key}-band`, label: s.band.label ?? `${s.name} · интервал`, color, shape: 'band' })
     return items
   })
-  const fmtOf = (s: Series) => s.fmt ?? fmtY
   const table: ChartTable = {
     columns: [xHeader, ...series.map((s) => s.name)],
     rows: labels.map((l, i) => [l, ...series.map((s) => (Number.isFinite(s.values[i]) ? fmtOf(s)(s.values[i]) : DASH))]),
@@ -129,7 +148,7 @@ export function Cartesian({
   return (
     <ChartFrame title={title} subtitle={subtitle} badges={badges} actions={actions} legend={legend} ariaLabel={label}
       table={isEmpty ? null : table} loading={loading} empty={isEmpty ? emptyTitle : undefined} emptyText={emptyText} className={className} compact={compact}
-      skeletonHeight={height}>
+      skeletonHeight={height} variant={variant}>
       <div
         ref={ref}
         className="ch-plot"
@@ -140,9 +159,10 @@ export function Cartesian({
         onBlur={hoverApi.onBlur}
       >
         <svg className="ch-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-          <Grid ticks={ticks} yAt={yAt} x0={PL} x1={width - PR} />
-          <YAxis ticks={ticks} yAt={yAt} x={PL - 8} fmt={fmtY} unit={unit} top={PT} />
-          <XAxis labels={labels} xAt={xAt} y={yBase} step={step} x0={PL} x1={width - PR} tickIndices={tickIndices} />
+          <Grid ticks={ticks} yAt={yAt} x0={PL} x1={width - PRr} />
+          <YAxis ticks={ticks} yAt={yAt} x={PL - 8} fmt={fmtY} unit={unit} top={pt} />
+          <XAxis labels={labels} xAt={xAt} y={yAxis} step={step} x0={PL} x1={width - PRr} tickIndices={tickIndices} />
+          {crossesZero && <line className="ch-baseline ch-zero" x1={PL} x2={width - PRr} y1={yAt(0)} y2={yAt(0)} aria-hidden="true" />}
 
           {series.map((s, si) => {
             const color = colorOf(si, s.color)
@@ -172,7 +192,7 @@ export function Cartesian({
                 {kind === 'area' && segs.map((pts, k) => <path key={k} className="ch-area" fill={color} d={areaPath(pts, yBase)} />)}
                 {segs.map((pts, k) => <path key={k} className={`ch-line${s.dashed ? ' ch-line--dashed' : ''}`} stroke={color} d={linePath(pts)} />)}
                 {lastIdx >= 0 && hover == null && !s.dashed && <Marker x={xAt(lastIdx)} y={yAt(s.values[lastIdx])} color={color} r={3.5} />}
-                {endLabels && lastIdx >= 0 && series.length <= 4 && (
+                {showEnd && lastIdx >= 0 && (
                   <text className="ch-endlabel" x={xAt(lastIdx) + 8} y={yAt(s.values[lastIdx]) + 4}>{fmtOf(s)(s.values[lastIdx])}</text>
                 )}
               </g>
@@ -183,10 +203,11 @@ export function Cartesian({
             if (a.index < 0 || a.index >= n) return null
             const ax = xAt(a.index)
             if (a.kind === 'line') {
+              const v = vmarks.get(a.key)
               return (
                 <g key={a.key} className="ch-vmark">
-                  <line x1={ax} x2={ax} y1={PT} y2={yBase} />
-                  <text x={ax + 6} y={PT + 10} className="ch-vmark__label">{a.label}</text>
+                  <line x1={ax} x2={ax} y1={pt} y2={yAxis} />
+                  {v && <text x={v.x} y={pt + 10 + v.row * VMARK_ROW} textAnchor={v.anchor} className="ch-vmark__label">{v.text}</text>}
                 </g>
               )
             }
@@ -196,22 +217,25 @@ export function Cartesian({
             const ay = yAt(v)
             const right = ax > PL + plotW * 0.66
             const tx = right ? ax - 14 : ax + 14
+            // Подпись не длиннее места до края плота: длинное имя укорачивается (полное — в подсказке и таблице).
+            const room = right ? tx - PL : width - PRr - tx
+            const text = wrapLabel(a.label, Math.max(6, Math.floor(room / LABEL_CHAR_W)), 1)[0] ?? a.label
             return (
               <g key={a.key} className="ch-leader">
                 <Marker x={ax} y={ay} color={colorOf(series.indexOf(s), s.color)} r={5} />
                 <line x1={ax + (right ? -7 : 7)} y1={ay} x2={tx - (right ? -3 : 3)} y2={ay} />
-                <text x={tx} y={ay + 4} textAnchor={right ? 'end' : 'start'} className="ch-endlabel">{a.label}</text>
+                <text x={tx} y={ay + 4} textAnchor={right ? 'end' : 'start'} className="ch-endlabel">{text !== a.label && <title>{a.label}</title>}{text}</text>
               </g>
             )
           })}
 
           {hover != null && (
             <g>
-              {kind !== 'column' && <Crosshair x={xAt(hover)} y0={PT} y1={PT + plotH} />}
+              {kind !== 'column' && <Crosshair x={xAt(hover)} y0={pt} y1={pt + plotH} />}
               {kind !== 'column' && series.map((s, si) => Number.isFinite(s.values[hover]) && (
                 <Marker key={s.key} x={xAt(hover)} y={yAt(s.values[hover])} color={colorOf(si, s.color)} />
               ))}
-              <ChartTooltip x={xAt(hover)} y={PT} width={width} height={plotH} title={labels[hover]}
+              <ChartTooltip x={xAt(hover)} y={pt} width={width} height={plotH} title={labels[hover]}
                 rows={[
                   ...series.map((s, si) => ({
                     key: s.key, label: s.name, color: colorOf(si, s.color),
@@ -225,6 +249,31 @@ export function Cartesian({
       </div>
     </ChartFrame>
   )
+}
+
+interface VmarkLabel { x: number; anchor: 'start' | 'end'; row: number; text: string }
+
+/**
+ * Подписи вертикальных отметок: справа от линии, у правого края — слева; наезжающие уходят строкой
+ * ниже (до 3 строк), длинные укорачиваются по месту — ни одна не вылезает за плот и не ложится на другую.
+ */
+export function placeVmarkLabels(marks: ReadonlyArray<Annotation>, xAt: (i: number) => number, x0: number, x1: number): Map<string, VmarkLabel> {
+  const out = new Map<string, VmarkLabel>()
+  const rows: Array<Array<[number, number]>> = [[], [], []]
+  const sorted = [...marks].sort((a, b) => xAt(a.index) - xAt(b.index))
+  for (const m of sorted) {
+    const ax = xAt(m.index)
+    const maxChars = Math.max(6, Math.floor((x1 - x0) / LABEL_CHAR_W))
+    const text = m.label.length > maxChars ? (wrapLabel(m.label, maxChars, 1)[0] ?? m.label) : m.label
+    const w = text.length * LABEL_CHAR_W
+    const toRight = ax + 6 + w <= x1
+    const span: [number, number] = toRight ? [ax + 6, ax + 6 + w] : [Math.max(x0, ax - 6 - w), ax - 6]
+    const row = rows.findIndex((r) => r.every(([a, b]) => span[1] + 6 < a || span[0] > b + 6))
+    const at = row < 0 ? rows.length - 1 : row
+    rows[at] = [...rows[at], span]
+    out.set(m.key, { x: toRight ? ax + 6 : Math.max(x0 + w, ax - 6), anchor: toRight ? 'start' : 'end', row: at, text })
+  }
+  return out
 }
 
 function lastFinite(values: ReadonlyArray<number>): number {

@@ -11,7 +11,7 @@ import { useEscapeLayer } from '../../../shell/overlays'
 import { useLeaveGuard } from '../../../shell/useLeaveGuard'
 import { Icon } from '../../../shell/icons'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog'
-import { EmptyState, ErrorBanner, PillTabs } from '../../../ui/kit'
+import { EmptyState, ErrorBanner, Segmented } from '../../../ui/kit'
 import type { GraphCanvasHandle } from '../../../ui/graph-canvas'
 import type { Routing } from '../../../lib/api'
 import { isDefaultRouting } from '../registries'
@@ -27,8 +27,9 @@ import './routing.css'
 
 type Tab = 'route' | 'table'
 
+/** Два вида одних и тех же операций — режим (Segmented), не разделы. */
 const TABS = [{ id: 'route' as const, label: 'Маршрут' }, { id: 'table' as const, label: 'Таблица' }]
-const MODES = [{ id: 'io' as const, label: 'Входы/выходы' }, { id: 'wc' as const, label: 'Оборудование' }, { id: 'time' as const, label: 'Время' }]
+const MODES = [{ id: 'wc' as const, label: 'Оборудование' }, { id: 'io' as const, label: 'Входы и выходы' }, { id: 'time' as const, label: 'Время' }]
 
 export function RoutingScreen({ id }: { id: string }) {
   const doc = useRoutingDoc(id)
@@ -112,9 +113,12 @@ export function RoutingScreen({ id }: { id: string }) {
       </header>
 
       <div className="rt-tools">
-        <PillTabs tabs={TABS} value={tab} onChange={(v) => setHashParams({ view: v === 'table' ? 'table' : null })} ariaLabel="Представление маршрута" idBase="rt" />
+        <Segmented size="md" options={TABS} value={tab} onChange={(v) => setHashParams({ view: v === 'table' ? 'table' : null })} label="Представление маршрута" />
         {tab === 'route' && (
-          <PillTabs tabs={MODES} value={mode} onChange={(v) => setHashParams({ mode: v === 'wc' ? null : v })} ariaLabel="Что показывать на узлах" />
+          <span className="rt-tools__group">
+            <span id="rt-mode-cap" className="rt-tools__cap">На узлах:</span>
+            <Segmented size="sm" options={MODES} value={mode} onChange={(v) => setHashParams({ mode: v === 'wc' ? null : v })} label="Что показывать на узлах" labelledBy="rt-mode-cap" />
+          </span>
         )}
         <span className="rt-tools__spacer" />
         {tab === 'route' && (
@@ -130,7 +134,7 @@ export function RoutingScreen({ id }: { id: string }) {
           <RoutingCanvas ref={canvasRef} ops={sorted} selectedId={state.selectedId} mode={mode} fitToken={fitToken} knownWc={knownWc}
             bottleneck={bottleneck} onSelect={select} />
         ) : (
-          <div id="rt-panel-table" role="tabpanel" aria-labelledby="rt-tab-table" className="rt-tablepanel">
+          <div className="rt-tablepanel">
             <RoutingTable ops={sorted} selectedId={state.selectedId} knownWc={knownWc} bottleneck={bottleneck} onSelect={select} />
           </div>
         )}

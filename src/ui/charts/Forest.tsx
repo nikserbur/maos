@@ -76,7 +76,7 @@ export function Forest({
   const x = (v: number) => PAD + ((Math.min(hi, Math.max(lo, v)) - lo) / span) * Math.max(10, trackW - PAD * 2)
   const hasShare = rows.some((r) => r.share !== undefined)
   const table: ChartTable = {
-    columns: ['Вариант', `Δ${baseLabel ? ` ${baseLabel}` : ''}`, 'ДИ от', 'ДИ до', ...(hasShare ? ['Доля побед'] : []), 'Вывод'],
+    columns: ['Вариант', `Разница${baseLabel ? ` ${baseLabel}` : ' с базой'}`, 'Диапазон от', 'Диапазон до', ...(hasShare ? ['Доля побед'] : []), 'Вывод'],
     rows: rows.map((r) => [r.label, fin(r.delta, fmt), fin(r.lo, fmt), fin(r.hi, fmt), ...(hasShare ? [r.share === undefined ? DASH : fmtShare(r.share)] : []), VERDICT[forestVerdict(r, better)].word]),
   }
   const label = ariaLabel ?? `Сравнение с базой${baseLabel ? ` ${baseLabel}` : ''}: ${rows.length} вариантов`
@@ -89,12 +89,13 @@ export function Forest({
           <span />
           <div ref={ref} className="ch-forest__track">
             <svg className="ch-svg" width={trackW} height={ROW_H} viewBox={`0 0 ${trackW} ${ROW_H}`}>
-              <text className="ch-forest__axislabel" x={x(0)} y={ROW_H - 6} textAnchor="middle">{zeroLabel}</text>
-              {threshold && <text className="ch-forest__axislabel" x={x(threshold.value)} y={ROW_H - 6} textAnchor="middle">{threshold.label}</text>}
+              {axisLabels(x, trackW, zeroLabel, threshold).map((l) => (
+                <text key={l.key} className="ch-forest__axislabel" x={l.x} y={ROW_H - 6 - l.row * 12} textAnchor={l.anchor}>{l.text}</text>
+              ))}
             </svg>
           </div>
-          <span className="ch-forest__h num">Δ</span>
-          {hasShare && <span className="ch-forest__h num">побед</span>}
+          <span className="ch-forest__h num">Разница</span>
+          {hasShare && <span className="ch-forest__h num">Побед</span>}
         </div>
         {rows.map((r) => {
           const v = forestVerdict(r, better)
@@ -119,6 +120,36 @@ export function Forest({
       </div>
     </ChartFrame>
   )
+}
+
+/** Ширина символа подписи 11 px (sans), px — для оценки длины подписи без DOM. */
+const LABEL_CHAR_W = 6.2
+
+interface AxisLabel { key: string; x: number; anchor: 'start' | 'middle' | 'end'; text: string; row: number }
+
+/**
+ * Подписи нулевой линии и порога: целиком внутри дорожки (у краёв — прижаты), при наезде порог
+ * уходит на строку выше — подпись никогда не обрезается рамкой SVG.
+ */
+export function axisLabels(x: (v: number) => number, trackW: number, zeroLabel: string, threshold?: { value: number; label: string }): AxisLabel[] {
+  const place = (key: string, v: number, text: string): AxisLabel => {
+    const half = (text.length * LABEL_CHAR_W) / 2
+    const cx = x(v)
+    if (cx - half < 0) return { key, x: 0, anchor: 'start', text, row: 0 }
+    if (cx + half > trackW) return { key, x: trackW, anchor: 'end', text, row: 0 }
+    return { key, x: cx, anchor: 'middle', text, row: 0 }
+  }
+  const span = (l: AxisLabel): [number, number] => {
+    const w = l.text.length * LABEL_CHAR_W
+    return l.anchor === 'start' ? [l.x, l.x + w] : l.anchor === 'end' ? [l.x - w, l.x] : [l.x - w / 2, l.x + w / 2]
+  }
+  const zero = place('zero', 0, zeroLabel)
+  if (!threshold) return [zero]
+  const thr = place('thr', threshold.value, threshold.label)
+  const [a0, a1] = span(zero)
+  const [b0, b1] = span(thr)
+  const overlap = a0 < b1 + 8 && b0 < a1 + 8
+  return [zero, { ...thr, row: overlap ? 1 : 0 }]
 }
 
 function fin(v: number, fmt: (v: number) => string): string {

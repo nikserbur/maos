@@ -1,52 +1,49 @@
 /**
- * «Мониторинг» (X2 «ответ сначала», конвейер Сценарий → Портфель → План → Мониторинг): вердикт одной
- * строкой; ≤ 5 показателей (заказы в срок, узкое место, кассовый разрыв частотой, ставка через N мес,
- * ряды хуже «как вчера»); исключения по важности (каждое ведёт в веер или «План»); веер ставки и
- * инфляция; топ-10 рядов по |Δ медианы| таблицей и ссылка «Все ряды → Сценарии › Прогноз».
- * Сценарий по умолчанию — сценарий последнего плана, иначе рабочий; в адресе `?sc=<id>&mode=manual`.
- * Ручные параметры «что если» — за раскрытием; открыв их, источник переключается на «ручные».
+ * «Мониторинг» (владелец: «невзрачно»; X2 «сначала ответ», «честные состояния», конвейер Сценарий →
+ * Портфель → План → Мониторинг). Сверху вниз:
+ *  шапка (источник · план; «Что если…» и «Обновить прогноз») → деловой статус словами и полнота данных
+ *  отдельно, одна фраза ответа (сбыт, сырьё, вывод для маржи, ставка), надёжность, основа расчёта →
+ *  четыре плитки (цены сбыта, закупочные цены, заказы в срок, касса) → «Сигналы» карточками и строка
+ *  «не рассчитано» → «Внешние условия» (ставка, инфляция, курс — веера генератора; «не прогноз» — один
+ *  раз в мета-строке) → «Цены» (топ-10 по изменению медианы, «Все 76 рядов цен →»).
+ * Источник — сценарий с пресетом «Базовый» (обученный генератор), а не «рабочий» (useMonitorSource);
+ * «что если» — только из панели «Что если…» (`?mode=manual&wp=…`), пересчёт — по кнопке.
+ * Сбой прогноза не прячет план и кассу.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ForecastProduct } from '../../lib/api'
-import { countText, dateTimeShort, num, pct, signed } from '../../explain/format'
+import { countText, num } from '../../explain/format'
 import { useDecisionContext } from '../../shell/context'
 import { useHashParams } from '../../shell/router'
-import { Sparkline } from '../../ui/charts'
-import { InfoTip } from '../../ui/InfoTip'
 import { RunProgress } from '../../ui/RunProgress'
-import { Chip, ErrorBanner, ScreenHeader, Skeleton } from '../../ui/kit'
-import { useCashStore } from '../finance/cashStore'
+import { Chip, ErrorBanner, ScreenHeader, Section, SkeletonRows, Skeleton, errorDetail } from '../../ui/kit'
 import { ensureRefs, useRefs } from '../method-map/useMethodMapState'
 import { useOptStore } from '../optimization/optStore'
 import { usePlanStore } from '../plan/planStore'
-import { fromMacroMode, toMacroMode } from '../scenarios/regimeMenu'
-import { effectiveScenario } from '../scenarios/scenarioDefaults'
-import { ForecastFan, ForecastTable } from './ForecastGrid'
+import { FORECAST_TAB_TITLE } from '../scenarios/scenarioPresets'
+import { ForecastTable } from './ForecastGrid'
 import { ForecastZoom } from './ForecastZoom'
-import { FORECAST_BACKTEST, FORECAST_ETA_S, FORECAST_PHASES, FORECAST_RUNS, forecastDelta, verdictText } from './forecastModel'
-import { forecastKey, publishForecast, useCachedForecast } from './forecastStore'
-import { Exceptions, KpiStrip, ManualPanel, buildExceptions, conditionsText, manualFrom, type ManualParams, type PlanFacts } from './MonitorParts'
+import { MacroFans } from './MacroFans'
+import { AlertList, MissingChip } from './MonitorAlerts'
+import { HeadlineBasis, HeadlineChips } from './MonitorBasis'
+import { KpiRow, StatusHeadline } from './MonitorHeadline'
+import { FORECAST_ETA_S, FORECAST_PHASES, FORECAST_RUNS, forecastDelta } from './forecastModel'
+import { publishForecast, useCachedForecast } from './forecastStore'
+import { narrowBand } from './macroModel'
+import { PRICE_SERIES, forecastPhase, headlineText, horizonBy, monitorStatus, normalizeForecast, priceMove, trustText } from './monitorModel'
+import { buildSignals, planLabel, severityMeta, type SignalAction } from './monitorSignals'
+import { useMonitorSource } from './useMonitorSource'
+import { usePlanFacts } from './usePlanFacts'
+import { WhatIfPanel } from './WhatIfPanel'
+import { WHAT_IF_CLEAR, whatIfLabel, whatIfToParams, type WhatIf } from './whatIfModel'
 import './forecast.css'
+import './monitor.css'
 
 const TOP_N = 10
-const MANUAL_FIELDS = 6
-const SERIES = ['ряд', 'ряда', 'рядов'] as const
 
-/** Факты последнего плана и кассы для полосы показателей и исключений. */
-function usePlanFacts(): PlanFacts {
-  const plan = usePlanStore()
-  const cash = useCashStore()
-  const refs = useRefs()
-  const kpi = plan.result?.kpi
-  const bn = plan.result?.bottleneck ?? refs.kpi?.bottleneck
-  const planId = plan.result?.plan_id ?? refs.kpi?.plan_id ?? null
-  const w = cash.result?.waterfall?.lp_recourse
-  return {
-    planNo: planId && /^\d+$/.test(planId) ? planId : null,
-    otd: typeof kpi?.otd === 'number' ? kpi.otd : typeof refs.kpi?.kpi.otd === 'number' ? refs.kpi.kpi.otd : null,
-    bottleneck: bn && typeof bn.utilization === 'number' ? { name: bn.wc_name || 'рабочий центр', load: bn.utilization } : null,
-    cashGap: w ? { p: w.p_breach, ci: w.p_breach_ci ?? null } : null,
-  }
+const thisMonth = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 export function ForecastScreen() {
@@ -58,107 +55,122 @@ export function ForecastScreen() {
   const [hp, setHp] = useHashParams()
   useEffect(() => { void ensureRefs() }, [])
 
-  // Сценарий: адрес → сценарий последнего плана (через его портфель) → рабочий → первый.
-  const ids = refs.scenarios.map((s) => s.id)
-  const known = (id?: string | null) => (id && ids.includes(id) ? id : undefined)
   const planSc = plan.result && plan.params.runId && opt.result?.run_id === plan.params.runId ? opt.result.scenario_id : undefined
-  const scId = known(hp.sc) ?? known(planSc) ?? known(ctx.scenarioId) ?? ids[0] ?? ''
-  const sc = refs.full[scId] ?? refs.scenarios.find((s) => s.id === scId) ?? null
-  const manual = hp.mode === 'manual' || (refs.status === 'ready' && !scId)
+  const src = useMonitorSource(refs, hp, { context: ctx.scenarioId, plan: planSc })
+  const { scId, sc, manual, whatIf, stressName, anchor } = src
+  const overrides = src.whatIfOn && (whatIf.inflation !== null || whatIf.usd !== null || whatIf.demand !== null)
+  /** Имя «что если» для чипа и фразы: пресет («Как 2022») или свои поправки панели. */
+  const whatIfName = stressName ?? (overrides ? 'Что если' : null)
 
-  const [draft, setDraft] = useState<ManualParams>(() => manualFrom(sc))
-  const [committed, setCommitted] = useState<ManualParams | null>(null)
-  useEffect(() => { if (!manual) setDraft(manualFrom(sc)) }, [sc, manual])
-  // Ручной режим из адреса (F5): считаем по текущим полям один раз, дальше — только по «Пересчитать».
-  useEffect(() => { if (manual && committed === null) setCommitted(draft) }, [manual]) // eslint-disable-line react-hooks/exhaustive-deps
-  const run = committed ?? draft
-
-  const months = effectiveScenario(sc ?? {}).months
-  const key = manual ? `manual|${JSON.stringify(run)}` : forecastKey(scId, sc?.macro_mode, months)
-  const params = useMemo(() => {
-    if (manual) return { months: run.months, inflation: run.inflation, fx: run.fx, demand: run.demand, volatility: run.volatility, corr: run.corr, runs: FORECAST_RUNS, backtest: FORECAST_BACKTEST }
-    const mode = toMacroMode(fromMacroMode(sc?.macro_mode), months)
-    const m = typeof mode === 'string' ? null : mode
-    return { scenario_id: scId, runs: FORECAST_RUNS, backtest: FORECAST_BACKTEST, macro_stress: m?.stress ?? null, macro_ref: m?.ref }
-  }, [manual, run, scId, sc?.macro_mode, months])
-  const { result, at, loading, error, refresh } = useCachedForecast(key, params, manual || Boolean(scId))
+  const { result: raw, at, loading, error, refresh } = useCachedForecast(src.key, src.params, manual ? !src.waitGen : Boolean(scId))
+  const { res: result, rateError } = useMemo(() => normalizeForecast(raw), [raw])
   const [zoom, setZoom] = useState<ForecastProduct | null>(null)
+  const [panel, setPanel] = useState(false)
+  const [filter, setFilter] = useState<{ ids: readonly string[]; title: string } | null>(null)
   const onOpen = useCallback((p: ForecastProduct) => setZoom(p), [])
 
   useEffect(() => {
-    if (result && at) publishForecast(result, { scenarioId: manual ? null : scId, scenarioName: manual ? null : sc?.name ?? null, source: manual ? 'manual' : 'scenario', runs: FORECAST_RUNS, at })
-  }, [result, at]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (raw && at) publishForecast(raw, { scenarioId: manual ? null : scId, scenarioName: manual ? null : sc?.name ?? null, source: manual ? 'manual' : 'scenario', runs: FORECAST_RUNS, at })
+  }, [raw, at]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setFilter(null) }, [src.key])
 
-  const setManual = (on: boolean) => {
-    if (on) setCommitted(draft)
-    setHp({ mode: on ? 'manual' : null })
+  const phase = forecastPhase({ hasResult: Boolean(result), loading, error, waiting: src.waitGen, refsReady: refs.status === 'ready' || refs.status === 'error' })
+  const pending = phase === 'pending'
+  const failed = phase === 'failed'
+  const by = horizonBy(anchor, result?.months ?? src.months)
+  /** Вкладка сценария; без сценария — список «Сценариев». */
+  const tabHref = (tab: 'forecast' | 'conditions') => (sc ? `#/scenarios/${encodeURIComponent(sc.id)}/${tab}` : '#/scenarios')
+  const rateHoldout = refs.macro?.holdout?.variables.key_pp ?? null
+  const signals = useMemo(() => buildSignals({
+    res: result, forecastFailed: failed, rateFailed: Boolean(result) && !result?.rate, plan: facts,
+    scenario: { id: manual ? null : scId || null, name: manual ? null : sc?.name ?? null },
+    hrefs: { forecast: tabHref('forecast'), conditions: tabHref('conditions') },
+    by, generatorCpi: src.genCpi, forecastAt: at, cbrLast: anchor, today: thisMonth(), rateHoldout, stress: Boolean(stressName),
+  }), [result, failed, facts, manual, scId, sc, by, src.genCpi, at, anchor, rateHoldout, stressName]) // eslint-disable-line react-hooks/exhaustive-deps
+  const status = pending ? null : monitorStatus(signals)
+  const goods = useMemo(() => (result ? priceMove(result.products, 'product') : null), [result])
+  const rawMove = useMemo(() => (result ? priceMove(result.products, 'raw') : null), [result])
+  const total = result?.products.length ?? 0
+  const top = useMemo(() => {
+    const ps = result?.products ?? []
+    const pool = filter ? ps.filter((p) => filter.ids.includes(p.id)) : ps
+    return pool.map((p) => ({ p, d: Math.abs(forecastDelta(p)?.value ?? 0) })).sort((a, b) => b.d - a.d).slice(0, filter ? pool.length : TOP_N).map((x) => x.p)
+  }, [result, filter])
+  const synthetic = Boolean(result?.synthetic)
+  const demo = Boolean(result && (result.synthetic || result.demo))
+
+  const runWhatIf = (w: WhatIf) => { setPanel(false); setHp(whatIfToParams(w)) }
+  const backToScenario = () => { setPanel(false); setHp(WHAT_IF_CLEAR) }
+  /** К прогнозу по обученному генератору: без «что если» и без явного стрессового сценария. */
+  const showForecast = () => { setPanel(false); setHp({ ...WHAT_IF_CLEAR, sc: null }) }
+  const onAction = (a: SignalAction) => {
+    if (a.kind === 'retry') refresh()
+    else if (a.kind === 'whatif') setPanel(true)
+    else if (a.kind === 'open') { const p = [...(result?.rate ? [result.rate] : []), ...(result?.products ?? [])].find((x) => x.id === a.id); if (p) setZoom(p) }
+    else if (a.kind === 'filter') {
+      setFilter({ ids: a.ids, title: a.title })
+      document.getElementById('mon-prices')?.scrollIntoView({ block: 'start' })
+    }
   }
-  const stale = manual && committed !== null && JSON.stringify(committed) !== JSON.stringify(draft)
-  const scenarioHref = sc ? `#/scenarios/${encodeURIComponent(sc.id)}/forecast` : '#/scenarios'
-  const exc = buildExceptions(result, facts, scenarioHref)
-  const top = useMemo(() => (result?.products ?? [])
-    .map((p) => ({ p, d: Math.abs(forecastDelta(p)?.value ?? 0) })).sort((a, b) => b.d - a.d).slice(0, TOP_N).map((x) => x.p), [result])
-  const total = (result?.products.length ?? 0) + (result?.rate ? 1 : 0)
-  const source = manual ? 'Ручные параметры' : sc ? `Сценарий «${sc.name || 'Без названия'}»` : 'Сценарий не выбран'
-  const prov = [source, facts.planNo ? `план №${facts.planNo}` : '', `${num(FORECAST_RUNS, 0)} прогонов`, at ? dateTimeShort(at) : ''].filter(Boolean).join(' · ')
+
+  const source = src.whatIfOn ? `Что если: ${whatIfLabel(whatIf)}`
+    : sc ? `${stressName ? 'Что если' : 'Прогноз'} · сценарий «${sc.name || 'Без названия'}»` : 'Прогноз генератора · без сценария'
+  const hasPlan = Boolean(facts.planKey || facts.otd !== null)
+  const prov = [source, hasPlan ? planLabel(facts) : ''].filter(Boolean).join(' · ')
+  const answer = result
+    ? headlineText({ res: result, by, stress: whatIfName, rateNarrow: !stressName && narrowBand(rateHoldout) !== null })
+    : failed ? 'Прогноз цен не рассчитан: сигналы цен и внешних условий недоступны.' : null
+  const basisLink = src.whatIfOn
+    ? <button type="button" className="pf-link" onClick={backToScenario}>вернуться к прогнозу</button>
+    : <a className="pf-link" href={tabHref('conditions')}>{sc ? 'изменить в Сценариях →' : 'открыть Сценарии →'}</a>
 
   return (
     <div className={`forecast mon${loading && result ? ' is-refetching' : ''}`}>
       <ScreenHeader title="Мониторинг" blocks={['monitoring', 'external']} className="forecast__head"
         subtitle="Внешние условия и цены: что изменилось к плану и насколько надёжен прогноз"
-        provenance={<><Chip size="sm" title="Откуда этот прогноз">{prov}</Chip><InfoTip id="forecast.fan" /></>}
-        actions={<button type="button" className="btn" onClick={refresh} aria-busy={loading || undefined}>{loading ? 'Считаем…' : 'Обновить прогноз'}</button>} />
+        provenance={<Chip size="sm" title="Откуда этот прогноз">{prov}</Chip>}
+        actions={<>
+          <button type="button" className="btn btn--ghost" onClick={() => setPanel(true)} aria-haspopup="dialog">Что если…</button>
+          <button type="button" className="btn" onClick={refresh} aria-busy={loading || undefined} disabled={src.waitGen}>{loading ? 'Считаем…' : 'Обновить прогноз'}</button>
+        </>} />
 
       <RunProgress phases={FORECAST_PHASES} running={loading} etaSeconds={FORECAST_ETA_S} title={result ? 'Пересчитываем прогноз' : 'Считаем прогноз'} />
-      {error !== null && <ErrorBanner title={result ? 'Пересчёт не удался — показан прежний прогноз' : 'Прогноз не рассчитан'} error={error} onRetry={refresh} />}
+      {error !== null && <ErrorBanner title={result ? 'Пересчёт не удался — показан прежний прогноз' : 'Прогноз цен не рассчитан — план и касса ниже показаны'} error={error} onRetry={refresh} />}
 
-      {result ? <p className="mon-verdict">{verdictText(result)}</p> : <Skeleton h={22} w="60%" />}
-      <KpiStrip res={result} plan={facts} />
-      {result ? <Exceptions crit={exc.crit} warn={exc.warn} onOpen={onOpen} /> : <Skeleton h={72} />}
+      <StatusHeadline status={status} answer={answer} trust={result ? trustText(result.products) : null}
+        missing={pending ? null : <MissingChip signals={signals} onAction={onAction} />}
+        chips={<HeadlineChips whatIf={whatIfName} changes={src.changes} conditionsHref={sc && !manual ? tabHref('conditions') : null} demo={demo} synthetic={synthetic} />}
+        action={whatIfName ? <button type="button" className="btn btn--sm" onClick={showForecast}>Показать прогноз (обучено на истории)</button> : null}
+        basis={<HeadlineBasis preset={src.preset} whatIf={whatIfName} changes={src.changes} trained={refs.macro?.data ?? null} at={at} anchor={anchor}
+          noBase={manual && !src.whatIfOn && refs.status === 'ready'} link={basisLink} />} />
+      <KpiRow goods={goods} raw={rawMove} by={by} plan={facts} loading={pending} failed={failed} />
 
-      <section className="mon-src" aria-label="Условия прогноза">
-        {!manual && sc && <p className="mon-src__sum">{conditionsText(manualFrom(sc))} · <a className="pf-link" href={`#/scenarios/${encodeURIComponent(sc.id)}/conditions`}>изменить в Сценариях →</a></p>}
-        <details className="mon-src__manual" open={manual} onToggle={(e) => { const on = (e.currentTarget as HTMLDetailsElement).open; if (on !== manual) setManual(on) }}>
-          <summary>Ручные параметры ({num(MANUAL_FIELDS, 0)}) {manual ? '▾ · источник: ручные' : '▸'}</summary>
-          <ManualPanel value={draft} onChange={setDraft} stale={stale} running={loading} onRun={() => setCommitted(draft)}
-            extra={sc ? <button type="button" className="btn btn--ghost" onClick={() => setManual(false)}>Вернуться к сценарию</button> : undefined} />
-        </details>
-      </section>
+      <Section id="mon-signals" title="Сигналы" meta={pending ? 'считаем…' : severityMeta(signals)}>
+        {pending ? <div className="mon-alerts__skel"><Skeleton h={112} /><Skeleton h={112} /></div> : <AlertList signals={signals} onAction={onAction} />}
+      </Section>
 
-      <div className="mon-row">
-        <div className="mon-rate">
-          {result?.rate ? <ForecastFan p={result.rate} height={220} showLegend onOpen={onOpen} /> : result ? <p className="fc-muted">Веер ставки недоступен: генератор не ответил.</p> : <Skeleton h={300} />}
-        </div>
-        <InflationTile index={result?.inflation_index ?? null} months={result?.months ?? months} />
-      </div>
+      <Section id="mon-macro" title="Внешние условия"
+        meta={stressName
+          ? <span className="mon-stressnote"><span className="glyph-info" aria-hidden="true" /> не прогноз: так могло бы пойти в условиях «{stressName}»</span>
+          : 'ставка, инфляция и курс — прогноз обученного генератора по рядам Банка России'}>
+        <MacroFans rate={result?.rate ?? null} rateError={result ? rateError : failed ? errorDetail(error) || 'прогноз не рассчитан' : null}
+          ratePending={!result && !failed} refetching={loading && Boolean(result)} sample={src.macro} summary={refs.macro} history={src.regimes?.history} anchor={anchor}
+          stress={stressName} onRetry={refresh} onOpenRate={onOpen} />
+      </Section>
 
-      <section className="mon-top" aria-labelledby="mon-top-t">
-        <div className="mon-top__head">
-          <h2 className="mon-h text-caps" id="mon-top-t">Сильнее всего меняются · {countText(top.length, SERIES)}</h2>
-          <a className="pf-link" href={scenarioHref}>Все {countText(total, SERIES)} → Сценарии › Прогноз</a>
-        </div>
-        {result ? <ForecastTable products={top} onOpen={onOpen} withQuality={false} sortBy="delta" caption="Ряды с наибольшим изменением медианы" loading={loading} />
-          : <Skeleton h={360} />}
-      </section>
+      <Section id="mon-prices" title="Цены: сильнее всего меняются"
+        meta={filter ? `${filter.title}: ${countText(top.length, ['позиция', 'позиции', 'позиций'])}` : result ? `топ-${num(top.length, 0)} из ${num(total, 0)} по изменению медианы` : undefined}
+        tools={<>
+          {filter && <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFilter(null)}>Показать топ-{num(TOP_N, 0)}</button>}
+          {total > 0 && <a className="pf-link" href={tabHref('forecast')} title={`Сценарии › ${FORECAST_TAB_TITLE}`}>Все {countText(total, PRICE_SERIES)} →</a>}
+        </>}>
+        {result ? <ForecastTable products={top} onOpen={onOpen} withQuality={false} sortBy="delta" caption="Ряды цен с наибольшим изменением медианы" loading={loading} empty="Рядов цен в прогнозе нет" />
+          : pending ? <SkeletonRows rows={6} cols={6} rowH={32} label="Считаем прогноз цен…" />
+            : <p className="mon-muted">Таблица появится после расчёта прогноза — «Повторить» в баннере выше.</p>}
+      </Section>
 
       {zoom && <ForecastZoom p={zoom} scenarioId={manual ? null : scId} synthetic={result?.synthetic} onClose={() => setZoom(null)} />}
-    </div>
-  )
-}
-
-/** Инфляция: спарклайн индекса и накопленный рост за горизонт. */
-function InflationTile({ index, months }: { index: readonly number[] | null; months: number }) {
-  const cum = index && index.length ? index[index.length - 1] / 100 - 1 : null
-  return (
-    <div className="mon-infl" role="group" aria-label="Инфляция">
-      <span className="text-caps mon-infl__k">Инфляция цен <InfoTip id="forecast.inflation" values={{ cum, months }} /></span>
-      {index ? (
-        <>
-          <b className="mon-infl__v num">{cum === null ? '—' : signed(cum, '%')}</b>
-          <span className="fc-muted">накопленная за {num(months, 0)} мес · в среднем {pct(Math.pow(1 + (cum ?? 0), 1 / Math.max(1, months)) - 1, 1)} в месяц</span>
-          <Sparkline points={index} width={240} height={48} />
-        </>
-      ) : <Skeleton h={120} />}
+      {panel && <WhatIfPanel initial={whatIf} active={src.whatIfOn} lastObs={src.lastObs} onRun={runWhatIf} onReset={backToScenario} onClose={() => setPanel(false)} />}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PriceScenario } from '../../lib/api'
-import { MINUS } from '../../explain/format'
+import { MINUS, NBSP } from '../../explain/format'
 import { buildLines, conditionRows, visibleLines } from './compareModel'
 
 const sc = (id: string, over: Partial<PriceScenario> = {}): PriceScenario => ({ id, name: id, description: '', horizon_hours: '720', created_at: '', ...over })
@@ -29,5 +29,18 @@ describe('сравнение сценариев', () => {
   it('режим генератора показывается всегда', () => {
     const lines = visibleLines(buildLines(conditionRows(), [sc('a'), sc('b')]), true)
     expect(lines.map((l) => l.key)).toEqual(['mode'])
+  })
+})
+
+describe('подписи сравнения без сокращений', () => {
+  it('нет «α», «Макс.», «HHI», «мес», «п. п.»; разница долей — словом «пункта»', () => {
+    const rows = conditionRows()
+    const labels = rows.map((r) => r.label).join(' ')
+    expect(labels).not.toMatch(/α|Макс\.|HHI/)
+    const months = rows.find((r) => r.key === 'months')!
+    expect(months.fmt?.(12)).toBe(`12${NBSP}месяцев`)
+    expect(months.deltaFmt?.(-3)).toBe(`${MINUS}3${NBSP}месяца`)
+    const alpha = rows.find((r) => r.key === 'alpha')!
+    expect(alpha.deltaFmt?.(0.05)).toBe(`+5${NBSP}пунктов`)
   })
 })

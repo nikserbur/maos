@@ -10,11 +10,13 @@ export type Connection = 'checking' | 'online' | 'offline'
 export interface Health {
   connection: Connection
   project: string | null
+  /** Версия сервера из /api/health — сверяется с версией интерфейса (устаревший сервер разработки). */
+  serverVersion: string | null
 }
 
 const HEALTH_POLL_MS = 30_000
 
-let health: Health = { connection: 'checking', project: null }
+let health: Health = { connection: 'checking', project: null, serverVersion: null }
 const listeners = new Set<() => void>()
 let timer: number | null = null
 
@@ -26,7 +28,7 @@ export function projectName(path: unknown): string | null {
 }
 
 function emit(next: Health): void {
-  if (next.connection === health.connection && next.project === health.project) return
+  if (next.connection === health.connection && next.project === health.project && next.serverVersion === health.serverVersion) return
   health = next
   listeners.forEach((l) => l())
 }
@@ -34,7 +36,11 @@ function emit(next: Health): void {
 /** Проверить связь сейчас (кнопка «Повторить» статус-бара). */
 export function checkHealth(): void {
   api.health()
-    .then((res) => emit({ connection: 'online', project: projectName(res.project) ?? health.project }))
+    .then((res) => emit({
+      connection: 'online',
+      project: projectName(res.project) ?? health.project,
+      serverVersion: typeof res.version === 'string' && res.version.trim() ? res.version.trim() : null,
+    }))
     .catch(() => emit({ ...health, connection: 'offline' }))
 }
 

@@ -31,14 +31,25 @@ export function deltaTone(value: number, better?: DeltaBetter): DeltaTone {
 }
 
 const WORD: Record<DeltaTone, string> = { good: 'лучше', bad: 'хуже', neutral: '' }
+const ZERO_EPS = 1e-9
+
+/** Разница — ноль: по значению или после округления форматтером (в подписи нет ни одной значащей цифры). */
+export function isZeroDelta(value: number, text: string): boolean {
+  return Math.abs(value) < ZERO_EPS || !/[1-9]/.test(text)
+}
 
 export function DeltaChip({ value, unit = '—', fmt, better, base, size = 'sm', title }: DeltaChipProps) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return <span className={`dk-delta dk-delta--${size} dk-delta--neutral`}>{DASH}</span>
   }
-  const tone = deltaTone(value, better)
-  const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '='
   const text = fmt ? fmt(value) : signed(value, unit)
+  // Нулевая разница (в т. ч. округлённая до нуля: «+0,0 ч») — словами, без стрелки и знака:
+  // «= 0 ч» читалось как «−0».
+  if (isZeroDelta(value, text)) {
+    return <span className={`dk-delta dk-delta--${size} dk-delta--neutral dk-delta--zero`} title={title}>без изменений</span>
+  }
+  const tone = deltaTone(value, better)
+  const arrow = value > 0 ? '▲' : '▼'
   return (
     <span className={`dk-delta dk-delta--${size} dk-delta--${tone}`} title={title}>
       <span className="dk-delta__arrow" aria-hidden="true">{arrow}</span>

@@ -2003,6 +2003,107 @@ static void migrate_v21(Database& db) {
   std::cout << "Migration v21 done.\n";
 }
 
+/* ── X2: «Базовый» = обученный генератор (владелец: «базовый — обучиться на истории и использовать
+ * как сценарий»). Идемпотентно, без номера user_version (номера миграций ведёт другая ветка работ):
+ *  1) рабочий «Базовый» (scen-base) с прежним эпизодом и ручными условиями копируется в «Базовый —
+ *     прежние правки» (scen-base-legacy, с распределениями и оверрайдами) и переводится на пресет
+ *     «Базовый»: macro_mode base, горизонт 12 мес, условия — NULL (умолчания движка);
+ *  2) эпизоды без порядка (прежнее «вперемешку», давало отрицательную ставку) → order "replay";
+ *  3) прежний «Ценовой кризис» без режима генератора → пресет «Ценовой кризис»;
+ *  4) инфляция 0 (прежнее умолчание формы, не значение) → NULL; горизонт без значения → 12 мес;
+ *  5) описания с внутренними словами движка (downturn, p_last, P_HMM, квантиль, «ГГГГ-ММ») → словами. */
+constexpr int kDefaultHorizonMonths = 12;   // один горизонт сценария: UI DEFAULT_HORIZON_MONTHS, /api/forecast
+
+static bool has_year_month(const std::string& s) {
+  for (size_t i = 0; i + 7 <= s.size(); ++i) {
+    bool ok = s[i + 4] == '-';
+    for (size_t k : { 0u, 1u, 2u, 3u, 5u, 6u }) ok = ok && std::isdigit((unsigned char)s[i + k]);
+    if (ok) return true;
+  }
+  return false;
+}
+
+static void migrate_learned_base(Database& db) {
+  std::lock_guard<std::recursive_mutex> lk(db.mutex());
+  const std::string baseMode = R"({"mode":"base","preset":"base"})";
+  const std::string crisisLine = "Рынок изделий штормит: цены колеблются вдвое сильнее обычного и ходят вместе, спрос на 15 % ниже. "
+                                 "Ставка, курс и инфляция — как в Базовом.";
+  db.exec("BEGIN");
+  try {
+    // 1) «Базовый» → пресет «Базовый»; прежние правки — в копию.
+    const auto base = db.query_json("SELECT * FROM price_scenarios WHERE id='scen-base'");
+    const bool hasLegacy = !db.query_json("SELECT id FROM price_scenarios WHERE id='scen-base-legacy'").empty();
+    if (!base.empty() && !hasLegacy) {
+      const json& b = base[0];
+      json mm = nullptr;
+      try { if (!jstr(b, "macro_mode").empty()) mm = json::parse(jstr(b, "macro_mode")); } catch (...) {}
+      const bool isBasePreset = mm.is_object() && mm.value("preset", std::string()) == "base";
+      const bool manual = (mm.is_object() && mm.value("mode", std::string("base")) != "base")
+                          || !jstr(b, "inflation").empty() || !jstr(b, "fx").empty()
+                          || !jstr(b, "demand").empty() || !jstr(b, "volatility").empty();
+      if (!isBasePreset) {
+        if (manual) {
+          db.exec("INSERT INTO price_scenarios"
+                  "(id,name,description,horizon_hours,market_corr,objective,alpha,max_share,mode,inflation,fx,demand,volatility,months,"
+                  "plan_id,start_date,end_date,sanctions,tax_change,energy,logistics,key_rate,macro_mode) "
+                  "SELECT 'scen-base-legacy', 'Базовый — прежние правки', ?, horizon_hours, market_corr, objective, alpha, max_share,"
+                  "mode, inflation, fx, demand, volatility, months, plan_id, start_date, end_date,"
+                  "sanctions, tax_change, energy, logistics, key_rate, macro_mode "
+                  "FROM price_scenarios WHERE id='scen-base'",
+                  { "Копия прежнего «Базового» до перевода на обученный генератор: ручные условия сохранены, "
+                    "период истории теперь повторяется по порядку." });
+          db.exec("INSERT INTO price_distributions(id,scenario_id,product_id,dist_type,mean,stddev,min_val,max_val,mode_val,beta) "
+                  "SELECT lower(hex(randomblob(8))), 'scen-base-legacy', product_id, dist_type, mean, stddev, min_val, max_val, mode_val, beta "
+                  "FROM price_distributions WHERE scenario_id='scen-base'");
+          db.exec("INSERT INTO scenario_overrides(id,scenario_id,product_id,base_price,base_cost) "
+                  "SELECT lower(hex(randomblob(8))), 'scen-base-legacy', product_id, base_price, base_cost "
+                  "FROM scenario_overrides WHERE scenario_id='scen-base'");
+        }
+        db.exec("UPDATE price_scenarios SET name=CASE WHEN name='Базовый рынок' THEN 'Базовый' ELSE name END, description=?, "
+                "macro_mode=?, months=?, inflation=NULL, fx=NULL, demand=NULL, volatility=NULL, market_corr=0.5 WHERE id='scen-base'",
+                { "Прогноз: генератор, обученный на истории ЦБ РФ 2013–2026, продолжает сегодняшние значения ставки, "
+                  "инфляции и курса; условия — по данным.", baseMode, std::to_string(kDefaultHorizonMonths) });
+      }
+    }
+    // 2) Эпизоды без порядка → по порядку один раз.
+    for (const auto& row : db.query_json("SELECT id, macro_mode FROM price_scenarios WHERE macro_mode LIKE '%episode%'")) {
+      try {
+        json mm = json::parse(jstr(row, "macro_mode"));
+        if (!mm.is_object() || !mm.contains("stress") || !mm["stress"].is_object()) continue;
+        json& st = mm["stress"];
+        if (!st.contains("episode") || st.contains("order")) continue;
+        st["order"] = "replay";
+        db.exec("UPDATE price_scenarios SET macro_mode=? WHERE id=?", { mm.dump(), jstr(row, "id") });
+      } catch (...) {}
+    }
+    // 3) Прежний «Ценовой кризис» → пресет.
+    db.exec("UPDATE price_scenarios SET volatility=0.12, market_corr=0.75, demand=0.85, months=?, macro_mode=?, description=? "
+            "WHERE id='scen-crisis' AND (macro_mode IS NULL OR macro_mode='')",
+            { std::to_string(kDefaultHorizonMonths), R"({"mode":"base","preset":"price-crisis"})", crisisLine });
+    // 4) Прежние умолчания формы → NULL; горизонт — один.
+    db.exec("UPDATE price_scenarios SET inflation=NULL WHERE inflation=0");
+    db.exec("UPDATE price_scenarios SET months=? WHERE months IS NULL OR months=''", { std::to_string(kDefaultHorizonMonths) });
+    // 5) Описания словами.
+    for (const auto& row : db.query_json("SELECT id, description, macro_mode FROM price_scenarios")) {
+      const std::string d = jstr(row, "description");
+      const bool jargon = d.find("downturn") != std::string::npos || d.find("p_last") != std::string::npos
+                          || d.find("P_HMM") != std::string::npos || d.find("квантильный путь") != std::string::npos || has_year_month(d);
+      if (!jargon) continue;
+      const std::string m = jstr(row, "macro_mode");
+      std::string text = crisisLine;
+      if (m.find("\"regime\"") != std::string::npos)
+        text = "Стресс: на весь горизонт — кризисный режим генератора (ставка, курс и инфляция колеблются сильнее). Проверка, не прогноз.";
+      else if (m.find("quantile_t") != std::string::npos)
+        text = "Стресс: крайний путь генератора — каждый месяц шок одной силы. Проверка, что портфель не держится только на росте цен.";
+      db.exec("UPDATE price_scenarios SET description=? WHERE id=?", { text, jstr(row, "id") });
+    }
+    db.exec("COMMIT");
+  } catch (std::exception& e) {
+    try { db.exec("ROLLBACK"); } catch (...) {}
+    std::cerr << "migrate_learned_base: " << e.what() << " — сценарии не изменены\n";
+  }
+}
+
 /* ── Волна A2: обогащение демо-НСИ для структурных ходов агентов (PLAN-V2 §8 п.4) ──────────
    Идемпотентно (маркер — строка паспорта rl.nsi.applied) и только для демо-завода «насосы»
    (есть fin-0000/fin-0048/semi-000). Номер user_version не занимается: миграции версий ведёт
@@ -2358,6 +2459,14 @@ static void register_scenarios(httplib::Server& svr, Database& db) {
                 jstr(body,"plan_id"), jstr(body,"start_date"), jstr(body,"end_date"),
                 jstr(body,"sanctions"), jstr(body,"tax_change"), jstr(body,"energy"),
                 jstr(body,"logistics"), jstr(body,"key_rate"), jstr(body,"macro_mode"), id });
+      // «Вернуть к умолчанию»: {"reset": ["inflation", …]} пишет NULL — движок снова берёт умолчание
+      // из данных (иначе COALESCE оставлял бы прежнее число навсегда). Только условия из белого списка.
+      if (body.contains("reset") && body["reset"].is_array()) {
+        static const std::set<std::string> kResettable = { "inflation", "fx", "demand", "volatility", "start_date", "end_date" };
+        for (const auto& k : body["reset"])
+          if (k.is_string() && kResettable.count(k.get<std::string>()))
+            db.exec("UPDATE price_scenarios SET " + k.get<std::string>() + "=NULL WHERE id=?", { id });
+      }
       writeDists(id, body);
       writeOverrides(id, body);
       db.exec("COMMIT");
@@ -2493,6 +2602,20 @@ static std::vector<double> emd_trend(const std::vector<double>& y) {
   return residue;
 }
 
+/* Умолчания условий сценария для незаданных полей (один источник с UI src/features/scenarios/
+ * conditionFields.ts): инфляция цен — последнее наблюдение ЦБ РФ из обученного генератора (г/г → в месяц;
+ * без генератора — прежние 1 %/мес); разброс цен 0,06 = ×1 к σ истории (VOL_REF прогноза = 0,06 оптимизатора). */
+constexpr double kScenarioVolNeutral = 0.06;
+static double scenario_inflation_default() {
+  if (g_macro) {
+    try {
+      const double yoy = g_macro->params()["last_obs"]["cpi_yoy_pp"].get<double>();
+      if (std::isfinite(yoy) && yoy > -50.0) return std::pow(1.0 + yoy / 100.0, 1.0 / 12.0) - 1.0;
+    } catch (...) {}
+  }
+  return 0.01;
+}
+
 /* ── Стадия E+: внешние условия и динамика цен по времени ─────────────────────
  * Прогноз цен изделий/сырья: тренд (EMD) + гармоники (SD) + случайный остаток. */
 static void register_forecast(httplib::Server& svr, Database& db) {
@@ -2502,11 +2625,12 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       auto getd = [&](const char* k, double d) {
         return body.contains(k) && !jstr(body, k).empty() ? std::stod(jstr(body, k)) : d;
       };
-      int months   = std::max(1, std::min(36, (int)getd("months", 6)));
-      double infl  = getd("inflation", 0.01);            // в месяц, доля (0.01 = +1%/мес)
+      int months   = std::max(1, std::min(36, (int)getd("months", kDefaultHorizonMonths)));
+      double infl  = getd("inflation", scenario_inflation_default());   // в месяц, доля (0.005 = +0,5 %/мес)
+      bool inflManual = body.contains("inflation") && !jstr(body, "inflation").empty();   // иначе — пути генератора
       double fx    = getd("fx", 1.0);
       double demand = getd("demand", 1.0);
-      double vol   = std::max(0.0, getd("volatility", 0.05));   // мес. волатильность цены
+      double vol   = std::max(0.0, getd("volatility", kScenarioVolNeutral));   // 0,06 = ×1 к σ истории
       double corr  = std::max(0.0, std::min(1.0, getd("corr", 0.5)));
       // Риск-факторы сценария (по умолчанию нейтральны; перекрываются из сценария ниже).
       double sanctions = 0.0, taxChange = 0.0, energy = 1.0, logistics = 1.0, keyRate = 8.0;
@@ -2518,12 +2642,14 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       // Стадия E: сценарий задаёт параметры прогноза и режим (если не заданы в запросе).
       std::string mode = "stochastic";
       const std::string scenarioId = jstr(body, "scenario_id");
+      json scMacro = nullptr;                                   // macro_mode сценария (режим/опора генератора)
       if (!scenarioId.empty()) {
         try {
           auto sc = db.query_one("SELECT * FROM price_scenarios WHERE id=?", { scenarioId });
           auto scd = [&](const char* k, double cur) { std::string s = jstr(sc, k); return s.empty() ? cur : std::stod(s); };
+          try { if (!jstr(sc, "macro_mode").empty()) scMacro = json::parse(jstr(sc, "macro_mode")); } catch (...) {}
           if (!body.contains("months")     && !jstr(sc,"months").empty())      months = std::max(1, std::min(36, (int)scd("months", months)));
-          if (!body.contains("inflation")  && !jstr(sc,"inflation").empty())   infl   = scd("inflation", infl);
+          if (!body.contains("inflation")  && !jstr(sc,"inflation").empty()) { infl = scd("inflation", infl); inflManual = true; }
           if (!body.contains("fx")         && !jstr(sc,"fx").empty())          fx     = scd("fx", fx);
           if (!body.contains("demand")     && !jstr(sc,"demand").empty())      demand = scd("demand", demand);
           if (!body.contains("volatility") && !jstr(sc,"volatility").empty())  vol    = scd("volatility", vol);
@@ -2578,6 +2704,58 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       const double beta = std::sqrt(corr);   // дефолтная загрузка на общий фактор (нет данных)
       const double driftStep = std::log(1.0 + infl) + riskDrift;
 
+      // X2: пути цен — от путей обученного генератора сценария (тот же режим и опора, что у Портфеля):
+      // по прогону r цена × exp(pt_fx·Δln S_r,t + pt_cpi·Π_r,t) (Π — накопленная инфляция, эластичности —
+      // паспорт macro.pt_*). Инфляция сценария, если задана вручную, — опора инфляции генератора; сдвиг
+      // курса — ref.fx. Пресеты «Как 2022» и т. п. так доходят до цен изделий. Без генератора — дрейф ln(1+π).
+      json fcStress = body.contains("macro_stress") ? body["macro_stress"] : json(nullptr);
+      json fcRef = body.contains("macro_ref") && body["macro_ref"].is_object() ? body["macro_ref"] : json::object();
+      if (scMacro.is_object()) {
+        if (!body.contains("macro_stress") && scMacro.contains("stress")) fcStress = scMacro["stress"];
+        if (!body.contains("macro_ref") && scMacro.contains("ref") && scMacro["ref"].is_object()) fcRef = scMacro["ref"];
+      }
+      if (inflManual) fcRef["cpi"] = json::array({ (std::pow(1.0 + infl, 12.0) - 1.0) * 100.0 });
+      if (std::fabs(fx - 1.0) > 1e-9) fcRef["fx"] = fx;
+      std::vector<std::vector<double>> macroLogProd, macroLogRaw;      // [прогон][t], t = 0…months
+      std::vector<double> medLogProd(months + 1, 0.0), medLogRaw(months + 1, 0.0), medCum(months + 1, 0.0),
+                          medFxProd(months + 1, 0.0), medFxRaw(months + 1, 0.0);
+      bool macroPrices = false;
+      double macroInflMonthly = infl;
+      if (g_macro) {
+        try {
+          const auto mr = g_macro->sample(runs, seed, 0, months, 0, maos::macro::Stress::from_json(fcStress),
+                                          maos::macro::Reference::from_json(fcRef));
+          const double s0 = g_macro->params()["last_obs"]["usd_rub"].get<double>();
+          const double ptFxP = maos::passport::number(db, "macro.pt_fx_product", 0.10);
+          const double ptFxR = maos::passport::number(db, "macro.pt_fx_raw", 0.30);
+          const double ptC = maos::passport::number(db, "macro.pt_cpi", 1.0);
+          const int n = (int)mr.monthly.cpi.size();
+          macroLogProd.assign(n, std::vector<double>(months + 1, 0.0)); macroLogRaw = macroLogProd;
+          std::vector<std::vector<double>> cum(months + 1, std::vector<double>(n, 0.0)), dls = cum;
+          double cpiSum = 0;
+          for (int r = 0; r < n; ++r) {
+            double c = 0;
+            for (int t = 1; t <= months; ++t) {
+              c += std::log1p(mr.monthly.cpi[r][t - 1] / 100.0) / 12.0;
+              const double ds = std::log(mr.monthly.fx[r][t - 1] / s0);
+              macroLogProd[r][t] = ptFxP * ds + ptC * c;
+              macroLogRaw[r][t]  = ptFxR * ds + ptC * c;
+              cum[t][r] = c; dls[t][r] = ds;
+              cpiSum += mr.monthly.cpi[r][t - 1];
+            }
+          }
+          auto med = [](std::vector<double> v) { std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end()); return v[v.size() / 2]; };
+          for (int t = 1; t <= months && n > 0; ++t) {
+            medCum[t] = med(cum[t]);
+            const double mds = med(dls[t]);
+            medFxProd[t] = ptFxP * mds; medFxRaw[t] = ptFxR * mds;
+            medLogProd[t] = medFxProd[t] + ptC * medCum[t]; medLogRaw[t] = medFxRaw[t] + ptC * medCum[t];
+          }
+          if (n > 0) macroInflMonthly = std::pow(1.0 + cpiSum / ((double)n * months) / 100.0, 1.0 / 12.0) - 1.0;
+          macroPrices = n == runs;
+        } catch (std::exception&) { macroPrices = false; }
+      }
+
       // Общий рыночный шок по (прогон, месяц) — обеспечивает корреляцию всех цен.
       std::vector<std::vector<double>> M(runs, std::vector<double>(months + 1, 0.0));
       for (int r = 0; r < runs; ++r)
@@ -2601,9 +2779,14 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       //   2) подбираем РАСПРЕДЕЛЕНИЕ к ОСТАТКАМ (не-тренду) по AIC: нормаль/Лаплас/t/α-stable;
       //   3) прогноз = экстраполяция тренда + случайный остаток из подобранного распределения
       //      (Монте-Карло, общий рыночный фактор → корреляция, веер P10/P50/P90).
+      // macroMul (сдвиг курса без генератора) — только на месяцы прогноза, не на историю и «сейчас»;
+      // useMacro — уровень по путям генератора (macroLog*), raw — эластичность сырья.
       auto fanFromHistory = [&](double base, const std::vector<double>& vals,
                                 double extraDrift, double macroMul, double loading,
-                                const std::string& ovrType, double ovrRelSd) -> json {
+                                const std::string& ovrType, double ovrRelSd,
+                                bool useMacro = false, bool raw = false) -> json {
+        const std::vector<std::vector<double>>& mlog = raw ? macroLogRaw : macroLogProd;
+        const std::vector<double>& mmed = raw ? medLogRaw : medLogProd;
         // Загрузка изделия на общий рыночный фактор (data-driven, из PCA-разложения корреляций).
         const double betaP = std::max(-0.999, std::min(0.999, loading));
         const double idioP = std::sqrt(std::max(0.0, 1.0 - betaP * betaP));
@@ -2716,9 +2899,11 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         sg *= volMul; lapB *= volMul; tScale *= volMul; sGamma *= volMul;
 
         // ПЕРЕОПРЕДЕЛЕНИЕ из настройки распределения сценария: тип задаёт ФОРМУ хвостов,
-        // ovrRelSd — относит. разброс. Иначе настройка распределения не влияла на прогноз.
+        // ovrRelSd — относит. разброс цены НА ГОРИЗОНТЕ (так его разыгрывает Портфель — один уровень на
+        // сценарий), поэтому шаг блуждания — ovrRelSd/√H: веер к горизонту шириной как распределение.
+        // Прежде 12 % трактовались как σ за месяц, и веер вырастал до «8 из 10 исходов» шире ±200 %.
         if (!ovrType.empty() && ovrRelSd > 0) {
-          const double s = ovrRelSd * volMul;
+          const double s = ovrRelSd / std::sqrt((double)std::max(1, months)) * volMul;
           if (ovrType == "t")            { dist = "t";      tScale = s; tNu = 5.0; }
           else if (ovrType == "pareto")  { dist = "stable"; sGamma = s; sAlpha = 1.6; }   // тяж. степ. хвост
           else if (ovrType == "lognormal") { dist = "normal"; sg = s; }
@@ -2734,7 +2919,7 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         std::exponential_distribution<double> ed(1.0);
         std::vector<std::vector<double>> px(months + 1, std::vector<double>(runs, 0.0));
         for (int r = 0; r < runs; ++r) {
-          px[0][r] = std::exp(anchor) * macroMul;
+          px[0][r] = std::exp(anchor);
           double cum = 0;   // НАКОПЛЕННЫЕ инновации: лог-цена — случайное блуждание
           for (int t = 1; t <= months; ++t) {
             double innov = 0;
@@ -2752,7 +2937,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
             // Раньше innov рисовался заново без накопления (stationary) — ширина
             // веера не зависела от горизонта, что занижало риск дальних месяцев.
             cum += innov;
-            px[t][r] = std::exp(anchor + slopeFwd * t + (harmAt(Hn - 1 + t) - hNow) + cum) * macroMul;  // тренд + гармоники + Σостатков
+            px[t][r] = std::exp(anchor + slopeFwd * t + (harmAt(Hn - 1 + t) - hNow) + cum
+                                + (useMacro ? mlog[r][t] : 0.0)) * macroMul;  // тренд + гармоники + Σостатков + макро
           }
         }
         json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
@@ -2767,9 +2953,10 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         json history = json::array();
         int hk = std::min((int)vals.size(), 12);
         for (int i = (int)vals.size() - hk; i < (int)vals.size(); ++i)
-          if (i >= 0) history.push_back(vals[i] * macroMul);
+          if (i >= 0) history.push_back(vals[i]);
         json trend = json::array();
-        for (int t = 0; t <= months; ++t) trend.push_back(std::exp(anchor + slopeFwd * t) * macroMul);
+        for (int t = 0; t <= months; ++t)
+          trend.push_back(std::exp(anchor + slopeFwd * t + (useMacro ? mmed[t] : 0.0)) * (t > 0 ? macroMul : 1.0));
 
         // Разложение прогноза median на горизонте: base × Πфакторов. Мультипликативно
         // (в лог-масштабе — слагаемые slopeFwd·t и ln(macroMul)), показываем как %-вклад:
@@ -2778,10 +2965,10 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         auto pctOf = [](double mult) { return mult - 1.0; };
         json contrib = {
           {"hist_trend", pctOf(std::exp(slp * months))},
-          {"inflation",  pctOf(std::exp(std::log(1.0 + infl) * months))},
+          {"inflation",  useMacro ? pctOf(std::exp(medCum[months])) : pctOf(std::exp(std::log(1.0 + infl) * months))},
           {"risk_drift", pctOf(std::exp(riskDrift * months))},
-          {"fx",         pctOf(fx)},
-          {"demand",     pctOf(demand)},
+          {"fx",         useMacro ? pctOf(std::exp(raw ? medFxRaw[months] : medFxProd[months])) : pctOf(macroMul)},
+          {"demand",     0.0},                                   // спрос — потолок продаж в Портфеле, не уровень цен
           {"macro",      pctOf(riskMacro)},
           {"total",      p50.empty() ? 0.0 : (p50.back().get<double>() / std::max(1e-9, base) - 1.0)},
         };
@@ -2866,7 +3053,9 @@ static void register_forecast(httplib::Server& svr, Database& db) {
         const double loading = loadings.count(pid) ? loadings[pid] : beta;
         const std::string ovrT = fcDist.count(pid) ? fcDist[pid].first : "";
         const double ovrSd = fcDist.count(pid) ? fcDist[pid].second : 0.0;
-        json j = fanFromHistory(base, vals, driftStep, fx * demand * riskMacro, loading, ovrT, ovrSd);
+        json j = macroPrices
+          ? fanFromHistory(base, vals, 0.0, riskMacro, loading, ovrT, ovrSd, true, !sellable)
+          : fanFromHistory(base, vals, driftStep, fx * riskMacro, loading, ovrT, ovrSd);
         j["id"] = pid; j["name"] = jstr(p, "name"); j["role"] = sellable ? "product" : "raw";
         j["loading"] = loading;
 
@@ -2914,8 +3103,8 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       if (g_macro) {
         try {
           const int H = std::max(months, 1);
-          maos::macro::Stress st = maos::macro::Stress::from_json(body.value("macro_stress", json(nullptr)));
-          const auto r = g_macro->sample(std::min(runs, 4000), seed, 0, H, 0, st, maos::macro::Reference::from_json(body.value("macro_ref", json(nullptr))));
+          maos::macro::Stress st = maos::macro::Stress::from_json(fcStress);
+          const auto r = g_macro->sample(std::min(runs, 4000), seed, 0, H, 0, st, maos::macro::Reference::from_json(fcRef));
           const int n = (int)r.monthly.key.size();
           json p10 = json::array(), p50 = json::array(), p90 = json::array(), mean = json::array();
           const double k0 = g_macro->params()["last_obs"]["key_pp"].get<double>();
@@ -2952,10 +3141,12 @@ static void register_forecast(httplib::Server& svr, Database& db) {
       try { tsSynthetic = std::stoi(jstr(db.query_one("SELECT COUNT(*) AS n FROM ts_data WHERE synthetic=0"), "n")) == 0; } catch (...) {}
 
       json inflIdx = json::array();
-      for (int t = 0; t <= months; ++t) inflIdx.push_back(std::pow(1.0 + infl, t) * 100.0);
+      for (int t = 0; t <= months; ++t) inflIdx.push_back(macroPrices ? std::exp(medCum[t]) * 100.0 : std::pow(1.0 + infl, t) * 100.0);
 
       ok(res, {
-        {"months", months}, {"inflation_monthly", infl}, {"fx", fx}, {"demand", demand},
+        {"months", months}, {"inflation_monthly", macroPrices && !inflManual ? macroInflMonthly : infl}, {"fx", fx}, {"demand", demand},
+        {"inflation_source", inflManual ? "manual" : (macroPrices ? "generator" : "default")},
+        {"price_paths", macroPrices ? "generator" : "drift"},
         {"volatility", vol}, {"corr", corr}, {"mode", mode}, {"scenario_id", scenarioId},
         {"sanctions", sanctions}, {"tax_change", taxChange}, {"energy", energy},
         {"logistics", logistics}, {"key_rate", keyRate}, {"risk_macro", riskMacro},
@@ -3007,8 +3198,11 @@ static void register_macro(httplib::Server& svr, Database& db) {
       auto geti = [&](const char* k, int d) { return body.contains(k) && body[k].is_number() ? body[k].get<int>() : d; };
       const int n = std::max(1, std::min(20000, geti("n", 1000)));
       const uint64_t seed = (uint64_t)std::max(0, geti("seed", 42));
-      const int weeks = std::max(0, std::min(maos::macro::kMaxWeeks, geti("horizon_weeks", 26)));
       const int months = std::max(0, std::min(120, geti("horizon_months", 0)));
+      // Недельная сетка нужна не всегда: при заданных месяцах без недель — только помесячно; недели не длиннее
+      // месяцев горизонта (months_for_weeks(w) ≤ H), иначе 6-месячный сценарий падал «недостаточно месяцев».
+      int weeks = std::max(0, std::min(maos::macro::kMaxWeeks, geti("horizon_weeks", months > 0 ? 0 : 26)));
+      if (months > 0) weeks = std::min(weeks, std::max(0, (int)std::floor((months - 2) * 52.0 / 12.0)));
       const int keep = std::max(0, std::min(n, geti("paths", 20)));
       const auto st = maos::macro::Stress::from_json(body.value("stress", json(nullptr)));
       const auto rf = maos::macro::Reference::from_json(body.value("ref", json(nullptr)));
@@ -4184,6 +4378,7 @@ static bool setup_database(Database& db) {
     migrate_v21(db);                    // v21 (волна M): synthetic, macro_mode, macro_series
     ensure_shop_manager_role(db);       // роль «Начальник цеха», users.org_unit_id
     enrich_demo_nsi(db);                // волна A2: демо-НСИ для структурных ходов (маркер rl.nsi.applied)
+    migrate_learned_base(db);           // X2: «Базовый» = обученный генератор; эпизоды по порядку
   } catch (std::exception& e) {
     std::cerr << "FATAL: migration failed: " << e.what() << "\n"
               << "Отказ старта с частично мигрированной БД (повтор при перезапуске).\n";
@@ -4283,7 +4478,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.75.0"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.76.0"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.

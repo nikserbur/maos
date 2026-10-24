@@ -54,7 +54,7 @@ export function RlStatusCard() {
             values={{ delta: bpFine(best.iqm, { signed: true }), n: V5.n }}
             interval={`95 %-ДИ ${bpCi(best.ci95)} б. п. · лучше в ${num(winCount(V5, best.win), 0)} из ${num(V5.instances.length, 0)}`}>
             <p className="ag-tile__note">
-              {isIdle(V5, best.policy) ? '0 ходов — совпал с EDD' : policyLabel(best.policy)} ·{' '}
+              {isIdle(V5, best.policy) ? '0 ходов — совпал с правилом «по ближайшему сроку»' : policyLabel(best.policy)} ·{' '}
               <span className="glyph-setup" title={`снимок стенда V5 от ${snapDay(V5.snapshot_date)}`}>снимок устарел — есть A2–A4</span>
             </p>
           </KpiTile>

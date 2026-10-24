@@ -1,11 +1,12 @@
 /**
- * Таблица-двойник сцены (X2 P-32): объекты уровня или состав цеха/завода — имя, статус глифом и
- * словом, загрузка по плану (по убыванию, ▲ от 85 %), очередь. Клик или Space — выбрать и
+ * Таблица-двойник сцены (X2 P-32): объекты уровня или состав цеха/завода — имя (статус глифом и
+ * словом — второй строкой, чтобы узкий инспектор не прокручивался вбок), загрузка по плану (по убыванию,
+ * ▲ от 85 %), пик очереди. Клик или Space — выбрать и
  * подсветить в 3D; Enter или двойной клик — войти внутрь (у контейнеров). Топ-10 + «Показать все N».
  */
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { DataTable, type DataColumn } from '../../ui/kit'
-import { num, pct } from '../../explain/format'
+import { num } from '../../explain/format'
 import { STATUS_META } from './types'
 import type { SceneNode } from './graph/sceneModel'
 import { statusWord } from './graph/status'
@@ -21,17 +22,20 @@ export interface ObjectRow {
 const LIMIT = 10
 
 const COLUMNS: ReadonlyArray<DataColumn<ObjectRow>> = [
-  { key: 'name', title: 'Объект', rowHeader: true, clip: true, get: (r) => r.node.title,
-    render: (r) => <span data-node-id={r.node.id}>{r.node.title}</span> },
-  { key: 'status', title: 'Статус', get: (r) => STATUS_META[r.node.status].label,
-    render: (r) => <span className={`sot-status ${STATUS_META[r.node.status].glyphClass}`}>{statusWord(r.node.refType, r.node.status)}</span> },
-  { key: 'util', title: 'Загрузка', num: true, get: (r) => r.ops?.util ?? null, hint: 'По последнему плану; у цеха — максимум по станкам',
+  { key: 'name', title: 'Объект и статус', rowHeader: true, primary: true, get: (r) => r.node.title,
+    render: (r) => (
+      <span className="sot-name" data-node-id={r.node.id}>
+        <span>{r.node.title}</span>
+        <span className={`sot-status ${STATUS_META[r.node.status].glyphClass}`}>{statusWord(r.node.refType, r.node.status)}</span>
+      </span>
+    ) },
+  { key: 'util', title: 'Загрузка, %', num: true, get: (r) => r.ops?.util ?? null, hint: 'По последнему плану; у цеха — максимум по станкам',
     render: (r) => {
       const u = r.ops?.util ?? null
       if (u === null) return <span className="sot-muted" title="Не рассчитано: плана ещё нет">—</span>
-      return u >= OVERLOAD ? <span className="sot-hot">{pct(u, 0)} <span className="glyph-setup" role="img" aria-label="перегрузка" /></span> : pct(u, 0)
+      return u >= OVERLOAD ? <span className="sot-hot">{num(u * 100, 0)} <span className="glyph-setup" role="img" aria-label="перегрузка" /></span> : num(u * 100, 0)
     } },
-  { key: 'queue', title: 'Очередь', num: true, get: (r) => r.ops?.queuePeak ?? null, hint: 'Пик очереди, партий',
+  { key: 'queue', title: 'Очередь, партий', num: true, get: (r) => r.ops?.queuePeak ?? null, hint: 'Пик очереди за план — наибольшее число партий',
     render: (r) => (r.ops?.queuePeak === null || r.ops?.queuePeak === undefined ? <span className="sot-muted">—</span> : num(r.ops.queuePeak, 0)) },
 ]
 

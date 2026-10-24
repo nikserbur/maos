@@ -1,11 +1,13 @@
 /**
- * Вкладка «Таблица» конструктора — двойник канваса: та же модель строками (№ · операция · тип станка ·
- * время «33 · 25–63» · наладка · IDEF0). Колонки IDEF0 скрыты, пока все пусты («Показать IDEF0»).
- * Мини-полоса маршрута — номера «1 ▸ 2 ▸ … 8» (название — в подсказке и для диктора), Σ справа.
+ * Вкладка «Таблица» конструктора — двойник канваса: та же модель строками (шаг · операция · тип
+ * оборудования · время «33 (25–63)» · наладка · IDEF0). Таблица — на классах кита (.dk-table: гибкая
+ * колонка операции, числа по содержимому). Колонки IDEF0 скрыты, пока все пусты («Показать IDEF0»).
+ * Мини-полоса маршрута — номера «1 ▸ 2 ▸ … 8» (название — в подсказке и для диктора), итог справа.
  */
 import { useState, type DragEvent } from 'react'
-import { fmtValue, num, NBSP } from '../../../explain/format'
+import { countText, fmtValue, num, NBSP } from '../../../explain/format'
 import { Chip } from '../../../ui/kit'
+import { headWidth } from '../../../ui/kit/columnLayout'
 import { totalMinutes, type CapacityBottleneck, type RoutingOp } from './routingModel'
 import { bottleneckText, pertText } from './RoutingCanvas'
 
@@ -17,15 +19,23 @@ interface RoutingTableProps {
   onSelect: (id: string) => void
 }
 
-const UNKNOWN_INPUTS = 'входы заданы в Справочниках — здесь не редактируются'
+const UNKNOWN_INPUTS = 'Входы части операций заданы в Справочниках и здесь не редактируются.'
+const OPS_FORMS = ['операция', 'операции', 'операций'] as const
 
 const idefCount = (op: RoutingOp) => op.inputs.length + op.outputs.length + op.controls.length + op.mechanisms.length
+
+/** Числовая шапка по ширине своего заголовка (как в DataTable): не уже половины текста — 1–2 строки, а не столбик. */
+const NUM_FIT = { fit: true, right: true, primary: false } as const
+const numHead = (title: string): string => `num dk-col-fit dk-thw-${headWidth(title, NUM_FIT) ?? 8}`
+const TIME_TITLE = 'Время по норме (от–до), мин'
+const SETUP_TITLE = 'Наладка, мин'
 
 export function RoutingTable({ ops, selectedId, knownWc, bottleneck, onSelect }: RoutingTableProps) {
   const anyIdef = ops.some((o) => idefCount(o) > 0 || !o.inputsKnown)
   const [showIdef, setShowIdef] = useState(false)
   const idef = anyIdef || showIdef
   const cols = idef ? 9 : 5
+  const someUnknown = idef && ops.some((o) => !o.inputsKnown)
   return (
     <div className="rt-tablebox">
       {!anyIdef && (
@@ -33,39 +43,42 @@ export function RoutingTable({ ops, selectedId, knownWc, bottleneck, onSelect }:
           {showIdef ? 'Скрыть IDEF0' : 'Показать IDEF0'}
         </button>
       )}
-      <div className="rt-tablewrap">
-        <table className="rt-table">
+      {someUnknown && <p className="rt-tablebox__note">{UNKNOWN_INPUTS}</p>}
+      <div className="dk-table-wrap dk-table-wrap--framed rt-tablewrap">
+        <table className="dk-table dk-table--tight">
           <thead>
             <tr>
-              <th scope="col" className="num">№</th>
-              <th scope="col">Операция</th>
-              <th scope="col">Тип станка</th>
-              <th scope="col" className="num" title="Норма · оптимистичное–пессимистичное (PERT)">Время, мин</th>
-              <th scope="col" className="num">Наладка, мин</th>
-              {idef && <><th scope="col">Входы (I)</th><th scope="col">Выход (O)</th><th scope="col">Управление (C)</th><th scope="col">Механизм (M)</th></>}
+              <th scope="col" className={numHead('Шаг')}>Шаг</th>
+              <th scope="col" className="dk-col-primary">Операция</th>
+              <th scope="col" className="dk-minw-14">Тип оборудования</th>
+              <th scope="col" className={numHead(TIME_TITLE)} title="Норма времени, в скобках — оптимистичная и пессимистичная оценки">{TIME_TITLE}</th>
+              <th scope="col" className={numHead(SETUP_TITLE)}>{SETUP_TITLE}</th>
+              {idef && <><th scope="col">Входы</th><th scope="col">Выход</th><th scope="col">Управление</th><th scope="col">Механизм</th></>}
             </tr>
           </thead>
           <tbody>
             {ops.length === 0 && (
-              <tr><td colSpan={cols} className="rt-table__empty">Операций пока нет — добавьте первую кнопкой «+ Операция».</td></tr>
+              <tr><td colSpan={cols} className="dk-td-empty">Операций пока нет — добавьте первую кнопкой «+ Операция».</td></tr>
             )}
             {ops.map((op, i) => (
-              <tr key={op.id} className={`rt-table__row${op.id === selectedId ? ' is-selected' : ''}`} onClick={() => onSelect(op.id)}
+              <tr key={op.id} className={`is-click${op.id === selectedId ? ' is-chosen' : ''}`} onClick={() => onSelect(op.id)}
                 tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onSelect(op.id) }} aria-selected={op.id === selectedId}>
-                <td className="num">{num(i + 1, 0)}</td>
-                <th scope="row">
-                  {op.title}
-                  {bottleneck?.id === op.id && ops.length > 1 && <span className="rt-table__bn" title={bottleneckText(bottleneck)}>узкое место</span>}
+                <td className="num dk-col-fit">{num(i + 1, 0)}</td>
+                <th scope="row" className="dk-col-primary">
+                  <span className="dk-cell-block">
+                    {op.title}
+                    {bottleneck?.id === op.id && ops.length > 1 && <span className="rt-table__bn" title={bottleneckText(bottleneck)}>узкое место</span>}
+                  </span>
                 </th>
-                <td>
+                <td className="dk-minw-14">
                   {!op.wcType ? <Chip tone="setup" size="sm">тип не задан</Chip>
                     : !knownWc || knownWc.has(op.wcType) ? op.wcType : <><Chip tone="setup" size="sm">тип не найден в Справочниках</Chip> {op.wcType}</>}
                 </td>
-                <td className="num">{num(op.timeMin, 0)}{pertText(op) && <span className="rt-muted"> · {num(op.tOpt, 0)}–{num(op.tPess, 0)}</span>}</td>
-                <td className="num">{op.setupMin > 0 ? num(op.setupMin, 0) : <span className="rt-muted">—</span>}</td>
+                <td className="num dk-col-fit">{num(op.timeMin, 0)}{pertText(op) && <span className="rt-muted"> ({num(op.tOpt, 0)}–{num(op.tPess, 0)})</span>}</td>
+                <td className="num dk-col-fit">{op.setupMin > 0 ? num(op.setupMin, 0) : <span className="rt-muted">—</span>}</td>
                 {idef && (
                   <>
-                    <td>{op.inputsKnown ? op.inputs.map((m) => `${m.name} ×${fmtValue(m.qty)}${NBSP}${m.unit}`).join(', ') || '—' : <span className="rt-muted">{UNKNOWN_INPUTS}</span>}</td>
+                    <td>{op.inputsKnown ? op.inputs.map((m) => `${m.name} ×${fmtValue(m.qty)}${NBSP}${m.unit}`).join(', ') || '—' : <span className="rt-muted" title={UNKNOWN_INPUTS}>в Справочниках</span>}</td>
                     <td>{op.outputs.join(', ') || '—'}</td>
                     <td>{op.controls.join(', ') || '—'}</td>
                     <td>{op.mechanisms.join(', ') || '—'}</td>
@@ -75,9 +88,9 @@ export function RoutingTable({ ops, selectedId, knownWc, bottleneck, onSelect }:
             ))}
           </tbody>
           {ops.length > 0 && (
-            <tfoot>
+            <tfoot className="rt-table__foot">
               <tr>
-                <td /><th scope="row">Σ {num(ops.length, 0)} оп.</th><td />
+                <td /><th scope="row">Итого: {countText(ops.length, OPS_FORMS)}</th><td />
                 <td className="num">{num(totalMinutes(ops), 0)}</td>
                 <td className="num">{num(ops.reduce((s, o) => s + o.setupMin, 0), 0)}</td>
                 {idef && <td colSpan={4} />}
@@ -122,7 +135,7 @@ export function RouteStrip({ ops, selectedId, bottleneckId, onSelect, onMoveTo }
         ))}
         {ops.length === 0 && <li className="rt-strip__empty">маршрут пуст</li>}
       </ol>
-      <span className="rt-strip__total num">Σ {fmtValue(totalMinutes(ops), 'мин')}</span>
+      <span className="rt-strip__total num">Итого {fmtValue(totalMinutes(ops), 'мин')}</span>
     </footer>
   )
 }

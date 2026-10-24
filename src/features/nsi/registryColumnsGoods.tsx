@@ -1,15 +1,17 @@
 /**
  * Колонки реестров «Изделия», «Техкарты», «Операции» (P-44, P-46, P-47): цена по роли (закупка у сырья
  * и полуфабрикатов, продажа у товаров), «—» там, где поле не применимо; техкарты — действующая версия
- * и альтернативы под своим изделием; операции — по техкартам «ТК … · 8 оп · Σ 407 мин», без сырых id.
+ * и альтернативы под своим изделием; операции — по техкартам «ТК … · 8 операций · всего 407 мин», без сырых id.
+ * Заголовки — полные фразы без сокращений; единица изделия (шт, кг…) — в самой ячейке: у изделий она разная.
  */
 import { countText, dateTimeShort, money, num, NBSP } from '../../explain/format'
 import { Chip } from '../../ui/kit'
-import { str, numOf, posOf, Muted, type AnyRow, type NsiColumn, type RegistryView, type ViewCtx } from './registryColumns'
+import { str, numOf, posOf, Muted, withTextCells, type AnyRow, type NsiColumn, type RegistryView, type ViewCtx } from './registryColumns'
 import { ROLE_LABELS, ROLE_ORDER, isDefaultRouting, opTypeLabel, productRole, routingVariantName, splitName } from './registries'
+import { unitWord } from './unitWords'
 import type { Operation, Routing } from '../../lib/api'
 
-const OPS_FORMS = ['оп.', 'оп.', 'оп.'] as const
+const OPS_FORMS = ['операция', 'операции', 'операций'] as const
 const VARIANT_FORMS = ['вариант', 'варианта', 'вариантов'] as const
 
 /* ── Изделия ─────────────────────────────────────────────────────────────── */
@@ -21,7 +23,7 @@ export function productView(ctx: ViewCtx): RegistryView {
   const unit = (r: AnyRow) => str(r, 'unit') || 'шт'
   const qty = (r: AnyRow, key: string) => {
     const v = numOf(r, key)
-    return v === null ? '' : `${num(v)}${NBSP}${unit(r)}`
+    return v === null ? '' : `${num(v)}${NBSP}${unitWord(unit(r), v)}`
   }
   const parentText = (r: AnyRow) => {
     const p = lk.productById.get(str(r, 'parent_id'))
@@ -30,21 +32,23 @@ export function productView(ctx: ViewCtx): RegistryView {
   const notApplicable = <Muted title="Не применимо к этой роли">—</Muted>
   const columns: NsiColumn[] = [
     {
-      key: 'item', title: 'Изделие', rowHeader: true, className: 'nsi-td-name', get: (r) => str(r, 'code') || str(r, 'name'),
-      text: (r) => `${str(r, 'code')} ${str(r, 'name')}`,
+      // Имя — первой строкой, уточнение в скобках — второй; код — своей колонкой, не перед именем
+      // (иначе при длинном имени он уходил на отдельную строку и строки выглядели по-разному).
+      key: 'item', title: 'Изделие', rowHeader: true, primary: true, get: (r) => str(r, 'name'),
+      text: (r) => str(r, 'name'),
       render: (r) => {
         const [head, tail] = splitName(str(r, 'name'))
         return (
-          <span className="nsi-item" title={str(r, 'name')}>
-            {str(r, 'code') && <span className="nsi-code mono">{str(r, 'code')}</span>}
+          <span className="nsi-item">
             <span className="nsi-item__name">{head}</span>
             {tail && <span className="nsi-item__tail">{tail}</span>}
           </span>
         )
       },
     },
-    { key: 'parent_id', title: 'Входит в', clip: true, get: parentText, text: parentText, render: (r) => parentText(r) || <Muted>—</Muted> },
-    { key: 'stock', title: 'Остаток', num: true, get: (r) => numOf(r, 'stock'), text: (r) => qty(r, 'stock'), render: (r) => qty(r, 'stock') || <Muted>—</Muted> },
+    { key: 'code', title: 'Код', width: 'fit', get: (r) => str(r, 'code'), text: (r) => str(r, 'code'), render: (r) => (str(r, 'code') ? <span className="mono">{str(r, 'code')}</span> : <Muted>—</Muted>) },
+    { key: 'parent_id', title: 'Входит в изделие', minWidth: 14, get: parentText, text: parentText, render: (r) => parentText(r) || <Muted>—</Muted> },
+    { key: 'stock', title: 'Остаток на складе', num: true, hint: 'В единицах изделия — единица указана в ячейке', get: (r) => numOf(r, 'stock'), text: (r) => qty(r, 'stock'), render: (r) => qty(r, 'stock') || <Muted>—</Muted> },
     {
       key: 'base_cost', title: 'Цена закупки, ₽', num: true, get: (r) => (isProduct(r) ? null : posOf(r, 'base_cost')),
       text: (r) => (isProduct(r) ? '' : posOf(r, 'base_cost') === null ? 'не задана' : money(posOf(r, 'base_cost'))),
@@ -56,19 +60,19 @@ export function productView(ctx: ViewCtx): RegistryView {
       render: (r) => (!isProduct(r) ? notApplicable : posOf(r, 'base_price') === null ? <Muted>не задана</Muted> : money(posOf(r, 'base_price'))),
     },
     {
-      key: 'demand_max', title: 'Спрос в год', num: true, get: (r) => (isProduct(r) ? posOf(r, 'demand_max') : null),
+      key: 'demand_max', title: 'Спрос в год', num: true, hint: 'Наибольший годовой спрос, в единицах изделия', get: (r) => (isProduct(r) ? posOf(r, 'demand_max') : null),
       text: (r) => (isProduct(r) ? qty(r, 'demand_max') : ''),
       render: (r) => (!isProduct(r) ? notApplicable : posOf(r, 'demand_max') === null ? <Muted>не задан</Muted> : qty(r, 'demand_max')),
     },
     {
-      key: 'market_capacity', title: 'Ёмкость рынка', num: true, get: (r) => (isProduct(r) ? posOf(r, 'market_capacity') : null),
+      key: 'market_capacity', title: 'Ёмкость рынка в год', num: true, hint: 'Сколько рынок выкупает по базовой цене за год, в единицах изделия', get: (r) => (isProduct(r) ? posOf(r, 'market_capacity') : null),
       text: (r) => (isProduct(r) ? qty(r, 'market_capacity') : ''),
       render: (r) => (!isProduct(r) ? notApplicable : posOf(r, 'market_capacity') === null ? <Muted>не задана</Muted> : qty(r, 'market_capacity')),
     },
   ]
   const prepare = (rows: AnyRow[]) => [...rows].sort((a, b) =>
     ROLE_ORDER[role(a)] - ROLE_ORDER[role(b)] || str(a, 'code').localeCompare(str(b, 'code'), 'ru', { numeric: true }))
-  return { columns, prepare, groupBy: (r) => ROLE_LABELS[role(r)] }
+  return { columns: withTextCells(columns), prepare, groupBy: (r) => ROLE_LABELS[role(r)] }
 }
 
 /* ── Техкарты ────────────────────────────────────────────────────────────── */
@@ -88,36 +92,36 @@ export function routingView(ctx: ViewCtx): RegistryView {
   }
   const versionText = (r: AnyRow) => {
     const v = str(r, 'version') || '1'
-    return isDefaultRouting(r) ? `v${v} · действует ●` : `v${v} · альтернатива ○`
+    return isDefaultRouting(r) ? `Версия ${v} · действует` : `Версия ${v} · альтернатива`
   }
   const columns: NsiColumn[] = [
     {
-      key: 'product', title: 'Изделие', rowHeader: true, className: 'nsi-td-name', get: sortKey, text: (r) => `${itemText(r)} ${str(r, 'name')}`,
+      key: 'product', title: 'Изделие', rowHeader: true, primary: true, get: sortKey, text: (r) => `${itemText(r)} ${str(r, 'name')}`,
       render: (r) => {
         const p = product(r)
         if (!p) return <span className="nsi-item">{str(r, 'name')} <Muted>без изделия</Muted></span>
-        if (variants(r) > 1) return <span className="nsi-item nsi-item--variant" title={str(r, 'name')}>{itemText(r)}</span>
+        if (variants(r) > 1) return <span className="nsi-item nsi-item--variant">{itemText(r)}</span>
         return (
-          <span className="nsi-item" title={str(r, 'name')}>
+          <span className="nsi-item">
             <span className="nsi-code mono">{p.code}</span><span className="nsi-item__name">{p.name}</span>
           </span>
         )
       },
     },
-    { key: 'version', title: 'Версия', get: (r) => (isDefaultRouting(r) ? 0 : 1), text: versionText, render: (r) => <Chip size="sm">{versionText(r)}</Chip> },
+    { key: 'version', title: 'Версия', width: 'fit', get: (r) => (isDefaultRouting(r) ? 0 : 1), text: versionText, render: (r) => <Chip size="sm">{versionText(r)}</Chip> },
     { key: 'ops', title: 'Операций', num: true, get: (r) => stats(r)?.ops ?? 0, text: (r) => num(stats(r)?.ops ?? 0, 0) },
-    { key: 'total', title: 'Σ норм. время, мин', num: true, get: (r) => stats(r)?.totalMin ?? 0, text: (r) => num(stats(r)?.totalMin ?? 0, 0) },
+    { key: 'total', title: 'Суммарное время по норме, мин', num: true, get: (r) => stats(r)?.totalMin ?? 0, text: (r) => num(stats(r)?.totalMin ?? 0, 0) },
     {
-      key: 'longest', title: 'Самая длинная операция', clip: true, get: (r) => stats(r)?.longest?.min ?? null,
+      key: 'longest', title: 'Самая длинная операция', minWidth: 16, get: (r) => stats(r)?.longest?.min ?? null,
       text: (r) => {
         const l = stats(r)?.longest
         return l ? `${l.name} · ${num(l.min, 0)}${NBSP}мин` : ''
       },
     },
-    { key: 'updated', title: 'Обновлено', get: (r) => str(r, 'effective_from') || str(r, 'created_at'), text: (r) => dateTimeShort(str(r, 'effective_from') || str(r, 'created_at')) },
+    { key: 'updated', title: 'Обновлено', width: 'fit', get: (r) => str(r, 'effective_from') || str(r, 'created_at'), text: (r) => dateTimeShort(str(r, 'effective_from') || str(r, 'created_at')) },
   ]
   return {
-    columns,
+    columns: withTextCells(columns),
     prepare: (rows) => [...rows].sort((a, b) => sortKey(a).localeCompare(sortKey(b), 'ru', { numeric: true })),
     groupBy: productKey,
     // Подзаголовок — только у изделий с вариантами: 70 заголовков по одной строке были бы шумом.
@@ -152,23 +156,25 @@ export function operationView(ctx: ViewCtx): RegistryView {
     if (n === null) return ''
     const lo = numOf(r, 't_opt')
     const hi = numOf(r, 't_pess')
-    return lo !== null && hi !== null && (lo !== n || hi !== n) ? `${num(n, 0)} · ${num(lo, 0)}–${num(hi, 0)}` : num(n, 0)
+    return lo !== null && hi !== null && (lo !== n || hi !== n) ? `${num(n, 0)} (${num(lo, 0)}–${num(hi, 0)})` : num(n, 0)
   }
   const routingName = (r: AnyRow) => {
     const rt = lk.routingById.get(str(r, 'routing_id'))
     return rt ? routingVariantName(rt.name, isDefaultRouting(rt)) : ''
   }
   const columns: NsiColumn[] = [
-    { key: 'name', title: 'Наименование', rowHeader: true, clip: true, text: (r) => str(r, 'name') },
+    { key: 'name', title: 'Наименование', rowHeader: true, primary: true, text: (r) => str(r, 'name') },
     { key: 'order_no', title: 'Шаг', num: true, get: (r) => numOf(r, 'order_no'), text: (r) => num(numOf(r, 'order_no'), 0) },
-    { key: 'code', title: 'Код', text: (r) => str(r, 'code'), render: (r) => (str(r, 'code') ? <span className="mono">{str(r, 'code')}</span> : <Muted>—</Muted>) },
-    { key: 'op_type', title: 'Тип', text: (r) => opTypeLabel(str(r, 'op_type')), render: (r) => opTypeLabel(str(r, 'op_type')) || <Muted>—</Muted> },
+    { key: 'code', title: 'Код', width: 'fit', priority: 2, text: (r) => str(r, 'code'), render: (r) => (str(r, 'code') ? <span className="mono">{str(r, 'code')}</span> : <Muted>—</Muted>) },
+    { key: 'op_type', title: 'Вид операции', width: 'fit', priority: 3, text: (r) => opTypeLabel(str(r, 'op_type')), render: (r) => opTypeLabel(str(r, 'op_type')) || <Muted>—</Muted> },
     {
-      key: 'wc_types', title: 'Тип оборудования', clip: true, get: types, text: (r) => types(r) || 'тип не задан',
+      // Без ограничения строк: «Токарный станок с ЧПУ DOOSAN…» не обрезается.
+      key: 'wc_types', title: 'Тип оборудования', minWidth: 16, get: types, text: (r) => types(r) || 'тип не задан',
       render: (r) => types(r) || (data.wcTypes.length ? <Chip tone="setup" size="sm">тип не задан</Chip> : str(r, 'wc_types')),
     },
     {
-      key: 't_norm', title: 'Время, мин', num: true, get: (r) => numOf(r, 't_norm'), hint: 'Норма · оптимистичное–пессимистичное (PERT)',
+      key: 't_norm', title: 'Время по норме (от–до), мин', num: true, get: (r) => numOf(r, 't_norm'),
+      hint: 'Норма времени, в скобках — оптимистичная и пессимистичная оценки',
       text: timeText, render: (r) => timeText(r) || <Muted>не задано</Muted>,
     },
     {
@@ -179,16 +185,16 @@ export function operationView(ctx: ViewCtx): RegistryView {
   ]
   const groupOf = (r: AnyRow) => str(r, 'routing_id') || TEMPLATES
   const groupLabel = (key: string, count: number) => {
-    if (key === TEMPLATES) return `${TEMPLATES} · ${num(count, 0)}`
+    if (key === TEMPLATES) return `${TEMPLATES} · ${countText(count, OPS_FORMS)}`
     const rt = lk.routingById.get(key)
     const st = lk.routingStats.get(key)
     const name = rt ? routingVariantName(rt.name, isDefaultRouting(rt)) : 'Техкарта'
-    return `${name} · ${countText(count, OPS_FORMS)} · Σ${NBSP}${num(st?.totalMin ?? 0, 0)}${NBSP}мин`
+    return `${name} · ${countText(count, OPS_FORMS)} · всего ${num(st?.totalMin ?? 0, 0)}${NBSP}мин`
   }
   const prepare = (rows: AnyRow[]) => [...rows].sort((a, b) => {
     const ga = order.get(str(a, 'routing_id')) ?? 'яяяя'
     const gb = order.get(str(b, 'routing_id')) ?? 'яяяя'
     return ga.localeCompare(gb, 'ru', { numeric: true }) || (numOf(a, 'order_no') ?? 0) - (numOf(b, 'order_no') ?? 0)
   })
-  return { columns, prepare, groupBy: groupOf, groupLabel, groupText: routingName }
+  return { columns: withTextCells(columns), prepare, groupBy: groupOf, groupLabel, groupText: routingName }
 }

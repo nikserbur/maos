@@ -6,7 +6,6 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { runLabel } from '../../explain/format'
-import { ruleLabel } from '../../explain/labels'
 import { setCrumbTitle } from '../../shell/crumbs'
 import { isStale, useInputsChanged } from '../../shell/context'
 import { navigateTo } from '../../shell/router'
@@ -20,6 +19,7 @@ import { getPlanState, planActions, usePlanStore } from './planStore'
 import { findRun, useRunIndex } from './runIndex'
 import { browserStorage, runMetaMap, type RunMeta } from './runMeta'
 import { ruleText } from './RunsTable'
+import { ruleWords } from './ruleWords'
 import { runSchedule } from './wizard/runSchedule'
 import { effectiveFields, getWizardState, useWizard, type WizardState } from './wizard/wizardStore'
 
@@ -62,7 +62,8 @@ export function RunView({ runKey, section }: { runKey: string; section: string |
   const row = findRun(idx.rows, runKey)
   const meta = useMemo(() => runMetaMap(browserStorage()).get(runKey), [runKey, plan.builtAt])
   const r = opened ? plan.result : null
-  const rule = r ? `${ruleLabel(r.rule)}${r.improver?.adopted ? ' + ГА' : ''}` : meta ? ruleText(meta) : ''
+  // Заголовок — правилом словами: «План №29 · критическое отношение · 24.10 20:24» (код правила — в списке прогонов).
+  const rule = r ? `${ruleWords(r.rule)}${r.improver?.adopted ? ' + генетический алгоритм' : ''}` : meta ? ruleText(meta) : ''
   const label = runLabel({ seq: row?.seq, rule, createdAt: row?.createdAt || (opened ? plan.builtAt : meta?.builtAt) })
   const sec = sectionBySlug(section)
 

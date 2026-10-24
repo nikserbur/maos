@@ -4,7 +4,7 @@
  * влияет на результат (переход в `#/map/<узел>`), проверенные маски, зависимости пакета, текст агента.
  */
 import type { StructuralMove } from '../../../lib/api'
-import { hours, money, pct } from '../../../explain/format'
+import { money, num, pct } from '../../../explain/format'
 import { StackBar } from '../../../ui/charts'
 import { Chip, DataTable, type DataColumn } from '../../../ui/kit'
 import { getNode } from '../../method-map/registry'
@@ -16,11 +16,11 @@ type Scn = StructuralMove['justification']['scenarios'][number]
 const opt = (v: number | undefined, f: (x: number) => string) => (v === undefined ? '—' : f(v))
 
 const COLUMNS: ReadonlyArray<DataColumn<Scn>> = [
-  { key: 'idx', title: 'Сценарий', num: true, rowHeader: true, render: (s) => `№ ${s.idx}` },
-  { key: 'key_rate', title: 'Ставка', num: true, render: (s) => opt(s.key_rate, (v) => pct(v, 0)) },
-  { key: 'price_shock', title: 'Шок цены', num: true, render: (s) => opt(s.price_shock, (v) => pct(v, 0)) },
-  { key: 'lead_delay_h', title: 'Задержка', num: true, render: (s) => opt(s.lead_delay_h, (v) => hours(v, 0)) },
-  { key: 'gain', title: 'Выигрыш', num: true, render: (s) => money(s.gain) },
+  { key: 'idx', title: 'Сценарий', rowHeader: true, width: 'fit', get: (s) => s.idx, render: (s) => `№ ${num(s.idx, 0)}` },
+  { key: 'key_rate', title: 'Ключевая ставка, %', num: true, render: (s) => opt(s.key_rate, (v) => num(v * 100, 0)) },
+  { key: 'price_shock', title: 'Шок цены, %', num: true, render: (s) => opt(s.price_shock, (v) => num(v * 100, 0)) },
+  { key: 'lead_delay_h', title: 'Задержка поставки, ч', num: true, render: (s) => opt(s.lead_delay_h, (v) => num(v, 0)) },
+  { key: 'gain', title: 'Выигрыш', num: true, hint: 'Прибыль хода в этом сценарии, ₽', render: (s) => money(s.gain) },
 ]
 
 interface Props {

@@ -52,7 +52,7 @@ export type V4Method = 'rule' | 'ga' | 'ga_warm' | 'cpsat'
 export const METHODS: readonly V4Method[] = ['rule', 'ga', 'ga_warm', 'cpsat']
 
 export const METHOD_LABEL: Readonly<Record<V4Method, string>> = {
-  rule: 'Правило', ga: 'ГА', ga_warm: 'ГА от CP-SAT', cpsat: 'CP-SAT',
+  rule: 'Правило', ga: 'Генетический алгоритм', ga_warm: 'Генетический со стартом от CP-SAT', cpsat: 'CP-SAT',
 }
 
 /** Эталон строки: BKS, иначе лучшее из четырёх методов. */

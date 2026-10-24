@@ -41,7 +41,7 @@ export function StackBar({ segments, fmt, title, subtitle, ariaLabel, compact = 
   const total = segments.reduce((a, s) => a + Math.max(0, s.value), 0) || 1
   const legend: LegendItem[] = segments.map((s, i) => ({ key: s.key, label: `${s.label} · ${fmt(s.value)}`, color: colorOf(i, s.color), shape: 'rect', glyph: s.glyph }))
   if (totalLabel) legend.push({ key: 'total', label: totalLabel, color: 'transparent', swatchClass: 'ch-swatch--none' })
-  const table: ChartTable = { columns: ['', 'Значение'], rows: segments.map((s) => [s.label, fmt(s.value)]) }
+  const table: ChartTable = { columns: ['Составляющая', 'Значение'], rows: segments.map((s) => [s.label, fmt(s.value)]) }
   let x = 0
   return (
     <ChartFrame title={title} subtitle={subtitle} legend={legend} ariaLabel={ariaLabel ?? `Доли: ${segments.map((s) => `${s.label} ${fmt(s.value)}`).join(', ')}`}

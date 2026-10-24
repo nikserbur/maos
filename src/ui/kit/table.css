@@ -1,5 +1,5 @@
 /*
- * Таблица данных и секции единого кита: липкая caps-шапка, сортировка, числовые колонки вправо,
+ * Таблица данных и секции единого кита: липкая шапка, сортировка, числовые колонки вправо,
  * липкие подзаголовки групп, кликабельные строки. Префикс dk-; только токены, обе темы.
  */
 /* ── Секция экрана: заголовок · мета · инструменты ──────────────────────── */
@@ -9,47 +9,142 @@
 .dk-sec__meta { color: var(--text-muted); font-size: var(--fs-12); }
 .dk-sec__tools { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
-/* ── Таблица данных: без вертикалей, липкая caps-шапка, сортировка, группы ── */
+/* ── Таблица данных: без вертикалей, липкая шапка, сортировка, группы ─────
+ * Ширины (владелец: «И…», «НАИ» — нечитаемо): одна гибкая колонка имени (.dk-col-primary)
+ * забирает свободную ширину и переносится до 2 строк; числовые и .dk-col-fit — по содержимому;
+ * заголовки — обычный регистр, переносятся (text-wrap: balance) и никогда не обрезаются. */
 .dk-table-wrap { position: relative; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--radius-lg); }
 .dk-table-wrap--framed { border: 1px solid var(--border); }
+/* Без рамки обёртка не прокручивается сама (clip): шапка липнет к прокрутке экрана (под его липкую полосу —
+   `--dk-sticky-top`). Таблица шире обёртки (is-overflowing ставит ResizeObserver) — видимая горизонтальная
+   прокрутка и липкая первая колонка; в собственном скроллере (рамка, прокрутка) отступ полосы экрана — 0,
+   иначе шапка съехала бы внутри обёртки на высоту чужой полосы. */
+.dk-table-wrap--flow { overflow: clip visible; }
+.dk-table-wrap--flow.is-overflowing { overflow-x: auto; }
+.dk-table-wrap:not(.dk-table-wrap--flow), .dk-table-wrap.is-overflowing { --dk-sticky-top: 0px; }
+.dk-table-wrap.is-overflowing .dk-table tr:not(.dk-table__group) > :first-child {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--dk-row-bg, var(--bg-app)); box-shadow: 1px 0 0 var(--border);
+}
+.dk-table-wrap.is-overflowing .dk-table thead tr > :first-child { z-index: 3; background: var(--bg-panel); }
+/* Признак «справа есть ещё»: тень у правого края, пока таблица не докручена до конца (подложка с
+   background-attachment: local уезжает вместе с содержимым и закрывает тень в конце прокрутки). */
+.dk-table-wrap.is-overflowing {
+  background:
+    linear-gradient(to left, var(--dk-row-bg, var(--bg-app)) 40%, transparent) right / 32px 100% no-repeat local,
+    linear-gradient(to left, color-mix(in oklch, var(--text) 16%, transparent), transparent) right / 14px 100% no-repeat scroll;
+}
+/* Подложка липкой колонки — цвет поверхности под таблицей (по умолчанию фон экрана; в карточке кита — карточки). */
+.dk-card { --dk-row-bg: var(--bg-card); }
+.dk-table-wrap.is-overflowing .dk-table tbody tr:hover > :first-child { background: linear-gradient(var(--bg-hover) 0 0), var(--dk-row-bg, var(--bg-app)); }
+/* Колонки с priority прячутся в узком контейнере (контейнер — только у таких таблиц: иначе ширина
+   обёртки перестала бы зависеть от содержимого в shrink-to-fit раскладках). */
+.dk-table-wrap--responsive { container-type: inline-size; }
+@container (max-width: 760px) { .dk-table .dk-col-p3 { display: none; } }
+@container (max-width: 560px) { .dk-table .dk-col-p2 { display: none; } }
+/* Свои пороги (`collapseAt`): ширину обёртки меряет ResizeObserver и ставит классы скрытия. */
+.dk-table-wrap.is-hide-p3 .dk-table .dk-col-p3, .dk-table-wrap.is-hide-p2 .dk-table .dk-col-p2 { display: none; }
 .dk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-13); }
+/* Контракт липкой шапки: экран с липкой полосой вкладок/содержания ставит `--dk-sticky-top` = её высота
+   (ResizeObserver или токен) — шапка таблицы и подзаголовки групп встают под полосу, а не под неё. */
 .dk-table thead th {
   position: sticky;
-  top: 0;
+  top: var(--dk-sticky-top, 0px);
   z-index: 2;
-  padding: 10px var(--space-3);
-  font-size: var(--fs-11);
+  padding: 8px var(--space-3);
+  font-size: var(--fs-12);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-feature-settings: 'case';
+  line-height: 1.25;
   text-align: left;
-  white-space: nowrap;
+  vertical-align: bottom;
+  white-space: normal;
+  text-wrap: balance;
+  overflow-wrap: normal;
+  hyphens: manual;
   color: var(--text-muted);
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
-.dk-table th.num, .dk-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums slashed-zero; }
+/* Заголовок не обрезается никогда — даже если класс колонки фичи ставит max-width/overflow. */
+.dk-table-wrap .dk-table thead th[scope='col'] { max-width: none; overflow: visible; text-overflow: clip; }
+.dk-table thead th.num { min-width: 9ch; text-align: right; }
+.dk-table thead th.dk-col-center { text-align: center; }
+.dk-table th.num, .dk-table td.num { text-align: right; font-variant-numeric: tabular-nums lining-nums slashed-zero; }
+.dk-table td.num, .dk-table tbody th.num { white-space: nowrap; }
+/* По содержимому: числа, даты, действия — ширина 1 % = «сколько нужно», без переноса. */
+.dk-table .dk-col-fit { width: 1%; white-space: nowrap; }
+.dk-table thead th.dk-col-fit { white-space: normal; }
+/* Ширина шапки узкой колонки по длине заголовка (DataTable считает: ≈ половина текста + стрелка,
+   не уже самого длинного слова) — заголовок занимает не больше 2 строк, а не столбик по слову. */
+.dk-table thead th.dk-thw-8 { min-width: 8ch; }
+.dk-table thead th.dk-thw-10 { min-width: 10ch; }
+.dk-table thead th.dk-thw-12 { min-width: 12ch; }
+.dk-table thead th.dk-thw-14 { min-width: 14ch; }
+.dk-table thead th.dk-thw-16 { min-width: 16ch; }
+.dk-table thead th.dk-thw-18 { min-width: 18ch; }
+.dk-table thead th.dk-thw-20 { min-width: 20ch; }
+.dk-table thead th.dk-thw-22 { min-width: 22ch; }
+/* Гибкая колонка имени: свободная ширина, минимум 14rem, перенос вместо многоточия. */
+.dk-table-wrap .dk-table .dk-col-primary { width: auto; max-width: none; white-space: normal; overflow: visible; }
+/* Минимум колонки имени переопределяется на обёртке/таблице: `--dk-primary-min: 10rem` (узкие панели). */
+.dk-table .dk-col-primary > .dk-cell-text,
+.dk-table .dk-col-primary > .dk-cell-block { min-width: var(--dk-primary-min, 14rem); }
+.dk-table--tight .dk-col-primary > .dk-cell-text,
+.dk-table--tight .dk-col-primary > .dk-cell-block { min-width: var(--dk-primary-min, 12rem); }
+/* Короткая аналитическая таблица (`width="content"`): по содержимому, имя 16–32rem, числа рядом с именем
+   (а не через 600–900 px пустоты). Реестры — во всю ширину. */
+.dk-table.dk-table--content { width: auto; max-width: 100%; }
+/* Рамка короткой таблицы — по таблице, а не на всю ширину с пустотой внутри. */
+.dk-table-wrap--framed.dk-table-wrap--content { width: fit-content; max-width: 100%; }
+/* Процентная ширина (1 %) растянула бы таблицу по содержимому на всю ширину контейнера — здесь «по содержимому» и так. */
+.dk-table.dk-table--content .dk-col-fit { width: auto; }
+.dk-table.dk-table--content .dk-col-primary > .dk-cell-text,
+.dk-table.dk-table--content .dk-col-primary > .dk-cell-block { min-width: var(--dk-primary-min, 16rem); max-width: 32rem; }
+.dk-table .dk-col-center { text-align: center; }
+/* Простой текст ограничивается по строкам только при явном `wrap` (по умолчанию — целиком); полный текст — в title, только если урезан. */
+.dk-cell-text, .dk-cell-block { display: block; overflow-wrap: anywhere; }
+.dk-cell-text--l1, .dk-cell-text--l2, .dk-cell-text--l3 { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.dk-cell-text--l1 { -webkit-line-clamp: 1; line-clamp: 1; }
+.dk-cell-text--l2 { -webkit-line-clamp: 2; line-clamp: 2; }
+.dk-cell-text--l3 { -webkit-line-clamp: 3; line-clamp: 3; }
+/* Минимальные ширины колонок, ch (DataColumn.minWidth). */
+.dk-table .dk-minw-8 { min-width: 8ch; }
+.dk-table .dk-minw-10 { min-width: 10ch; }
+.dk-table .dk-minw-12 { min-width: 12ch; }
+.dk-table .dk-minw-14 { min-width: 14ch; }
+.dk-table .dk-minw-16 { min-width: 16ch; }
+.dk-table .dk-minw-18 { min-width: 18ch; }
+.dk-table .dk-minw-20 { min-width: 20ch; }
+.dk-table .dk-minw-24 { min-width: 24ch; }
+.dk-table td[class*='dk-minw-'] > .dk-cell-text, .dk-table th[class*='dk-minw-'] > .dk-cell-text { min-width: inherit; }
 .dk-table__sort {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 4px;
+  /* Кнопка выходит на поля ячейки (margin −space-2 с двух сторон) — и шире ячейки на столько же:
+     с max-width: 100% она была на 16 px уже колонки и срезала последнюю букву подписи. */
+  max-width: calc(100% + 2 * var(--space-2));
   margin: -4px calc(var(--space-2) * -1);
   padding: 4px var(--space-2);
   font: inherit;
+  line-height: inherit;
   letter-spacing: inherit;
-  text-transform: inherit;
+  text-align: inherit;
   color: inherit;
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.dk-table th.num .dk-table__sort { flex-direction: row-reverse; }
+.dk-th__label { min-width: 0; }
+/* Числовая колонка: стрелка — после текста, но «висит» в правом поле ячейки (отрицательный отступ),
+   чтобы правый край подписи стоял ровно над правым краем чисел. */
+.dk-table th.num .dk-table__sort { justify-content: flex-end; }
+.dk-table th.num .dk-table__arrow { width: 0.75em; margin-left: -2px; margin-right: calc(-0.75em - 2px); }
 .dk-table__sort:hover { color: var(--text); background: var(--bg-hover); }
 .dk-table__sort:focus-visible { outline: 2px solid transparent; box-shadow: var(--halo); }
 /* Стрелка — только у отсортированной колонки; у остальных — при наведении и фокусе (подсказка, что можно). */
-.dk-table__arrow { width: 0.9em; color: var(--text-muted); font-family: var(--font-mono); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.dk-table__arrow { flex: none; width: 0.9em; color: var(--text-muted); font-family: var(--font-mono); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
 .dk-table__sort:hover .dk-table__arrow, .dk-table__sort:focus-visible .dk-table__arrow { opacity: 1; }
 th[aria-sort] .dk-table__arrow { opacity: 1; }
 th[aria-sort='ascending'] .dk-table__arrow, th[aria-sort='descending'] .dk-table__arrow { color: var(--accent-text); }
@@ -66,8 +161,8 @@ th[aria-sort='ascending'] .dk-table__arrow, th[aria-sort='descending'] .dk-table
 .dk-table tbody th[scope='row'] { padding: 9px var(--space-3); font-size: var(--fs-13); font-weight: 500; color: var(--text); text-align: left; background: transparent; border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent); vertical-align: middle; }
 .dk-table tbody tr.is-open td, .dk-table tbody tr.is-open th[scope='row'] { background: color-mix(in oklch, var(--accent) 9%, transparent); color: var(--text); }
 .dk-table--tight tbody th[scope='row'] { height: 32px; padding: 4px var(--space-3); }
-/* Длинный текст — одна строка с многоточием; полный — в title ячейки. */
-.dk-table .dk-td-clip { max-width: 0; width: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Числовой заголовок строки — вправо, как и его заголовок колонки. */
+.dk-table tbody th[scope='row'].num { text-align: right; }
 .dk-table tbody tr:last-child td, .dk-table tbody tr:last-child th[scope='row'] { border-bottom: 0; }
 .dk-table tbody tr { transition: background-color var(--dur-fast) var(--ease-out); }
 .dk-table tbody tr:hover td, .dk-table tbody tr:hover th[scope='row'] { background: var(--bg-hover); }
@@ -77,19 +172,22 @@ th[aria-sort='ascending'] .dk-table__arrow, th[aria-sort='descending'] .dk-table
 .dk-table tr.is-click:focus-visible td, .dk-table tr.is-click:focus-visible th[scope='row'] { background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--focus); }
 .dk-table tr.is-chosen td, .dk-table tr.is-chosen th[scope='row'] { background: color-mix(in oklch, var(--accent) 9%, transparent); color: var(--text); }
 .dk-table tr.is-alert td:first-child, .dk-table tr.is-alert th[scope='row'] { box-shadow: inset 2px 0 0 var(--status-down); }
+/* Подзаголовок группы: прижат влево (не по центру таблицы), липкий ровно под шапкой любой высоты
+   (--dk-thead-h ставит ResizeObserver), подпись не уезжает при горизонтальном скролле. */
 .dk-table__group th {
   position: sticky;
-  top: 34px;
+  top: calc(var(--dk-sticky-top, 0px) + var(--dk-thead-h, 34px));
   z-index: 1;
   padding: 6px var(--space-3);
-  font-size: var(--fs-11);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
   background: color-mix(in oklch, var(--bg-panel) 60%, var(--bg-card));
   border-bottom: 1px solid var(--border);
 }
-.dk-table__group th { font-variant-numeric: tabular-nums; }
+.dk-table__grouplabel { position: sticky; left: var(--space-3); display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 /* Пересчёт: прежние строки приглушены, а не пропадают. */
 .dk-table-wrap.is-refetching tbody { opacity: 0.5; transition: opacity var(--dur-fast) var(--ease-out); }
 .dk-table__count { padding: 0 var(--space-3) var(--space-2); font-size: var(--fs-12); color: var(--text-muted); font-variant-numeric: tabular-nums; }

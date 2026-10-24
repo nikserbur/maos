@@ -30,12 +30,16 @@ interface YAxisProps {
   /** Правый край подписей (ось рисуется у plot-левого края). */
   x: number
   fmt: (v: number) => string
-  /** Подпись единицы над осью («ч», «₽») — одно слово в углу. */
+  /** Подпись оси над делениями («ч», «ожидаемая прибыль, ₽ ↑») — от левого края svg вправо, не обрезается. */
   unit?: string
+  /** Верх плота, px: подпись оси стоит над ним (графику с подписью нужен отступ сверху ≥ UNIT_PT). */
   top?: number
 }
 
-/** Подписи оси Y справа-налево у левого края плота; без рамки. */
+/** Отступ сверху у графика с подписью оси Y: строка подписи над верхним делением, px. */
+export const UNIT_PT = 26
+
+/** Подписи оси Y справа-налево у левого края плота; подпись оси — строкой над ними от x = 0. */
 export function YAxis({ ticks, yAt, x, fmt, unit, top }: YAxisProps) {
   return (
     <g className="ch-axis ch-axis--y" aria-hidden="true">
@@ -43,7 +47,7 @@ export function YAxis({ ticks, yAt, x, fmt, unit, top }: YAxisProps) {
         <text key={t} x={x} y={yAt(t) + 3.5} textAnchor="end" className="ch-tick">{fmt(t)}</text>
       ))}
       {unit && top !== undefined && (
-        <text x={x} y={top - 4} textAnchor="end" className="ch-tick ch-tick--unit">{unit}</text>
+        <text x={0} y={Math.max(11, top - 10)} textAnchor="start" className="ch-tick ch-tick--unit">{unit}</text>
       )}
     </g>
   )
@@ -65,6 +69,8 @@ interface XAxisProps {
   rotate?: boolean
   /** Подписывать только эти индексы (даты: начало месяца/квартала); прочие — без подписи. */
   tickIndices?: ReadonlyArray<number>
+  /** Индексы подписей, которые не пропускаются никогда («сейчас» у веера); крайние уступают им место. */
+  keep?: ReadonlyArray<number>
 }
 
 /** Высота полосы оси X без поворота подписей, px. */
@@ -76,10 +82,11 @@ export const X_AXIS_ROTATED_H = 52
  * Базовая линия + подписи оси X (категории/даты): по центру деления, у краёв прижаты к плоту,
  * наезжающие — пропускаются, при большом числе пропусков — равномерный шаг (placeXLabels).
  */
-export function XAxis({ labels, xAt, y, step = 1, x0, x1, charW = TICK_CHAR_W, gap = TICK_GAP, tickIndices }: XAxisProps) {
+export function XAxis({ labels, xAt, y, step = 1, x0, x1, charW = TICK_CHAR_W, gap = TICK_GAP, tickIndices, keep = [] }: XAxisProps) {
   const idx = tickIndices ? tickIndices.filter((i) => Number.isInteger(i) && i >= 0 && i < labels.length) : labels.map((_, i) => i)
   const xs = idx.map((i) => xAt(i))
-  const placed = placeXLabels(idx.map((i) => labels[i]), xs, x0, x1, charW, gap, tickIndices ? 1 : step)
+  const priority = keep.map((k) => idx.indexOf(k)).filter((k) => k >= 0)
+  const placed = placeXLabels(idx.map((i) => labels[i]), xs, x0, x1, charW, gap, tickIndices ? 1 : step, priority)
     .map((p) => ({ ...p, i: idx[p.i] }))
   return (
     <g className="ch-axis ch-axis--x" aria-hidden="true">

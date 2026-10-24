@@ -42,8 +42,9 @@ describe('плитки KPI', () => {
       <KpiPins pinned={['MAKESPAN', 'OTD']} bundle={bundle} loading={false} series={[base, bundle]} seriesLoading={false}
         ctx={{}} base={{ ref, bundle: base }} onOpen={noop} editing={false} onToggleEdit={noop} />,
     )
-    expect(html).toContain('Заказы в срок · OTD')
-    expect(html).toContain('Длина расписания · E[Cmax]')
+    expect(html).toContain('Заказы в срок')
+    expect(html).not.toMatch(/>[^<]*(OTD|CVaR|\(ср\.\))[^<]*</)
+    expect(html).toContain('Длина расписания (среднее)')
     expect(html).not.toContain('glyph-running')
     expect(html).not.toContain('в норме')
     expect(html).toContain('к №27')

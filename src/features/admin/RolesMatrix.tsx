@@ -1,21 +1,23 @@
 /**
- * Права ролей матрицей (X2 P-142): строка — право по-русски, столбец — роль (короткое имя и
- * «N польз.»), ячейка ✓ или —. Код права в API — только в «i» строки. Все права видны без наведения.
+ * Права ролей матрицей (X2 P-142): строка — право по-русски, столбец — роль (полное имя и
+ * «N пользователей»), ячейка ✓ или —. Код права в API — только в «i» строки. Все права видны без наведения.
  */
 import type { Role, User } from '../../lib/api'
-import { NBSP, num } from '../../explain/format'
+import { countText } from '../../explain/format'
 import { NoteTip } from '../../ui/NoteTip'
 import { DataTable, ErrorBanner, type DataColumn } from '../../ui/kit'
 import { PERM_CODES, PERM_LABEL, parsePerms } from './auditVocabulary'
 import type { Resource } from './useAdminData'
 
-/** Короткие имена ролей для заголовков столбцов (полное — в подсказке). */
-const ROLE_SHORT: Readonly<Record<string, string>> = {
-  'role-admin': 'Админ',
-  'role-planner': 'Плани­ровщик',
-  'role-viewer': 'Наблю­датель',
-  'role-shop-manager': 'Нач. цеха',
+/** Имена ролей для заголовков столбцов — полностью, без сокращений и мягких переносов (заголовок переносится по словам). */
+const ROLE_NAME: Readonly<Record<string, string>> = {
+  'role-admin': 'Администратор',
+  'role-planner': 'Планировщик',
+  'role-viewer': 'Наблюдатель',
+  'role-shop-manager': 'Начальник цеха',
 }
+
+const USER_FORMS = ['пользователь', 'пользователя', 'пользователей'] as const
 
 const PERM_NOTE: Readonly<Record<string, string>> = {
   READ: 'Открывать все экраны и отчёты без права менять данные.',
@@ -29,7 +31,7 @@ const PERM_NOTE: Readonly<Record<string, string>> = {
 function columns(roles: ReadonlyArray<Role>, users: ReadonlyArray<User>): DataColumn<string>[] {
   const permsOf = new Map(roles.map((r) => [r.id, new Set(parsePerms(r.permissions))]))
   const first: DataColumn<string> = {
-    key: 'perm', title: 'Право', rowHeader: true, sortable: false, render: (code) => (
+    key: 'perm', title: 'Право', rowHeader: true, primary: true, sortable: false, render: (code) => (
       <span className="adm__perm">
         {PERM_LABEL[code] ?? code}
         <NoteTip title={PERM_LABEL[code] ?? code}>
@@ -44,12 +46,13 @@ function columns(roles: ReadonlyArray<Role>, users: ReadonlyArray<User>): DataCo
     return {
       key: r.id,
       sortable: false,
+      align: 'center',
+      width: 'fit',
       className: 'adm__cell-mark',
-      hint: r.name,
       title: (
         <span className="adm__role-head">
-          <span>{ROLE_SHORT[r.id] ?? r.name}</span>
-          <span className="adm__sub">{num(n, 0)}{NBSP}польз.</span>
+          <span>{ROLE_NAME[r.id] ?? r.name}</span>
+          <span className="adm__sub">{countText(n, USER_FORMS)}</span>
         </span>
       ),
       render: (code) => (permsOf.get(r.id)?.has(code)
