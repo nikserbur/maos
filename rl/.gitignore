@@ -8,3 +8,22 @@ env/*.so
 train/checkpoints/*.zip
 train/checkpoints/*.pt
 train/runs/
+
+# Крупные промежуточные результаты экспериментов — только локально (воспроизводятся скриптами rl/eval, rl/bench,
+# rl/train; итоговые числа — в отчётах docs/research/A*-*.md и малых сводках champions/distill/v4/v5_<стресс>).
+results/a3/v5_a3.json
+results/a3/keys_a3.json
+results/a3/ref_train_a3.json
+results/a3/ref_train_a3_l3s.json
+results/a3/headroom_a3.json
+results/a4/keys_a4f.json
+results/a4/ref_train_a4.json
+results/a4/baselines_a4.json
+results/a4/base/
+results/a4/la/
+results/v5_a2.json
+results/v5_a2_ga_keys.json
+results/cpsat_keys_a2.json
+results/v5_results.json
+results/v5_baselines.json
+results/*.onnx
