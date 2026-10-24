@@ -220,12 +220,6 @@
 .pf-regimes__track--flat i { display: block; height: 100%; border-radius: 2px; }
 .pf-regimes__axis { display: flex; justify-content: space-between; font-size: var(--fs-11); color: var(--text-muted); }
 
-/* ── Веер ────────────────────────────────────────────────────────────────── */
-/* Веер — на chart-системе (src/ui/charts/Fan); здесь только строка качества под заголовком. */
-.pf-fan { min-width: 0; }
-.pf-quality { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-11); color: var(--text-secondary); }
-.pf-quality.is-warn { color: var(--text); }
-
 /* ── Плотность ───────────────────────────────────────────────────────────── */
 .pf-density { display: block; }
 .pf-density__area { fill: var(--chart-1); opacity: 0.14; }
