@@ -23,7 +23,7 @@ function optValues(r: OptResultExt | null): ValuesByMetric {
     'opt.worst': { worst: m.worst_case, n },
     'opt.p_loss': { p_loss: m.p_loss, n },
     'opt.max_regret': { regret: m.max_regret, n },
-    'opt.sigma': { sigma: m.std, n },
+    'opt.sigma': { std: m.std, n },
     'opt.hhi': { hhi: div.hhi, n_products: div.n_products },
     'opt.effective_n': { eff: div.effective_n, hhi: div.hhi, n_products: div.n_products },
     'opt.max_share': { limit: r.max_share },
@@ -61,7 +61,7 @@ function planValues(r: ScheduleResult | null): ValuesByMetric {
     'plan.setup_share': { setup: k.setup_hours, n_setups: k.n_setups, fund: r.calendar.work_fond_hours },
     'plan.wait_share': { share: k.wait_share },
     'plan.maintenance': { maint: k.maintenance_hours, repair: k.breakdown_hours_mean, n: r.samples },
-    'plan.labor_cost': { cost: k.labor_cost, n_workers: r.n_workers },
+    'plan.labor_cost': { labor: k.labor_cost, n_workers: r.n_workers },
   }
   if (r.improver?.validation) {
     const v = r.improver.validation

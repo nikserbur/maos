@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupCommands, isPaletteShortcut, scoreItem, searchCommands, type CommandItem } from './commandIndex'
+import { groupCommands, isMentatShortcut, isPaletteShortcut, scoreItem, searchCommands, type CommandItem } from './commandIndex'
 
 const ITEMS: CommandItem[] = [
   { id: 's:plan', group: 'screen', title: 'План', hint: 'Решения · Стадия 1', keywords: ['plan', 'schedule'] },
@@ -36,5 +36,12 @@ describe('command index', () => {
     expect(isPaletteShortcut({ key: 'л', metaKey: false, ctrlKey: true, altKey: false })).toBe(true)
     expect(isPaletteShortcut({ key: 'k', metaKey: false, ctrlKey: false, altKey: false })).toBe(false)
     expect(isPaletteShortcut({ key: 'k', metaKey: true, ctrlKey: false, altKey: true })).toBe(false)
+  })
+
+  it('recognises Cmd/Ctrl+J for MENTAT in both layouts', () => {
+    expect(isMentatShortcut({ key: 'j', metaKey: true, ctrlKey: false, altKey: false })).toBe(true)
+    expect(isMentatShortcut({ key: 'о', metaKey: false, ctrlKey: true, altKey: false })).toBe(true)
+    expect(isMentatShortcut({ key: 'j', metaKey: false, ctrlKey: false, altKey: false })).toBe(false)
+    expect(isMentatShortcut({ key: 'k', metaKey: true, ctrlKey: false, altKey: false })).toBe(false)
   })
 })

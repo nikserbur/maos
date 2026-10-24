@@ -8,7 +8,7 @@ import { DEFAULT_SCREEN_ID, replaceRoute, useHashRoute } from './router'
 import { PipelineStrip } from '../ui/PipelineStrip'
 import { CommandPalette } from '../ui/CommandPalette'
 import { MentatPanel } from '../features/explain/MentatPanel'
-import { isPaletteShortcut } from './commandIndex'
+import { isMentatShortcut, isPaletteShortcut } from './commandIndex'
 import { overlayActions, useOverlays } from './overlays'
 import { buildCommandItems } from './useCommandItems'
 import './shell.css'
@@ -35,13 +35,18 @@ export default function AppShell() {
     document.title = `${active.label} · PESCADITO`
   }, [active.label])
 
-  // Командная палитра — Cmd/Ctrl+K в любом месте (UX-V2 §7 G4); MENTAT — из верхней панели или палитры.
+  // Командная палитра — Cmd/Ctrl+K, MENTAT — Cmd/Ctrl+J в любом месте (UX-V2 §7 G4); MENTAT — ещё из верхней
+  // панели, палитры и действия «Спросить MENTAT» узла карты / «i».
   const overlays = useOverlays()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!isPaletteShortcut(e)) return
-      e.preventDefault()
-      overlayActions.togglePalette()
+      if (isPaletteShortcut(e)) {
+        e.preventDefault()
+        overlayActions.togglePalette()
+      } else if (isMentatShortcut(e)) {
+        e.preventDefault()
+        overlayActions.toggleMentat()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -50,7 +55,7 @@ export default function AppShell() {
   const commandItems = useMemo(() => (overlays.palette ? buildCommandItems() : []), [overlays.palette])
 
   return (
-    <div className="shell">
+    <div className={overlays.mentat ? 'shell shell--mentat' : 'shell'}>
       <TopBar title={active.label} />
       <div className="shell__body">
         <NavRail activeId={active.id} onSelect={navigate} />

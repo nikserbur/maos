@@ -356,3 +356,9 @@
   color: var(--text-muted);
   font-size: var(--fs-13);
 }
+
+/* Панель MENTAT на широком экране — пристыкована: контент сужается, а не перекрывается (ссылки ответа
+   открывают узел карты рядом с панелью). Уже — панель поверх контента. */
+@media (min-width: 1280px) {
+  .shell--mentat .shell__content { margin-right: min(480px, 100vw); }
+}

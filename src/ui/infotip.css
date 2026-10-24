@@ -348,6 +348,17 @@
   text-underline-offset: 2px;
 }
 
+/* «Спросить MENTAT» — кнопка в виде ссылки, отдельной строкой под «Узел на карте». */
+.infotip-pop__ask {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .infotip,
   .infotip-pop__close {

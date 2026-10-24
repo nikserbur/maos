@@ -12,6 +12,7 @@
 #include "Finance.h"
 #include "InvestApi.h"
 #include "MacroSampler.h"
+#include "Mentat.h"
 #include "RlRule.h"
 #include "SimEnv.h"
 #include "Optimizer.h"
@@ -4260,6 +4261,7 @@ int main(int argc, char* argv[]) {
       if (starts("/api/users") || starts("/api/roles")) need = "MANAGE_USERS";
       else if (starts("/api/optimize") || starts("/api/schedule") ||
                starts("/api/forecast") || starts("/api/mrp") || starts("/api/macro")) need = "RUN_OPTIMIZE";
+      else if (path == "/api/mentat/ask") need = "READ";  // вопрос MENTAT — не мутация данных (аудит пишет сам)
       else if (starts("/api/demand_orders") || starts("/api/production_plans") ||
                starts("/api/scenarios") || starts("/api/calendar")) need = "WRITE_PLAN";
       else need = "EDIT_NSI";                          // НСИ и прочие мутации
@@ -4404,6 +4406,12 @@ int main(int argc, char* argv[]) {
 
   // Audit / analytics
   register_analytics(svr, db);
+
+  // MENTAT-API (блок [8]): прокси к локальной LLM владельца — 503, пока модель не подключена.
+  maos::mentat::register_routes(svr, db, [&db](const std::string& entity, const std::string& id,
+                                               const std::string& action, const json& payload) {
+    audit(db, entity, id, action, payload);
+  });
 
   std::cout << "Listening on http://127.0.0.1:8080\n";
   svr.listen("127.0.0.1", 8080);

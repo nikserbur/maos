@@ -10,6 +10,7 @@ import { ParamField } from '../../ui/ParamField'
 import { Chip, EmptyState, ErrorBanner, errorText } from '../../ui/kit'
 import { money, num, pct } from '../../explain/format'
 import type { TypeLoad } from './analyticsModel'
+import { publishInvest } from './investStore'
 
 const SAMPLES = 500
 const MONTHS_IN_YEAR = 12
@@ -38,11 +39,13 @@ export function InvestPanel({ wcTypes, loads, preselect, nameOfType }: InvestPan
     if (!wct) { setErr('Выберите тип оборудования'); return }
     setRunning(true); setErr(null); setResult(null)
     try {
-      setResult(await api.analytics.investment({
+      const r = await api.analytics.investment({
         wc_type_id: wct, add_machines: Math.max(1, Math.round(addN)),
         machine_capex: Math.max(0, capex), discount_rate: disc / 100,
         life_months: Math.max(1, Math.round(life)), demand: Math.max(0.1, demand), samples: SAMPLES,
-      }))
+      })
+      setResult(r)
+      publishInvest(r) // MENTAT объясняет уже посчитанный проект
     } catch (e) { setErr(errorText(e, 'Ошибка расчёта инвестпроекта')) } finally { setRunning(false) }
   }
 

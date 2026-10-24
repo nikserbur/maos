@@ -3,7 +3,8 @@
  * обход в ширину ПРОТИВ рёбер данных / параметров / управления / обратной связи от узла-результата
  * (рёбра «объяснение» — сам MENTAT — пропускаются), с глубиной и подписью ребра, затем параметры
  * посещённых подблоков. Это и есть «почему так»: какие входы и с какими весами дошли до числа.
- * Чистая функция; LLM лишь пересказывает этот путь (подключится позже), не выдумывая связей.
+ * Чистая функция; по этому пути строится контекст MENTAT (context/buildContext.ts) — LLM лишь
+ * пересказывает его, не выдумывая связей.
  */
 import { ALL_EDGES } from '../method-map/edges'
 import { childrenOf, getNode } from '../method-map/registry'
@@ -50,29 +51,4 @@ export function explainPath(target: string, maxDepth = 3): ExplainStep[] {
     }
   }
   return out
-}
-
-export interface MentatTemplate {
-  id: string
-  question: string
-  /** Узел-результат, от которого строится путь. */
-  target: string
-  /** Экраны, где вопрос уместен первым. */
-  screens: readonly string[]
-}
-
-export const MENTAT_TEMPLATES: readonly MentatTemplate[] = [
-  { id: 'cmax', question: 'Почему E[Cmax] плана именно такой и что его удлиняет?', target: 'crit.schedule', screens: ['plan', 'analytics'] },
-  { id: 'bottleneck', question: 'Почему узкое место — этот тип станков?', target: 'dec.schedule', screens: ['plan', 'scheme'] },
-  { id: 'cvar', question: 'Что определило CVaR прибыли портфеля?', target: 'crit.profit', screens: ['optimization', 'scenarios'] },
-  { id: 'cash', question: 'Почему касса может уйти в разрыв и при каком α?', target: 'crit.cash', screens: ['plan', 'optimization'] },
-  { id: 'rl', question: 'Почему агент RL не предлагает ходов и чемпион — правило?', target: 'ag.rl', screens: ['agents', 'plan', 'map'] },
-  { id: 'prices', question: 'Откуда берутся сценарии цен и насколько им верить?', target: 'dist.prices', screens: ['scenarios', 'monitoring'] },
-  { id: 'planfact', question: 'Почему факт разошёлся с планом?', target: 'mon.planfact', screens: ['analytics', 'monitoring'] },
-]
-
-/** Шаблоны в порядке уместности для экрана (сначала свои, затем остальные). */
-export function templatesFor(screenId: string): MentatTemplate[] {
-  const own = MENTAT_TEMPLATES.filter((t) => t.screens.includes(screenId))
-  return [...own, ...MENTAT_TEMPLATES.filter((t) => !t.screens.includes(screenId))]
 }

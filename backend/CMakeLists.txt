@@ -59,6 +59,8 @@ add_library(maos_core STATIC
   src/InvestApi.cpp
   src/InvestEval.cpp
   src/MacroSampler.cpp
+  src/Mentat.cpp
+  src/MentatRoutes.cpp
   src/Optimizer.cpp
   src/Passport.cpp
   src/RlRule.cpp
@@ -142,6 +144,7 @@ if(MAOS_BUILD_TESTS)
     tests/test_invest.cpp
     tests/test_ga.cpp
     tests/test_macrosampler.cpp
+    tests/test_mentat.cpp
     tests/test_optimizer.cpp
     tests/test_planmath.cpp
     tests/test_rlrule.cpp

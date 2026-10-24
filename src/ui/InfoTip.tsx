@@ -29,6 +29,7 @@ import { bindFormulaParts, fmtValue, type FormatInput } from '../explain/format'
 import { getMetric } from '../explain/metrics'
 import { nodeForMetric } from '../features/method-map/registry'
 import type { MetricExplain } from '../explain/types'
+import { overlayActions } from '../shell/overlays'
 import './infotip.css'
 
 export type InfoTipValues = Readonly<Record<string, FormatInput>>
@@ -336,6 +337,11 @@ export function InfoTipContent({ entry, values, titleId, onClose, onNavigate, ma
         <a className="infotip-pop__more" href={`#/map/${encodeURIComponent(mapNodeId)}`} onClick={onNavigate}>
           Узел на карте →
         </a>
+      )}
+      {mapNodeId && (
+        <button type="button" className="infotip-pop__more infotip-pop__ask" onClick={() => { overlayActions.askMentat(mapNodeId); onNavigate?.() }}>
+          Спросить MENTAT: почему так →
+        </button>
       )}
     </div>
   )

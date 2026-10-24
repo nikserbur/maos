@@ -11,6 +11,7 @@ import { methodologyHref } from '../../explain/anchors'
 import { getMetric } from '../../explain/metrics'
 import { buildHash } from '../../shell/router'
 import { Icon } from '../../shell/icons'
+import { overlayActions } from '../../shell/overlays'
 import { InfoTipContent } from '../../ui/InfoTip'
 import { blockTag, blockOf } from './blocks'
 import { liveOf } from './deriveState'
@@ -197,7 +198,8 @@ export function NodePanel({ nodeId, live, onClose, onSelect }: NodePanelProps) {
           </a>
         )}
         {node.learnMore && !metric && <a className="btn btn--ghost" href={methodologyHref(node.learnMore)}>Подробнее в «Методике»</a>}
-        <button type="button" className="btn btn--ghost" disabled title="MENTAT: объяснение по графу — волна 2">
+        <button type="button" className="btn btn--ghost" onClick={() => overlayActions.askMentat(node.id)}
+          title="MENTAT: «почему так» по графу расчёта вокруг этого узла (Cmd/Ctrl+J)">
           <Icon name="sparkle" size={14} /> Спросить MENTAT
         </button>
       </footer>

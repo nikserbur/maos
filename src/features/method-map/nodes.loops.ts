@@ -63,6 +63,6 @@ export const LOOP_NODES: readonly MapNode[] = [
     screen: { id: 'methodology' } },
 
   { id: 'llm.mentat', kind: 'subblock', block: 'llm', parent: 'llm', shape: 'point',
-    title: 'MENTAT: объяснение по графу расчёта', short: 'Боковая панель «почему так»: путь по рёбрам карты от результата к параметрам, со ссылками на узлы.',
+    title: 'MENTAT: объяснение по графу расчёта', short: 'Панель «почему так» (Cmd/Ctrl+J): контекст графа расчёта → промпт → локальная LLM владельца → проверка верности каждого числа по узлу. Модель подключается позже — до этого «Показать промпт».',
     screen: { id: 'aiflow' }, learnMore: 'overview', stage: 'w2' },
 ]

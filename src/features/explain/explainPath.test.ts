@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getNode } from '../method-map/registry'
-import { MENTAT_TEMPLATES, explainPath, templatesFor } from './explainPath'
+import { explainPath } from './explainPath'
 
 describe('explainPath', () => {
   it('walks against data edges from a result to its inputs with depth and edge labels', () => {
@@ -22,10 +21,7 @@ describe('explainPath', () => {
     expect(ids).toContain('crit.profit')
   })
 
-  it('returns nothing for an unknown node; every template targets a real node', () => {
+  it('returns nothing for an unknown node', () => {
     expect(explainPath('nope')).toEqual([])
-    for (const t of MENTAT_TEMPLATES) expect(getNode(t.target), t.id).toBeDefined()
-    expect(templatesFor('agents')[0].id).toBe('rl')
-    expect(templatesFor('agents')).toHaveLength(MENTAT_TEMPLATES.length)
   })
 })

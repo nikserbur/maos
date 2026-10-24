@@ -63,3 +63,8 @@ export function groupCommands(items: readonly CommandItem[]): Array<{ group: Com
 export function isPaletteShortcut(e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>): boolean {
   return (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л')
 }
+
+/** Сочетание клавиш панели MENTAT: Cmd/Ctrl+J (в русской раскладке — «о»). */
+export function isMentatShortcut(e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>): boolean {
+  return (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'j' || e.key === 'J' || e.key === 'о' || e.key === 'О')
+}

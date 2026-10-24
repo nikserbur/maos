@@ -35,7 +35,7 @@ export function TopBar({ title }: TopBarProps) {
         <kbd className="topbar__kbd">{mac ? '⌘K' : 'Ctrl K'}</kbd>
       </button>
       <button type="button" className="btn btn--ghost topbar__mentat" onClick={overlayActions.toggleMentat} aria-pressed={overlays.mentat}
-        title="MENTAT: почему так (заготовка — LLM подключится позже)">
+        aria-keyshortcuts={mac ? 'Meta+J' : 'Control+J'} title={`MENTAT: почему так — объяснение по графу расчёта (${mac ? '⌘J' : 'Ctrl+J'})`}>
         <Icon name="bulb" size={14} />
         <span className="topbar__cmd-label">MENTAT</span>
       </button>
