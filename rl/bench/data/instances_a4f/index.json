@@ -1,0 +1,572 @@
+{
+ "a4f-s00": {
+  "rho": 0.9,
+  "window_w": 3,
+  "focal": "wct-02-09",
+  "det_makespan_w": 3.6908308531746017,
+  "cash_tight": false,
+  "n_orders": 6,
+  "value": 135454264.79,
+  "fixed_w": 576359.8229191598,
+  "bottleneck": "wct-02-04",
+  "bottleneck_load": 0.9007858796296296,
+  "dual_type": "wct-02-09",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 528
+ },
+ "a4f-s01": {
+  "rho": 1.1,
+  "window_w": 3,
+  "focal": "wct-02-12",
+  "det_makespan_w": 5.69236081142526,
+  "cash_tight": true,
+  "n_orders": 8,
+  "value": 188973104.83,
+  "fixed_w": 903570.9119364042,
+  "bottleneck": "wct-02-10",
+  "bottleneck_load": 1.100056886574074,
+  "dual_type": "wct-02-12",
+  "duals_per_hour": {
+   "wct-02-10": 29661.83876500858,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 1080
+ },
+ "a4f-s02": {
+  "rho": 1.25,
+  "window_w": 3,
+  "focal": "wct-00-10",
+  "det_makespan_w": 4.366201388888889,
+  "cash_tight": false,
+  "n_orders": 6,
+  "value": 74876115.95,
+  "fixed_w": 305853.0270641049,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 1.2500468749999998,
+  "dual_type": "wct-01-08",
+  "duals_per_hour": {
+   "wct-02-01": 19670.64839924673,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 820
+ },
+ "a4f-s03": {
+  "rho": 1.4,
+  "window_w": 3,
+  "focal": "wct-02-05",
+  "det_makespan_w": 7.557435226521157,
+  "cash_tight": true,
+  "n_orders": 19,
+  "value": 412853651.16,
+  "fixed_w": 2154776.5068129892,
+  "bottleneck": "wct-02-12",
+  "bottleneck_load": 1.4010502314814812,
+  "dual_type": "wct-00-05",
+  "duals_per_hour": {
+   "wct-02-12": 44630.79689595068,
+   "wct-00-05": 26489.449802227045,
+   "wct-02-05": 11476.179231256936
+  },
+  "n_jobs": 1999
+ },
+ "a4f-s04": {
+  "rho": 0.9,
+  "window_w": 3,
+  "focal": "wct-02-01",
+  "det_makespan_w": 3.3774948684334825,
+  "cash_tight": false,
+  "n_orders": 7,
+  "value": 117344740.57,
+  "fixed_w": 493391.96952640265,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 0.9032111111111112,
+  "dual_type": "wct-00-10",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 704
+ },
+ "a4f-s05": {
+  "rho": 1.1,
+  "window_w": 3,
+  "focal": "wct-00-10",
+  "det_makespan_w": 3.662148230820104,
+  "cash_tight": true,
+  "n_orders": 4,
+  "value": 76539392.92999999,
+  "fixed_w": 272844.96583353734,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 1.1000283564814815,
+  "dual_type": "wct-00-10",
+  "duals_per_hour": {
+   "wct-02-01": 28276.582692307733,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 512
+ },
+ "a4f-s06": {
+  "rho": 1.25,
+  "window_w": 3,
+  "focal": "wct-00-05",
+  "det_makespan_w": 4.689574652777781,
+  "cash_tight": false,
+  "n_orders": 8,
+  "value": 143524712.16,
+  "fixed_w": 821724.4706149176,
+  "bottleneck": "wct-00-02",
+  "bottleneck_load": 1.2507504629629624,
+  "dual_type": "wct-00-05",
+  "duals_per_hour": {
+   "wct-00-05": 18042.571171171214,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 658
+ },
+ "a4f-s07": {
+  "rho": 1.4,
+  "window_w": 3,
+  "focal": "wct-02-12",
+  "det_makespan_w": 4.607323288690479,
+  "cash_tight": true,
+  "n_orders": 9,
+  "value": 210761172.49,
+  "fixed_w": 955345.6970008614,
+  "bottleneck": "wct-02-10",
+  "bottleneck_load": 1.4011776620370369,
+  "dual_type": "wct-00-08",
+  "duals_per_hour": {
+   "wct-02-10": 30282.32215351304,
+   "wct-00-08": 16780.437880633348,
+   "wct-00-00": 0.0
+  },
+  "n_jobs": 1036
+ },
+ "a4f-s08": {
+  "rho": 0.9,
+  "window_w": 3,
+  "focal": "wct-02-01",
+  "det_makespan_w": 3.3878847552910063,
+  "cash_tight": false,
+  "n_orders": 6,
+  "value": 56498260.06,
+  "fixed_w": 297568.958448068,
+  "bottleneck": "wct-01-08",
+  "bottleneck_load": 0.9026680555555555,
+  "dual_type": "wct-02-01",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 624
+ },
+ "a4f-s09": {
+  "rho": 1.1,
+  "window_w": 3,
+  "focal": "wct-00-10",
+  "det_makespan_w": 3.6563097718253976,
+  "cash_tight": true,
+  "n_orders": 6,
+  "value": 96117360.83,
+  "fixed_w": 471130.6924853974,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 1.1001682870370368,
+  "dual_type": "wct-00-10",
+  "duals_per_hour": {
+   "wct-02-01": 23308.651118210844,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 784
+ },
+ "a4f-m10": {
+  "rho": 1.25,
+  "window_w": 6,
+  "focal": "wct-02-11",
+  "det_makespan_w": 11.394182932374344,
+  "cash_tight": false,
+  "n_orders": 17,
+  "value": 743541438.29,
+  "fixed_w": 3366363.7479142407,
+  "bottleneck": "wct-02-11",
+  "bottleneck_load": 1.2511889467592592,
+  "dual_type": "wct-02-09",
+  "duals_per_hour": {
+   "wct-02-11": 86762.08736059477,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 2113
+ },
+ "a4f-m11": {
+  "rho": 1.4,
+  "window_w": 6,
+  "focal": "wct-00-09",
+  "det_makespan_w": 12.19803823578042,
+  "cash_tight": true,
+  "n_orders": 14,
+  "value": 278628089.61,
+  "fixed_w": 1506912.0505863668,
+  "bottleneck": "wct-02-10",
+  "bottleneck_load": 1.400845138888889,
+  "dual_type": "wct-00-08",
+  "duals_per_hour": {
+   "wct-02-10": 22388.10977701546,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 1694
+ },
+ "a4f-m12": {
+  "rho": 0.9,
+  "window_w": 6,
+  "focal": "wct-02-04",
+  "det_makespan_w": 7.36869450644842,
+  "cash_tight": false,
+  "n_orders": 11,
+  "value": 299775802.58,
+  "fixed_w": 1243786.6890957444,
+  "bottleneck": "wct-02-09",
+  "bottleneck_load": 0.9012010995370372,
+  "dual_type": "wct-02-04",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 1316
+ },
+ "a4f-m13": {
+  "rho": 1.1,
+  "window_w": 6,
+  "focal": "wct-02-12",
+  "det_makespan_w": 7.476484788359789,
+  "cash_tight": true,
+  "n_orders": 12,
+  "value": 281044422.27,
+  "fixed_w": 995304.2372965532,
+  "bottleneck": "wct-02-10",
+  "bottleneck_load": 1.1000040798611113,
+  "dual_type": "wct-00-08",
+  "duals_per_hour": {
+   "wct-02-10": 20772.19641109302,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 1554
+ },
+ "a4f-m14": {
+  "rho": 1.25,
+  "window_w": 6,
+  "focal": "wct-01-10",
+  "det_makespan_w": 8.099454406415337,
+  "cash_tight": false,
+  "n_orders": 11,
+  "value": 289471364.43,
+  "fixed_w": 1770727.2656444672,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 1.2500914641203704,
+  "dual_type": "wct-02-03",
+  "duals_per_hour": {
+   "wct-00-05": 23439.083870967763,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 1312
+ },
+ "a4f-m15": {
+  "rho": 1.4,
+  "window_w": 6,
+  "focal": "wct-02-10",
+  "det_makespan_w": 13.070857060185176,
+  "cash_tight": true,
+  "n_orders": 16,
+  "value": 307936312.52,
+  "fixed_w": 1495557.8234108856,
+  "bottleneck": "wct-00-08",
+  "bottleneck_load": 1.401349450231482,
+  "dual_type": "wct-02-10",
+  "duals_per_hour": {
+   "wct-00-08": 41647.344827586225,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 1880
+ },
+ "a4f-m16": {
+  "rho": 0.9,
+  "window_w": 6,
+  "focal": "wct-01-08",
+  "det_makespan_w": 6.189934265459653,
+  "cash_tight": false,
+  "n_orders": 10,
+  "value": 136814708.97,
+  "fixed_w": 581753.0735980208,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 0.9008845486111112,
+  "dual_type": "wct-01-08",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 1196
+ },
+ "a4f-m17": {
+  "rho": 1.1,
+  "window_w": 6,
+  "focal": "wct-00-00",
+  "det_makespan_w": 8.060831411210318,
+  "cash_tight": true,
+  "n_orders": 15,
+  "value": 398852673.4,
+  "fixed_w": 1617948.3001809334,
+  "bottleneck": "wct-02-04",
+  "bottleneck_load": 1.1010710358796296,
+  "dual_type": "wct-02-09",
+  "duals_per_hour": {
+   "wct-02-04": 25292.570197544228,
+   "wct-02-09": 1961.9211232508953,
+   "wct-00-00": 0.0
+  },
+  "n_jobs": 1860
+ },
+ "a4f-m18": {
+  "rho": 1.25,
+  "window_w": 6,
+  "focal": "wct-01-10",
+  "det_makespan_w": 11.525808242394174,
+  "cash_tight": false,
+  "n_orders": 11,
+  "value": 304636151.36,
+  "fixed_w": 1593537.3580817992,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 1.2500595775462964,
+  "dual_type": "wct-02-03",
+  "duals_per_hour": {
+   "wct-00-05": 22376.833562822732,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 1243
+ },
+ "a4f-m19": {
+  "rho": 1.4,
+  "window_w": 6,
+  "focal": "wct-02-03",
+  "det_makespan_w": 8.683090711805555,
+  "cash_tight": true,
+  "n_orders": 12,
+  "value": 256956865.71,
+  "fixed_w": 1088239.1531813631,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 1.4016590277777772,
+  "dual_type": "wct-02-03",
+  "duals_per_hour": {
+   "wct-00-05": 18546.334423407887,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 1384
+ },
+ "a4f-l20": {
+  "rho": 0.9,
+  "window_w": 12,
+  "focal": "wct-02-05",
+  "det_makespan_w": 16.106006138392864,
+  "cash_tight": false,
+  "n_orders": 32,
+  "value": 760178554.49,
+  "fixed_w": 3070520.98798652,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 0.900636082175926,
+  "dual_type": "wct-02-05",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 3979
+ },
+ "a4f-l21": {
+  "rho": 1.1,
+  "window_w": 12,
+  "focal": "wct-00-00",
+  "det_makespan_w": 17.194248139880923,
+  "cash_tight": true,
+  "n_orders": 23,
+  "value": 734350668.5600001,
+  "fixed_w": 4117101.973320179,
+  "bottleneck": "wct-02-09",
+  "bottleneck_load": 1.100002690972222,
+  "dual_type": "wct-02-04",
+  "duals_per_hour": {
+   "wct-02-09": 33581.39980158733,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 3013
+ },
+ "a4f-l22": {
+  "rho": 1.25,
+  "window_w": 12,
+  "focal": "wct-00-05",
+  "det_makespan_w": 17.541183366402098,
+  "cash_tight": false,
+  "n_orders": 22,
+  "value": 539383394.18,
+  "fixed_w": 1910985.6736934423,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 1.2500163483796296,
+  "dual_type": "wct-00-02",
+  "duals_per_hour": {
+   "wct-00-05": 20014.219819819824,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 2486
+ },
+ "a4f-l23": {
+  "rho": 1.4,
+  "window_w": 12,
+  "focal": "wct-00-08",
+  "det_makespan_w": 24.64379741236775,
+  "cash_tight": true,
+  "n_orders": 38,
+  "value": 1027101880.72,
+  "fixed_w": 4167881.832321979,
+  "bottleneck": "wct-02-10",
+  "bottleneck_load": 1.4005165653935183,
+  "dual_type": "wct-02-12",
+  "duals_per_hour": {
+   "wct-02-12": 30069.060575607917,
+   "wct-00-08": 24072.27092471069,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 4196
+ },
+ "a4f-l24": {
+  "rho": 0.9,
+  "window_w": 12,
+  "focal": "wct-00-00",
+  "det_makespan_w": 15.237015356316201,
+  "cash_tight": false,
+  "n_orders": 25,
+  "value": 922852765.39,
+  "fixed_w": 3187501.7615758698,
+  "bottleneck": "wct-02-04",
+  "bottleneck_load": 0.9005982783564815,
+  "dual_type": "wct-02-09",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 3156
+ },
+ "a4f-l25": {
+  "rho": 1.1,
+  "window_w": 12,
+  "focal": "wct-00-10",
+  "det_makespan_w": 17.10303189070769,
+  "cash_tight": true,
+  "n_orders": 17,
+  "value": 323621708.42,
+  "fixed_w": 1333373.7069185318,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 1.1000231770833333,
+  "dual_type": "wct-00-10",
+  "duals_per_hour": {
+   "wct-02-01": 12291.270926517514,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 2193
+ },
+ "a4f-l26": {
+  "rho": 1.25,
+  "window_w": 12,
+  "focal": "wct-02-05",
+  "det_makespan_w": 23.509776331018532,
+  "cash_tight": false,
+  "n_orders": 42,
+  "value": 1250257214.25,
+  "fixed_w": 6493492.788178796,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 1.2500080150462967,
+  "dual_type": "wct-02-10",
+  "duals_per_hour": {
+   "wct-00-05": 21173.74578313256,
+   "wct-02-10": 15440.202936378471,
+   "wct-00-00": 0.0
+  },
+  "n_jobs": 4213
+ },
+ "a4f-l27": {
+  "rho": 1.4,
+  "window_w": 12,
+  "focal": "wct-02-01",
+  "det_makespan_w": 19.09969915674605,
+  "cash_tight": true,
+  "n_orders": 22,
+  "value": 357365205.2,
+  "fixed_w": 2015077.0527486359,
+  "bottleneck": "wct-02-01",
+  "bottleneck_load": 1.400034157986111,
+  "dual_type": "wct-00-10",
+  "duals_per_hour": {
+   "wct-02-01": 18762.674879807688,
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0
+  },
+  "n_jobs": 2970
+ },
+ "a4f-l28": {
+  "rho": 0.9,
+  "window_w": 12,
+  "focal": "wct-00-00",
+  "det_makespan_w": 15.322090794477488,
+  "cash_tight": false,
+  "n_orders": 22,
+  "value": 702459369.32,
+  "fixed_w": 3305448.589047968,
+  "bottleneck": "wct-02-09",
+  "bottleneck_load": 0.9005789207175927,
+  "dual_type": "wct-02-11",
+  "duals_per_hour": {
+   "wct-00-00": 0.0,
+   "wct-01-08": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 2746
+ },
+ "a4f-l29": {
+  "rho": 1.1,
+  "window_w": 12,
+  "focal": "wct-01-10",
+  "det_makespan_w": 16.470801607969587,
+  "cash_tight": true,
+  "n_orders": 22,
+  "value": 494873418.43,
+  "fixed_w": 1830243.0780589913,
+  "bottleneck": "wct-00-05",
+  "bottleneck_load": 1.1000690827546298,
+  "dual_type": "wct-02-03",
+  "duals_per_hour": {
+   "wct-00-05": 15822.530630630692,
+   "wct-00-00": 0.0,
+   "wct-01-09": 0.0
+  },
+  "n_jobs": 2801
+ }
+}

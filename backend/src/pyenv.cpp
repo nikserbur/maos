@@ -57,7 +57,8 @@ NB_MODULE(maos_env, m) {
     .def_rw("invest_enabled", &EnvConfig::investEnabled).def_rw("shock_window_min", &EnvConfig::shockWindowMin)
     .def_rw("recover_share", &EnvConfig::recoverShare).def_rw("rush_price_mul", &EnvConfig::rushPriceMul)
     .def_rw("rush_late_loss", &EnvConfig::rushLateLoss)
-    .def_rw("struct_mode", &EnvConfig::structMode);   // A3: структурный режим L2/L3
+    .def_rw("struct_mode", &EnvConfig::structMode)    // A3: структурный режим L2/L3
+    .def_rw("struct_obs_a4", &EnvConfig::structObsA4); // A4: наблюдение 80 (последствия ходов, дескрипторы)
 
   nb::class_<SimEnv>(m, "SimEnv")
     .def(nb::init<Instance, EnvConfig>(), nb::arg("instance"), nb::arg("config"))

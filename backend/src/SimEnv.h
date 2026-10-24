@@ -100,6 +100,10 @@ struct Instance {
   double outsourceOpMarkup = 1.6;    // субподряд: mul × (ставка типа + труд) × часы работы
   double outsourceOpShare = 0.25;    // объём одного хода: доля недельного фонда узкого места
   std::vector<InvestCand> investCands;                    // ≤ SimEnv::kInvestSlots кандидатов L3 (TOC / двойственные цены)
+  // Волна A4: дешёвый взгляд вперёд для инвестиций — таблица [кандидат][неделя заказа] = {ΔCVaR₀.₁(Π), ΔE[Π], ЧДД}
+  // в % стоимости портфеля и ΔP(разрыва); считается InvestEval на малом CRN-пакете ОБУЧАЮЩИХ сценариев, кэш по
+  // сигнатуре (экземпляр, неделя) — rl/eval/a4_common.py:invest_lookahead. Пусто → признаки 0.
+  std::vector<std::vector<std::vector<double>>> investLa;
 };
 
 Instance instance_from_json(const json& j);
@@ -158,6 +162,10 @@ struct EnvConfig {
   // Волна A3: структурный режим L2/L3 — компактное пространство ходов вокруг узкого места (kStructActs),
   // эпохи — начало недели И экстренные события (отказ, срочный заказ, вскрывшийся срыв поставки).
   bool structMode = false;
+  // Волна A4: наблюдение структурного режима 80 = 48 (A3) + последствия ходов (сверхурочные/субподряд — прогноз
+  // штрафов и выручки в горизонте с ходом и без; инвестиции — таблица investLa; запас ликвидности после хода)
+  // + дескрипторы экземпляра (класс, касса, лимит, постоянные, маржа). false → 48 (политики A3 без изменений).
+  bool structObsA4 = false;
   unsigned seed = 42;
 };
 
@@ -196,13 +204,13 @@ public:
   const std::vector<uint8_t>& mask_l2() const { return maskL2_; }
   int obs_l0_size() const { return cfg_.kMaxCands * kCandFeats + kMachFeats + kPoolFeats + kGlobFeats + kShockFeats; }
   int act_l0_size() const { return cfg_.kMaxCands + 1; }   // + WAIT
-  int obs_l2_size() const { return cfg_.structMode ? kStructObs : cfg_.kMaxOrders * kOrderFeats + cfg_.kMaxWct + kFinFeats; }
+  int obs_l2_size() const { return cfg_.structMode ? (cfg_.structObsA4 ? kStructObsA4 : kStructObs) : cfg_.kMaxOrders * kOrderFeats + cfg_.kMaxWct + kFinFeats; }
   int act_l2_size() const { return cfg_.structMode ? kStructActs : 1 + kMoveKinds * cfg_.kMaxOrders + kFinActs + (cfg_.investEnabled ? cfg_.kMaxWct : 0); }
 
   // ── Волна A3: структурный режим (SimEnvStruct.cpp) ──
   enum StructAct { kSNoop = 0, kSOvertime, kSOutsource, kSAltRoute, kSSplit, kSInvest0, kSInvest1, kSInvest2,
                    kSDraw, kSRepay, kSDispDefault, kSDispEdd, kSDispExpedite, kStructActs };
-  static constexpr int kInvestSlots = 3, kStructObs = 48;
+  static constexpr int kInvestSlots = 3, kStructObs = 48, kStructObsA4 = 80;
   static const char* const kStructActNames[kStructActs];
   /** Диспетчеризация L0 по умолчанию (статический чемпион): правило или ключ (CP-SAT/ГА); сохраняется между эпизодами. */
   void set_dispatch(const std::string& rule, const std::vector<double>& key);
@@ -347,6 +355,12 @@ private:
   double type_rate(const std::string& wct) const;
   int  horizon_tt() const;
   std::vector<double> project_finish(const std::string& wct) const;   // прогноз окончания заказов с учётом мощности узкого места
+  // A4: прогноз окончания с ходом — extraE машино-минут сверхурочных на узком месте в ближайшую неделю и/или
+  // джобы removed, переданные субподрядчику (срок + работа); стоимость заказа при окончании fin (штраф договора или
+  // потеря маржи за горизонтом); признаки последствий ходов и дескрипторы экземпляра (f[48..79]).
+  std::vector<double> project_finish_alt(const std::string& wct, double extraE, const std::vector<int>& removed) const;
+  std::pair<double,double> order_cost(int k, double fin) const;   // {штраф договора, потеря маржи за горизонтом}
+  void build_obs_a4(float* f, const std::string& bn, double c, double u) const;
   int  urgent_order_for(int kind) const;
 };
 

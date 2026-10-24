@@ -1,0 +1,127 @@
+{
+ "seed": 1,
+ "variant": "C",
+ "lambda": 0.5,
+ "bc": {
+  "n": 82573,
+  "agreement": 1.0,
+  "score": 0.0
+ },
+ "curve": [
+  {
+   "decisions": 0,
+   "score": 0.0,
+   "phase": "bc"
+  },
+  {
+   "decisions": 502388,
+   "score": 0.0,
+   "phase": "rl"
+  },
+  {
+   "decisions": 1004896,
+   "score": -0.0001,
+   "phase": "rl"
+  },
+  {
+   "decisions": 1506479,
+   "score": -0.00016,
+   "phase": "rl"
+  },
+  {
+   "decisions": 2010752,
+   "score": 0.0,
+   "phase": "rl"
+  }
+ ],
+ "iters": [
+  {
+   "it": 1,
+   "decisions": 249114,
+   "n_states": 960,
+   "best_gain_mean": 0.2372,
+   "best_ne_current": 0.637,
+   "kl": 0.0109,
+   "epochs": 9
+  },
+  {
+   "it": 2,
+   "decisions": 502388,
+   "n_states": 960,
+   "best_gain_mean": 0.3464,
+   "best_ne_current": 0.639,
+   "kl": 0.0062,
+   "epochs": 20
+  },
+  {
+   "it": 3,
+   "decisions": 752482,
+   "n_states": 960,
+   "best_gain_mean": 0.2446,
+   "best_ne_current": 0.642,
+   "kl": 0.0014,
+   "epochs": 20
+  },
+  {
+   "it": 4,
+   "decisions": 1004896,
+   "n_states": 960,
+   "best_gain_mean": 0.2195,
+   "best_ne_current": 0.662,
+   "kl": 0.0005,
+   "epochs": 20
+  },
+  {
+   "it": 5,
+   "decisions": 1252317,
+   "n_states": 960,
+   "best_gain_mean": 0.2552,
+   "best_ne_current": 0.647,
+   "kl": 0.0009,
+   "epochs": 20
+  },
+  {
+   "it": 6,
+   "decisions": 1506479,
+   "n_states": 960,
+   "best_gain_mean": 0.2858,
+   "best_ne_current": 0.643,
+   "kl": 0.0065,
+   "epochs": 20
+  },
+  {
+   "it": 7,
+   "decisions": 1756908,
+   "n_states": 960,
+   "best_gain_mean": 0.274,
+   "best_ne_current": 0.64,
+   "kl": 0.0105,
+   "epochs": 14
+  },
+  {
+   "it": 8,
+   "decisions": 2010752,
+   "n_states": 960,
+   "best_gain_mean": 0.2508,
+   "best_ne_current": 0.62,
+   "kl": 0.0003,
+   "epochs": 20
+  },
+  {
+   "it": 9,
+   "decisions": 2261659,
+   "n_states": 960,
+   "best_gain_mean": 0.2453,
+   "best_ne_current": 0.647,
+   "kl": 0.0004,
+   "epochs": 20
+  }
+ ],
+ "best": {
+  "decisions": 0,
+  "score": 0.0,
+  "phase": "bc"
+ },
+ "decisions": 2261659,
+ "note": "остановлен вручную после 2.26e6 решений (≥ минимума 2e6): argmax не менялся, валидация 0/−0.0001/−0.00016/0; восстановлено из журнала"
+}

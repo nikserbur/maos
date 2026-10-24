@@ -310,6 +310,8 @@ export interface FinParams {
   vat_period_weeks: number; vat_instalments: number; vat_instalment_lag_weeks: number; tax_period_weeks: number
   payroll_weeks: number[]; dscr_covenant: number; rate_owner: number; rate_bank: number
   beta: number; l_min: number; horizon_weeks: number; cash_samples: number; auto_repay: number
+  /** A4: налог на прибыль нарастающим итогом с начала года (1, по умолчанию; ст. 285–286 НК РФ) | 0 — помесячно с NOL. */
+  tax_cumulative?: number
 }
 export interface PeriodQuantiles { p05: number[]; p50: number[]; p95: number[] }
 /** KPI денежного слоя (METHODOLOGY-V2 §6.0) по водопаду §4.3 на решении LP. */

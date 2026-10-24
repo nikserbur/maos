@@ -105,7 +105,7 @@ json a3_json(const Instance& inst) {
   return { {"late_fixed", inst.lateFixed}, {"late_per_week", inst.latePerWeek}, {"late_cap", inst.lateCap},
            {"overtime_hours_week", inst.overtimeHoursWeek}, {"overtime_cost_mul", inst.overtimeCostMul},
            {"outsource_op_markup", inst.outsourceOpMarkup}, {"outsource_op_share", inst.outsourceOpShare},
-           {"invest_cands", c} };
+           {"invest_cands", c}, {"invest_la", inst.investLa} };
 }
 void a3_from(const json& a, Instance& inst) {
   if (!a.is_object()) return;
@@ -120,6 +120,8 @@ void a3_from(const json& a, Instance& inst) {
       ic.prepayShare = std::min(1.0, std::max(0.0, num(c, "prepay_share", 0.3))); ic.source = str(c, "source");
       inst.investCands.push_back(ic);
     }
+  if (a.contains("invest_la") && a["invest_la"].is_array())             // A4: взгляд вперёд инвестиций [c][w][4]
+    inst.investLa = a["invest_la"].get<std::vector<std::vector<std::vector<double>>>>();
 }
 }  // namespace
 
@@ -165,7 +167,8 @@ json instance_to_json(const Instance& inst) {
                {"spread", f.spread}, {"overdraft_spread", f.overdraftSpread}, {"overdraft_limit", f.overdraftLimit},
                {"tau_v", f.tauV}, {"tau_p", f.tauP}, {"tau_soc", f.tauSoc}, {"dso_kernel", f.dsoKernel},
                {"prepay_share", f.prepayShare}, {"dpo_weeks", f.dpoWeeks}, {"lead_weeks", f.leadWeeks},
-               {"dscr_covenant", f.dscrCovenant}, {"payroll_weeks", f.payrollWeeks}, {"tax_cumulative", f.taxCumulative} };
+               {"dscr_covenant", f.dscrCovenant}, {"payroll_weeks", f.payrollWeeks}, {"tax_cumulative", f.taxCumulative},
+               {"auto_repay", f.autoRepay} };
   return { {"name", inst.name}, {"machines", machines}, {"wc_types", wcts}, {"products", products},
            {"workers", workers}, {"eligible", elig}, {"orders", orders}, {"calendar", calendar_json(inst.cal)},
            {"machine_calendars", mcal},
@@ -226,7 +229,8 @@ Instance instance_from_json(const json& j) {
     fp.prepayShare = num(f, "prepay_share", fp.prepayShare); fp.dpoWeeks = (int)num(f, "dpo_weeks", fp.dpoWeeks);
     fp.leadWeeks = (int)num(f, "lead_weeks", fp.leadWeeks); fp.dscrCovenant = num(f, "dscr_covenant", fp.dscrCovenant);
     if (f.contains("payroll_weeks") && f["payroll_weeks"].is_array()) fp.payrollWeeks = f["payroll_weeks"].get<std::vector<int>>();
-    fp.taxCumulative = f.value("tax_cumulative", false);
+    fp.taxCumulative = f.value("tax_cumulative", fp.taxCumulative);    // A4: по умолчанию — нарастающим итогом
+    fp.autoRepay = f.value("auto_repay", fp.autoRepay);                // A4: погашение линии излишком кассы
   }
   if (j.contains("fixed")) { auto& f = j["fixed"]; inst.payrollFixedWeekly = num(f, "payroll_w"); inst.repairBudgetWeekly = num(f, "repair_w"); inst.otherFixedWeekly = num(f, "other_w"); }
   inst.tailWeight = j.value("tail_weight", -1.0);

@@ -463,7 +463,106 @@ void SimEnv::build_obs_struct() {
   f[45] = (float)(weeksLeft * kWeekMin / H);
   f[46] = (!inst_.investCands.empty() && inst_.investCands[0].wct == bn) ? 1.f : 0.f;
   f[47] = (float)nBn / 10.0f;
+  if (cfg_.structObsA4) build_obs_a4(f, bn, c, u);
   for (int a = 0; a < kStructActs; ++a) maskL2_[a] = struct_allowed(a) ? 1 : 0;
+}
+
+/* ── A4: последствия ходов (дешёвый взгляд вперёд) и дескрипторы экземпляра ── */
+// Прогноз окончания заказов с ходом: та же модель, что project_finish (цепочка по средним + очередь узкого места по
+// EDD / фонд), но extraE машино-минут сверхурочных в ближайшую неделю (очередь до cap + E проходит за неделю, дальше —
+// со сдвигом на E) и джобы removed у субподрядчика (срок + работа, вне очереди узкого места).
+std::vector<double> SimEnv::project_finish_alt(const std::string& wct, double extraE, const std::vector<int>& removed) const {
+  const int K = (int)ord_.size();
+  std::vector<char> rem(jobs_.size(), 0);
+  for (int j : removed) if (j >= 0 && j < (int)jobs_.size()) rem[j] = 1;
+  const double lead = inst_.outsourceLeadHours * 60.0;
+  std::vector<double> est(jobs_.size(), 0.0), fin(K, now_), bw(K, 0.0);
+  for (int v : topo_) {
+    const Job& j = jobs_[v]; double e;
+    if (st_.done[v]) e = finishAt_[v] >= 0 ? finishAt_[v] : st_.out.end[v];
+    else { double s0 = std::max(now_, j.releaseMin); for (int p : j.preds) s0 = std::max(s0, est[p]); e = s0 + (rem[v] ? lead : 0.0) + j.durMean; }
+    est[v] = e; fin[j.orderIdx] = std::max(fin[j.orderIdx], e);
+    if (!st_.done[v] && !rem[v] && j.wcType == wct) bw[j.orderIdx] += j.durMean;
+  }
+  double cap = 0;
+  if (auto it = inst_.model.machinesOf.find(wct); it != inst_.model.machinesOf.end()) for (auto& mid : it->second) cap += week_capacity_min(mid);
+  const double rate = std::max(1e-9, cap / kWeekMin);
+  std::vector<int> ord(K); std::iota(ord.begin(), ord.end(), 0);
+  std::sort(ord.begin(), ord.end(), [&](int a, int b) { return due_[a] != due_[b] ? due_[a] < due_[b] : a < b; });
+  double cum = 0;
+  for (int k : ord) {
+    if (bw[k] <= 0) continue;
+    cum += bw[k];
+    const double q = extraE <= 0 ? cum : (cum >= cap + extraE ? cum - extraE : cum * cap / std::max(1e-9, cap + extraE));
+    fin[k] = std::max(fin[k], std::max(now_, inst_.orders[k].releaseMin) + q / rate);
+  }
+  return fin;
+}
+
+// Цена окончания заказа k в момент fin: штраф договора (A3) или, если окончание за горизонтом водопада, потеря
+// маржи (выручка не признаётся, материалы остаются запасом). Завершённые заказы уже в водопаде → 0.
+std::pair<double,double> SimEnv::order_cost(int k, double fin) const {
+  if (ord_[k].finishMin >= 0) return { 0.0, 0.0 };
+  const OrderSpec& o = inst_.orders[k];
+  const double val = o.price * o.qty * sc_.priceMul;
+  if (fin >= horizon_tt() * kWeekMin) return { 0.0, std::max(0.0, val - o.matCost * o.qty) };
+  const double lateW = std::max(0.0, fin - due_[k]) / kWeekMin;
+  if (lateW <= 0) return { 0.0, 0.0 };
+  if (k >= nBaseOrders_) return { cfg_.rushLateLoss * val, 0.0 };
+  const double perW = inst_.latePerWeek >= 0 ? inst_.latePerWeek : cfg_.tardPenaltyPerWeek;
+  const double cap = inst_.lateCap >= 0 ? inst_.lateCap : cfg_.tardPenaltyCap;
+  return { std::min(cap, inst_.lateFixed + perW * lateW) * val, 0.0 };
+}
+
+// f[48..79]: последствия ходов в % стоимости портфеля V (обрезка ±10), запас ликвидности (доли V), дескрипторы.
+void SimEnv::build_obs_a4(float* f, const std::string& bn, double c, double u) const {
+  double V = 0, margin = 0, maxDue = 0;
+  for (int k = 0; k < nBaseOrders_ && k < (int)inst_.orders.size(); ++k) {
+    const OrderSpec& o = inst_.orders[k];
+    V += o.price * o.qty; margin += (o.price - o.matCost) * o.qty; maxDue = std::max(maxDue, o.dueMin);
+  }
+  V = std::max(1.0, V);
+  auto pct = [&](double x) { return (float)std::max(-10.0, std::min(10.0, 100.0 * x / V)); };
+  auto frac = [&](double x) { return (float)std::max(-5.0, std::min(5.0, x / V)); };
+  auto costs = [&](const std::vector<double>& fin) {
+    std::pair<double,double> s{ 0.0, 0.0 };
+    for (int k = 0; k < (int)ord_.size(); ++k) { const auto pc = order_cost(k, fin[k]); s.first += pc.first; s.second += pc.second; }
+    return s;
+  };
+  auto put = [&](int at, std::pair<double,double> base, std::pair<double,double> alt, double fee) {
+    f[at] = pct(base.first - alt.first); f[at + 1] = pct(base.second - alt.second); f[at + 2] = pct(fee);
+    f[at + 3] = pct(base.first + base.second - alt.first - alt.second - fee);
+  };
+  if (!bn.empty()) {
+    const auto base = costs(project_finish_alt(bn, 0.0, {}));
+    if (struct_allowed(kSOvertime)) {                     // сверхурочные: +16 ч/станок узкого места на неделю
+      const auto it = inst_.model.machinesOf.find(bn);
+      const double nM = it != inst_.model.machinesOf.end() ? (double)it->second.size() : 0.0;
+      const double fee = nM * inst_.overtimeHoursWeek * type_rate(bn) * inst_.overtimeCostMul;
+      put(48, base, costs(project_finish_alt(bn, nM * inst_.overtimeHoursWeek * 60.0, {})), fee);
+    }
+    if (struct_allowed(kSOutsource)) {                    // субподряд: те же джобы, что выберет ход
+      const std::vector<int> pick = outsource_pick(bn);
+      double fee = 0; for (int j : pick) fee += inst_.outsourceOpMarkup * jobs_[j].durMean / 60.0 * (jobs_[j].hourRate + jobs_[j].laborRate);
+      put(52, base, costs(project_finish_alt(bn, 0.0, pick)), fee);
+    }
+  }
+  f[68] = frac(c + u);
+  for (int ci = 0; ci < kInvestSlots && ci < (int)inst_.investCands.size(); ++ci) {
+    const InvestCand& ic = inst_.investCands[ci];
+    f[69 + ci] = frac(c + u - ic.capex * ic.prepayShare);
+    if (ci >= (int)inst_.investLa.size() || !struct_allowed(kSInvest0 + ci)) continue;
+    const auto& row = inst_.investLa[ci];
+    if (week_ < (int)row.size())
+      for (int q = 0; q < 4 && q < (int)row[week_].size(); ++q) f[56 + 4 * ci + q] = (float)std::max(-10.0, std::min(10.0, row[week_][q]));
+  }
+  // Дескрипторы экземпляра (класс по сроку последнего заказа: ≤ 6 нед. — малый, ≤ 12 — средний, иначе крупный).
+  const double dueW = maxDue / kWeekMin;
+  f[dueW <= 6.0 ? 72 : (dueW <= 12.0 ? 73 : 74)] = 1.f;
+  f[75] = frac(inst_.fin.creditLimit); f[76] = frac(inst_.fin.c0);
+  f[77] = frac(26.0 * (inst_.otherFixedWeekly + inst_.payrollFixedWeekly + inst_.repairBudgetWeekly));
+  f[78] = frac(margin);
+  f[79] = inst_.investCands.empty() ? 0.f : frac(inst_.investCands[0].capex);
 }
 
 json SimEnv::struct_state() const {

@@ -176,8 +176,9 @@ def focal_types(js_any: dict, prof: dict) -> list[str]:
     return sorted(t for t, u in users.items() if u >= 5 and 0 < nm.get(t, 0) <= 3)
 
 
-def make_instance(me, db: Path, prof: dict, focal: list[str], i: int) -> tuple[str, dict, dict]:
-    rng = np.random.default_rng([A3_SEED, i])
+def make_instance(me, db: Path, prof: dict, focal: list[str], i: int, seed: int = A3_SEED,
+                  prefix: str = "a3") -> tuple[str, dict, dict]:
+    rng = np.random.default_rng([seed, i])
     cls = i // 10 % 3
     W = WINDOW[cls]
     rho = RHO[i % len(RHO)]
@@ -263,7 +264,7 @@ def make_instance(me, db: Path, prof: dict, focal: list[str], i: int) -> tuple[s
            "opex_weekly": 0.0, "life_weeks": INVEST["life_weeks"], "mtbf_mul": INVEST["mtbf_mul"] if has_risk else 1.0,
            "repair_mul": INVEST["repair_mul"] if has_risk else 1.0, "prepay_share": INVEST["prepay"], "source": "toc"}
     js["a3"] = {**CONTRACT, **OVERTIME, **OUTSOURCE_OP, "invest_cands": [m1, mod, machine(b2, "dual")]}
-    name = f"a3-{['s', 'm', 'l'][cls]}{i:02d}"
+    name = f"{prefix}-{['s', 'm', 'l'][cls]}{i:02d}"
     js["name"] = name
     meta = {"rho": rho, "window_w": W, "focal": b, "det_makespan_w": float(fin.max() / WEEK_H), "cash_tight": tight,
             "n_orders": len(js["orders"]), "value": value, "fixed_w": fixed_w, "bottleneck": t1,
@@ -273,7 +274,8 @@ def make_instance(me, db: Path, prof: dict, focal: list[str], i: int) -> tuple[s
     return name, js, meta
 
 
-def write_all(db: Path | None = None) -> dict:
+def write_all(db: Path | None = None, seed: int = A3_SEED, out: Path = OUT, prefix: str = "a3") -> dict:
+    """A4: seed/out/prefix — свежий набор F того же генератора (rl/eval/prereg_a4.md §2)."""
     from rl.env.core import load_module
     me = load_module()
     db = db or (REPO / "backend" / "build" / "maos.db")
@@ -281,18 +283,24 @@ def write_all(db: Path | None = None) -> dict:
     sellable = [(r[0], float(r[1])) for r in con.execute(
         "SELECT p.id, p.demand_max FROM products p WHERE p.sellable=1 AND EXISTS(SELECT 1 FROM routings r WHERE r.product_id=p.id) ORDER BY p.id")]
     con.close()
-    OUT.mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     prof = product_profiles(me, db, sellable)
     focal = focal_types(json.loads(me.instance_from_db(str(db), [(sellable[0][0], 1.0)], [0.0], True).to_json()), prof)
     index = {}
     for i in range(N_INST):
-        name, js, meta = make_instance(me, db, prof, focal, i)
-        (OUT / f"{name}.json").write_text(json.dumps(js), encoding="utf-8")
+        name, js, meta = make_instance(me, db, prof, focal, i, seed, prefix)
+        (out / f"{name}.json").write_text(json.dumps(js), encoding="utf-8")
         index[name] = meta
         print(name, {k: meta[k] for k in ("rho", "cash_tight", "n_orders", "n_jobs", "bottleneck", "bottleneck_load")}, flush=True)
-    (OUT / "index.json").write_text(json.dumps(index, indent=1, ensure_ascii=False), encoding="utf-8")
+    (out / "index.json").write_text(json.dumps(index, indent=1, ensure_ascii=False), encoding="utf-8")
     return index
 
 
 if __name__ == "__main__":
-    write_all()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seed", type=int, default=A3_SEED)
+    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--prefix", default="a3")
+    a = ap.parse_args()
+    write_all(seed=a.seed, out=a.out, prefix=a.prefix)

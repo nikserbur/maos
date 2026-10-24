@@ -20,6 +20,7 @@ cw::FinParams hand_params(double limit) {
   fp.dsoKernel = { 0.0, 0.5, 0.5 }; fp.prepayShare = 0; fp.dpoWeeks = 1; fp.leadWeeks = 0;
   fp.vatPeriodWeeks = 3; fp.vatInstalments = 1; fp.vatInstalmentLagWeeks = 0;
   fp.taxPeriodWeeks = 3; fp.payrollWeeks.clear();
+  fp.autoRepay = false; fp.taxCumulative = false;   // ручной пример §4.7 — правила до A4 (без погашения, налог с NOL)
   return fp;
 }
 cw::ScenarioInput hand_input() {
@@ -142,6 +143,7 @@ TEST(CashWaterfall, IdentitiesHoldOnRandomInputs) {
     fp.vatInstalmentLagWeeks = (int)(5 * u(rng)); fp.taxPeriodWeeks = 1 + (int)(8 * u(rng));
     if (u(rng) < 0.3) fp.payrollWeeks.clear();
     fp.autoRepay = u(rng) < 0.5;
+    fp.taxCumulative = u(rng) < 0.5;                     // A4: оба режима налога
     cw::ScenarioInput in;
     const int T = 4 + (int)(30 * u(rng));
     double scale = fp.c0 + fp.creditLimit + 1;
@@ -247,4 +249,65 @@ TEST(CashWaterfall, A3CapexTrancheIsDrawnAndIdentitiesHold) {
   const cw::ScenarioResult base = cw::run(fp, hand_input());
   EXPECT_NEAR(r.periods[0].netCash, base.periods[0].netCash, 1e-9);      // касса: +транш − CAPEX = 0
   EXPECT_GT(r.periods.back().debt, base.periods.back().debt + 119.0);
+}
+
+// ── Волна A4: правила продукта по умолчанию ─────────────────────────────────────────────────────────────────
+// Погашение линии излишком кассы сверх буфера C_min (revolver sweep): ликвидность C + U в каждом периоде та же, что
+// без погашения, долг и проценты ниже, тождества §4.6 держатся.
+TEST(CashWaterfall, A4DefaultSweepKeepsLiquidityAndCutsInterest) {
+  const cw::FinParams def;
+  EXPECT_TRUE(def.autoRepay);
+  EXPECT_TRUE(def.taxCumulative);
+  cw::FinParams fp = hand_params(1000);
+  fp.taxCumulative = true;
+  cw::ScenarioInput in;
+  for (int t = 0; t < 12; ++t) {          // выборка на старте (закупка), затем инкассация больше платежей
+    cw::PeriodInput p;
+    p.revenue = t >= 2 ? 150 : 0; p.cogs = t >= 2 ? 60 : 0; p.orders = t < 2 ? 200 : 40; p.rawConsumed = p.cogs;
+    p.energy = 30;
+    in.periods.push_back(p);
+  }
+  const cw::ScenarioResult hold = cw::run(fp, in);
+  fp.autoRepay = true; fp.cMin = 5;
+  const cw::ScenarioResult sweep = cw::run(fp, in);
+  fp.autoRepay = false;
+  const cw::ScenarioResult hold5 = cw::run(fp, in);
+  EXPECT_GT(hold.maxDebt, 100.0);
+  EXPECT_LT(sweep.totalInterest, hold5.totalInterest - 1e-6);
+  EXPECT_LT(sweep.periods.back().debt, hold5.periods.back().debt - 1.0);
+  for (size_t t = 0; t < in.periods.size(); ++t) {
+    const auto& a = sweep.periods[t]; const auto& b = hold5.periods[t];
+    EXPECT_FALSE(a.breach);
+    if (a.debt > 1e-9) EXPECT_NEAR(a.cash, fp.cMin, 1e-9) << t;        // пока есть долг, касса держится на буфере
+    EXPECT_GE(a.cash + a.undrawn, b.cash + b.undrawn - (hold5.totalInterest - sweep.totalInterest) - 1e-6) << t;
+  }
+  EXPECT_GT(sweep.profit, hold5.profit);                                // экономия процентов после налога
+  EXPECT_LE(sweep.residuals.max(), 1e-9 * 5000);
+}
+
+// Налог нарастающим итогом по умолчанию: при убытке в начале года и прибыли позже налог за горизонт = τ·max(0, Σ EBT)
+// (в обоих режимах при такой последовательности), а при прибыли в начале и убытке позже — меньше, чем помесячно с NOL.
+TEST(CashWaterfall, A4DefaultTaxIsYearToDate) {
+  cw::FinParams fp = hand_params(1000);
+  fp.taxCumulative = cw::FinParams{}.taxCumulative;
+  ASSERT_TRUE(fp.taxCumulative);
+  fp.vatPeriodWeeks = 4; fp.taxPeriodWeeks = 4; fp.dsoKernel = { 1.0 };
+  cw::ScenarioInput in;
+  for (int t = 0; t < 12; ++t) {
+    cw::PeriodInput p;
+    p.revenue = t < 4 ? 300 : 50; p.cogs = t < 4 ? 100 : 20; p.orders = p.cogs; p.rawConsumed = p.cogs; p.energy = 60;
+    in.periods.push_back(p);
+  }
+  const cw::ScenarioResult ytd = cw::run(fp, in);
+  fp.taxCumulative = false;
+  const cw::ScenarioResult nol = cw::run(fp, in);
+  double ebt = 0, accrued = 0, accruedNol = 0;
+  for (size_t t = 0; t < ytd.periods.size(); ++t) {
+    ebt += ytd.periods[t].ebt;
+    accrued += ytd.periods[t].ebt - ytd.periods[t].profitAcc;
+    accruedNol += nol.periods[t].ebt - nol.periods[t].profitAcc;
+  }
+  EXPECT_NEAR(accrued, 0.25 * std::max(0.0, ebt), 1e-9 * 1000);         // расход по налогу = τ·max(0, Σ EBT)
+  EXPECT_GT(accruedNol, accrued + 1.0);                                  // помесячно: налог с ранней прибыли сверх τ·Σ EBT
+  EXPECT_LE(ytd.residuals.max(), 1e-9 * 5000);
 }

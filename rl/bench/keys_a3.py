@@ -23,9 +23,9 @@ GA_SEED0, GA_NS = 1000, 8
 
 
 def _one(args) -> tuple[str, dict]:
-    name, sec, ga_sec = args
+    name, sec, ga_sec, d = args
     me = load_module()
-    js = json.loads((A3_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    js = json.loads((d / f"{name}.json").read_text(encoding="utf-8"))
     inst = me.Instance.from_json(json.dumps(js))
     det = me.SimEnv(inst, make_config({"event_mode": False, "deterministic": True, "breakdowns": False, "dense_reward": False}))
     best, bf, bg = None, float("inf"), None
@@ -58,10 +58,16 @@ def main() -> None:
     ap.add_argument("--sec", type=float, default=60.0)
     ap.add_argument("--ga-sec", type=float, default=30.0)
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--set", choices=["A3", "F"], default="A3")      # A4: свежий набор F (prereg_a4.md §4 п.2)
     a = ap.parse_args()
+    if a.set == "F":
+        from rl.eval.a4_common import A4_RES, F_DIR, set_names
+        names, d, out = set_names("F"), F_DIR, A4_RES / "keys_a4f.json"
+    else:
+        names, d, out = a3_names(), A3_DIR, A3_RES / "keys_a3.json"
     with ProcessPoolExecutor(a.workers) as ex:
-        res = dict(ex.map(_one, [(n, a.sec, a.ga_sec) for n in a3_names()]))
-    save(A3_RES / "keys_a3.json", res)
+        res = dict(ex.map(_one, [(n, a.sec, a.ga_sec, d) for n in names]))
+    save(out, res)
 
 
 if __name__ == "__main__":

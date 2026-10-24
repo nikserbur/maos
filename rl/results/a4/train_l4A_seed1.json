@@ -1,0 +1,749 @@
+{
+ "seed": 1,
+ "variant": "A",
+ "lambda": 0.5,
+ "ppo": {
+  "lr": 3e-05,
+  "clip": 0.1,
+  "target_kl": 0.01,
+  "epochs": 4,
+  "minibatch": 4096,
+  "ent": 0.001,
+  "vf": 0.5,
+  "max_grad": 0.5
+ },
+ "bc_cfg": {
+  "scen": 48,
+  "epochs": 10,
+  "smooth": 0.05,
+  "lr": 0.001
+ },
+ "B": 32,
+ "alpha": 0.1,
+ "w_cash": 0.5,
+ "bc": {
+  "n": 82573,
+  "loss": 0.2615458369255066,
+  "agreement": 1.0,
+  "score": 0.0,
+  "sec": 105.48896312713623
+ },
+ "curve": [
+  {
+   "decisions": 0,
+   "score": 0.0,
+   "phase": "bc",
+   "sec": 105.48896837234497
+  },
+  {
+   "decisions": 111607,
+   "score": 0.0,
+   "phase": "rl",
+   "sec": 230.60110640525818
+  },
+  {
+   "decisions": 222946,
+   "score": 0.0,
+   "phase": "rl",
+   "sec": 356.2110893726349
+  },
+  {
+   "decisions": 305816,
+   "score": 0.0,
+   "phase": "rl",
+   "sec": 463.5140962600708
+  },
+  {
+   "decisions": 417081,
+   "score": 0.0,
+   "phase": "rl",
+   "sec": 587.5532469749451
+  },
+  {
+   "decisions": 500446,
+   "score": 0.0,
+   "phase": "rl",
+   "sec": 694.7679712772369
+  }
+ ],
+ "best": {
+  "decisions": 0,
+  "score": 0.0,
+  "phase": "bc",
+  "validation": {
+   "score": 0.0,
+   "per_instance": {
+    "a3-s00": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0,
+     "moves": {},
+     "profit_cvar": 14576994.928701945,
+     "cash_min_cvar": -1674729.1366328832
+    },
+    "a3-s01": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0,
+     "moves": {},
+     "profit_cvar": 18431667.974516977,
+     "cash_min_cvar": -12416564.640915148
+    },
+    "a3-s02": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.013701326967780997,
+     "moves": {
+      "overtime": 663
+     },
+     "profit_cvar": 5254726.337338745,
+     "cash_min_cvar": 0.0
+    },
+    "a3-s03": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.011559244211817539,
+     "moves": {
+      "overtime": 695
+     },
+     "profit_cvar": 4169954.2247776785,
+     "cash_min_cvar": -9966931.95295491
+    },
+    "a3-s04": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.008402563689091574,
+     "moves": {
+      "overtime": 646
+     },
+     "profit_cvar": 18748054.486870117,
+     "cash_min_cvar": 0.0
+    },
+    "a3-s05": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.01051434543303629,
+     "moves": {
+      "overtime": 898
+     },
+     "profit_cvar": 10708909.06696143,
+     "cash_min_cvar": -20535420.614112247
+    },
+    "a3-s06": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.006997921961133495,
+     "moves": {
+      "overtime": 1105
+     },
+     "profit_cvar": 24441650.80846642,
+     "cash_min_cvar": 0.0
+    },
+    "a3-s07": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0,
+     "moves": {},
+     "profit_cvar": 11466878.78994446,
+     "cash_min_cvar": -31053779.965974312
+    },
+    "a3-s08": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.002560949571743443,
+     "moves": {
+      "overtime": 654
+     },
+     "profit_cvar": 3896963.416070347,
+     "cash_min_cvar": -1461721.7537194851
+    },
+    "a3-s09": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0405643356201748,
+     "moves": {
+      "overtime": 926
+     },
+     "profit_cvar": 9915478.988002433,
+     "cash_min_cvar": -10939641.527671512
+    },
+    "a3-m10": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0031557006304953014,
+     "moves": {
+      "overtime": 994
+     },
+     "profit_cvar": 8326060.870972991,
+     "cash_min_cvar": 0.0
+    },
+    "a3-m11": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 7.249044654185473e-05,
+     "moves": {
+      "dispatch": 38
+     },
+     "profit_cvar": -1987637.3574368302,
+     "cash_min_cvar": -24347258.734038267
+    },
+    "a3-m12": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0015203919839740737,
+     "moves": {
+      "overtime": 921
+     },
+     "profit_cvar": 7594511.006982026,
+     "cash_min_cvar": 0.0
+    },
+    "a3-m13": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.027564872802996822,
+     "moves": {
+      "overtime": 597
+     },
+     "profit_cvar": 8680820.788947318,
+     "cash_min_cvar": -28734045.676480994
+    },
+    "a3-m14": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.007064269697671604,
+     "moves": {
+      "invest": 128,
+      "overtime": 2284
+     },
+     "profit_cvar": 29562509.295630604,
+     "cash_min_cvar": 0.0
+    },
+    "a3-m15": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.010600153531301238,
+     "moves": {
+      "overtime": 2396
+     },
+     "profit_cvar": 10176723.194156187,
+     "cash_min_cvar": -44387295.11127266
+    },
+    "a3-m16": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0021311877426982923,
+     "moves": {
+      "overtime": 168
+     },
+     "profit_cvar": 9371389.966570502,
+     "cash_min_cvar": 0.0
+    },
+    "a3-m17": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.06186554303356846,
+     "moves": {
+      "overtime": 1611,
+      "outsource_op": 559,
+      "dispatch": 38
+     },
+     "profit_cvar": 7696497.171164417,
+     "cash_min_cvar": -23790676.360439334
+    },
+    "a3-m18": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0,
+     "moves": {},
+     "profit_cvar": 7560689.191916463,
+     "cash_min_cvar": 0.0
+    },
+    "a3-m19": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.0012604905272472684,
+     "moves": {
+      "overtime": 2427
+     },
+     "profit_cvar": 10361390.8664847,
+     "cash_min_cvar": -34149979.124620594
+    },
+    "a3-l20": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.02927661389560351,
+     "moves": {
+      "overtime": 2239
+     },
+     "profit_cvar": 22323904.161607023,
+     "cash_min_cvar": -1577951.4822533845
+    },
+    "a3-l21": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.02689013579913068,
+     "moves": {
+      "overtime": 1694,
+      "outsource_op": 570,
+      "dispatch": 38
+     },
+     "profit_cvar": 2015456.29862549,
+     "cash_min_cvar": -64658494.26967776
+    },
+    "a3-l22": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.012736081594732971,
+     "moves": {
+      "modernize": 128,
+      "overtime": 6747
+     },
+     "profit_cvar": -15407600.551912604,
+     "cash_min_cvar": 0.0
+    },
+    "a3-l23": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.03539656921553029,
+     "moves": {
+      "overtime": 6683
+     },
+     "profit_cvar": -40908141.35597822,
+     "cash_min_cvar": -70305597.00828908
+    },
+    "a3-l24": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.01408448672991176,
+     "moves": {
+      "overtime": 5159
+     },
+     "profit_cvar": 25388599.730704334,
+     "cash_min_cvar": 0.0
+    },
+    "a3-l25": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.02336823753193651,
+     "moves": {
+      "overtime": 2443
+     },
+     "profit_cvar": -1478419.0749292907,
+     "cash_min_cvar": -56761368.03365634
+    },
+    "a3-l26": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.010249111141785774,
+     "moves": {
+      "invest": 128,
+      "overtime": 2598
+     },
+     "profit_cvar": -1009259.220872925,
+     "cash_min_cvar": -158196820.21985742
+    },
+    "a3-l27": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.03970320502137299,
+     "moves": {
+      "overtime": 2692
+     },
+     "profit_cvar": 226778.9620158961,
+     "cash_min_cvar": -27572698.07289505
+    },
+    "a3-l28": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.007978922782572303,
+     "moves": {
+      "invest": 128,
+      "overtime": 2492
+     },
+     "profit_cvar": 30977485.649420787,
+     "cash_min_cvar": 0.0
+    },
+    "a3-l29": {
+     "score_vs_cstar": 0.0,
+     "score_vs_rule": 0.01654202762352697,
+     "moves": {
+      "overtime": 5166
+     },
+     "profit_cvar": -16113874.357091203,
+     "cash_min_cvar": -186660120.8985981
+    }
+   }
+  }
+ },
+ "iters": [
+  {
+   "it": 1,
+   "decisions": 27674,
+   "n": 27674,
+   "reward_mean": -0.4311065971851349,
+   "dev_share": 0.043325865433258656,
+   "kl": 0.0,
+   "epochs": 4,
+   "clipfrac": 0.0,
+   "entropy": 0.26062634587287903,
+   "vloss": 3.719646453857422,
+   "kinds": {
+    "outsource_op": 479,
+    "invest": 329,
+    "dispatch": 294,
+    "finance": 157,
+    "overtime": 13688,
+    "modernize": 144,
+    "reassign": 69
+   },
+   "sec": 122.63186717033386
+  },
+  {
+   "it": 2,
+   "decisions": 55591,
+   "n": 27917,
+   "reward_mean": -0.3846835494041443,
+   "dev_share": 0.042375613425511334,
+   "kl": 0.0002366172702750191,
+   "epochs": 4,
+   "clipfrac": 0.014435648918151855,
+   "entropy": 0.24275492131710052,
+   "vloss": 4.981441497802734,
+   "kinds": {
+    "dispatch": 222,
+    "overtime": 13931,
+    "finance": 152,
+    "modernize": 174,
+    "invest": 351,
+    "outsource_op": 345,
+    "reassign": 60
+   },
+   "sec": 139.44910621643066
+  },
+  {
+   "it": 3,
+   "decisions": 83678,
+   "n": 28087,
+   "reward_mean": -0.5945929884910583,
+   "dev_share": 0.041300245665254386,
+   "kl": 0.00022979575442150235,
+   "epochs": 4,
+   "clipfrac": 0.016128458082675934,
+   "entropy": 0.2270478904247284,
+   "vloss": 5.179475784301758,
+   "kinds": {
+    "invest": 305,
+    "overtime": 14016,
+    "finance": 157,
+    "dispatch": 255,
+    "modernize": 143,
+    "outsource_op": 499,
+    "reassign": 55
+   },
+   "sec": 157.34484934806824
+  },
+  {
+   "it": 4,
+   "decisions": 111607,
+   "n": 27929,
+   "reward_mean": -0.2853698432445526,
+   "dev_share": 0.037022449783379284,
+   "kl": 0.00018843986617866904,
+   "epochs": 4,
+   "clipfrac": 0.01142181921750307,
+   "entropy": 0.21175865828990936,
+   "vloss": 3.0486888885498047,
+   "kinds": {
+    "invest": 264,
+    "dispatch": 212,
+    "overtime": 14109,
+    "finance": 121,
+    "modernize": 161,
+    "outsource_op": 396,
+    "reassign": 59
+   },
+   "sec": 174.33988523483276
+  },
+  {
+   "it": 5,
+   "decisions": 139422,
+   "n": 27815,
+   "reward_mean": -0.251922607421875,
+   "dev_share": 0.03429804062556175,
+   "kl": 0.00017602316802367568,
+   "epochs": 4,
+   "clipfrac": 0.009455329738557339,
+   "entropy": 0.19861631095409393,
+   "vloss": 1.2399249076843262,
+   "kinds": {
+    "finance": 130,
+    "dispatch": 237,
+    "outsource_op": 500,
+    "overtime": 13899,
+    "modernize": 125,
+    "invest": 235,
+    "reassign": 52
+   },
+   "sec": 248.24118518829346
+  },
+  {
+   "it": 6,
+   "decisions": 167572,
+   "n": 28150,
+   "reward_mean": -0.3348614573478699,
+   "dev_share": 0.03175843694493783,
+   "kl": 0.00014304890646599233,
+   "epochs": 4,
+   "clipfrac": 0.007992895320057869,
+   "entropy": 0.1896781027317047,
+   "vloss": 7.7548089027404785,
+   "kinds": {
+    "dispatch": 201,
+    "invest": 234,
+    "overtime": 14380,
+    "modernize": 128,
+    "finance": 108,
+    "outsource_op": 396,
+    "reassign": 39
+   },
+   "sec": 264.9946322441101
+  },
+  {
+   "it": 7,
+   "decisions": 195115,
+   "n": 27543,
+   "reward_mean": -0.22660097479820251,
+   "dev_share": 0.030025777874596087,
+   "kl": 0.00015937932766973972,
+   "epochs": 4,
+   "clipfrac": 0.008749954402446747,
+   "entropy": 0.18035537004470825,
+   "vloss": 1.638595461845398,
+   "kinds": {
+    "dispatch": 191,
+    "modernize": 113,
+    "invest": 223,
+    "overtime": 13739,
+    "finance": 115,
+    "outsource_op": 480,
+    "reassign": 61
+   },
+   "sec": 282.7002112865448
+  },
+  {
+   "it": 8,
+   "decisions": 222946,
+   "n": 27831,
+   "reward_mean": -0.14088290929794312,
+   "dev_share": 0.027559196579353958,
+   "kl": 0.00017545348964631557,
+   "epochs": 4,
+   "clipfrac": 0.008623477071523666,
+   "entropy": 0.1717916578054428,
+   "vloss": 1.046682357788086,
+   "kinds": {
+    "finance": 96,
+    "invest": 195,
+    "dispatch": 154,
+    "modernize": 118,
+    "overtime": 14263,
+    "outsource_op": 358,
+    "reassign": 55
+   },
+   "sec": 299.53229331970215
+  },
+  {
+   "it": 9,
+   "decisions": 250619,
+   "n": 27673,
+   "reward_mean": -0.29324233531951904,
+   "dev_share": 0.025078596465869258,
+   "kl": 7.814340642653406e-05,
+   "epochs": 4,
+   "clipfrac": 0.005095219239592552,
+   "entropy": 0.1652999073266983,
+   "vloss": 5.3903069496154785,
+   "kinds": {
+    "finance": 96,
+    "overtime": 13938,
+    "dispatch": 212,
+    "modernize": 96,
+    "invest": 184,
+    "reassign": 37,
+    "outsource_op": 416
+   },
+   "sec": 373.62358021736145
+  },
+  {
+   "it": 10,
+   "decisions": 278369,
+   "n": 27750,
+   "reward_mean": -0.08902762830257416,
+   "dev_share": 0.025261261261261263,
+   "kl": 0.00010906549141509458,
+   "epochs": 4,
+   "clipfrac": 0.007135135121643543,
+   "entropy": 0.16105477511882782,
+   "vloss": 1.0092613697052002,
+   "kinds": {
+    "finance": 107,
+    "reassign": 44,
+    "invest": 167,
+    "overtime": 14182,
+    "dispatch": 125,
+    "modernize": 102,
+    "outsource_op": 353
+   },
+   "sec": 390.1028542518616
+  },
+  {
+   "it": 11,
+   "decisions": 305816,
+   "n": 27447,
+   "reward_mean": -0.1477559357881546,
+   "dev_share": 0.024192079280067037,
+   "kl": 9.281736129196361e-05,
+   "epochs": 4,
+   "clipfrac": 0.0061208875849843025,
+   "entropy": 0.153592050075531,
+   "vloss": 1.619481086730957,
+   "kinds": {
+    "finance": 102,
+    "dispatch": 154,
+    "invest": 175,
+    "overtime": 13748,
+    "outsource_op": 421,
+    "reassign": 50,
+    "modernize": 101
+   },
+   "sec": 407.2631502151489
+  },
+  {
+   "it": 12,
+   "decisions": 333856,
+   "n": 28040,
+   "reward_mean": -0.14500953257083893,
+   "dev_share": 0.02203994293865906,
+   "kl": 9.072844113688916e-05,
+   "epochs": 4,
+   "clipfrac": 0.005420827306807041,
+   "entropy": 0.14574366807937622,
+   "vloss": 1.7575886249542236,
+   "kinds": {
+    "finance": 99,
+    "dispatch": 137,
+    "overtime": 14362,
+    "outsource_op": 373,
+    "modernize": 82,
+    "invest": 161,
+    "reassign": 36
+   },
+   "sec": 479.96806931495667
+  },
+  {
+   "it": 13,
+   "decisions": 361313,
+   "n": 27457,
+   "reward_mean": -0.12457037717103958,
+   "dev_share": 0.0214881450996103,
+   "kl": 0.0001247092295670882,
+   "epochs": 4,
+   "clipfrac": 0.009323669597506523,
+   "entropy": 0.13377231359481812,
+   "vloss": 0.8155868053436279,
+   "kinds": {
+    "dispatch": 153,
+    "finance": 87,
+    "modernize": 77,
+    "overtime": 13894,
+    "invest": 163,
+    "outsource_op": 407,
+    "reassign": 47
+   },
+   "sec": 497.4137291908264
+  },
+  {
+   "it": 14,
+   "decisions": 389309,
+   "n": 27996,
+   "reward_mean": -0.05897890031337738,
+   "dev_share": 0.020110015716530934,
+   "kl": 5.9372076066210866e-05,
+   "epochs": 4,
+   "clipfrac": 0.0034647807478904724,
+   "entropy": 0.1293569654226303,
+   "vloss": 0.42250117659568787,
+   "kinds": {
+    "overtime": 14418,
+    "invest": 141,
+    "dispatch": 115,
+    "modernize": 85,
+    "reassign": 49,
+    "outsource_op": 329,
+    "finance": 83
+   },
+   "sec": 514.4576172828674
+  },
+  {
+   "it": 15,
+   "decisions": 417081,
+   "n": 27772,
+   "reward_mean": -0.07080967724323273,
+   "dev_share": 0.02005617168371021,
+   "kl": 5.652563049807213e-05,
+   "epochs": 4,
+   "clipfrac": 0.0031686590518802404,
+   "entropy": 0.12978920340538025,
+   "vloss": 0.6443758606910706,
+   "kinds": {
+    "overtime": 14090,
+    "invest": 132,
+    "modernize": 74,
+    "finance": 90,
+    "dispatch": 145,
+    "reassign": 38,
+    "outsource_op": 445
+   },
+   "sec": 531.7987871170044
+  },
+  {
+   "it": 16,
+   "decisions": 445064,
+   "n": 27983,
+   "reward_mean": -0.13790833950042725,
+   "dev_share": 0.019797734338705644,
+   "kl": 3.82928155886475e-05,
+   "epochs": 4,
+   "clipfrac": 0.0018225350650027394,
+   "entropy": 0.12343114614486694,
+   "vloss": 1.6356793642044067,
+   "kinds": {
+    "overtime": 14447,
+    "dispatch": 104,
+    "invest": 147,
+    "finance": 85,
+    "outsource_op": 330,
+    "reassign": 32,
+    "modernize": 85
+   },
+   "sec": 603.9050891399384
+  },
+  {
+   "it": 17,
+   "decisions": 472603,
+   "n": 27539,
+   "reward_mean": -0.11948087066411972,
+   "dev_share": 0.018446566687243544,
+   "kl": 3.945457501686178e-05,
+   "epochs": 4,
+   "clipfrac": 0.0022513526491820812,
+   "entropy": 0.12156359851360321,
+   "vloss": 0.8420483469963074,
+   "kinds": {
+    "overtime": 14016,
+    "modernize": 58,
+    "dispatch": 127,
+    "finance": 85,
+    "outsource_op": 433,
+    "invest": 134,
+    "reassign": 39
+   },
+   "sec": 621.1208922863007
+  },
+  {
+   "it": 18,
+   "decisions": 500446,
+   "n": 27843,
+   "reward_mean": -0.06821335107088089,
+   "dev_share": 0.01896347376360306,
+   "kl": 0.00012654841702897102,
+   "epochs": 4,
+   "clipfrac": 0.00861976109445095,
+   "entropy": 0.12095990777015686,
+   "vloss": 1.5344725847244263,
+   "kinds": {
+    "invest": 131,
+    "outsource_op": 334,
+    "overtime": 14319,
+    "reassign": 41,
+    "finance": 89,
+    "dispatch": 93,
+    "modernize": 66
+   },
+   "sec": 637.8745501041412
+  }
+ ],
+ "decisions": 500446,
+ "sec": 695.5076491832733
+}

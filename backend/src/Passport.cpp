@@ -28,6 +28,8 @@ const Row kFinance[] = {
   { "fin.spread", "деньги", "Спред линии над ключевой", "0.03", "год.", "НОРМ", "типовые условия", "fin_params.spread" },
   { "fin.overdraft_spread", "деньги", "Штрафной спред овердрафта", "0.10", "год.", "НОРМ", "типовые условия", "fin_params.overdraft_spread" },
   { "fin.overdraft_limit", "деньги", "Лимит овердрафта (0 → невозможен)", "0", "тыс. ₽", "НОРМ", "договора нет", "fin_params.overdraft_limit" },
+  { "fin.auto_repay", "деньги", "Казначейское правило: излишек кассы сверх целевого буфера C_min в конце недели гасит кредитную линию (revolver sweep); ликвидность C + U не меняется, выборка — по правилу §4.3 п.8; 0 → только плановое погашение", "1 (вкл.)", "—", "НОРМ", "типовое управление ликвидностью (cash sweep); A4: по умолчанию во всём продукте", "fin_params.auto_repay; CashWaterfall.h:FinParams.autoRepay" },
+  { "fin.tax_cumulative", "деньги", "Налог на прибыль: авансы по базе нарастающим итогом с начала года (переплата — актив, без возврата); 0 → помесячные периоды с переносом убытка (до A4)", "1 (вкл.)", "—", "НОРМ", "ст. 285–286 НК РФ; A4: по умолчанию во всём продукте", "fin_params.tax_cumulative; CashWaterfall.h:FinParams.taxCumulative" },
   { "fin.tau_v", "деньги", "НДС", "0.22", "доля", "НОРМ", "ст. 164 НК РФ с 01.01.2026 [FZ-425]", "fin_params.tau_v" },
   { "fin.tau_p", "деньги", "Налог на прибыль", "0.25", "доля", "НОРМ", "ст. 284 НК РФ с 01.01.2025 [FZ-176]", "fin_params.tau_p" },
   { "fin.tau_soc", "деньги", "Страховые взносы", "0.30", "доля", "НОРМ", "гл. 34 НК РФ", "fin_params.tau_soc" },
@@ -209,10 +211,16 @@ const Row kRl[] = {
   { "rl.a3.invest.tranche", "агенты", "Финансирование CAPEX траншами кредитной линии: 30 % при заказе, 70 % при вводе (минимум выборки водопада), проценты по ключевой ставке пути + спред", "30 / 70 %", "доля", "К", "PLAN-V2 §9", "SimEnvStruct.cpp:order_invest; CashWaterfall drawFloor" },
   { "rl.a3.invest.continuation", "агенты", "ЧДД кандидата: прирост стоимости собственника на горизонте + операционный поток после налога в неделю использования, продлённый на ≤ 260 недель («портфель повторяется»), + остаточная стоимость × 0.7", "260 нед; 0.7", "—", "К", "ВК 477 (расчётный период = срок жизни проекта)", "InvestEval.cpp:evaluate" },
   { "rl.a3.invest.apply", "агенты", "Правило применения: E[ЧДД] > 0, нижняя граница 95%-ДИ E[ЧДД] > 0 на ОТЛОЖЕННЫХ сценариях, CVaR₀.₀₅(C_min) ≥ min(L, база), L = 0", "L = 0", "₽", "К", "PLAN-V2 §9", "InvestEval.cpp:evaluate; InvestApi.cpp" },
-  { "rl.a3.tax_cumulative", "деньги", "Налог на прибыль по базе нарастающим итогом с начала года (переплата — актив, без возврата); по умолчанию выключено, включено в экземплярах A3 и в «Инвестпроектах»", "вкл. (A3)", "—", "НОРМ", "ст. 285–287 НК РФ; поправка П1 prereg_a3", "CashWaterfall.h:FinParams.taxCumulative" },
+  { "rl.a3.tax_cumulative", "деньги", "Налог на прибыль по базе нарастающим итогом с начала года (переплата — актив, без возврата); A3 — эксперимент, с A4 — по умолчанию во всём продукте (fin.tax_cumulative)", "вкл.", "—", "НОРМ", "ст. 285–287 НК РФ; поправка П1 prereg_a3", "CashWaterfall.h:FinParams.taxCumulative" },
   { "rl.a3.family", "агенты", "Семейство A3: 30 экземпляров (окна 3/6/12 нед.), ρ ∈ {0.9, 1.1, 1.25, 1.4}, наценка U(0.25,0.6), постоянные φ ~ U(0.3,0.5) маржи, сроки (EDD − запуск)/ρ × U(0.9,1.2), лимит 1.25·q90 / 1.0·медиана потребности", "seed 20261023", "—", "К", "rl/eval/prereg_a3.md §2", "rl/bench/instances_a3.py" },
   { "rl.a3.reward", "агенты", "Награда PPO: терминальная парная (CRN) к H*: 100·[(1+κ·1{Π_ref ≤ η})(Π − Π_ref) + 0.5·(min(0,C_min) − min(0,C_min,ref))]/V", "κ 4; α 0.1", "—", "К", "Tamar et al. 2015; prereg_a3 §7", "rl/env/l3_env.py:StructEnv.terminal_reward" },
   { "rl.a3.ppo", "агенты", "PPO L3: n_steps 256 × 16 сред, batch 1024, lr 5e-5, γ 0.995, clip 0.1, ent 0.002, MLP [256,256]; BC от H* (48 сц./экз./пул, 6 эпох, сглаживание 0.05)", "см. значение", "—", "К", "prereg_a3 §7", "rl/train/train_l3.py" },
+  // ── Волна A4: RL против строгого чемпиона C* (rl/eval/prereg_a4.md) ──
+  { "rl.a4.obs", "агенты", "Наблюдение структурного режима A4: 48 признаков A3 + последствия ходов (сверхурочные/субподряд: прогноз Δ штрафов договора, Δ потерь маржи за горизонтом, плата, чистая выгода, % V) + таблица взгляда вперёд инвестиций + запас ликвидности после хода + дескрипторы экземпляра; вход RL — + one-hot хода C*", "80 (+13)", "—", "НОРМ", "prereg_a4 §6", "SimEnvStruct.cpp:build_obs_a4; EnvConfig.structObsA4" },
+  { "rl.a4.lookahead", "агенты", "Взгляд вперёд инвестиций: InvestEval [кандидат][неделя заказа] на 20 обучающих сценариях (base), ΔCVaR₀.₁(Π), ΔE[Π], ΔP(разрыва), ЧДД; кэш по сигнатуре (экземпляр, неделя)", "20 сц.", "—", "К", "prereg_a4 §6", "rl/eval/a4_common.py:invest_lookahead; Instance.investLa" },
+  { "rl.a4.reward", "агенты", "Награда PPO A4: CVaR по пакету B общих сценариев (Рокафеллар–Урясев): 100/V·[(1−λ)(Π − Π_C*) + λ((η − Π_C*)⁺ − (η − Π)⁺)/α + w_c(min(0,C_min) − min(0,C_min,C*))], η — α-квантиль пакета", "B 32; α 0.1; λ 0.5 | 1; w_c 0.5", "—", "К", "Rockafellar & Uryasev 2000; prereg_a4 §7", "rl/train/train_l4.py:group_rewards" },
+  { "rl.a4.ppo", "агенты", "PPO A4 (собственная реализация): clip 0.1, target KL 0.01, lr 3e-5, ≤ 4 эпох, минипакет 4096, энтропия 0.001, γ 1; BC от C* (48 сц./экз./пул, 10 эпох, сглаживание 0.05); валидация 128 сц.", "см. значение", "—", "К", "prereg_a4 §7", "rl/train/train_l4.py:PPO, BC" },
+  { "rl.a4.family_fresh", "агенты", "Свежий отложенный набор F: тот же генератор A3, seed 20261024, 30 экземпляров (RL их не видит до V5)", "seed 20261024", "—", "К", "prereg_a4 §2", "rl/bench/instances_a3.py --seed 20261024; rl/bench/data/instances_a4f" },
 };
 
 const Row kMacro[] = {
@@ -246,7 +254,7 @@ const char* kFinColumns[] = {
   "tau_v", "tau_p", "tau_soc", "property_tax_weekly", "payroll_fixed_weekly", "repair_budget_weekly",
   "other_fixed_weekly", "pd", "lgd", "prepay_share", "dpo_weeks", "lead_weeks", "vat_period_weeks",
   "vat_instalments", "vat_instalment_lag_weeks", "tax_period_weeks", "dscr_covenant", "rate_owner",
-  "rate_bank", "beta", "l_min", "horizon_weeks", "cash_samples", "auto_repay",
+  "rate_bank", "beta", "l_min", "horizon_weeks", "cash_samples", "auto_repay", "tax_cumulative",
 };
 const char* kFinJsonColumns[] = { "dso_kernel", "payroll_weeks" };
 
@@ -290,10 +298,18 @@ void migrate(Database& db) {
                "payroll_weeks TEXT NOT NULL DEFAULT '[2,0]', dscr_covenant REAL NOT NULL DEFAULT 1.2, "
                "rate_owner REAL NOT NULL DEFAULT 0.18, rate_bank REAL NOT NULL DEFAULT 0.16, "
                "beta REAL NOT NULL DEFAULT 0.05, l_min REAL NOT NULL DEFAULT 0, horizon_weeks INTEGER NOT NULL DEFAULT 0, "
-               "cash_samples INTEGER NOT NULL DEFAULT 300, auto_repay INTEGER NOT NULL DEFAULT 0, "
+               "cash_samples INTEGER NOT NULL DEFAULT 300, auto_repay INTEGER NOT NULL DEFAULT 1, tax_cumulative INTEGER NOT NULL DEFAULT 1, "
                "effective_from TEXT NOT NULL DEFAULT '2026-01-01', "
                "updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
   db.exec_safe("INSERT OR IGNORE INTO fin_params(entity) VALUES('default')");
+  // A4: налог нарастающим итогом и погашение линии излишком кассы — по умолчанию во всём продукте. Для БД, созданных
+  // до A4, — один раз (маркер: строка паспорта fin.auto_repay ещё не посеяна); дальше значения пользователя не трогаем.
+  db.exec_safe("ALTER TABLE fin_params ADD COLUMN tax_cumulative INTEGER NOT NULL DEFAULT 1");
+  if (db.query_json("SELECT code FROM param_passport WHERE code='fin.auto_repay'").empty())
+    db.exec_safe("UPDATE fin_params SET auto_repay=1, tax_cumulative=1, updated_at=datetime('now')");
+  db.exec("UPDATE param_passport SET name=?, value='вкл.', updated_at=datetime('now') "
+          "WHERE code='rl.a3.tax_cumulative' AND value='вкл. (A3)'",
+          { "Налог на прибыль по базе нарастающим итогом с начала года (переплата — актив, без возврата); A3 — эксперимент, с A4 — по умолчанию во всём продукте (fin.tax_cumulative)" });
   // Таблица план-факта операций (пустая до импорта): R20 — калибровка только по ней.
   db.exec_safe("CREATE TABLE IF NOT EXISTS plan_fact_ops ("
                "id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, machine_id TEXT, "
@@ -377,7 +393,8 @@ cash::FinParams load_fin_params(Database& db) {
   fp.vatPeriodWeeks = (int)g("vat_period_weeks", 13); fp.vatInstalments = (int)g("vat_instalments", 3);
   fp.vatInstalmentLagWeeks = (int)g("vat_instalment_lag_weeks", 4); fp.taxPeriodWeeks = (int)g("tax_period_weeks", 4);
   fp.dscrCovenant = g("dscr_covenant", 1.2); fp.rateOwner = g("rate_owner", 0.18); fp.rateBank = g("rate_bank", 0.16);
-  fp.autoRepay = g("auto_repay", 0) != 0;
+  fp.autoRepay = g("auto_repay", 1) != 0;              // A4: по умолчанию вкл. [НОРМ] fin.auto_repay
+  fp.taxCumulative = g("tax_cumulative", 1) != 0;      // A4: по умолчанию вкл. [НОРМ] fin.tax_cumulative
   if (j.contains("dso_kernel") && j["dso_kernel"].is_array() && !j["dso_kernel"].empty())
     fp.dsoKernel = parse_doubles(j["dso_kernel"].dump(), fp.dsoKernel);
   if (j.contains("payroll_weeks") && j["payroll_weeks"].is_array()) {

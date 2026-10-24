@@ -135,8 +135,17 @@ TEST(InvestA3, InvestMachineAddsCapacityAfterLeadWithTranche) {
   for (auto& g : st.gantt()) if (g.at("machine_id") == "inv-mB") { used = true; EXPECT_GE(g.at("start").get<double>() * 60.0, delivery - 1e-6); }
   EXPECT_TRUE(used);
   EXPECT_LT(inv.at("tardiness_h").get<double>(), base.at("tardiness_h").get<double>());
-  EXPECT_GT(inv.at("max_debt").get<double>(), base.at("max_debt").get<double>() + 4.9e5);
   EXPECT_LE(inv.at("cash_residual").get<double>(), 1e-6 * 2e6);
+  // A4: по умолчанию излишек кассы гасит линию — CAPEX покрывается свободной кассой (c0 = 2 млн), долг не копится.
+  EXPECT_LT(inv.at("end_debt").get<double>(), 1.0);
+  // Транши видны в долге при выключенном погашении (fin.auto_repay = false, режим до A4).
+  json jNo = a3_instance(50, 5e5); jNo["fin"]["auto_repay"] = false;
+  SimEnv stNo(maos::env::instance_from_json(jNo), det_cfg(true));
+  const json baseNo = run_struct(stNo, 9, 0, "EDD");
+  const json invNo = run_struct(stNo, 9, SimEnv::kSInvest0, "EDD");
+  EXPECT_GT(invNo.at("max_debt").get<double>(), baseNo.at("max_debt").get<double>() + 4.9e5);
+  EXPECT_LE(invNo.at("cash_residual").get<double>(), 1e-6 * 2e6);
+  EXPECT_GT(inv.at("profit").get<double>(), invNo.at("profit").get<double>());   // проценты по траншам сэкономлены
   // Статическая покупка до эпизода (schedule_invest) = ход invest на эпохе недели 0.
   SimEnv st2(inst, det_cfg(false));
   st2.schedule_invest(0, 0);
@@ -179,4 +188,25 @@ TEST(InvestA3, MachinePaysOnlyWhenBottleneckBinds) {
   ASSERT_GE(cands.size(), 2u);
   EXPECT_EQ(cands[0].wct, "B");
   EXPECT_EQ(cands[1].kind, "modernize");
+}
+
+// Волна A4: наблюдение 80 = 48 признаков A3 (без изменений) + последствия ходов (сверхурочные: чистая выгода =
+// Δштрафов + Δпотерь маржи − плата) + таблица взгляда вперёд инвестиций (a3.invest_la) + дескрипторы экземпляра.
+TEST(InvestA4, StructObsA4ExtendsA3AndPricesMoves) {
+  json j = a3_instance(60, 5e5);
+  std::vector<std::vector<double>> row(26, std::vector<double>(4, 0.0));
+  row[0] = { 0.5, 0.2, -0.1, 3.0 };
+  j["a3"]["invest_la"] = json::array({ row });
+  const Instance inst = maos::env::instance_from_json(j);
+  EnvConfig c3 = det_cfg(true), c4 = det_cfg(true); c4.structObsA4 = true;
+  SimEnv e3(inst, c3), e4(inst, c4);
+  ASSERT_EQ(e4.obs_l2_size(), SimEnv::kStructObsA4);
+  for (SimEnv* e : { &e3, &e4 }) { e->set_dispatch("EDD", {}); e->reset(5); while (e->level() == 0 && !e->done()) e->run_l0(); }
+  const auto& o3 = e3.obs_l2(); const auto& o4 = e4.obs_l2();
+  for (int i = 0; i < SimEnv::kStructObs; ++i) EXPECT_FLOAT_EQ(o3[i], o4[i]) << i;
+  ASSERT_TRUE(e4.mask_l2()[SimEnv::kSOvertime]);
+  EXPECT_GT(o4[50], 0.f);                                              // плата за смену
+  EXPECT_NEAR(o4[51], o4[48] + o4[49] - o4[50], 1e-4);
+  EXPECT_FLOAT_EQ(o4[56], 0.5f); EXPECT_FLOAT_EQ(o4[58], -0.1f);       // таблица инвестиций, неделя 0
+  EXPECT_FLOAT_EQ(o4[72] + o4[73] + o4[74], 1.f);                      // класс — one-hot
 }
