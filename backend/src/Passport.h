@@ -11,6 +11,7 @@
  * CVaR-LP с кассой (CashLp); ставки налогов хранятся с датой начала действия, не в коде.
  */
 #include "CashWaterfall.h"
+#include "CounterpartyRisk.h"
 #include "Database.h"
 #include <nlohmann/json.hpp>
 #include <string>
@@ -28,6 +29,13 @@ json fin_params_json(Database& db);
 json save_fin_params(Database& db, const json& body);
 /** Параметры водопада из fin_params. */
 cash::FinParams load_fin_params(Database& db);
+/** Параметры водопада из строки fin_params (JSON fin_params_json или с переопределением). */
+cash::FinParams fin_params_from_json(const json& fin);
+/** fin_params с переопределением на один запрос (fin_override) — без записи в БД, с той же проверкой диапазонов;
+ *  неизвестный ключ → исключение. */
+json fin_params_with_override(Database& db, const json& override);
+/** CPR: параметры fin.cp.* из fin_params.counterparty (+ переопределение запроса), с проверкой диапазонов. */
+cpr::CpParams counterparty_params(const json& fin, const json& requestOverride);
 
 /** Список паспорта (все параметры) — GET /api/passport. */
 json passport_list(Database& db);

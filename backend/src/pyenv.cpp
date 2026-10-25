@@ -2,6 +2,7 @@
  * nanobind-модуль `maos_env` — стенд rl/ (волна A): SimEnv, экземпляры, сценарии, правила, ГА.
  * Собирается отдельной целью (MAOS_BUILD_PYENV=ON) в rl/env/; сервер от него не зависит.
  */
+#include "CounterpartyRisk.h"
 #include "InvestEval.h"
 #include "SimEnv.h"
 #include <nanobind/nanobind.h>
@@ -10,6 +11,9 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
+#include <fstream>
+#include <limits>
+#include <stdexcept>
 
 namespace nb = nanobind;
 using namespace maos::env;
@@ -17,6 +21,32 @@ using nlohmann::json;
 
 namespace {
 Scenario scenario_of(const std::string& js) { return js.empty() ? Scenario{} : Scenario::from_json(json::parse(js)); }
+
+/* CPR: события контрагентов сценария idx — единственная реализация розыгрыша (стенд не дублирует его на Python).
+   Режимы по месяцам — сырые метки генератора (−1 эпизод, −2 квантильный стресс) + блоки; параметры генератора —
+   из macro_params.json (π_g, кризисный режим, метки HMM). f_tilde = NaN — общего фактора нет (λ_F не применяется);
+   недопустимые fin.cp.* — исключение (ValueError). */
+std::string cp_events_json(const std::string& paramsJson, uint64_t seed, uint64_t idx, const std::vector<int>& regime,
+                           const std::vector<int>& block, int weeks, const std::vector<std::string>& supplierIds,
+                           double fTilde, const std::string& macroParamsPath) {
+  maos::cpr::CpParams p = maos::cpr::CpParams::from_json(paramsJson.empty() ? json::object() : json::parse(paramsJson));
+  if (const auto errs = p.validate(); !errs.empty()) throw std::invalid_argument("fin.cp." + errs.front());
+  static std::string cachedPath;                                  // параметры генератора — один разбор на путь
+  static json cached = json::object();
+  if (macroParamsPath != cachedPath) {
+    cached = json::object();
+    if (!macroParamsPath.empty()) { std::ifstream in(macroParamsPath); if (in) in >> cached; }
+    cachedPath = macroParamsPath;
+  }
+  const json& mp = cached;
+  p.apply_generator(mp);
+  const auto months = regime.empty() ? std::vector<std::vector<int>>{ {} }
+                                     : maos::cpr::resolve_regimes({ regime }, { block }, mp, p.crisisIndex);
+  std::vector<uint32_t> ent;
+  for (const auto& id : supplierIds) ent.push_back(p.supplier_entity(id));   // поставщик позиции — supplier_groups
+  const auto ev = maos::cpr::draw(p, seed, idx, months[0], fTilde, weeks, (int)p.buyer_weights().size(), ent);
+  return json{ {"events", maos::cpr::events_to_json(ev)}, {"params", p.to_json()} }.dump();
+}
 nb::ndarray<nb::numpy, float> to_np(const std::vector<float>& v) {
   float* data = new float[v.size()]; std::copy(v.begin(), v.end(), data);
   nb::capsule owner(data, [](void* p) noexcept { delete[] (float*)p; });
@@ -134,6 +164,10 @@ NB_MODULE(maos_env, m) {
                           {"prepay_share", c.prepayShare}, {"source", c.source} });
           return a.dump(); },
         nb::arg("instance"), nb::arg("rule") = std::string("EDD"), nb::arg("duals") = std::vector<std::string>{}, nb::arg("capex") = 0.0);
+  // CPR (rl.cp.enabled): события контрагентов из генератора C++ — {"events", "params"} для Scenario.cp.
+  m.def("cp_events", &cp_events_json, nb::arg("params_json"), nb::arg("seed"), nb::arg("idx"), nb::arg("regime") = std::vector<int>{},
+        nb::arg("block") = std::vector<int>{}, nb::arg("weeks") = 52, nb::arg("supplier_ids") = std::vector<std::string>{},
+        nb::arg("f_tilde") = std::numeric_limits<double>::quiet_NaN(), nb::arg("macro_params_path") = std::string());
   m.def("ga_improve", [](const SimEnv& e, int generations, int nScen, uint64_t seed0, double timeSec, const std::vector<std::string>& rules) {
           return ga_improve(e, generations, nScen, seed0, timeSec, rules).dump(); },
         nb::arg("env"), nb::arg("generations") = 30, nb::arg("n_scen") = 8, nb::arg("seed0") = 1000, nb::arg("time_sec") = 30.0,

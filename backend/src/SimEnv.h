@@ -29,6 +29,7 @@
  *   Все константы — с кодами паспорта rl.* (Passport.cpp).
  */
 #include "CashWaterfall.h"
+#include "CounterpartyRisk.h"
 #include "SchedCore.h"
 #include <cstdint>
 #include <deque>
@@ -104,6 +105,9 @@ struct Instance {
   // в % стоимости портфеля и ΔP(разрыва); считается InvestEval на малом CRN-пакете ОБУЧАЮЩИХ сценариев, кэш по
   // сигнатуре (экземпляр, неделя) — rl/eval/a4_common.py:invest_lookahead. Пусто → признаки 0.
   std::vector<std::vector<std::vector<double>>> investLa;
+  // CPR (аддитивно): базовые цены покупных позиций (products.base_cost) — плановая смесь поставщиков θ̄_j;
+  // пусто → смесь по количеству [НОРМ-упрощение].
+  std::unordered_map<std::string, double> matPrice;
 };
 
 Instance instance_from_json(const json& j);
@@ -129,6 +133,13 @@ struct Scenario {
   int    rushOrder = 0;                    // индекс заказа-образца (mod число заказов)
   int    regimeShockWeek = -1;             // неделя переключения в кризисный режим (пути — со стенда); для метрик
   double supplyDelay = 0;                  // срыв поставки критичного входа: + задержка (доля LB) поставок затронутых заказов
+  // CPR (аддитивно): события контрагентов сценария (cpr::draw — [seed, 915, idx, kind, entity]; стенд — pyenv
+  // cp_events) и параметры fin.cp.*. Покупатели → потоки водопада (legacy defaultWeek не применяется);
+  // поставщики (entity = entity_of(поставщик позиции НСИ, fin.cp.supplier_groups)) → задержки поставок заказов
+  // (судьба заказа — по fin.lead_weeks, как в Стадии 2), перезаказ с надбавкой, аннулирования.
+  bool hasCp = false;
+  cpr::CpEvents cpEvents;
+  cpr::CpParams cpParams;
   static Scenario from_json(const json& j);
   bool has_shock() const { return outageAt >= 0 || rushAt >= 0 || supplyDelay > 0; }
 };
@@ -232,6 +243,8 @@ public:
   std::string describe_l2(int action) const;
 
   json summary() const;                                    // KPI эпизода + финансы + ходы
+  /** Вход водопада за weeks недель (как run_cash; CPR — с потоками контрагентов) — диагностика и тесты T21. */
+  cash::ScenarioInput cash_input(int weeks) const;
   json gantt() const;
   const std::vector<Job>& jobs() const { return jobs_; }
   const Instance& instance() const { return inst_; }
@@ -314,6 +327,12 @@ private:
   json shock_metrics() const;            // A2: время восстановления пропускной способности и т. п.
   bool invest_allowed(int wi) const;     // A3-крючок: маска хода invest
   std::mt19937 job_rng(int j, uint32_t stream) const;
+  // CPR: дефицитные материалы изделия (индексы поставщиков событий, доли срока supply-джобы), плановая смесь θ̄_j.
+  std::unordered_map<std::string, std::pair<std::vector<int>, std::vector<double>>> cpMats_;
+  std::vector<double> cpTheta_;
+  void resolve_cp();
+  int cp_supplier_of(const std::unordered_map<uint32_t, int>& byEnt, const std::string& productId) const;
+  double cp_supply_delay_min(int j, double durMin) const;
   void init_events();
   bool advance();                        // → true если найдена эпоха решения (L0/L2); false → эпизод завершён
   void place_job(int j, const std::string& machineId, double notBefore);

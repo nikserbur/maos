@@ -1,5 +1,8 @@
 #include "Scheduler.h"
 #include "SchedCore.h"
+#include "CounterpartyRisk.h"
+#include "MacroSampler.h"
+#include "Passport.h"
 #include "RlRule.h"
 #include "CpSatRule.h"
 #include "GaImprover.h"
@@ -8,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <queue>
 #include <random>
 #include <cctype>
@@ -540,6 +544,109 @@ json paired_delta_ci(const std::vector<double>& a, const std::vector<double>& b,
            {"delta_cvar", cvar_upper(b, alpha) - cvar_upper(a, alpha)}, {"ci_cvar", { q(dc, 0.025), q(dc, 0.975) }} };
 }
 
+/* ── CPR (Стадия 1): события поставщиков (поток [seed, 915]) → задержки supply-джоб в durMC ──────────── */
+/* Покупные материалы BOM изделия (рекурсивно по входам операций). */
+void bom_purchased(const Model& m, const std::string& pid, double mult, std::unordered_map<std::string, double>& need,
+                   std::unordered_set<std::string>& vis, int depth) {
+  if (depth > 64 || vis.count(pid)) return;
+  vis.insert(pid);
+  if (auto it = m.opsOf.find(pid); it != m.opsOf.end())
+    for (auto& o : it->second) for (auto& in : o.inputs) {
+      auto pit = m.prods.find(in.first);
+      if (pit != m.prods.end() && pit->second.purchased) need[in.first] += mult * in.second;
+      bom_purchased(m, in.first, mult * in.second, need, vis, depth + 1);
+    }
+  vis.erase(pid);
+}
+
+/* Режимы сценариев по месяцам (MacroSampler, путь s) и F̃_s — те же пути, что у Стадии 2 при том же горизонте. */
+void stage1_regimes(const ScheduleParams& p, const cpr::CpParams& cp, int N, int weeks,
+                    std::vector<std::vector<int>>& months, std::vector<double>& fTilde) {
+  if (!p.macro) return;
+  const macro::SampleResult r = p.macro->sample(N, p.seed, weeks, 0, 0, macro::Stress::from_json(p.macroStress));
+  months = cpr::resolve_regimes(r.paths.regime, r.paths.blockId, p.macro->params(), cp.crisisIndex);
+  if (cp.lambdaF > 0) {
+    const double sgn = p.macro->params()["svd_vectors"][0][2].get<double>() > 0 ? -1.0 : 1.0;
+    for (double f : p.macro->common_factor(r.paths)) fTilde.push_back(sgn * f);
+  }
+}
+
+/* Параметры CPR Стадии 1 и договорной срок L (fin.lead_weeks — единый для Стадий 1, 2 и SimEnv). Нет таблицы
+   fin_params → умолчания; недопустимые значения (в т. ч. переопределения запроса) — исключение → 400. */
+cpr::CpParams stage1_cp_params(Database& db, const ScheduleParams& p, int& L) {
+  json fin = json::object();
+  try { fin = passport::fin_params_json(db); } catch (const std::exception&) {}
+  L = std::max(0, passport::fin_params_from_json(fin).leadWeeks);
+  return passport::counterparty_params(fin, p.counterpartyOverride);
+}
+
+/* Дефицитные покупные материалы заказа (правило supply-джобы: потребность программы > остаток) и их доли срока
+   supply-джобы (срок материала / максимум по дефицитным). */
+struct Stage1Mats { std::vector<std::vector<int>> mats; std::vector<std::vector<double>> share; int maxLeadW = 0, nShort = 0; };
+Stage1Mats stage1_materials(const Model& m, const std::vector<OrderLine>& program, const std::unordered_map<std::string, int>& jOf) {
+  const int K = (int)program.size();
+  Stage1Mats r; r.mats.resize(K); r.share.resize(K);
+  std::vector<std::unordered_map<std::string, double>> perOrder(K);
+  std::unordered_map<std::string, double> total;
+  for (int k = 0; k < K; ++k) {
+    std::unordered_set<std::string> vis;
+    bom_purchased(m, program[k].productId, std::max(1.0, program[k].qty), perOrder[k], vis, 0);
+    for (auto& [id, q] : perOrder[k]) total[id] += q;
+  }
+  double maxLeadH = 0;
+  for (auto& [id, q] : total)
+    if (q > m.prods.at(id).stock) { ++r.nShort; maxLeadH = std::max(maxLeadH, m.prods.at(id).leadHours); }
+  r.maxLeadW = (int)std::ceil(maxLeadH / 168.0 - 1e-9);
+  for (int k = 0; k < K; ++k)
+    for (auto& [id, q] : perOrder[k]) {
+      const Prod& pr = m.prods.at(id);
+      if (!(total[id] > pr.stock)) continue;
+      r.mats[k].push_back(jOf.at(id));
+      r.share[k].push_back(maxLeadH > 0 ? pr.leadHours / maxLeadH : 1.0);
+    }
+  return r;
+}
+
+json stage1_counterparty(Database& db, const Model& m, const std::vector<Job>& jobs, const std::vector<OrderLine>& program,
+                         double horizonHours, const ScheduleParams& p, std::vector<std::vector<double>>& durMC) {
+  if (p.counterparty == 0) return nullptr;
+  int L = 0;
+  cpr::CpParams cp = stage1_cp_params(db, p, L);
+  if (p.counterparty < 0 && !cp.enabled) return nullptr;
+  cp.enabled = true;
+  if (p.macro) cp.apply_generator(p.macro->params());
+  const int K = (int)program.size(), N = (int)durMC.size();
+  std::vector<int> supplyJob(K, -1);
+  for (size_t j = 0; j < jobs.size(); ++j) if (jobs[j].productId == "supply") supplyJob[jobs[j].orderIdx] = (int)j;
+  std::vector<std::string> ids;
+  for (auto& [id, pr] : m.prods) if (pr.purchased) ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  std::vector<uint32_t> ent; std::unordered_map<std::string, int> jOf;
+  for (size_t j = 0; j < ids.size(); ++j) { ent.push_back(cp.supplier_entity(ids[j])); jOf[ids[j]] = (int)j; }
+  const Stage1Mats sm = stage1_materials(m, program, jOf);
+  const int weeks = std::max(1, (int)std::ceil(horizonHours / 168.0 - 1e-9));
+  std::vector<std::vector<int>> months; std::vector<double> fT;
+  stage1_regimes(p, cp, N, weeks, months, fT);
+  const int Tev = std::max(52, weeks + std::max(L, sm.maxLeadW) + 1);
+  std::vector<cpr::CpEvents> ev(N);
+  for (int s = 0; s < N; ++s)
+    ev[s] = cpr::draw(cp, p.seed, (uint64_t)s, s < (int)months.size() ? months[s] : std::vector<int>{},
+                      s < (int)fT.size() ? fT[s] : std::numeric_limits<double>::quiet_NaN(), Tev, 0, ent);
+  const auto X = cpr::stage1_apply(ev, cp, sm.mats, sm.share, std::vector<int>(K, 0), L, supplyJob, durMC);
+  int delayedScen = 0, cells = 0; double sumD = 0, maxD = 0;
+  for (const auto& row : X) {
+    bool any = false;
+    for (double x : row) if (x > 0) { any = true; ++cells; sumD += x / 10080.0; maxD = std::max(maxD, x / 10080.0); }
+    delayedScen += any;
+  }
+  return { {"enabled", true}, {"stream", { (int)p.seed, cpr::kCpStream }}, {"scenarios", N},
+           {"share_scenarios_delayed", N > 0 ? (double)delayedScen / N : 0.0},
+           {"mean_delay_weeks", cells > 0 ? sumD / cells : 0.0}, {"max_delay_weeks", maxD},
+           {"lead_weeks", L}, {"shortage_materials", sm.nShort}, {"regimes", p.macro ? "MacroSampler" : "m ≡ 1 (генератор не передан)"},
+           {"status", "К/НОРМ (паспорт fin.cp.*): эффект при калибровке, не оценка"},
+           {"warnings", cpr::clip_warnings(cp)} };
+}
+
 }  // namespace
 
 /* ── Главная процедура ───────────────────────────────────────────────────── */
@@ -692,6 +799,10 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     for (size_t i = 0; i < jobs.size(); ++i) durMC[s][i] = sample_dur(jobs[i], p.tailWeight, rng);
   std::vector<double> durMean(jobs.size());
   for (size_t i = 0; i < jobs.size(); ++i) durMean[i] = jobs[i].durMean;
+  // CPR: срывы/дефолты поставщиков удлиняют поставку затронутых заказов (после durMC; поток rng(seed) не тронут).
+  double cprHorizonH = portfolioHorizon;
+  if (!(cprHorizonH > 0)) for (auto& ol : program) cprHorizonH = std::max(cprHorizonH, ol.dueHours);
+  const json cprJson = stage1_counterparty(db, m, jobs, program, cprHorizonH > 0 ? cprHorizonH : 720.0, p, durMC);
 
   // Волна A2: правило «CP-SAT» — точная детерминированная модель в sidecar; старты и станки
   // фиксируются пинами, дальше — тот же конвейер МК/CVaR. Sidecar недоступен → error_soft.
@@ -1247,6 +1358,14 @@ json run_schedule(Database& db, const ScheduleParams& p) {
     // Волна A2: правило «CP-SAT» — статус солвера, разрыв к лучшему правилу, «цена детерминизма».
     {"cpsat", cpsatJson},
   };
+  if (!cprJson.is_null()) result["counterparty"] = cprJson;      // CPR: доля сценариев со срывом, Δ просрочки
+  if (p.perScenario) {                                           // CR-E1 §11: те же CRN, что у finalMc (часы)
+    std::vector<double> mks, tards;
+    runScen(key, *finalPins, 0, N, mks, tards);
+    for (double& v : mks) v = H(v);
+    for (double& v : tards) v = H(v);
+    result["mc_per_scenario"] = { {"makespan_h", mks}, {"tardiness_h", tards} };
+  }
   return result;
 }
 

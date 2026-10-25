@@ -3254,6 +3254,8 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       if (body.contains("cash_samples") && !jstr(body, "cash_samples").empty()) pr.cashSamples = (int)std::stod(jstr(body, "cash_samples"));
       pr.scheduleRefId = jstr(body, "schedule_ref_id");
       if (body.contains("pol_curve")) pr.polCurve = flag("pol_curve");
+      if (body.contains("pol_grid") && body["pol_grid"].is_array()) pr.polGrid = body["pol_grid"];   // CR-E1 §8
+      if (body.contains("fixed_schedule")) pr.fixedSchedule = flag("fixed_schedule");                 // CR-E1 §8
       // Волна M: макро-генератор; режим/стресс/опора из запроса, иначе из сценария (macro_mode), иначе base.
       pr.macro = g_macro.get();
       if (body.contains("macro_mode")) {
@@ -3267,6 +3269,11 @@ static void register_optimize(httplib::Server& svr, Database& db) {
       if (body.contains("macro_stress")) pr.macroStress = body["macro_stress"];
       if (body.contains("macro_ref"))    pr.macroRef    = body["macro_ref"];
       if (body.contains("eval_portfolio") && body["eval_portfolio"].is_object()) pr.evalPortfolio = body["eval_portfolio"];   // E1
+      // CPR (§2.6в): fin.cp.* и fin_params на один запрос — без записи в БД; диапазоны проверяются (400 при ошибке).
+      if (body.contains("fin_override") && body["fin_override"].is_object()) pr.finOverride = body["fin_override"];
+      if (body.contains("counterparty") && body["counterparty"].is_object()) pr.counterparty = body["counterparty"];
+      if (!pr.finOverride.is_null() || !pr.counterparty.is_null())
+        maos::passport::counterparty_params(maos::passport::fin_params_with_override(db, pr.finOverride), pr.counterparty);
       pr.scenarioId = jstr(body, "scenario_id");
       if (!jstr(body, "objective").empty()) pr.objective = jstr(body, "objective");
       if (body.contains("samples")) pr.samples = (int)std::stod(jstr(body, "samples"));
@@ -3515,6 +3522,7 @@ static void register_schedule(httplib::Server& svr, Database& db) {
       }
       if (body.contains("improve_iters") && !jstr(body, "improve_iters").empty())
         sp.improveIters = (int)std::stod(jstr(body, "improve_iters"));
+      if (body.contains("per_scenario")) { const std::string ps = jstr(body, "per_scenario"); sp.perScenario = (ps == "true" || ps == "1"); }   // CR-E1 §11
       // Волна A2: правило «CP-SAT» (sidecar) — лимит солвера, с; режим хромосомы ГА.
       if (body.contains("cpsat_time_limit") && !jstr(body, "cpsat_time_limit").empty())
         sp.cpsatTimeLimit = std::clamp(std::stod(jstr(body, "cpsat_time_limit")), 1.0, 600.0);
@@ -3525,6 +3533,16 @@ static void register_schedule(httplib::Server& svr, Database& db) {
       if (body.contains("apply_feedback")) {                    // R5: запись stage1_feedback — явно
         const std::string af = jstr(body, "apply_feedback");
         sp.applyFeedback = (af == "true" || af == "1");
+      }
+      // CPR (§5.3а): срывы/дефолты поставщиков в Монте-Карло Стадии 1; counterparty: true|false|{fin.cp.*}
+      // (нет поля → fin.cp.enabled из БД); режимные пути — обученный генератор (macro_stress → стресс §2.6б).
+      if (body.contains("seed") && !jstr(body, "seed").empty()) sp.seed = (unsigned)std::stod(jstr(body, "seed"));
+      sp.macro = g_macro.get();
+      if (body.contains("macro_stress") && body["macro_stress"].is_object()) sp.macroStress = body["macro_stress"];
+      if (body.contains("counterparty")) {
+        const json& cpv = body["counterparty"];
+        if (cpv.is_boolean()) sp.counterparty = cpv.get<bool>() ? 1 : 0;
+        else if (cpv.is_object()) { sp.counterparty = cpv.value("enabled", true) ? 1 : 0; sp.counterpartyOverride = cpv; }
       }
       // Конструктор эвристики: custom_rule = [{criterion, weight}, …]
       if (body.contains("custom_rule") && body["custom_rule"].is_array())
@@ -4478,7 +4496,7 @@ int main(int argc, char* argv[]) {
   // Health
   svr.Get("/api/health", [&db](const httplib::Request&, httplib::Response& res) {
     cors(res);
-    ok(res, { {"status", "ok"}, {"version", "0.76.3"}, {"project", db.path()} });
+    ok(res, { {"status", "ok"}, {"version", "0.76.4"}, {"project", db.path()} });
   });
 
   // Мультипроектность: список проектов (*.db в рабочей папке) + текущий.
@@ -4608,7 +4626,10 @@ int main(int argc, char* argv[]) {
     audit(db, entity, id, action, payload);
   });
 
-  std::cout << "Listening on http://127.0.0.1:8080\n";
-  svr.listen("127.0.0.1", 8080);
+  // MAOS_PORT — отдельный экземпляр (стенд эксперимента CR-E1 на копии БД); по умолчанию 8080.
+  int port = 8080;
+  if (const char* pe = std::getenv("MAOS_PORT")) { try { port = std::stoi(pe); } catch (...) {} }
+  std::cout << "Listening on http://127.0.0.1:" << port << "\n";
+  svr.listen("127.0.0.1", port);
   return 0;
 }

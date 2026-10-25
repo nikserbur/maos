@@ -52,6 +52,7 @@ add_library(maos_core STATIC
   src/CashLp.cpp
   src/CashOptimize.cpp
   src/CashWaterfall.cpp
+  src/CounterpartyRisk.cpp
   src/CpSatRule.cpp
   src/Database.cpp
   src/ExactCvar.cpp
@@ -138,6 +139,9 @@ if(MAOS_BUILD_TESTS)
   add_executable(maos_tests
     tests/test_cashlp.cpp
     tests/test_cashwaterfall.cpp
+    tests/test_counterparty.cpp
+    tests/test_cpr_golden.cpp
+    tests/test_cpr_stage.cpp
     tests/test_cpsat.cpp
     tests/test_access.cpp
     tests/test_finance.cpp

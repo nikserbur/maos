@@ -30,6 +30,15 @@ struct CashInputs {
   // Волна M: ключевая ставка по сценарию и неделе (N×T, годовая) из MacroSampler; пусто → fin_params.key_rate.
   std::vector<std::vector<double>> keyRate;
   std::vector<double> logisticsIndex;                             // ℓ_i (множитель Pay^log), пусто → 1
+  // CPR (аддитивно): режимы макро-путей по месяцам (сырые метки −1/−2 разрешаются по параметрам генератора),
+  // блоки остатков и общий фактор F_i — для событий контрагентов (поток [seed, 915]); пусто → m ≡ 1, F̃ = 0.
+  std::vector<std::vector<int>> regimeMonths, blockMonths;        // [i][месяц]
+  std::vector<double> factorF;                                    // F_i
+  // Поставщики (покупные позиции НСИ), доли θ_{s,j} материальной себестоимости и дефицит по опорной программе;
+  // пусто → строятся по БД (BOM по базовым ценам, остатки products.stock).
+  std::vector<std::string> supplierIds;
+  std::vector<std::vector<double>> theta;                         // [s][j]
+  std::vector<char> shortage;                                     // [j]
 };
 
 nlohmann::json cash_compare(Database& db, const CashInputs& in, const OptimizeParams& p);

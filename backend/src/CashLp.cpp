@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <string>
 #include <limits>
 #include <mutex>
 
@@ -62,6 +64,20 @@ exact::Metrics metrics_from(std::vector<double> v, double alpha) {
   return mt;
 }
 
+/* CPR: данные сценария i (пустые → общий путь). */
+template <class V> bool has_i(const V& v, size_t i) { return i < v.size() && !v[i].empty(); }
+
+/* Сериализация строк [a, b) с точным (шестнадцатеричным) видом чисел — дамп модели для теста T4. */
+std::string dump_rows(const RowBuilder& rb, int a, int b) {
+  std::string out; char buf[64];
+  for (int r = a; r < b; ++r) {
+    std::snprintf(buf, sizeof buf, "[%a,%a]", rb.lower[r], rb.upper[r]); out += buf;
+    for (HighsInt k = rb.start[r]; k < rb.start[r + 1]; ++k) { std::snprintf(buf, sizeof buf, " %d:%a", (int)rb.index[k], rb.value[k]); out += buf; }
+    out += "\n";
+  }
+  return out;
+}
+
 }  // namespace
 
 std::vector<double> uniform_profile(int T) {
@@ -81,7 +97,7 @@ std::vector<double> payment_profile(const std::vector<double>& production, doubl
   return psi;
 }
 
-Result solve(const Problem& P) {
+Result solve(const Problem& P, ModelDump* dump) {
   Result r;
   const auto t0 = std::chrono::steady_clock::now();
   const exact::Problem& pb = P.base;
@@ -98,6 +114,12 @@ Result solve(const Problem& P) {
       { r.reason = "invalid scenario matrix"; return r; }
   for (size_t s = 0; s < S; ++s)
     if ((int)P.ship[s].size() < T || (int)P.pay[s].size() < TT) { r.reason = "invalid profile length"; return r; }
+  for (const auto* v : { &P.payI, &P.matLossI, &P.shipI })      // CPR: [i][s][t<TT]
+    for (size_t i = 0; i < v->size() && i < N; ++i) {
+      if ((*v)[i].empty()) continue;
+      if ((*v)[i].size() != S) { r.reason = "invalid counterparty data"; return r; }
+      for (const auto& row : (*v)[i]) if ((int)row.size() < TT) { r.reason = "invalid counterparty data"; return r; }
+    }
   const bool cvar = pb.criterion != exact::Criterion::Expected;
   r.tailK = pb.criterion == exact::Criterion::Worst ? 1 : exact::tail_count(pb.alpha, (int)N);
   r.tailKBeta = exact::tail_count(cp.beta, (int)N);
@@ -149,8 +171,15 @@ Result solve(const Problem& P) {
   const int cU = cEta + 1;
   const int cZeta = cU + (cvar ? (int)N : 0);
   const int cV = cZeta + 1;
-  const int nCol = cV + (int)N;
+  // CPR: выручка R_{i,t} при t ∈ [T, TT) — только у сценариев со сдвигом отгрузок; столбцы — в конце
+  // (индексы общего пути не меняются, строки сценариев без событий те же).
+  const int cRx = cV + (int)N;
+  std::vector<int> rxOff(N, -1); int nRx = 0;
+  for (size_t i = 0; i < N; ++i) if (has_i(P.shipI, i)) { rxOff[i] = nRx; nRx += TT - T; }
+  const int nCol = cRx + nRx;
   auto fin = [&](int i, int t) { return cp.firstStage ? t : i * TT + t; };
+  auto rcol = [&](size_t i, int t) { return t < T ? cR + (int)i * T + t : (rxOff[i] >= 0 && t < TT ? cRx + rxOff[i] + t - T : -1); };
+  auto shipOf = [&](size_t i, size_t s, int t) { return has_i(P.shipI, i) ? P.shipI[i][s][t] : (t < T ? P.ship[s][t] : 0.0); };
 
   HighsLp lp;
   lp.num_col_ = nCol;
@@ -171,23 +200,39 @@ Result solve(const Problem& P) {
       lp.col_upper_[cD + i * TT + t] = std::max(0.0, cp.creditLimit) / M;
     }
   }
+  for (int c = cRx; c < nCol; ++c) lp.col_lower_[c] = -kHighsInf;
   lp.col_lower_[cEta] = -kHighsInf;
   lp.col_lower_[cZeta] = -kHighsInf;
+  // CPR: списания (λ) и потери материала уменьшают Π_i: в цели E[Π] — с весом 1/N.
+  auto add_cp_expected = [&](std::vector<double>& cost) {
+    for (size_t i = 0; i < N; ++i) {
+      if (has_i(P.writeOffI, i))
+        for (const LpFlow& f : P.writeOffI[i]) { const int rc = rcol(i, f.from); if (rc >= 0) cost[rc] += f.share * v1 / N; }
+      if (has_i(P.matLossI, i))
+        for (size_t s = 0; s < S; ++s) {
+          double ml = 0; for (int t = 0; t < TT; ++t) ml += P.matLossI[i][s][t];
+          cost[cX + s] += ml * pb.cost[i][s] * P.vatCostShare[s] * sigma[s] / M / N;
+        }
+    }
+  };
+  // Коэффициенты цели max E[Π] (min −E[Π]/M) — критерий Expected и фаза 2 лексикографической постановки.
+  auto expected_costs = [&](std::vector<double>& cost) {
+    for (size_t i = 0; i < N; ++i) {
+      for (size_t s = 0; s < S; ++s) {
+        cost[cY + s] += -pb.price[i][s] * sigma[s] / M / N;
+        cost[cX + s] +=  pb.cost[i][s]  * sigma[s] / M / N;
+      }
+      for (int t = 1; t < TT; ++t) cost[cD + i * TT + t - 1] += P.rate[i][t] / N;
+      cost[cD + i * TT + TT - 1] += P.rate[i][TT - 1] / N;      // терминальный период
+      for (int q = 0; q < Q; ++q) cost[cTax + i * Q + q] += 1.0 / N;
+    }
+    add_cp_expected(cost);
+  };
   // Цель (min −F/M).
   if (cvar) {
     lp.col_cost_[cEta] = -1.0;
     for (size_t i = 0; i < N; ++i) lp.col_cost_[cU + i] = 1.0 / r.tailK;
-  } else {
-    for (size_t i = 0; i < N; ++i) {
-      for (size_t s = 0; s < S; ++s) {
-        lp.col_cost_[cY + s] += -pb.price[i][s] * sigma[s] / M / N;
-        lp.col_cost_[cX + s] +=  pb.cost[i][s]  * sigma[s] / M / N;
-      }
-      for (int t = 1; t < TT; ++t) lp.col_cost_[cD + i * TT + t - 1] += P.rate[i][t] / N;
-      lp.col_cost_[cD + i * TT + TT - 1] += P.rate[i][TT - 1] / N;      // терминальный период
-      for (int q = 0; q < Q; ++q) lp.col_cost_[cTax + i * Q + q] += 1.0 / N;
-    }
-  }
+  } else expected_costs(lp.col_cost_);
   if (cp.lambdaL > 0) {
     lp.col_cost_[cZeta] += -cp.lambdaL;
     for (size_t i = 0; i < N; ++i) lp.col_cost_[cV + i] += cp.lambdaL / r.tailKBeta;
@@ -228,15 +273,34 @@ Result solve(const Problem& P) {
       }
       rb.add(row, -kHighsInf, 0.0);
     }
+  // CPR: в строку — списания (λ·(1+τ_v)·R_{i,from}) и потери материала (ml·c·m·x) по неделям ≤ tMax с коэффициентом w.
+  auto add_cp_losses = [&](std::vector<std::pair<int,double>>& rw, size_t i, int tMax, double w) {
+    if (has_i(P.writeOffI, i))
+      for (const LpFlow& f : P.writeOffI[i]) {
+        const int rc = rcol(i, f.from);
+        if (rc >= 0 && f.to <= tMax) rw.push_back({ rc, w * f.share * v1 });
+      }
+    if (has_i(P.matLossI, i))
+      for (size_t s = 0; s < S; ++s) {
+        double ml = 0; for (int t = 0; t <= tMax && t < TT; ++t) ml += P.matLossI[i][s][t];
+        if (ml != 0) rw.push_back({ cX + (int)s, w * ml * pb.cost[i][s] * P.vatCostShare[s] * sigma[s] / M });
+      }
+  };
   const int K = (int)cp.dsoKernel.size();
   std::vector<double> cumShip(S);                        // Φ_{s,q} для налоговых строк
+  std::vector<int> scenRow(N + 1, 0);                     // строки сценария i — [scenRow[i], scenRow[i+1])
   for (size_t i = 0; i < N; ++i) {
     const int iT = (int)i * T, iTT = (int)i * TT;
-    // Выручка по отгрузкам.
-    for (int t = 0; t < T; ++t) {
-      row.assign({ { cR + iT + t, 1.0 } });
+    scenRow[i] = rb.rows();
+    // CPR: данные сценария (пусто → общий путь).
+    const bool hasColl = has_i(P.collectI, i), hasPay = has_i(P.payI, i), hasShip = has_i(P.shipI, i);
+    std::vector<std::vector<std::pair<int,double>>> collAt(hasColl ? TT : 0);
+    if (hasColl) for (const LpFlow& f : P.collectI[i]) if (f.to >= 0 && f.to < TT) collAt[f.to].push_back({ f.from, f.share });
+    // Выручка по отгрузкам (CPR: со сдвигом отгрузок — до TT).
+    for (int t = 0; t < (hasShip ? TT : T); ++t) {
+      row.assign({ { rcol(i, t), 1.0 } });
       for (size_t s = 0; s < S; ++s)
-        row.push_back({ cY + (int)s, -pb.price[i][s] * P.ship[s][t] * sigma[s] / M });
+        row.push_back({ cY + (int)s, -pb.price[i][s] * shipOf(i, s, t) * sigma[s] / M });
       rb.add(row, 0.0, 0.0);
     }
     // Касса и долг по периодам.
@@ -244,12 +308,15 @@ Result solve(const Problem& P) {
       row.assign({ { cC + iTT + t, 1.0 } });
       double rhs = -P.fixed[i][t] / M;
       if (t > 0) row.push_back({ cC + iTT + t - 1, -1.0 }); else rhs += cp.c0 / M;
-      for (int k = 0; k < K && t - k >= 0; ++k)
-        if (t - k < T) row.push_back({ cR + iT + t - k, -cp.dsoKernel[k] * v1 });
+      if (hasColl) {                                     // CPR: инкассация/взыскание по потокам вместо ядра
+        for (const auto& [from, sh] : collAt[t]) { const int rc = rcol(i, from); if (rc >= 0) row.push_back({ rc, -sh * v1 }); }
+      } else
+        for (int k = 0; k < K && t - k >= 0; ++k) { const int rc = rcol(i, t - k); if (rc >= 0) row.push_back({ rc, -cp.dsoKernel[k] * v1 }); }
       for (size_t s = 0; s < S; ++s) {                  // материалы — по ψ с НДС; конверсия — при выпуске
         const double m = P.vatCostShare[s];
-        const double k = P.pay[s][t] * m * (1.0 + cp.tauV) + (t < T ? P.ship[s][t] : 0.0) * (1.0 - m);
-        if (k > 0) row.push_back({ cX + (int)s, k * pb.cost[i][s] * sigma[s] / M });
+        const double pay = hasPay ? P.payI[i][s][t] : P.pay[s][t];
+        const double k = pay * m * (1.0 + cp.tauV) + shipOf(i, s, t) * (1.0 - m);
+        if (k != 0) row.push_back({ cX + (int)s, k * pb.cost[i][s] * sigma[s] / M });
       }
       if (t > 0) row.push_back({ cD + iTT + t - 1, P.rate[i][t] }); else rhs -= P.rate[i][0] * cp.d0 / M;
       row.push_back({ cRep + fin((int)i, t), 1.0 });
@@ -259,7 +326,7 @@ Result solve(const Problem& P) {
         const auto [from, to] = vatPeriods[vp.q];
         for (int tau = from; tau <= to; ++tau) row.push_back({ cR + iT + tau, cp.tauV * vp.share });
         for (size_t s = 0; s < S; ++s) {
-          double pi = 0; for (int tau = from; tau <= to; ++tau) pi += P.ship[s][tau];
+          double pi = 0; for (int tau = from; tau <= to; ++tau) pi += shipOf(i, s, tau);
           if (pi > 0) row.push_back({ cX + (int)s, -cp.tauV * vp.share * pi * pb.cost[i][s] * P.vatCostShare[s] * sigma[s] / M });
         }
       }
@@ -274,7 +341,7 @@ Result solve(const Problem& P) {
     double cumF = 0; int tPrev = 0;
     for (int q = 0; q < Q; ++q) {
       const int tq = taxWeeks[q];
-      for (int t = tPrev; t <= tq; ++t) { cumF += P.fixed[i][t] / M; for (size_t s = 0; s < S; ++s) cumShip[s] += P.ship[s][t]; }
+      for (int t = tPrev; t <= tq; ++t) { cumF += P.fixed[i][t] / M; for (size_t s = 0; s < S; ++s) cumShip[s] += shipOf(i, s, t); }
       tPrev = tq + 1;
       row.clear();
       for (int qq = 0; qq <= q; ++qq) row.push_back({ cTax + (int)i * Q + qq, 1.0 });
@@ -282,6 +349,7 @@ Result solve(const Problem& P) {
       for (size_t s = 0; s < S; ++s)
         if (cumShip[s] > 0) row.push_back({ cX + (int)s, cp.tauP * cumShip[s] * pb.cost[i][s] * sigma[s] / M });
       for (int t = 1; t <= tq; ++t) row.push_back({ cD + iTT + t - 1, cp.tauP * P.rate[i][t] });
+      add_cp_losses(row, i, tq, cp.tauP);                // CPR: списания и потери материала до t_q — вычет сразу
       rb.add(row, cp.tauP * (-cumF - P.rate[i][0] * cp.d0 / M), kHighsInf);
     }
     // Прибыль сценария и CVaR.
@@ -296,12 +364,15 @@ Result solve(const Problem& P) {
       for (int q = 0; q < Q; ++q) row.push_back({ cTax + (int)i * Q + q, -1.0 });
       row.push_back({ cEta, -1.0 });
       row.push_back({ cU + (int)i, 1.0 });
+      add_cp_losses(row, i, TT - 1, -1.0);               // CPR: Π_i − списания − потери материала
       rb.add(row, P.rate[i][0] * cp.d0 / M, kHighsInf);
     }
     // CVaR минимума кассы: C_{i,t} − ζ + v_i ≥ 0.
     for (int t = 0; t < TT; ++t)
       rb.add({ { cC + iTT + t, 1.0 }, { cZeta, -1.0 }, { cV + (int)i, 1.0 } }, 0.0, kHighsInf);
   }
+  scenRow[N] = rb.rows();
+  if (dump) for (size_t i = 0; i < N; ++i) dump->scenarioRows.push_back(dump_rows(rb, scenRow[i], scenRow[i + 1]));
   int liqRow = -1;
   if (cp.liquidityConstraint) {
     row.assign({ { cZeta, 1.0 } });
@@ -338,12 +409,48 @@ Result solve(const Problem& P) {
     objVal = highs.getInfo().objective_function_value;
     r.status = status_name(st);
     if (st != HighsModelStatus::kOptimal) r.reason = highs.modelStatusToString(st);
+    // CPR: лексикографическая фаза 2 — max E[Π] при CVaR_α(Π) ≥ CVaR* − ε·max(1,|CVaR*|) (цена ликвидности без
+    // неоднозначности CVaR-оптимума). Не оптимальна → остаётся решение фазы 1 (причина — в lexStatus).
+    if (st == HighsModelStatus::kOptimal && cp.lexicographic && pb.criterion == exact::Criterion::Cvar && col.size() == (size_t)nCol) {
+      std::vector<HighsInt> idx{ cEta }; std::vector<double> val{ 1.0 };
+      double cv = col[cEta];
+      for (size_t i = 0; i < N; ++i) { idx.push_back(cU + (int)i); val.push_back(-1.0 / r.tailK); cv -= col[cU + i] / r.tailK; }
+      r.cvarPhase1 = cv * M;
+      highs.addRow(cv - cp.lexEps * std::max(1.0, std::fabs(cv * M)) / M, kHighsInf, (HighsInt)idx.size(), idx.data(), val.data());
+      std::vector<double> cost(nCol, 0.0);
+      expected_costs(cost);
+      highs.changeColsCost(0, nCol - 1, cost.data());
+      highs.run();
+      const HighsModelStatus st2 = highs.getModelStatus();
+      r.lexStatus = st2 == HighsModelStatus::kOptimal ? "optimal" : highs.modelStatusToString(st2);
+      const HighsSolution& sol2 = highs.getSolution();
+      if (st2 == HighsModelStatus::kOptimal && sol2.value_valid) {
+        col = sol2.col_value;
+        if (sol2.dual_valid) { rowDual = sol2.row_dual; colDual = sol2.col_dual; }
+      }
+    }
   }
   r.solveMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
   if (st != HighsModelStatus::kOptimal || col.size() != (size_t)nCol) return r;
 
   // ── Разбор ────────────────────────────────────────────────────────────────
   r.lpObjective = -objVal * M;
+  // CPR: списания и потери материала сценария на истинной g (как прибыль ниже).
+  auto cp_loss_true = [&](size_t i) {
+    double loss = 0;
+    if (has_i(P.writeOffI, i))
+      for (const LpFlow& f : P.writeOffI[i]) {
+        double rev = 0;
+        for (size_t s = 0; s < S; ++s) rev += pb.price[i][s] * shipOf(i, s, f.from) * exact::revenue_volume(pb.market[s], r.x[s]);
+        loss += f.share * v1 * rev;
+      }
+    if (has_i(P.matLossI, i))
+      for (size_t s = 0; s < S; ++s) {
+        double ml = 0; for (int t = 0; t < TT; ++t) ml += P.matLossI[i][s][t];
+        loss += ml * pb.cost[i][s] * P.vatCostShare[s] * r.x[s];
+      }
+    return loss;
+  };
   r.x.assign(S, 0.0); r.xRounded.assign(S, 0.0);
   for (size_t s = 0; s < S; ++s) {
     double v = col[cX + s] * sigma[s];
@@ -374,6 +481,7 @@ Result solve(const Problem& P) {
     for (size_t s = 0; s < S; ++s)
       pr += exact::revenue_volume(pb.market[s], r.x[s]) * pb.price[i][s] - r.x[s] * pb.cost[i][s];
     r.profit[i] = pr - r.interestTotal[i] - r.taxTotal[i];
+    if (has_i(P.writeOffI, i) || has_i(P.matLossI, i)) r.profit[i] -= cp_loss_true(i);   // CPR: списания, потери
   }
   r.pNegativeCash = (double)neg / N;
   r.metrics = metrics_from(r.profit, pb.criterion == exact::Criterion::Worst ? 1.0 / N : pb.alpha);

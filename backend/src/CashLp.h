@@ -30,6 +30,9 @@
  * Двойственные: по мощностям — ₽/машино-час; по ликвидности — цена ликвидности
  * (₽ цели на ₽ L_min); по лимиту — цена лимита (из reduced cost границ D).
  * Чистый модуль: без БД и JSON (tests/test_cashlp.cpp).
+ *
+ * CPR (METHODOLOGY-V2 §5.2б): необязательные данные сценариев с событиями контрагентов (collectI, writeOffI, payI,
+ * matLossI, shipI) меняют только коэффициенты строк сценария; пустые — строки побайтно прежние (tests/test_cpr_stage.cpp).
  */
 #include "ExactCvar.h"
 #include <string>
@@ -50,7 +53,14 @@ struct CashParams {
   double lambdaL = 0;                        // вес CVaR_β(C_min) в цели (0 → чистый CVaR прибыли)
   bool   firstStage = false;                 // транши заранее (d_t общие по сценариям)
   int    runoffWeeks = 0;                    // периоды дорасчёта после горизонта (инкассация/оплата)
+  // CPR: лексикографическая фаза 2 для цены ликвидности — max E[Π] при CVaR_α(Π) ≥ CVaR* − ε·max(1,|CVaR*|)
+  // (только критерий CVaR; фаза 1 — обычное решение). fin.cp.lp_lex_eps [техн.]
+  bool   lexicographic = false;
+  double lexEps = 1e-7;
 };
+
+/** CPR: поток счёта недели from в неделю to (доля счёта с НДС). */
+struct LpFlow { int from = 0, to = 0; double share = 0; };
 
 struct Problem {
   exact::Problem base;                       // цены/себестоимости N×S, рынок, мощности, доля
@@ -61,7 +71,17 @@ struct Problem {
   std::vector<std::vector<double>> fixed;    // [i][t<T+runoff] F_{i,t}
   std::vector<std::vector<double>> rate;     // [i][t<T+runoff] r_{i,t} периодная (неделя)
   CashParams cp;
+  // CPR (аддитивно; METHODOLOGY-V2 §5.2б): данные сценария i с событиями контрагентов. Пустой внешний вектор
+  // или пустой элемент [i] → общий путь (строки сценария побайтно те же). Решения не меняются.
+  std::vector<std::vector<LpFlow>> collectI;   // [i] κ: инкассация + взыскание + обеспечение (вместо ядра w_k)
+  std::vector<std::vector<LpFlow>> writeOffI;  // [i] λ: списание LGD и бонус — уменьшают Π_i и налоговую базу
+  std::vector<std::vector<std::vector<double>>> payI;      // [i][s][t<TT] ψ^(i) (предоплаты, сдвиги, взыскания «−»)
+  std::vector<std::vector<std::vector<double>>> matLossI;  // [i][s][t<TT] потери на ед. материальной себестоимости
+  std::vector<std::vector<std::vector<double>>> shipI;     // [i][s][t<TT] φ^(i): сдвиг отгрузок, Σ_t = 1
 };
+
+/** Дамп строк модели по сценариям (тест T4: строки сценариев без событий не меняются). */
+struct ModelDump { std::vector<std::string> scenarioRows; };
 
 struct Result {
   std::string status = "error", reason;
@@ -82,9 +102,12 @@ struct Result {
   bool   liquidityBinding = false;
   double creditLimitDual = 0;                // ∂цели/∂Limit (≥ 0), среднее по сценариям
   int    tailK = 1, tailKBeta = 1;
+  // CPR: лексикографическая фаза 2 (если включена): CVaR* фазы 1 и статус фазы 2.
+  double cvarPhase1 = 0;
+  std::string lexStatus;                     // "" → не применялась; optimal | <причина> (тогда — решение фазы 1)
 };
 
-Result solve(const Problem& pb);
+Result solve(const Problem& pb, ModelDump* dump = nullptr);
 
 /** Профиль «равномерно по горизонту» (φ_{s,t} = 1/T) — по умолчанию без опорного расписания [К]. */
 std::vector<double> uniform_profile(int T);

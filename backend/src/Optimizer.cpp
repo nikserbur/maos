@@ -783,6 +783,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     bool on = false; int months = 0, weeks = 0;
     std::vector<double> F, dlnS, cumPi, logIdx;          // по сценарию
     std::vector<std::vector<double>> keyRate;            // N×T годовая
+    std::vector<std::vector<int>> regime, blockId;       // CPR: режимы и блоки по месяцам (события контрагентов)
     json regimeShare;
   };
   const int weeksT = std::max(1, (int)std::ceil(horizon / 168.0 - 1e-9));
@@ -802,6 +803,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
     const macro::SampleResult r = p.macro->sample(n, seed, weeksT, 0, 0, macroSt, macro::Reference::from_json(macroRef));
     mp.on = true; mp.months = r.months; mp.weeks = r.weeks;
     mp.F = p.macro->common_factor(r.paths);
+    mp.regime = r.paths.regime; mp.blockId = r.paths.blockId;
     mp.keyRate.assign(n, std::vector<double>(weeksT, 0.0));
     const double s0 = r.monthly.fx.empty() ? 1.0 : p.macro->params()["last_obs"]["usd_rub"].get<double>();
     std::vector<int> share(std::max(1, p.macro->regimes()), 0); int total = 0;
@@ -1314,6 +1316,7 @@ json run_optimization(Database& db, const OptimizeParams& p) {
       ci.market.resize(S); ci.meanPrice = meanPrice; ci.maxShare = maxShare;
       ci.enforceShare = bestRobust > -1e299; ci.horizonHours = horizon;
       ci.keyRate = macroMain.keyRate; ci.logisticsIndex = macroMain.logIdx;   // волна M: ставка по сценарию
+      ci.regimeMonths = macroMain.regime; ci.blockMonths = macroMain.blockId; ci.factorF = macroMain.F;   // CPR
       for (size_t s = 0; s < S; ++s) {
         const Prod& pr = m.prods.at(m.sellables[s]);
         ci.market[s].capM = capOf(s); ci.market[s].competitor = pr.competitorSupply;

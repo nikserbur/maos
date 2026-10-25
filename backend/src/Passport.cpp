@@ -1,5 +1,6 @@
 #include "Passport.h"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace maos::passport {
@@ -246,6 +247,62 @@ const Row kMacro[] = {
   { "macro.mode_default", "макро", "Режим генератора по умолчанию", "base (p_last, P_HMM, эмпирические блоки)", "—", "НОРМ", "§2.6б; стрессы — не прогноз", "main.cpp:/api/optimize" },
 };
 
+/* Блок контрагентского риска (CPR): платежи, дефолты и срывы поставок (METHODOLOGY-V2 §2.6в, §4.3). Одна строка на
+   каждый ключ fin_params.counterparty (JSON-ключ = суффикс кода). Данных предприятия нет (Р8) → [К]/[НОРМ]/техн.;
+   [О] — только режимы обученного генератора. Включение по умолчанию — решение владельца по итогам CR-E1. */
+const Row kCounterparty[] = {
+  { "fin.cp.enabled", "контрагенты", "Включение блока CPR; 0 — старая ветка побитово (legacy fin.pd, fin.lgd); 1 — события контрагентов вместо legacy-розыгрыша (без двойного счёта)", "0", "флаг", "НОРМ", "включение по умолчанию — решением владельца по итогам CR-E1 (прецедент A4 fin.auto_repay)", "CounterpartyRisk.h:CpParams.enabled" },
+  { "fin.cp.stream", "контрагенты", "Поток CRN событий контрагентов: SeedSequence([seed, 915, id, kind, entity]); kind 0 Z, 1 дефолт покупателя (и его общий фактор ε_c), 2 просрочки, 3 дефолт поставщика, 4 перебои поставщика (по неделям начала)", "915", "—", "техн.", "после 871/872 (макро/мост), 911 (legacy-платежи), 913 (шоки RL); события id не зависят от N, T, числа контрагентов и решений", "CounterpartyRisk.cpp:draw" },
+  { "fin.cp.regime_stationary", "контрагенты", "Стационарные вероятности режимов π_g для нормировки множителей интенсивностей и масштабов задержек (Σ π_g·m_g = 1)", "0.9037 / 0.0963", "доля", "О", "regime_stats.stationary_prob обученного генератора (rl/macro/params/macro_params.json); без генератора — значение паспорта", "CounterpartyRisk.cpp:regime_multipliers" },
+  { "fin.cp.crisis_regime", "контрагенты", "Индекс кризисного режима (∈ [0, k)); эпизод (−1) → метка HMM исходного месяца; квантильный стресс (−2) → кризис [К]; без генератора m ≡ 1 [НОРМ]", "crisis_index = 1", "—", "О", "regime_stats.crisis_index (режим максимальной дисперсии)", "CounterpartyRisk.cpp:resolve_regimes" },
+  { "fin.cp.rho", "контрагенты", "Корреляция активов ВНУТРИ режима ρ_w однофакторной гауссовой копулы: −1 → корень уравнения «полная корреляция дефолтов за год при смеси режимов (режим на весь год с вероятностью π_g, множители κ_PD) = подразумеваемой ρ Базеля ρ(PD) = 0.12·w + 0.24·(1−w), w = (1−e^{−50PD})/(1−e^{−50})» — режимный множитель не учитывает систематический риск дважды; без генератора ρ_w = ρ Базеля; ≥ 0 — переопределение ρ_w [К]", "−1 (ρ_w 0.097 при PD 0.04, κ_PD 3; ρ Базеля 0.136)", "—", "НОРМ", "BCBS (2006) Basel II §272; Положение Банка России № 483-П (коэффициент корреляции); приближение «режим на весь год» завышает вклад режима → ρ_w — нижняя оценка", "CounterpartyRisk.cpp:within_regime_rho" },
+  { "fin.cp.lambda_f", "контрагенты", "Загрузка систематического фактора Z_i на ориентированный макрофактор F̃_i = −sgn(v₁,fx)·F_i; F̃ не задан (нет генератора, стенд RL) → загрузка не применяется (Z ~ N(0,1)); при λ_F > 0 F̃ негауссов при HMM/блоках/t-инновациях (Var ≠ 1) — безусловная PD смещается; при λ_F = 0 неблагоприятной корреляции внутри режима нет (связь с ценами и курсом — только через режим)", "0 (чувствительность 0.5)", "—", "К", "макроканал — режим; второй канал дал бы двойной счёт", "CounterpartyRisk.cpp:draw" },
+  { "fin.cp.regime_mult_pd", "контрагенты", "κ_PD = h_crisis/h_calm, нормировано на π (m_calm 0.8386, m_crisis 2.5157)", "3", "×", "К", "ориентир — динамика корпоративных банкротств 2015/2022 к спокойным годам (Федресурс), ряд не загружен; чувствительность {1,2,3,5}", "CounterpartyRisk.h:CpParams.kappaPd" },
+  { "fin.cp.buyers_n", "контрагенты", "Число покупателей n_b", "10", "шт", "К", "реестра покупателей нет", "CounterpartyRisk.h:CpParams.nBuyers" },
+  { "fin.cp.buyers_zipf", "контрагенты", "Концентрация покупателей: ω_c ∝ c^{−a} (top-1 34 %, HHI 0.181)", "a = 1.0", "—", "К", "ориентир B2B-машиностроения; реестра нет", "CounterpartyRisk.h:CpParams.zipfA" },
+  { "fin.cp.buyer_shares", "контрагенты", "Явные доли покупателей ω_c (Σ = 1, не более 1000) — переопределяют Зипф; статус Н при вводе из реестра", "[] (Зипф)", "доля", "К", "реестра покупателей нет", "CounterpartyRisk.h:CpParams.buyerShares" },
+  { "fin.cp.buyer_pd_annual", "контрагенты", "Годовая PD покупателя — ЮРИДИЧЕСКИЙ дефолт (банкротство, ликвидация); недельная интенсивность h̄ = −ln(1−PD)/52. 90+ DPD живого покупателя — хвост просрочек (fin.cp.default_dpd_weeks), в PD не входит", "0.04", "доля/год", "К", "≡ текущему fin.pd = 0.02 на 26 недель при постоянной интенсивности; 590-П как ориентир категорий; цель О — доля юридических дефолтов по реестру (§3.1а)", "CounterpartyRisk.h:CpParams.buyerPd" },
+  { "fin.cp.buyer_lgd", "контрагенты", "LGD требований к покупателю после обеспечения (юридический дефолт и дефолт когорты 90+ DPD); не зависит от режима (связи PD–LGD нет — хвост убытков занижен, раскрыто); остаток (1−LGD) до взыскания учитывается по номиналу", "0.9 (чувствительность 0.45)", "доля", "К", "требование поставщика — третья очередь конкурса (Закон № 127-ФЗ, ст. 134), удовлетворение — единицы процентов (Федресурс, ряд не загружен) → база 0.9; 0.45 — Basel F-IRB для старших необеспеченных требований банка (BCBS 2006 §287), к требованию поставщика не применим — только чувствительность", "CounterpartyRisk.h:CpParams.buyerLgd" },
+  { "fin.cp.recovery_lag_weeks", "контрагенты", "Лаг взыскания ℓ_R (покупатели и поставщики); за горизонтом сумма остаётся активом по номиналу, терминальной выплаты нет (денежные критерии видят её как потерю — раскрыто)", "52", "нед", "НОРМ", "дело о банкротстве — до 7 мес. (п. 2 ст. 51) + конкурсное производство 6 мес. (п. 2 ст. 124 Закона № 127-ФЗ); рукопись §4.3: ℓ_R = 4 квартала", "CounterpartyRisk.h:CpParams.recoveryLag" },
+  { "fin.cp.buyer_security_share", "контрагенты", "Доля экспозиции под обеспечением g_b (страхование, гарантия, аккредитив)", "0", "доля", "НОРМ", "договоров обеспечения нет", "CounterpartyRisk.h:CpParams.securityShare" },
+  { "fin.cp.buyer_security_lag_weeks", "контрагенты", "Лаг выплаты по обеспечению ℓ_G после дефолта", "8", "нед", "К", "период ожидания выплаты по страхованию", "CounterpartyRisk.h:CpParams.securityLag" },
+  { "fin.cp.stop_lag_weeks", "контрагенты", "Отгрузки дефолтному покупателю прекращаются через s_stop", "1", "нед", "К", "типовая реакция службы сбыта", "CounterpartyRisk.h:CpParams.stopLag" },
+  { "fin.cp.replace_lag_weeks", "контрагенты", "Доп. сдвиг инкассации доли, переданной заменяющему покупателю (без риска [НОРМ-упрощение]); замена всего объёма без провала продаж — НЕКОНСЕРВАТИВНОЕ допущение (раскрыто)", "4", "нед", "К", "поиск покупателя / условия дистрибьютора", "CounterpartyRisk.h:CpParams.replaceLag" },
+  { "fin.cp.replace_discount", "контрагенты", "Бонус заменяющему покупателю h_rs: расход недели выставления, база НДС не уменьшается (п. 2.1 ст. 154 НК РФ — налоговая трактовка [НОРМ])", "0.05", "доля", "К", "—", "CounterpartyRisk.h:CpParams.replaceDiscount" },
+  { "fin.cp.late_share", "контрагенты", "q̄ — безусловная доля когорт счетов с просрочкой сверх ядра DSO (излечение или 90+ DPD; цель О — Beta-апостериор по реестру, §3.1а)", "0.15", "доля", "К", "ориентир — международные барометры платёжной дисциплины B2B, не загружены", "CounterpartyRisk.h:CpParams.lateShare" },
+  { "fin.cp.late_regime_mult", "контрагенты", "κ_q для доли просрочек (q_calm 0.137, q_crisis 0.274), обрезка q·m > 1 до 1 с предупреждением", "2", "×", "К", "—", "CounterpartyRisk.h:CpParams.kappaLate" },
+  { "fin.cp.late_tail_alpha", "контрагенты", "Индекс хвоста задержки оплаты α (Ломакс = GPD, ξ = 1/α); цель О — POT/Хилл по оплаченным счетам с цензурированием справа на D_def (§3.1а)", "1.5", "—", "К", "—", "CounterpartyRisk.h:CpParams.lateAlpha" },
+  { "fin.cp.late_scale_weeks", "контрагенты", "Безусловный масштаб σ задержки Ломакса: σ_g = σ·m_g(κ_σ) с нормировкой Σ π_g σ_g = σ (σ_calm 2.86, σ_crisis 4.29); Δ = max(1, ⌈σ_g((1−u)^{−1/α} − 1)⌉)", "3", "нед", "К", "P(Δ > 13) — доля дефолтов когорт среди просроченных: 0.077 calm / 0.124 crisis", "CounterpartyRisk.h:CpParams.lateScale" },
+  { "fin.cp.late_crisis_scale_mult", "контрагенты", "κ_σ — растяжение масштаба просрочек оплаты в кризисе (нормировано по π)", "1.5", "×", "К", "—", "CounterpartyRisk.h:CpParams.kappaLateScale" },
+  { "fin.cp.default_dpd_weeks", "контрагенты", "D_def — порог дефолта когорты: просрочка > D_def недель — дефолт когорты (часть k признаётся дефолтной на τ+k+D_def: списание LGD, взыскание через ℓ_R), ≤ D_def — излечение (оплата целиком); одно определение дефолта для просрочек и PD", "13", "нед", "НОРМ", "90 дней просрочки — признак дефолта: BCBS (2006) §452; Положение Банка России № 483-П; МСФО (IFRS) 9, п. B5.5.37", "CounterpartyRisk.h:CpParams.defaultDpd" },
+  { "fin.cp.late_max_weeks", "контрагенты", "Потолок излеченной просрочки Δmax (≤ D_def): излеченные Δ ∈ [1, Δmax]", "13", "нед", "техн.", "= D_def", "CounterpartyRisk.h:CpParams.lateMax" },
+  { "fin.cp.late_rho", "контрагенты", "ρ_L — корреляция латентной просрочки с систематическим фактором Z (своя, не базельская); −1 → = ρ_w покупателя", "0.10", "—", "К", "базельской калибровки для просрочек нет; чувствительность {0, 0.1, 0.2}", "CounterpartyRisk.h:CpParams.lateRho" },
+  { "fin.cp.late_buyer_loading", "контрагенты", "λ_b — доля общего фактора покупателя ε_c (того же, что в его дефолте) в идиосинкратической части латентной просрочки: просрочки покупателя связаны между собой и с его дефолтом — серия просрочек повышает условную PD", "0.3", "доля", "К", "устойчивость платёжной дисциплины покупателя; данных нет; чувствительность {0, 0.3, 0.6}", "CounterpartyRisk.h:CpParams.lateBuyerLoad" },
+  { "fin.cp.suppliers", "контрагенты", "Множество поставщиков: покупные позиции НСИ, сгруппированные по fin.cp.supplier_groups (пусто → позиция = поставщик); θ_{s,j} — доля j в материальной себестоимости s (BOM по базовым ценам [Н]); entity — FNV-1a кода поставщика. Судьба заказа (окно аннулирования, плановый приход для перебоя) — по единому договорному сроку fin.lead_weeks в Стадиях 1, 2 и SimEnv [НОРМ-упрощение]; физический срок позиции — только длительность supply-джобы", "12 в демо", "шт", "К", "реестра договоров поставки нет", "CashOptimize.cpp:supplier_mix" },
+  { "fin.cp.supplier_groups", "контрагенты", "Группировка покупных позиций НСИ по поставщикам {позиция: поставщик}: позиции одного поставщика получают общие дефолт и перебои; пусто → позиция = поставщик (частота дефолтов завышена, тяжесть занижена — раскрыто)", "{} (позиция = поставщик)", "—", "К", "реестра договоров поставки нет; поля поставщика в НСИ нет", "CounterpartyRisk.h:CpParams.supplierGroups" },
+  { "fin.cp.supplier_pd_annual", "контрагенты", "Годовая PD поставщика (юридический дефолт)", "0.04", "доля/год", "К", "симметрично покупателям без данных", "CounterpartyRisk.h:CpParams.supplierPd" },
+  { "fin.cp.supplier_lgd", "контрагенты", "LGD требования о возврате предоплаты поставщику-дефолтнику", "0.9 (чувствительность 0.45)", "доля", "К", "требование третьей очереди конкурса (Закон № 127-ФЗ, ст. 134); 0.45 Basel F-IRB — только чувствительность", "CounterpartyRisk.h:CpParams.supplierLgd" },
+  { "fin.cp.supplier_replace_lag_weeks", "контрагенты", "ℓ_rep — квалификация и контрактование нового поставщика (заменяющий — без риска [НОРМ-упрощение])", "2", "нед", "К", "для литья и поковок — переопределение по позиции", "CounterpartyRisk.h:CpParams.replaceSupplierLag" },
+  { "fin.cp.supplier_replace_premium", "контрагенты", "π_rep — надбавка к цене у заменяющего поставщика", "0.10", "доля", "К", "—", "CounterpartyRisk.h:CpParams.replacePremium" },
+  { "fin.cp.supplier_prepay_replacement", "контрагенты", "φ_rep — предоплата, которую требует заменяющий поставщик", "0.5", "доля", "К", "—", "CounterpartyRisk.h:CpParams.replacePrepay" },
+  { "fin.cp.disrupt_share", "контрагенты", "q^s — вероятность НАЧАЛА перебоя у поставщика на неделю (≈ 0.5 перебоя в год; calm 0.009, crisis 0.018): плановые приходы внутри перебоя [s, s+D) ждут его конца — без обгона", "0.01", "доля/нед", "К", "калибровка — число перебоев в год на поставщика (модели up/down: Tomlin 2006, Snyder et al. 2016), ряд не загружен", "CounterpartyRisk.h:CpParams.disruptShare" },
+  { "fin.cp.disrupt_regime_mult", "контрагенты", "κ_s для начала перебоев", "2", "×", "К", "—", "CounterpartyRisk.h:CpParams.kappaDisrupt" },
+  { "fin.cp.disrupt_tail_alpha", "контрагенты", "Индекс хвоста длительности перебоя α_s (Ломакс)", "2.0", "—", "К", "хвост supply-джобы Стадии 1 (вес 0.12, α 2) пересекается с перебоями CPR — при калибровке по данным оценивается по поставкам вне перебоев (раскрыто)", "CounterpartyRisk.h:CpParams.disruptAlpha" },
+  { "fin.cp.disrupt_scale_weeks", "контрагенты", "Безусловный масштаб σ_s длительности перебоя: σ_g = σ_s·m_g(κ_σ^s), Σ π_g σ_g = σ_s", "2.0", "нед", "К", "средняя длительность ≈ 2–3 нед.; P(D > 8) ≈ 0.04", "CounterpartyRisk.h:CpParams.disruptScale" },
+  { "fin.cp.disrupt_crisis_scale_mult", "контрагенты", "κ_σ^s — растяжение длительности перебоев в кризисе (нормировано по π)", "1.5", "×", "К", "—", "CounterpartyRisk.h:CpParams.kappaDisruptScale" },
+  { "fin.cp.disrupt_max_weeks", "контрагенты", "Потолок длительности перебоя", "26", "нед", "техн.", "—", "CounterpartyRisk.h:CpParams.disruptMax" },
+  { "fin.cp.disrupt_rho", "контрагенты", "ρ_s — корреляция начала перебоев с систематическим фактором Z (своя, не базельская); −1 → = ρ_w поставщика", "0.10", "—", "К", "базельской калибровки для срывов поставок нет; чувствительность {0, 0.1, 0.2}", "CounterpartyRisk.h:CpParams.disruptRho" },
+  { "fin.cp.theta_min", "контрагенты", "Минимальная доля материала в себестоимости изделия, при которой задержка материала задерживает выпуск (и только при дефиците по опорной программе)", "0.05", "доля", "К", "правило дефицита — как у supply-джобы Стадии 1; опорная программа Стадии 2 — верхние границы выпуска", "CounterpartyRisk.h:CpParams.thetaMin" },
+  { "fin.cp.prepay_discount", "контрагенты", "d_φ — скидка к цене материала за 100 % предоплаты поставщику (сравнение условий оплаты; только водопад; во всех сценариях прогона с CPR — с событиями и без)", "0 (чувствительность 0.02)", "доля", "К", "ориентир «2/10 net 30» (Ng, Smith & Smith 1999, JF)", "CounterpartyRisk.h:CpParams.prepayDiscount" },
+  { "fin.cp.tax_bad_debt", "контрагенты", "Списания (LGD, бонус, потеря предоплаты поставщику) уменьшают налоговую базу сразу [НОРМ-упрощение]", "immediate", "—", "НОРМ", "резерв по сомнительным долгам (ст. 266 НК РФ) не моделируется — раскрыто", "CashWaterfall.cpp:run (п. 9)" },
+  { "fin.cp.vat_restore", "контрагенты", "Восстановление вычета входящего НДС при аннулировании заказа у поставщика-дефолтника; в LP не корректируется (второй порядок)", "вкл.", "—", "НОРМ", "пп. 3 п. 3 ст. 170 НК РФ", "CashWaterfall.cpp:supply_cancels" },
+  { "fin.cp.stage2_ship_shift", "контрагенты", "Распространение задержки материала на отгрузку в Стадии 2: сдвиг один к одному (верхняя граница), Σ_t = 1 с усечением в TT−1 [НОРМ-упрощение]; неустойка нашему покупателю за задержку отгрузки не моделируется — НЕКОНСЕРВАТИВНО (раскрыто; в SimEnv — договорный штраф A3)", "вкл. при enabled", "—", "НОРМ", "точное распространение — Стадия 1 (§5.3, итерация не реализована)", "CounterpartyRisk.cpp:lp_data" },
+  { "fin.cp.lexicographic", "контрагенты", "Лексикографическая фаза 2 CVaR-LP для цены ликвидности: max E[Π] при CVaR_α(Π) ≥ CVaR* − ε·max(1,|CVaR*|)", "выкл.", "флаг", "техн.", "для PoL без неоднозначности CVaR-оптимума (CR-E1 §8)", "CashLp.h:CashParams.lexicographic" },
+  { "fin.cp.lp_lex_eps", "контрагенты", "Допуск лексикографической фазы 2 LP", "1e-7", "—", "техн.", "—", "CashLp.h:CashParams.lexEps" },
+  { "fin.cp.lp_time_limit_sec", "контрагенты", "Лимит времени HiGHS (опция time_limit) на решение одной задачи CVaR-LP денежного слоя; превышение → статус time_limit", "30", "с", "техн.", "30 с — прежний лимит exact::Problem (побитово); CR-E1 §8 поднимает лимит на запрос (лимит считает время по стенке, включая сон стенда)", "ExactCvar.h:Problem.timeLimitSec" },
+  { "rl.cp.enabled", "агенты", "События CPR в сценариях RL/InvestEval из генератора C++ (pyenv cp_events); сплайс кризиса A2 переводит режимы событий в кризис с недели переключения, стресс joint — дефолт крупнейшего покупателя; F̃ стенду не передаётся (NaN)", "0", "флаг", "К", "результаты A1–A4 не меняются; новые прогоны RL — только с предрегистрацией", "rl/env/scenarios.py" },
+};
+
 /* Волна M: UI-коэффициенты ползунков больше не участвуют в расчёте (R1 §2.11, §2.5). */
 const char* kDeprecatedUi[] = { "r1.50", "r1.51", "r1.52", "r1.53", "r1.58" };
 
@@ -256,7 +313,17 @@ const char* kFinColumns[] = {
   "vat_instalments", "vat_instalment_lag_weeks", "tax_period_weeks", "dscr_covenant", "rate_owner",
   "rate_bank", "beta", "l_min", "horizon_weeks", "cash_samples", "auto_repay", "tax_cumulative",
 };
-const char* kFinJsonColumns[] = { "dso_kernel", "payroll_weeks" };
+const char* kFinJsonColumns[] = { "dso_kernel", "payroll_weeks", "counterparty" };
+
+/* Строки-определения кода (блок CPR): вставка или обновление — текст паспорта следует за кодом. */
+void upsert_rows(Database& db, const Row* rows, size_t n) {
+  for (size_t i = 0; i < n; ++i)
+    db.exec("INSERT INTO param_passport(code,block,name,value,unit,status,source,file_ref) VALUES(?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(code) DO UPDATE SET block=excluded.block, name=excluded.name, value=excluded.value, unit=excluded.unit, "
+            "status=excluded.status, source=excluded.source, file_ref=excluded.file_ref, updated_at=datetime('now')",
+            { rows[i].code, rows[i].block, rows[i].name, rows[i].value, rows[i].unit,
+              rows[i].status, rows[i].source, rows[i].file });
+}
 
 void seed_rows(Database& db, const Row* rows, size_t n) {
   for (size_t i = 0; i < n; ++i)
@@ -305,6 +372,8 @@ void migrate(Database& db) {
   // A4: налог нарастающим итогом и погашение линии излишком кассы — по умолчанию во всём продукте. Для БД, созданных
   // до A4, — один раз (маркер: строка паспорта fin.auto_repay ещё не посеяна); дальше значения пользователя не трогаем.
   db.exec_safe("ALTER TABLE fin_params ADD COLUMN tax_cumulative INTEGER NOT NULL DEFAULT 1");
+  // CPR: параметры контрагентского риска (fin.cp.*) — JSON поверх умолчаний CpParams; '{}' → умолчания (выкл.).
+  db.exec_safe("ALTER TABLE fin_params ADD COLUMN counterparty TEXT NOT NULL DEFAULT '{}'");
   if (db.query_json("SELECT code FROM param_passport WHERE code='fin.auto_repay'").empty())
     db.exec_safe("UPDATE fin_params SET auto_repay=1, tax_cumulative=1, updated_at=datetime('now')");
   db.exec("UPDATE param_passport SET name=?, value='вкл.', updated_at=datetime('now') "
@@ -323,6 +392,7 @@ void migrate(Database& db) {
   seed_rows(db, kCode, sizeof(kCode) / sizeof(kCode[0]));
   seed_rows(db, kMacro, sizeof(kMacro) / sizeof(kMacro[0]));
   seed_rows(db, kRl, sizeof(kRl) / sizeof(kRl[0]));
+  upsert_rows(db, kCounterparty, sizeof(kCounterparty) / sizeof(kCounterparty[0]));   // CPR: определения кода
   // A2: значение штрафа за просрочку в среде изменено (0.01 → 0.021) — строка из A1 обновляется один раз.
   db.exec("UPDATE param_passport SET value='0.021', name=?, updated_at=datetime('now') "
           "WHERE code='rl.tard_penalty_per_week' AND value='0.01'",
@@ -350,9 +420,52 @@ json fin_params_json(Database& db) {
     const std::string s = v.is_string() ? v.get<std::string>() : v.dump();
     if (k == "entity" || k == "period_type" || k == "effective_from" || k == "updated_at") { out[k] = s; continue; }
     if (k == "dso_kernel" || k == "payroll_weeks") { try { out[k] = json::parse(s); } catch (...) { out[k] = json::array(); } continue; }
+    if (k == "counterparty") {                       // CPR: действующие значения = сохранённые поверх умолчаний
+      json stored = json::object();
+      try { stored = json::parse(s); } catch (...) {}
+      out[k] = cpr::CpParams::from_json(stored).to_json();
+      continue;
+    }
     try { out[k] = std::stod(s); } catch (...) { out[k] = s; }
   }
   return out;
+}
+
+/* Значение столбца fin_params: число и диапазон (доли, недели); ошибка — исключение с кодом столбца. */
+double checked_fin_value(const std::string& c, const json& body) {
+  const double v = jnum(body, c, 0.0);
+  if (!std::isfinite(v)) throw std::runtime_error("fin_params." + c + ": not a number");
+  if ((c == "tau_v" || c == "tau_p" || c == "tau_soc" || c == "prepay_share" || c == "pd" || c == "lgd" || c == "beta") &&
+      (v < 0 || v > 1)) throw std::runtime_error("fin_params." + c + ": доля вне [0,1]");
+  if ((c.find("weeks") != std::string::npos || c == "vat_instalments" || c == "cash_samples") && v < 0)
+    throw std::runtime_error("fin_params." + c + ": отрицательное значение");
+  return v;
+}
+
+/* Тип значения fin.cp.* совпадает с типом умолчания (булевы — также 0/1, массивы — числа, группы — строки). */
+bool cp_type_ok(const json& def, const json& v) {
+  auto all = [&](auto pred) { for (auto& e : v) if (!pred(e)) return false; return true; };
+  if (def.is_boolean()) return v.is_boolean() || (v.is_number() && (v.get<double>() == 0 || v.get<double>() == 1));
+  if (def.is_number()) return v.is_number();
+  if (def.is_array()) return v.is_array() && all([](const json& e) { return e.is_number(); });
+  if (def.is_object()) return v.is_object() && all([](const json& e) { return e.is_string(); });
+  return v == def;                                                // строковые константы (tax_bad_debt)
+}
+
+/* CPR: новые значения поверх сохранённых; неизвестный ключ, неверный тип или диапазон (T22) — исключение. */
+json checked_counterparty(const json& stored, const json& patch) {
+  if (!patch.is_object()) throw std::runtime_error("fin_params.counterparty: object expected");
+  static const json defaults = cpr::CpParams{}.to_json();
+  json merged = stored.is_object() ? stored : json::object();
+  for (auto& [k, v] : patch.items()) {
+    if (k == "stream") continue;                                  // техн. константа потока — только чтение
+    if (!defaults.contains(k)) throw std::runtime_error("fin_params.counterparty." + k + ": неизвестный параметр");
+    if (!cp_type_ok(defaults[k], v)) throw std::runtime_error("fin_params.counterparty." + k + ": неверный тип значения");
+    merged[k] = v;
+  }
+  const auto errs = cpr::CpParams::from_json(merged).validate();
+  if (!errs.empty()) throw std::runtime_error("fin_params.counterparty." + errs.front());
+  return merged;
 }
 
 json save_fin_params(Database& db, const json& body) {
@@ -360,16 +473,18 @@ json save_fin_params(Database& db, const json& body) {
   std::lock_guard<std::recursive_mutex> lk(db.mutex());
   for (const char* col : kFinColumns) {
     if (!body.contains(col) || body[col].is_null()) continue;
-    const double v = jnum(body, col, 0.0);
-    if (!std::isfinite(v)) throw std::runtime_error(std::string("fin_params.") + col + ": not a number");
     const std::string c = col;
-    if ((c == "tau_v" || c == "tau_p" || c == "tau_soc" || c == "prepay_share" || c == "pd" || c == "lgd" || c == "beta") &&
-        (v < 0 || v > 1)) throw std::runtime_error("fin_params." + c + ": доля вне [0,1]");
-    if ((c.find("weeks") != std::string::npos || c == "vat_instalments" || c == "cash_samples") && v < 0)
-      throw std::runtime_error("fin_params." + c + ": отрицательное значение");
+    const double v = checked_fin_value(c, body);
     db.exec("UPDATE fin_params SET " + c + "=?, updated_at=datetime('now') WHERE entity='default'", { std::to_string(v) });
   }
+  if (body.contains("counterparty") && !body["counterparty"].is_null()) {
+    json stored = json::object();
+    try { stored = json::parse(db.query_one("SELECT counterparty FROM fin_params WHERE entity='default'").value("counterparty", std::string("{}"))); } catch (...) {}
+    db.exec("UPDATE fin_params SET counterparty=?, updated_at=datetime('now') WHERE entity='default'",
+            { checked_counterparty(stored, body["counterparty"]).dump() });
+  }
   for (const char* col : kFinJsonColumns) {
+    if (std::string(col) == "counterparty") continue;            // объект — выше
     if (!body.contains(col) || !body[col].is_array()) continue;
     for (auto& e : body[col]) if (!e.is_number()) throw std::runtime_error(std::string("fin_params.") + col + ": массив чисел");
     db.exec(std::string("UPDATE fin_params SET ") + col + "=?, updated_at=datetime('now') WHERE entity='default'",
@@ -380,8 +495,33 @@ json save_fin_params(Database& db, const json& body) {
   return fin_params_json(db);
 }
 
-cash::FinParams load_fin_params(Database& db) {
+cash::FinParams load_fin_params(Database& db) { return fin_params_from_json(fin_params_json(db)); }
+
+json fin_params_with_override(Database& db, const json& override) {
   json j = fin_params_json(db);
+  if (!override.is_object()) return j;
+  for (const char* col : kFinColumns)
+    if (override.contains(col) && !override[col].is_null()) j[col] = checked_fin_value(col, override);
+  for (const char* col : { "dso_kernel", "payroll_weeks" })
+    if (override.contains(col)) {
+      if (!override[col].is_array()) throw std::runtime_error(std::string("fin_override.") + col + ": массив чисел");
+      for (auto& e : override[col]) if (!e.is_number()) throw std::runtime_error(std::string("fin_override.") + col + ": массив чисел");
+      j[col] = override[col];
+    }
+  if (override.contains("counterparty"))
+    j["counterparty"] = cpr::CpParams::from_json(checked_counterparty(j.value("counterparty", json::object()), override["counterparty"])).to_json();
+  for (auto& [k, v] : override.items())
+    if (!j.contains(k)) throw std::runtime_error("fin_override." + k + ": неизвестный параметр");
+  return j;
+}
+
+cpr::CpParams counterparty_params(const json& fin, const json& requestOverride) {
+  json base = fin.contains("counterparty") && fin["counterparty"].is_object() ? fin["counterparty"] : json::object();
+  if (requestOverride.is_object() && !requestOverride.empty()) base = checked_counterparty(base, requestOverride);
+  return cpr::CpParams::from_json(base);
+}
+
+cash::FinParams fin_params_from_json(const json& j) {
   cash::FinParams fp;
   auto g = [&](const char* k, double def) { return j.contains(k) && j[k].is_number() ? j[k].get<double>() : def; };
   fp.c0 = g("c0", 0); fp.cMin = g("c_min", 0); fp.creditLimit = g("credit_limit", 0); fp.d0 = g("d0", 0);

@@ -4,6 +4,14 @@
 инфляция, режим HMM) + дефолт покупателя (поток [seed, 911]) + множители стресса. Потоки
 фиксированы: один и тот же индекс i даёт один и тот же путь для всех сравниваемых политик.
 Розыгрыши длительностей/поломок — внутри SimEnv по seed = seed_base + i (по идентичности джобы).
+
+Блок контрагентского риска (CPR, rl.cp.enabled [К], по умолчанию выкл. — результаты A1–A4 не меняются):
+при cp_enabled события покупателей и поставщиков берутся из генератора C++ (maos_env.cp_events, поток
+[seed, 915, idx, kind, entity]) — розыгрыш не дублируется на Python; legacy-дефолт [seed, 911] тогда не
+применяется (без двойного счёта). Шок A2 supply_delay остаётся отдельным видом. Переключение в кризис A2
+(сплайс пути с недели w) переводит и режимы событий контрагентов в кризис с месяца ⌊12w/52⌋; стресс «joint»
+(force_default) — дефолт крупнейшего покупателя в неделю legacy-розыгрыша (0-based). Общий фактор F_i
+генератором Python не публикуется — f_tilde = NaN (загрузка λ_F не применяется).
 """
 from __future__ import annotations
 
@@ -18,6 +26,7 @@ from rl.macro.sample import PARAMS_PATH, Sampler, load_params
 
 HOLDOUT_SEED = 2026102201   # [НОРМ] §10.2а п.1
 DEFAULT_STREAM = 911        # поток дефолтов (§11.3а: payments)
+CP_WEEKS_MIN = 52           # CPR: недель розыгрыша событий (префикс по неделям — горизонт SimEnv не влияет на события)
 SHOCK_STREAM = 913          # A2: поток экстренных событий (шоков) — свой, CRN по индексу сценария
 # A2: параметры шоков [К] rl.shock.* — доли нижней оценки Cmax экземпляра (SimEnv разрешает на reset).
 # Генератор событий (база): вероятности по видам [отказ узкого места, срочный заказ, срыв поставки,
@@ -62,6 +71,9 @@ class ScenarioSet:
     pd: float = 0.02      # fin.pd [К]
     lgd: float = 0.45     # fin.lgd [НОРМ]
     params_path: Path = PARAMS_PATH
+    cp_enabled: bool = False          # rl.cp.enabled [К]: события контрагентов из C++ (по умолчанию выкл.)
+    cp_params: dict | None = None     # fin.cp.* (None → умолчания паспорта, enabled включается флагом)
+    cp_suppliers: tuple = ()          # покупные позиции НСИ экземпляра (поставщики; entity = FNV-1a кода)
     _paths: dict = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -84,6 +96,10 @@ class ScenarioSet:
         dweek = rng.integers(1, self.weeks + 1, size=self.n)
         self._paths = {"key": key, "fx": fx, "cpi": cpi, "regime": regime_w, "u": u, "dweek": dweek,
                        "regime_share": regime_share(regime_w)}
+        if self.cp_enabled:                                    # CPR: сырые режимы и блоки по месяцам для C++
+            self._paths["regime_m"] = np.asarray(r["regime"]).astype(int)
+            self._paths["block_m"] = np.asarray(r["block_id"]).astype(int)
+            self._paths["crisis"] = crisis_regime(params)      # режим событий после переключения A2
         self._shocks = self._draw_shocks(sampler, params) if any(p > 0 for p in self.stress.events) else [None] * self.n
 
     def _draw_shocks(self, sampler, params) -> list[dict | None]:
@@ -138,6 +154,8 @@ class ScenarioSet:
             "lead_mul": self.stress.lead_mul,
             "price_mul": self.stress.price_mul,
         }
+        if self.cp_enabled:                                    # CPR: события из C++, legacy-дефолт не применяется
+            out["default_week"], out["lgd"] = -1, 0.0
         sh = self._shocks[i] if with_shock else None
         if sh:
             out.update({k: v for k, v in sh.items() if not k.startswith("_")})
@@ -147,7 +165,30 @@ class ScenarioSet:
                     src = sp["key" if k == "key_rate" else k]
                     out[k] = out[k][:w] + [float(x) for x in src[w:]]
                 out["regime"] = out["regime"][:w] + [int(sp["regime"])] * (len(out["regime"]) - w)
+        if self.cp_enabled:                                    # кризис A2 — и у событий контрагентов с недели w
+            out["cp"] = self.cp_events(i, sh["regime_shock_week"] if sh and "_splice" in sh else None)
+            if self.stress.force_default:                      # «joint»: дефолт крупнейшего покупателя
+                force_buyer_default(out["cp"], self._largest_buyer(), int(p["dweek"][i]) - 1)
         return out
+
+    def _largest_buyer(self) -> int:
+        """Покупатель с наибольшей долей: явные buyer_shares → argmax, иначе Зипф — покупатель 0."""
+        shares = (self.cp_params or {}).get("buyer_shares") or []
+        return int(np.argmax(shares)) if len(shares) else 0
+
+    def cp_events(self, i: int, crisis_from_week: int | None = None) -> dict:
+        """События контрагентов сценария i ({"events", "params"}) — maos_env.cp_events (генератор C++).
+        crisis_from_week — неделя переключения в кризис A2: месяцы ≥ ⌊12w/52⌋ получают кризисный режим."""
+        from rl.env.core import load_module
+        params = {**(self.cp_params or {}), "enabled": True}
+        p = self._paths
+        regime = [int(x) for x in p["regime_m"][i]]
+        if crisis_from_week is not None:
+            m0 = int(math.floor(12.0 * crisis_from_week / 52.0))
+            regime = regime[:m0] + [int(p["crisis"])] * (len(regime) - m0)
+        return json.loads(load_module().cp_events(
+            json.dumps(params), int(self.seed), int(i), regime, [int(x) for x in p["block_m"][i]],
+            max(CP_WEEKS_MIN, int(self.weeks)), list(self.cp_suppliers), float("nan"), str(self.params_path)))
 
     def scenario_json(self, i: int) -> str:
         return json.dumps(self.scenario(i))
@@ -163,6 +204,13 @@ class ScenarioSet:
         """Преобладающий режим сценария (для обоснования хода)."""
         vals, cnt = np.unique(self._paths["regime"][i], return_counts=True)
         return int(vals[int(np.argmax(cnt))])
+
+
+def force_buyer_default(cp: dict, buyer: int, week: int) -> None:
+    """Стресс «joint» в CPR: дефолт покупателя buyer не позже недели week (0-based); событие раньше — сохраняется."""
+    b = cp["events"]["buyers"][buyer]
+    cur = int(b["default_week"])
+    b["default_week"] = week if cur < 0 else min(cur, week)
 
 
 def crisis_regime(params: dict) -> int:

@@ -20,6 +20,12 @@
  *
  * Тождества §4.6 возвращаются как невязки (Residuals) и проверяются тестами
  * (tests/test_cashwaterfall.cpp) на ручном примере §4.7 и на случайных входах.
+ *
+ * Контрагентский риск (CPR, CounterpartyRisk.h): непустой ScenarioInput.cp включает ветку событий —
+ * взыскания/обеспечение первыми (п. 1а), приходы и аннулирования по частям заказа (п. 2), инкассация и
+ * списания по потокам (п. 3), предоплата по частям, восстановление НДС, требование SC (п. 4); EBITDA
+ * уменьшается на списания + бонус + потерю предоплаты (вычет для налога — сразу [НОРМ-упрощение], резерв
+ * по сомнительным долгам ст. 266 НК РФ не моделируется). Пустой блок — старая ветка побитово.
  */
 #include <vector>
 
@@ -83,10 +89,32 @@ struct PeriodInput {
   double keyRate = -1;         // ≥ 0 → ключевая ставка периода из макро-пути; < 0 → FinParams
 };
 
+/* ── Блок контрагентского риска (CPR, CounterpartyRisk.h): события сценария как потоки по долям ──────────
+ * Доли — от счёта недели from (Rev·(1+τ_v)) или заказа недели from (Ord), поэтому потоки не зависят от решения
+ * (x, φ, транши) и строятся один раз на сценарий. Пустой блок → старая ветка побитово. */
+enum FlowKind : unsigned char { kFlowCollect = 0, kFlowRecovery = 1, kFlowSecurity = 2, kFlowLgd = 3, kFlowBonus = 4 };
+struct BuyerFlow { int from = 0, to = 0; double share = 0; unsigned char kind = kFlowCollect; };
+/** Часть заказа недели from, приходящая в to; prepay — доля предоплаты этой части (φ или φ_rep). */
+struct SupplyPart { int to = 0; double share = 0, prepay = 0; };
+/** Аннулирование доли заказа недели from на неделе at (дефолт поставщика до прихода arrive): остаток
+ *  оплаты снимается, вычет НДС восстанавливается, уплаченная предоплата — требование SC (LGD — сразу,
+ *  остальное — на неделе recoveryWeek). */
+struct SupplyCancel { int from = 0, at = 0, arrive = 0, recoveryWeek = 0; double share = 0, prepay = 0, lgd = 0; };
+struct CounterpartyFlows {
+  std::vector<BuyerFlow> buyerCollect;     // инкассация (kFlowCollect), взыскание (kFlowRecovery), обеспечение (kFlowSecurity)
+  std::vector<BuyerFlow> buyerWriteOff;    // списание LGD (kFlowLgd), бонус заменяющему покупателю (kFlowBonus)
+  std::vector<std::vector<SupplyPart>> supplyArrive;   // [неделя заказа] → части; пусто → по умолчанию (L, φ)
+  std::vector<SupplyCancel> supplyCancel;
+  bool vatRestore = true;                  // пп. 3 п. 3 ст. 170 НК РФ [НОРМ] fin.cp.vat_restore
+  bool buyers() const { return !buyerCollect.empty() || !buyerWriteOff.empty(); }
+  bool empty() const { return !buyers() && supplyArrive.empty() && supplyCancel.empty(); }
+};
+
 struct ScenarioInput {
   std::vector<PeriodInput> periods;
   int    defaultWeek = -1;     // с этой недели инкассация с потерей LGD (дефолт покупателя); −1 → нет
   double lgd = 0;              // доля потерь при дефолте [О]/[НОРМ]
+  CounterpartyFlows cp;        // CPR: при непустом — инкассация по потокам (legacy defaultWeek не применяется)
 };
 
 /** Выходы периода (§4.5) — всё, что нужно KPI и тождествам. */
@@ -101,6 +129,9 @@ struct PeriodState {
   double badDebt = 0, nol = 0, vatOut = 0, vatIn = 0;
   double dscr = 0, icr = 0;              // +∞ при нулевой службе долга / нулевых процентах
   bool   breach = false, covenantBreach = false;
+  // CPR (аддитивно; 0 в старой ветке): взыскания и выплаты по обеспечению (покупатели + поставщики),
+  // бонус заменяющему покупателю, потеря предоплаты поставщику-дефолтнику, требования к поставщикам SC.
+  double recoveries = 0, cpDiscount = 0, supLoss = 0, sc = 0;
 };
 
 /** Невязки тождеств §4.6 (абсолютные, в тыс. ₽; тест: ≤ 1e-9·масштаб). */
@@ -111,7 +142,8 @@ struct Residuals {
   double debt = 0;            // 4a. долг
   double interest = 0;        // 4b. проценты
   double npvDecomposition = 0;// 5. разложение NPV собственника
-  double material = 0;        // 7. материальный баланс
+  double material = 0;        // 7. материальный баланс (с аннулированиями: Itr = ΣOrd − ΣArr − ΣCancel)
+  double supplierClaims = 0;  // 3б. CPR: SC_H + ΣRecov_s + ΣSupLoss = Σ потерянной предоплаты
   double max() const;
 };
 
@@ -130,6 +162,8 @@ struct ScenarioResult {
   int    tBreach = -1;        // первая неделя разрыва (1-based), −1 → нет
   bool   breach = false, covenantBreach = false;
   Residuals residuals;
+  // Итоги по сценарию (аддитивно): списания, бонус, потеря предоплаты, взыскания, выставлено с НДС.
+  double badDebt = 0, cpDiscount = 0, supLoss = 0, recoveries = 0, revenueVat = 0;
 };
 
 /** Периодная ставка из годовой: (1+r)^{1/52} − 1. */
@@ -150,6 +184,7 @@ struct Summary {
   double npvOwnerMean = 0, npvBankMean = 0, pNpvOwnerNeg = 0;
   double maxResidual = 0;
   std::vector<double> cashP05, cashP50, cashP95;      // по периодам (netCash)
+  double badDebtMean = 0, discountMean = 0, supLossMean = 0, recoveriesMean = 0, revenueVatMean = 0;   // CPR
 };
 Summary summarize(const std::vector<ScenarioResult>& rs, double alpha, double beta,
                   double creditLimit, unsigned bootstrapSeed = 1, int bootstrapB = 1000);

@@ -34,10 +34,106 @@ double cut_by_priority(Ledger& L, double shortage) {
 
 double df_of(double annual, int t) { return std::pow(1.0 + annual, -(double)t / 52.0); }
 
+/* ── CPR: индексы потоков по неделям (только при непустом ScenarioInput.cp) ─────────────────────────── */
+struct CpIndex {
+  std::vector<std::vector<int>> collAt, woAt, cancelAt, cancelFrom;   // [t] → индексы потоков
+  std::vector<char> custom;                                          // [τ] заказ недели τ разложен на части
+  int extent = 0;                                                    // последняя неделя, куда пишут ведомости
+};
+
+CpIndex index_cp(const CounterpartyFlows& cp, int T) {
+  CpIndex ix;
+  ix.collAt.resize(T); ix.woAt.resize(T); ix.cancelAt.resize(T); ix.cancelFrom.resize(T); ix.custom.assign(T, 0);
+  auto put = [&](const std::vector<BuyerFlow>& v, std::vector<std::vector<int>>& at) {
+    for (size_t k = 0; k < v.size(); ++k)
+      if (v[k].from >= 0 && v[k].from < T && v[k].to >= v[k].from && v[k].to < T) at[v[k].to].push_back((int)k);
+  };
+  put(cp.buyerCollect, ix.collAt);
+  put(cp.buyerWriteOff, ix.woAt);
+  for (int t = 0; t < T && t < (int)cp.supplyArrive.size(); ++t) {
+    if (!cp.supplyArrive[t].empty()) ix.custom[t] = 1;
+    for (const SupplyPart& sp : cp.supplyArrive[t]) ix.extent = std::max(ix.extent, sp.to);
+  }
+  for (size_t k = 0; k < cp.supplyCancel.size(); ++k) {
+    const SupplyCancel& c = cp.supplyCancel[k];
+    if (c.from < 0 || c.from >= T || c.at < c.from || c.at > c.arrive) continue;   // аннулирование — до прихода
+    ix.custom[c.from] = 1; ix.cancelFrom[c.from].push_back((int)k);
+    if (c.at < T) ix.cancelAt[c.at].push_back((int)k);
+    ix.extent = std::max({ ix.extent, c.arrive, c.recoveryWeek });
+  }
+  return ix;
+}
+
+/* П. 3 (CPR): инкассация, взыскания/обеспечение, списания LGD и бонус недели t по потокам покупателей. */
+struct BuyerStep { double coll = 0, recov = 0, bad = 0, disc = 0; };
+BuyerStep buyer_step(const CounterpartyFlows& cp, const CpIndex& ix, const std::vector<double>& arIssued, int t) {
+  BuyerStep b;
+  for (int k : ix.collAt[t]) {
+    const BuyerFlow& f = cp.buyerCollect[k];
+    const double a = f.share * arIssued[f.from];
+    if (f.kind == kFlowCollect) b.coll += a; else b.recov += a;
+  }
+  for (int k : ix.woAt[t]) {
+    const BuyerFlow& f = cp.buyerWriteOff[k];
+    const double a = f.share * arIssued[f.from];
+    if (f.kind == kFlowBonus) b.disc += a; else b.bad += a;
+  }
+  return b;
+}
+
+/* П. 2/4 (CPR): заказ недели t по частям — приходы, предоплата (возврат), остатки к оплате (в apSched). */
+double supply_order_parts(const CounterpartyFlows& cp, const CpIndex& ix, int t, double orders, double v1, int dpo,
+                          std::vector<double>& arrive, std::vector<double>& apSched) {
+  const double invoice = orders * v1;
+  double prepay = 0;
+  if (t < (int)cp.supplyArrive.size())
+    for (const SupplyPart& sp : cp.supplyArrive[t]) {
+      arrive[sp.to] += sp.share * orders;
+      prepay += sp.prepay * sp.share * invoice;
+      apSched[sp.to + dpo] += (1.0 - sp.prepay) * sp.share * invoice;
+    }
+  for (int k : ix.cancelFrom[t]) {                           // аннулируемая доля: пока заказ «жив» — как обычно
+    const SupplyCancel& c = cp.supplyCancel[k];
+    prepay += c.prepay * c.share * invoice;
+    apSched[c.arrive + dpo] += (1.0 - c.prepay) * c.share * invoice;
+  }
+  return prepay;
+}
+
+/* П. 2/4 (CPR): аннулирования недели t — снять остаток к оплате, восстановить НДС, предоплата → требование SC. */
+struct CancelStep { double cancelled = 0, vatRestore = 0, lostPrepay = 0, supLoss = 0, recovNow = 0; };
+CancelStep supply_cancels(const CounterpartyFlows& cp, const CpIndex& ix, const std::vector<PeriodInput>& periods, int t,
+                          double v1, double tauV, int dpo, std::vector<double>& apSched, std::vector<double>& recovS) {
+  CancelStep cs;
+  for (int k : ix.cancelAt[t]) {
+    const SupplyCancel& c = cp.supplyCancel[k];
+    const double o = c.share * periods[c.from].orders;
+    apSched[c.arrive + dpo] -= (1.0 - c.prepay) * o * v1;
+    cs.cancelled += o;
+    if (cp.vatRestore) cs.vatRestore += tauV * o;
+    const double claim = c.prepay * o * v1;
+    cs.lostPrepay += claim;
+    cs.supLoss += c.lgd * claim;
+    if (c.recoveryWeek <= t) cs.recovNow += (1.0 - c.lgd) * claim;          // лаг взыскания 0 — в ту же неделю
+    else if (c.recoveryWeek < (int)recovS.size()) recovS[c.recoveryWeek] += (1.0 - c.lgd) * claim;
+  }
+  return cs;
+}
+
+/* Тождество 3 при потоках: невыставленная к концу горизонта часть счетов по тем же потокам. */
+double ar_expected_cp(const CounterpartyFlows& cp, const std::vector<double>& arIssued, int T) {
+  double ar = 0;
+  for (double a : arIssued) ar += a;
+  for (const auto* v : { &cp.buyerCollect, &cp.buyerWriteOff })
+    for (const BuyerFlow& f : *v)
+      if (f.from >= 0 && f.from < T && f.to >= f.from && f.to < T) ar -= f.share * arIssued[f.from];
+  return ar;
+}
+
 }  // namespace
 
 double Residuals::max() const {
-  return std::max({ cash, reconciliation, receivables, debt, interest, npvDecomposition, material });
+  return std::max({ cash, reconciliation, receivables, debt, interest, npvDecomposition, material, supplierClaims });
 }
 
 double weekly_rate(double annual) { return std::pow(1.0 + annual, 1.0 / 52.0) - 1.0; }
@@ -53,10 +149,17 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
   const int vatLag = std::max(0, fp.vatInstalmentLagWeeks), taxP = std::max(1, fp.taxPeriodWeeks);
   const double phi = std::min(1.0, std::max(0.0, fp.prepayShare));
   const double v1 = 1.0 + fp.tauV;
+  // CPR: непустой блок событий → ветка потоков; пустой — старая ветка побитово (все добавки под hasCp).
+  const CounterpartyFlows& cp = in.cp;
+  const bool hasCp = !cp.empty(), cpBuyers = cp.buyers();
+  const CpIndex ix = hasCp ? index_cp(cp, T) : CpIndex{};
 
   // Ведомости по неделям (с запасом на хвост за горизонтом).
-  const int ext = T + L + DPO + vatLag * vatN + 2;
+  int ext = T + L + DPO + vatLag * vatN + 2;
+  if (hasCp) ext = std::max(ext, ix.extent + DPO + 2);
   std::vector<double> arIssued(T, 0.0), apSched(ext, 0.0), arrive(ext, 0.0), vatDue(ext, 0.0);
+  std::vector<double> recovS(hasCp ? ext : 0, 0.0);          // взыскания требований к поставщикам по неделям
+  double sc = 0, sumCancel = 0, sumRecovB = 0, sumRecovS = 0, sumDisc = 0, sumSupLoss = 0, sumLost = 0;
 
   double C = fp.c0, D = std::max(0.0, fp.d0), OD = 0, NOL = 0, vatPos = 0, labAcc = 0, ebtAcc = 0;
   double cumEbt = 0, taxLiab = 0, taxPaidYtd = 0;       // A3: налог нарастающим итогом (taxCumulative)
@@ -77,10 +180,21 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     // 1. Макросостояние: ставка линии и штрафная ставка овердрафта.
     const double key = p.keyRate >= 0 ? p.keyRate : fp.keyRate;
     const double rw = weekly_rate(key + fp.spread), rod = weekly_rate(key + fp.spread + fp.overdraftSpread);
+    // 1а (CPR). Взыскания требований к поставщикам, назначенные на неделю (покупателей — в п. 3), поступают первыми.
+    double recovT = 0, prepayCp = 0;
+    if (hasCp) { recovT = recovS[t]; sc -= recovS[t]; sumRecovS += recovS[t]; }
     // 2. Производственные события → запасы по себестоимости.
-    arrive[t + L] += p.orders;
+    const bool customSupply = hasCp && ix.custom[t];
+    if (customSupply) prepayCp = supply_order_parts(cp, ix, t, p.orders, v1, DPO, arrive, apSched);
+    else arrive[t + L] += p.orders;
     const double arrivals = arrive[t];
     Itr += p.orders - arrivals;
+    CancelStep cs;
+    if (hasCp) {                                       // аннулирования недели (дефолт поставщика до прихода)
+      cs = supply_cancels(cp, ix, in.periods, t, v1, fp.tauV, DPO, apSched, recovS);
+      Itr -= cs.cancelled; sumCancel += cs.cancelled; sumLost += cs.lostPrepay; sumSupLoss += cs.supLoss;
+      sc += cs.lostPrepay - cs.supLoss - cs.recovNow; recovT += cs.recovNow; sumRecovS += cs.recovNow;
+    }
     Iraw += arrivals - p.rawConsumed;
     Ifg  += p.rawConsumed - p.cogs;
     sumOrd += p.orders; sumArr += arrivals; sumCons += p.rawConsumed; sumCogs += p.cogs;
@@ -88,19 +202,27 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     arIssued[t] = p.revenue * v1;
     arOut += arIssued[t]; sumRevVat += arIssued[t];
     s.vatOut = fp.tauV * p.revenue;
-    const bool defaulted = in.defaultWeek >= 0 && week >= in.defaultWeek;
-    double coll = 0, bad = 0;
-    for (int k = 0; k < K && t - k >= 0; ++k) {
-      const double a = fp.dsoKernel[k] * arIssued[t - k];
-      if (defaulted) { bad += a * in.lgd; coll += a * (1.0 - in.lgd); } else coll += a;
+    double coll = 0, bad = 0, disc = 0;
+    if (cpBuyers) {                                    // CPR: инкассация, взыскания, списания — по потокам
+      const BuyerStep b = buyer_step(cp, ix, arIssued, t);
+      coll = b.coll; bad = b.bad; disc = b.disc; recovT += b.recov; sumRecovB += b.recov; sumDisc += disc;
+      arOut -= b.recov + disc;
+    } else {
+      const bool defaulted = in.defaultWeek >= 0 && week >= in.defaultWeek;
+      for (int k = 0; k < K && t - k >= 0; ++k) {
+        const double a = fp.dsoKernel[k] * arIssued[t - k];
+        if (defaulted) { bad += a * in.lgd; coll += a * (1.0 - in.lgd); } else coll += a;
+      }
     }
     arOut -= coll + bad; sumColl += coll; sumBad += bad;
     // 4. Закупки и кредиторка: предоплата при заказе, остаток через L + DPO; входящий НДС.
     const double invoice = p.orders * v1;
-    apSched[t + L + DPO] += (1.0 - phi) * invoice;
+    if (!customSupply) apSched[t + L + DPO] += (1.0 - phi) * invoice;
     s.vatIn = fp.tauV * p.orders;
+    if (hasCp) vatPos += cs.vatRestore;                // восстановление вычета (пп. 3 п. 3 ст. 170 НК РФ)
     Ledger L2; for (int c = 0; c < kCats; ++c) L2.due[c] = L1.arr[c];
-    L2.due[kSup] += phi * invoice + apSched[t];
+    if (customSupply) L2.due[kSup] += prepayCp + apSched[t];
+    else L2.due[kSup] += phi * invoice + apSched[t];
     L2.due[kLog] += p.logistics;
     // 5. Персонал: начисление с взносами, выплата в недели payrollWeeks (пусто → еженедельно).
     const double labAccrued = p.payrollGross * (1.0 + fp.tauSoc);
@@ -129,6 +251,7 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     }
     const double opex = labAccrued + p.energy + p.logistics + p.repairPlanned + p.repairBreakdown + other;
     s.ebitda = p.revenue - p.cogs - opex - bad;
+    if (hasCp) s.ebitda -= disc + cs.supLoss;             // CPR: бонус и потеря предоплаты — расход периода
     s.ebit   = s.ebitda - p.depreciation;
     s.ebt    = s.ebit - intr;
     double tax = 0, taxExp = 0;                            // уплата (касса) / расход по налогу (прибыль)
@@ -153,7 +276,8 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     L2.due[kTax] += tax + vatDue[t];
     // 10. Закрытие кассы: правило выборки, овердрафт, разрыв с обрезкой по приоритету.
     for (int c = 0; c < kCats; ++c) L2.paid[c] = L2.due[c];
-    const double cashHat = C + coll - L2.totalDue();
+    double cashHat = C + coll - L2.totalDue();
+    if (hasCp) cashHat += recovT;                         // CPR п. 1а: взыскания и обеспечение
     double U = std::max(0.0, fp.creditLimit - D);
     double d = p.drawdown >= 0 ? std::min(U, p.drawdown)
                                : std::min(U, std::max({ 0.0, fp.cMin - cashHat, p.drawFloor }));   // A3: транш под CAPEX
@@ -179,6 +303,7 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     s.cash = C; s.debt = D + OD; s.overdraft = OD; s.undrawn = std::max(0.0, fp.creditLimit - D);
     s.drawdown = d + odDraw; s.repayment = L2.paid[kPr] + extra + odRep; s.interest = intr;
     s.collections = coll; s.badDebt = bad; s.revenue = p.revenue;
+    if (hasCp) { s.recoveries = recovT; s.cpDiscount = disc; s.supLoss = cs.supLoss; s.sc = sc; }
     s.payMat = L2.paid[kSup]; s.payLog = L2.paid[kLog]; s.payLab = L2.paid[kLab]; s.payEn = L2.paid[kEn];
     s.payRep = L2.paid[kRep]; s.payBrk = p.repairBreakdown; s.payOther = L2.paid[kOth];
     s.capex = L2.paid[kCapex];
@@ -189,16 +314,19 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     s.ap = apFuture + L2.arr[kSup]; s.ar = arOut;
     s.invRaw = Iraw; s.invFg = Ifg; s.invTransit = Itr;
     s.wc = s.ar + Iraw + Ifg + Itr - s.ap;
+    if (hasCp) s.wc += sc;                                // требования к поставщикам — оборотный актив
     s.profitAcc = s.ebt - taxExp;
     s.cfOp = coll - s.payMat - s.payLog - s.payLab - s.payEn - s.payRep - s.payOther - payIntr - payTax;
+    if (hasCp) s.cfOp += recovT;                          // CFADS включает взыскания
     const double service = intr + pr;
     s.dscr = service > 1e-12 ? (s.cfOp + payIntr) / service : kInf;
     s.icr  = intr > 1e-12 ? s.ebit / intr : kInf;
     s.covenantBreach = service > 1e-12 && s.dscr < fp.dscrCovenant;
     cfadsSum += s.cfOp + payIntr; serviceSum += service;
     // 11. Тождества (накопление).
-    const double flow = coll - s.payMat - s.payLog - s.payLab - s.payEn - s.payRep - s.payOther
+    double flow = coll - s.payMat - s.payLog - s.payLab - s.payEn - s.payRep - s.payOther
                       - payIntr - s.repayment + s.drawdown - s.vatPay - s.tax - s.capex;
+    if (hasCp) flow += recovT;
     maxResCash = std::max(maxResCash, std::fabs(C - (prevCash + flow)));
     sumProfit += s.profitAcc; sumCfOp += s.cfOp; sumDep += p.depreciation;
     sumDraw += s.drawdown; sumRep += s.repayment; sumInt += intr;
@@ -216,6 +344,7 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
     r.wcAvg += s.wc / T;
     r.taxPaid += payTax;
     r.totalInterest += intr;
+    r.badDebt += bad; r.cpDiscount += disc; r.supLoss += cs.supLoss; r.recoveries += recovT; r.revenueVat += arIssued[t];
     if (breach && r.tBreach < 0) { r.tBreach = week; r.breach = true; }
   }
   // Сводка по сценарию.
@@ -231,21 +360,29 @@ ScenarioResult run(const FinParams& fp, const ScenarioInput& in) {
   Residuals& z = r.residuals;
   z.cash = maxResCash;
   double vatFuture = 0; for (int u = T; u < ext; ++u) vatFuture += vatDue[u];
-  const double wcExtH = last.ar + Iraw + Ifg + Itr - last.ap - labAcc
-                      - (L1.arrears() - L1.arr[kSup] - L1.arr[kCapex]) - (vatPos + vatFuture)
-                      + (taxPaidYtd - taxLiab);              // A3: переплата налога — актив (0 без taxCumulative)
+  double wcExtH = last.ar + Iraw + Ifg + Itr - last.ap - labAcc
+                - (L1.arrears() - L1.arr[kSup] - L1.arr[kCapex]) - (vatPos + vatFuture)
+                + (taxPaidYtd - taxLiab);                    // A3: переплата налога — актив (0 без taxCumulative)
+  if (hasCp) wcExtH += sc;                                   // CPR: требования к поставщикам — актив
   z.reconciliation = std::fabs(sumProfit - (sumCfOp - sumDep + (wcExtH - wcExt0)));
   double arExpected = 0;
-  for (int t = 0; t < T; ++t) {
-    double applied = 0; for (int k = 0; k < K && t + k < T; ++k) applied += fp.dsoKernel[k];
-    arExpected += arIssued[t] * (1.0 - applied);
-  }
-  z.receivables = std::max(std::fabs(arExpected - last.ar), std::fabs(last.ar + sumColl + sumBad - sumRevVat));
+  if (cpBuyers) arExpected = ar_expected_cp(cp, arIssued, T);
+  else
+    for (int t = 0; t < T; ++t) {
+      double applied = 0; for (int k = 0; k < K && t + k < T; ++k) applied += fp.dsoKernel[k];
+      arExpected += arIssued[t] * (1.0 - applied);
+    }
+  // 3. AR_H + ΣColl + ΣRecov_b + ΣBad + ΣDisc = ΣRev·(1+τ_v) (CPR: со взысканиями и бонусом).
+  z.receivables = cpBuyers
+    ? std::max(std::fabs(arExpected - last.ar), std::fabs(last.ar + sumColl + sumRecovB + sumBad + sumDisc - sumRevVat))
+    : std::max(std::fabs(arExpected - last.ar), std::fabs(last.ar + sumColl + sumBad - sumRevVat));
   z.debt = std::fabs(last.debt - (fp.d0 + sumDraw - sumRep));
   z.interest = std::fabs(sumInt - sumIntChk);
   z.npvDecomposition = std::fabs(r.npvOwner - (pvFlows + holdTerm));
-  z.material = std::max({ std::fabs(Itr - (sumOrd - sumArr)), std::fabs(Iraw - (sumArr - sumCons)),
-                          std::fabs(Ifg - (sumCons - sumCogs)) });
+  z.material = std::max({ std::fabs(Itr - (hasCp ? sumOrd - sumArr - sumCancel : sumOrd - sumArr)),
+                          std::fabs(Iraw - (sumArr - sumCons)), std::fabs(Ifg - (sumCons - sumCogs)) });
+  // 3б. SC_H + ΣRecov_s + ΣSupLoss = Σ потерянной предоплаты.
+  if (hasCp) z.supplierClaims = std::fabs(sc + sumRecovS + sumSupLoss - sumLost);
   return r;
 }
 
@@ -295,6 +432,9 @@ Summary summarize(const std::vector<ScenarioResult>& rs, double alpha, double be
     S.taxPaid += r.taxPaid / rs.size(); S.npvBankMean += r.npvBank / rs.size();
     S.profitMean += r.profit / rs.size(); S.npvOwnerMean += r.npvOwner / rs.size();
     S.maxResidual = std::max(S.maxResidual, r.residuals.max());
+    S.badDebtMean += r.badDebt / rs.size(); S.discountMean += r.cpDiscount / rs.size();
+    S.supLossMean += r.supLoss / rs.size(); S.recoveriesMean += r.recoveries / rs.size();
+    S.revenueVatMean += r.revenueVat / rs.size();
   }
   S.cashMinP50 = quantile(minCash, 0.5);
   S.cfar = cvar_lower(minCash, beta);

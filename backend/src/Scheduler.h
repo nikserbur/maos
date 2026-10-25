@@ -15,6 +15,7 @@
  * узкие места, простои, KPI (makespan/tardiness/utilization) + риск по хвосту.
  */
 namespace maos {
+namespace macro { class MacroSampler; }
 
 using nlohmann::json;
 
@@ -47,6 +48,15 @@ struct ScheduleParams {
   double cpsatTimeLimit = 30.0;
   // Режим хромосомы ГА: auto (CP-SAT → both, иначе structured) | structured | op_keys | both.
   std::string gaMode = "auto";
+  // CPR (аддитивно; METHODOLOGY-V2 §5.3а): срывы и дефолты поставщиков — задержка supply-джобы заказа по его
+  // дефицитным материалам после выборки durMC (поток rng(seed) не трогается). counterparty: −1 → fin.cp.enabled
+  // из БД, 0 — выкл., 1 — вкл.; counterpartyOverride — fin.cp.* на запрос. Режимный путь сценария s —
+  // MacroSampler(seed, путь s) со стрессом macroStress (те же пути, что у Стадии 2); nullptr → m ≡ 1.
+  int  counterparty = -1;
+  json counterpartyOverride;
+  const macro::MacroSampler* macro = nullptr;
+  json macroStress;
+  bool perScenario = false;           // CR-E1 §11: Cmax и ΣT итогового ключа по сценариям (парный бутстреп снаружи)
 };
 
 // Строит и оптимизирует расписание; ПЕРСИСТИТ план (plans/plan_tasks) и

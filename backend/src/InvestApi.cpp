@@ -1,9 +1,12 @@
 #include "InvestApi.h"
+#include "CounterpartyRisk.h"
 #include "InvestEval.h"
+#include "Passport.h"
 #include "SimEnv.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 
 namespace maos::invest {
 namespace {
@@ -21,12 +24,38 @@ std::string jstr(const json& b, const char* k) {
   return b[k].is_string() ? b[k].get<std::string>() : b[k].dump();
 }
 
+/* CPR: события контрагентов сценариев набора — те же координаты [seed, 915, i, kind, entity], что Стадия 2 (сценарий
+   i), Стадия 1 и стенд RL (эпизод idx = i); режимы — пути генератора набора, F̃ — общий фактор пути (λ_F > 0). */
+void attach_cp(std::vector<env::Scenario>& sc, const cpr::CpParams& cp, const macro::MacroSampler* ms,
+               const macro::SampleResult* r, uint64_t seed, int weeks, const std::vector<uint32_t>& ent) {
+  std::vector<std::vector<int>> months;
+  std::vector<double> fT;
+  if (ms && r) {
+    months = cpr::resolve_regimes(r->paths.regime, r->paths.blockId, ms->params(), cp.crisisIndex);
+    if (cp.lambdaF > 0) {
+      const double sgn = ms->params()["svd_vectors"][0][2].get<double>() > 0 ? -1.0 : 1.0;
+      for (double f : ms->common_factor(r->paths)) fT.push_back(sgn * f);
+    }
+  }
+  const int nb = (int)cp.buyer_weights().size(), T = std::max(52, weeks);
+  for (size_t i = 0; i < sc.size(); ++i) {
+    env::Scenario& s = sc[i];
+    s.hasCp = true; s.cpParams = cp;
+    s.cpEvents = cpr::draw(cp, seed, i, i < months.size() ? months[i] : std::vector<int>{},
+                           i < fT.size() ? fT[i] : std::numeric_limits<double>::quiet_NaN(), T, nb, ent);
+  }
+}
+
+}  // namespace
+
 // Сценарии водопада из обученного макро-генератора: ключевая ставка/курс/инфляция по неделям, режим HMM
 // (месяц → неделя); без генератора — постоянные параметры fin_params (CRN по seed эпизода сохраняется).
-std::vector<env::Scenario> macro_scenarios(const macro::MacroSampler* ms, int n, uint64_t seed, int weeks) {
+// cp (CPR включён) — события контрагентов сценария i на том же seed набора.
+std::vector<env::Scenario> macro_scenarios(const macro::MacroSampler* ms, int n, uint64_t seed, int weeks,
+                                           const cpr::CpParams* cp, const std::vector<uint32_t>& ent) {
   std::vector<env::Scenario> out(n);
   for (int i = 0; i < n; ++i) out[i].idx = i;
-  if (!ms) return out;
+  if (!ms) { if (cp) attach_cp(out, *cp, nullptr, nullptr, seed, weeks, ent); return out; }
   const auto r = ms->sample(n, seed, weeks);
   for (int i = 0; i < n; ++i) {
     env::Scenario& s = out[i];
@@ -35,7 +64,25 @@ std::vector<env::Scenario> macro_scenarios(const macro::MacroSampler* ms, int n,
     const auto& rg = r.paths.regime[i];
     for (int w = 0; w < weeks && !rg.empty(); ++w) s.regime.push_back(rg[std::min((int)rg.size() - 1, (int)std::floor(w * 12.0 / 52.0))]);
   }
+  if (cp) attach_cp(out, *cp, ms, &r, seed, weeks, ent);
   return out;
+}
+
+namespace {
+
+/* CPR экземпляра: fin.cp.* из БД (выкл. или нет таблицы → false), поставщики — покупные позиции НСИ (entity поставщика позиции). */
+bool cp_of_instance(Database& db, const env::Instance& inst, const macro::MacroSampler* ms, cpr::CpParams& cp,
+                    std::vector<uint32_t>& ent) {
+  json fin = json::object();
+  try { fin = passport::fin_params_json(db); } catch (const std::exception&) { return false; }
+  cp = passport::counterparty_params(fin, json::object());
+  if (!cp.enabled) return false;
+  if (ms) cp.apply_generator(ms->params());
+  std::vector<std::string> ids;
+  for (const auto& [id, pr] : inst.model.prods) if (pr.purchased) ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  for (const auto& id : ids) ent.push_back(cp.supplier_entity(id));
+  return true;
 }
 
 std::vector<std::string> dual_types(const json& r0) {
@@ -68,7 +115,11 @@ json analytics_crn(Database& db, const json& body, const json& r0, const macro::
   }
   inst.investCands = cands;
   // Набор A (отбор, правило диспетчеризации) и ОТЛОЖЕННЫЙ набор B (вердикт) — разные потоки генератора и seed эпизодов.
-  const auto scA = macro_scenarios(sampler, n, seed, cfg.horizonWeeks), scB = macro_scenarios(sampler, n, seed + 1, cfg.horizonWeeks);
+  // CPR (fin.cp.enabled): события контрагентов — на seed своего набора; база и проект идут на одних событиях.
+  cpr::CpParams cp; std::vector<uint32_t> ent;
+  const bool cpOn = cp_of_instance(db, inst, sampler, cp, ent);
+  const auto scA = macro_scenarios(sampler, n, seed, cfg.horizonWeeks, cpOn ? &cp : nullptr, ent);
+  const auto scB = macro_scenarios(sampler, n, seed + 1, cfg.horizonWeeks, cpOn ? &cp : nullptr, ent);
   std::vector<uint64_t> sdA(n), sdB(n);
   for (int i = 0; i < n; ++i) { sdA[i] = 1000 + i; sdB[i] = 50000 + i; }
   std::string rule = jstr(body, "rule"); json rules = nullptr;
@@ -90,6 +141,9 @@ json analytics_crn(Database& db, const json& body, const json& r0, const macro::
   return {
     {"status", "ok"}, {"rule", rule}, {"rules", rules}, {"n_scenarios", n}, {"seed", (int64_t)seed},
     {"holdout_seed", (int64_t)(seed + 1)}, {"macro", sampler != nullptr}, {"duals_used", duals},
+    {"counterparty", cpOn ? json{ {"enabled", true}, {"stream", { (int64_t)seed, cpr::kCpStream }}, {"suppliers", (int)ent.size()},
+                                  {"status", "К/НОРМ (паспорт fin.cp.*): эффект при калибровке, не оценка"} }
+                          : json(nullptr)},
     {"params", { {"cont_weeks", ec.contWeeks}, {"liq_threshold", ec.liqThreshold}, {"rate_owner", inst.fin.rateOwner},
                  {"horizon_weeks", cfg.horizonWeeks}, {"alpha", ec.alpha}, {"beta", ec.beta}, {"salvage", ec.salvage},
                  {"tax_cumulative", true} }},

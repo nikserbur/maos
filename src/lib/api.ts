@@ -307,6 +307,72 @@ export interface OptimizeParams {
   macro_mode?: MacroMode | MacroModeName; macro_stress?: MacroStress; macro_ref?: MacroRef
   /** E1: оценить заданный план {product_id: qty} через водопад без решения LP → cash_lp.fixed_portfolio. */
   eval_portfolio?: Record<string, number>
+  /** CPR: переопределение fin.cp.* на запрос (без записи в БД; диапазоны проверяются сервером, 400 при ошибке). */
+  counterparty?: Partial<CounterpartyParams>
+  /** Переопределение fin_params на запрос (без записи в БД); неизвестный ключ → 400. */
+  fin_override?: FinOverride
+}
+
+/* ── Блок контрагентского риска (CPR): платежи, дефолты, срывы поставок — паспорт fin.cp.* ([К]/[НОРМ]) ── */
+/** Параметры fin.cp.* (ключ = суффикс кода паспорта); GET /api/fin_params отдаёт действующие значения. */
+export interface CounterpartyParams {
+  enabled: boolean; stream: number
+  regime_stationary: number[]; crisis_regime: number
+  /** −1 → ρ Базеля по PD (корреляция внутри режима). */
+  rho: number; lambda_f: number; regime_mult_pd: number
+  buyers_n: number; buyers_zipf: number; buyer_shares: number[]
+  buyer_pd_annual: number; buyer_lgd: number; recovery_lag_weeks: number
+  buyer_security_share: number; buyer_security_lag_weeks: number
+  stop_lag_weeks: number; replace_lag_weeks: number; replace_discount: number
+  late_share: number; late_regime_mult: number; late_tail_alpha: number; late_scale_weeks: number
+  late_crisis_scale_mult: number; late_max_weeks: number; late_rho: number
+  /** D_def: просрочка > D_def недель — дефолт когорты (90+ DPD); λ_b — общий фактор покупателя в просрочках. */
+  default_dpd_weeks?: number; late_buyer_loading?: number
+  supplier_pd_annual: number; supplier_lgd: number; supplier_replace_lag_weeks: number
+  supplier_replace_premium: number; supplier_prepay_replacement: number
+  disrupt_share: number; disrupt_regime_mult: number; disrupt_tail_alpha: number; disrupt_scale_weeks: number
+  /** Перебои поставщика: растяжение длительности в кризисе, потолок, своя ρ (−1 → ρ_w поставщика). */
+  disrupt_crisis_scale_mult?: number; disrupt_max_weeks?: number; disrupt_rho?: number
+  /** Группировка покупных позиций НСИ по поставщикам {позиция: поставщик} (пусто → позиция = поставщик). */
+  supplier_groups?: Record<string, string>
+  theta_min: number; prepay_discount: number; tax_bad_debt: 'immediate'
+  vat_restore: boolean; stage2_ship_shift: boolean; lexicographic: boolean; lp_lex_eps: number
+}
+/** fin_params на один запрос: те же ключи, что FinParams (+ counterparty частично). */
+export type FinOverride = Partial<Omit<FinParams, 'entity' | 'period_type' | 'effective_from' | 'updated_at' | 'counterparty'>> & {
+  counterparty?: Partial<CounterpartyParams>
+}
+/** CPR в водопаде (средние по сценариям): списания LGD, бонус заменяющему покупателю, потеря предоплаты, взыскания. */
+export interface CounterpartyWaterfall {
+  bad_debt_mean: number; discount_mean: number; supplier_loss_mean: number; recoveries_mean: number
+  ecl_pct_revenue: number; ship_delay_mean_weeks: number
+}
+/** Сводка CPR по сценариям (cash_lp.counterparty) — эффект при калибровке [К]/[НОРМ], не оценка. */
+export interface CounterpartySummary extends Omit<CounterpartyWaterfall, 'ship_delay_mean_weeks'> {
+  enabled: boolean; stream: [number, number]; params: CounterpartyParams; status: string
+  n_scenarios: number; horizon_weeks: number
+  p_buyer_default: number; p_supplier_default: number; mean_buyer_defaults: number; mean_supplier_defaults: number
+  /** Доля просроченных когорт счетов по режимам генератора (null — режим не встречался). */
+  late_share_by_regime: Array<number | null>
+  default_corr: { within_regime: number; empirical: number; pd_horizon: number; rho: number; note: string
+    /** ρ Базеля, полная корреляция за год при смеси режимов и её цель (подразумеваемая ρ Базеля). */
+    rho_basel?: number; total_annual?: number; target_annual?: number }
+  /** Доля когорт счетов с дефолтом когорты (просрочка > D_def, 90+ DPD). */
+  cohort_default_share?: number
+  supply: { disrupt_share: number; disrupt_mean_weeks: number; ship_delay: { mean_weeks: number; share_scenarios: number }
+    outages_per_supplier_year?: number; outage_mean_weeks?: number }
+  suppliers?: { n: number; shortage: number }
+  /** Статус каждого параметра по паспорту (ключ = суффикс fin.cp.*): Н | О | К | НОРМ | техн. */
+  param_status?: Record<string, PassportStatus>
+  warnings: string[]
+}
+/** CPR в Стадии 1: задержки поставок по событиям поставщиков (тот же поток [seed, 915]). */
+export interface ScheduleCounterparty {
+  enabled: boolean; stream: [number, number]; scenarios: number
+  share_scenarios_delayed: number; mean_delay_weeks: number; max_delay_weeks: number
+  shortage_materials: number; regimes: string; status: string; warnings: string[]
+  /** Договорной срок fin.lead_weeks — судьба заказа (окно аннулирования, плановый приход) как в Стадии 2. */
+  lead_weeks?: number
 }
 
 /* ── Волна F: денежный слой (fin_params, паспорт, CVaR-LP с кассой) ──────── */
@@ -329,6 +395,8 @@ export interface FinParams {
   beta: number; l_min: number; horizon_weeks: number; cash_samples: number; auto_repay: number
   /** A4: налог на прибыль нарастающим итогом с начала года (1, по умолчанию; ст. 285–286 НК РФ) | 0 — помесячно с NOL. */
   tax_cumulative?: number
+  /** CPR: параметры fin.cp.* (PUT — частично, поверх сохранённых). */
+  counterparty?: CounterpartyParams
 }
 export interface PeriodQuantiles { p05: number[]; p50: number[]; p95: number[] }
 /** KPI денежного слоя (METHODOLOGY-V2 §6.0) по водопаду §4.3 на решении LP. */
@@ -342,6 +410,8 @@ export interface CashWaterfallKpi {
   npv_owner_mean: number; npv_bank_mean: number; p_npv_owner_neg: number
   identities_max_residual: number
   cash: PeriodQuantiles
+  /** CPR (только при fin.cp.enabled): списания, потери предоплаты, взыскания. */
+  counterparty?: CounterpartyWaterfall
 }
 export interface CashLpSummary {
   status: string; reason?: string; objective: number; lp_objective: number
@@ -379,9 +449,15 @@ export interface CashLpResult extends CashLpSummary {
     items: Array<{ product_id: string; qty: number }>
     gross: { expected: number; cvar: number; worst: number }
     waterfall_rule: CashWaterfallKpi
-    per_scenario: { profit: number[]; min_cash: number[]; breach: number[]; interest: number[] }
+    per_scenario: { profit: number[]; min_cash: number[]; breach: number[]; interest: number[]
+      counterparty?: { bad_debt: number[]; supplier_loss: number[]; recoveries: number[]; ship_delay: number[] } }
   }
   total_ms: number
+  /** CPR: сводка по сценариям (есть только при включённом блоке). */
+  counterparty?: CounterpartySummary
+  /** CPR: лексикографическая фаза 2 LP (fin.cp.lexicographic). */
+  lexicographic?: { status: string; cvar_phase1: number; eps: number }
+  fin_override?: FinOverride
 }
 export interface OptRunSummary {
   id: string; scenario_id: string; objective: string; samples: string; alpha: string; created_at: string
@@ -549,6 +625,8 @@ export interface ScheduleResult {
   rl?: RlEval | null
   /** Волна A2: правило «CP-SAT»; null для прочих правил. */
   cpsat?: SchedCpSat | null
+  /** CPR: срывы/дефолты поставщиков в Монте-Карло (есть только при включённом блоке). */
+  counterparty?: ScheduleCounterparty
   plan_id?: string; error_soft?: boolean
 }
 export interface ScheduleParams {
@@ -562,6 +640,9 @@ export interface ScheduleParams {
   cpsat_time_limit?: number; ga_mode?: 'auto' | 'structured' | 'op_keys' | 'both'
   /** Конструктор эвристики: критерии с весами (знак = направление, меньший key — раньше). */
   custom_rule?: Array<{ criterion: 'duration' | 'due' | 'rem' | 'inputs' | 'setup'; weight: number }>
+  /** CPR: срывы/дефолты поставщиков в Стадии 1 (true/false или fin.cp.*; нет поля → fin.cp.enabled); seed, стресс генератора. */
+  counterparty?: boolean | Partial<CounterpartyParams>
+  seed?: number; macro_stress?: MacroStress
 }
 export interface WorkCalendar {
   schedule_id?: string; name?: string; enabled: boolean
@@ -644,6 +725,8 @@ export interface InvestCrn {
   params?: { cont_weeks: number; liq_threshold: number; rate_owner: number; horizon_weeks: number; alpha: number; beta: number
              salvage: number; tax_cumulative: boolean }
   rule_of_apply?: string; assumptions?: string[]; candidates?: InvestCrnCandidate[]; ms?: number
+  /** CPR: сценарии несут события контрагентов (fin.cp.enabled); null — блок выключен. */
+  counterparty?: { enabled: boolean; stream: [number, number]; suppliers: number; status: string } | null
 }
 /** Волна A3: гейт структурного RL (GET /api/rl/status → gate_a3). */
 export interface RlGateA3 {

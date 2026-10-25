@@ -123,6 +123,30 @@ void a3_from(const json& a, Instance& inst) {
   if (a.contains("invest_la") && a["invest_la"].is_array())             // A4: взгляд вперёд инвестиций [c][w][4]
     inst.investLa = a["invest_la"].get<std::vector<std::vector<std::vector<double>>>>();
 }
+
+/* CPR: потоки покупателей и план закупок с событиями поставщиков по плановой смеси θ̄_j [НОРМ-упрощение]; перезаказ
+   с надбавкой и аннулирования — тем же supplier_plan, что Стадия 2; надбавка — в себестоимость недели перезаказа. */
+void cp_cash_flows(const cpr::CpEvents& ev, const cpr::CpParams& p, const std::vector<double>& theta,
+                   const cash::FinParams& fin, cash::ScenarioInput& in) {
+  const int W = (int)in.periods.size();
+  cpr::buyer_flows(ev, p, fin.dsoKernel, fin.tauV, W, in.cp);
+  in.cp.vatRestore = p.vatRestore;
+  if (!ev.has_supplier_events()) return;
+  const size_t J = ev.suppliers.size();
+  std::vector<std::vector<double>> oj(J, std::vector<double>(W, 0.0));
+  std::vector<double> other(W, 0.0);
+  for (int t = 0; t < W; ++t) {
+    const double o = in.periods[t].orders; double rest = 1.0;
+    for (size_t j = 0; j < J && j < theta.size(); ++j) { oj[j][t] = theta[j] * o; rest -= theta[j]; }
+    other[t] = std::max(0.0, rest) * o;
+  }
+  const cpr::SupplyPlan sp = cpr::supplier_plan(ev, p, oj, other, std::max(0, fin.leadWeeks),
+                                                std::min(1.0, std::max(0.0, fin.prepayShare)), W, in.cp);
+  for (int t = 0; t < W; ++t) {
+    in.periods[t].orders = sp.orders[t];
+    in.periods[t].rawConsumed += sp.premium[t]; in.periods[t].cogs += sp.premium[t];
+  }
+}
 }  // namespace
 
 json instance_to_json(const Instance& inst) {
@@ -153,6 +177,7 @@ json instance_to_json(const Instance& inst) {
     products.push_back({ {"id", pid}, {"name", m.prodName.count(pid) ? m.prodName.at(pid) : pid},
                          {"batch_size", pr.batchSize}, {"stock", pr.stock}, {"purchased", pr.purchased},
                          {"lead_hours", pr.leadHours}, {"ops", ops}, {"alt_routings", alts} });
+    if (inst.matPrice.count(pid)) products.back()["base_cost"] = inst.matPrice.at(pid);   // CPR: смесь поставщиков
   }
   json workers = json::array();
   for (auto& w : m.workers) workers.push_back({ {"id", w.id}, {"name", w.name}, {"skills", w.skills}, {"cost", w.costPerHour} });
@@ -196,6 +221,7 @@ Instance instance_from_json(const json& j) {
     const std::string id = str(p, "id");
     sched::Prod pr; pr.batchSize = std::max(1.0, num(p, "batch_size", 1)); pr.stock = num(p, "stock");
     pr.purchased = p.value("purchased", false); pr.leadHours = num(p, "lead_hours");
+    if (pr.purchased && p.contains("base_cost")) inst.matPrice[id] = num(p, "base_cost");   // CPR: смесь поставщиков
     m.prods[id] = pr; m.prodName[id] = p.value("name", id);
     if (p.contains("ops")) for (auto& o : p["ops"]) m.opsOf[id].push_back(op_from(o));
     if (p.contains("alt_routings")) for (auto& a : p["alt_routings"]) {
@@ -246,6 +272,7 @@ Instance instance_from_db(Database& db, const std::vector<std::pair<std::string,
   if (useCalendar) for (auto& [mid, sch] : m.machineSched) { Calendar c; if (sched::machine_calendar(sch, c)) inst.calByM.emplace(mid, c); }
   std::unordered_map<std::string,double> baseCost, basePrice;
   for (auto& p : db.query_json("SELECT id,base_cost,base_price FROM products")) { baseCost[str(p,"id")] = num(p,"base_cost"); basePrice[str(p,"id")] = num(p,"base_price"); }
+  for (auto& [id, pr] : m.prods) if (pr.purchased && baseCost.count(id)) inst.matPrice[id] = baseCost[id];   // CPR
   // Программа.
   std::vector<std::pair<std::string,double>> prog = program; std::vector<double> dueH = dueHours; std::vector<int> prio;
   if (prog.empty()) {
@@ -312,6 +339,12 @@ Scenario Scenario::from_json(const json& j) {
   s.rushAt = num(j, "rush_at", -1); s.rushQty = num(j, "rush_qty", 0.5); s.rushDue = num(j, "rush_due", 1.5);
   s.rushOrder = (int)num(j, "rush_order", 0); s.supplyDelay = num(j, "supply_delay", 0);
   s.regimeShockWeek = (int)num(j, "regime_shock_week", -1);
+  if (j.contains("cp") && j["cp"].is_object()) {           // CPR: события и параметры контрагентов
+    s.hasCp = true;
+    s.cpEvents = cpr::events_from_json(j["cp"].value("events", json::object()));
+    s.cpParams = cpr::CpParams::from_json(j["cp"].value("params", json::object()));
+    if (const auto errs = s.cpParams.validate(); !errs.empty()) throw std::invalid_argument("scenario.cp.params." + errs.front());
+  }
   return s;
 }
 
@@ -475,6 +508,69 @@ void SimEnv::draw_durations() {
   if (supplyExtra_ > 0)
     for (size_t j = 0; j < jobs_.size(); ++j)
       if (jobs_[j].productId == "supply" && supplyShockOrders_.count(jobs_[j].orderIdx)) dur_[j] += supplyExtra_;
+  // CPR: срывы и дефолты поставщиков дефицитных материалов заказа (по неделе запуска) — отдельный вид от шока A2.
+  if (sc_.hasCp)
+    for (size_t j = 0; j < jobs_.size(); ++j)
+      if (jobs_[j].productId == "supply") dur_[j] += cp_supply_delay_min((int)j, dur_[j]);
+}
+
+/* ── CPR: дефицитные материалы заказов, плановая смесь поставщиков, задержки поставок ─────────────────── */
+/* Поставщик позиции НСИ в событиях сценария: entity = entity_of(поставщик позиции по fin.cp.supplier_groups). */
+int SimEnv::cp_supplier_of(const std::unordered_map<uint32_t, int>& byEnt, const std::string& id) const {
+  const auto it = byEnt.find(sc_.cpParams.supplier_entity(id));
+  return it == byEnt.end() ? -1 : it->second;
+}
+
+void SimEnv::resolve_cp() {
+  cpMats_.clear(); cpTheta_.clear();
+  if (!sc_.hasCp) return;
+  const Model& m = inst_.model;
+  std::unordered_map<uint32_t, int> byEnt;                       // поставщик событий ↔ entity поставщика позиции
+  for (size_t j = 0; j < sc_.cpEvents.suppliers.size(); ++j) byEnt[sc_.cpEvents.suppliers[j].entity] = (int)j;
+  std::function<void(const std::string&, double, std::unordered_map<std::string,double>&, std::unordered_set<std::string>&, int)> need =
+    [&](const std::string& pid, double mult, std::unordered_map<std::string,double>& acc, std::unordered_set<std::string>& vis, int depth) {
+      if (depth > 64 || vis.count(pid)) return; vis.insert(pid);
+      if (auto it = m.opsOf.find(pid); it != m.opsOf.end())
+        for (auto& o : it->second) for (auto& [q, qty] : o.inputs) { acc[q] += mult * qty; need(q, mult * qty, acc, vis, depth + 1); }
+      vis.erase(pid);
+    };
+  std::unordered_map<std::string,double> total;                  // потребность экземпляра (как rebuild_jobs)
+  for (int k = 0; k < nBaseOrders_; ++k) { std::unordered_set<std::string> vis; need(inst_.orders[k].productId, inst_.orders[k].qty, total, vis, 0); }
+  cpTheta_.assign(sc_.cpEvents.suppliers.size(), 0.0);
+  double tot = 0, maxLeadH = 0;                                   // срок supply-джобы — максимум по дефицитным (rebuild_jobs)
+  for (auto& [id, q] : total) {
+    auto pit = m.prods.find(id);
+    if (pit == m.prods.end() || !pit->second.purchased) continue;
+    if (q > pit->second.stock) maxLeadH = std::max(maxLeadH, pit->second.leadHours);
+    const int js = cp_supplier_of(byEnt, id);
+    if (js < 0) continue;
+    const double v = q * (inst_.matPrice.empty() ? 1.0 : (inst_.matPrice.count(id) ? inst_.matPrice.at(id) : 0.0));
+    cpTheta_[js] += v; tot += v;
+  }
+  for (double& t : cpTheta_) t = tot > 0 ? t / tot : 0.0;
+  for (const auto& o : inst_.orders) {
+    if (cpMats_.count(o.productId)) continue;
+    std::unordered_map<std::string,double> acc; std::unordered_set<std::string> vis; need(o.productId, 1.0, acc, vis, 0);
+    auto& [mats, share] = cpMats_[o.productId];
+    for (auto& [id, q] : acc) {
+      auto pit = m.prods.find(id); const int js = cp_supplier_of(byEnt, id);
+      if (pit == m.prods.end() || !pit->second.purchased || js < 0 || !(total[id] > pit->second.stock)) continue;
+      mats.push_back(js);
+      share.push_back(maxLeadH > 0 ? pit->second.leadHours / maxLeadH : 1.0);   // ×leadMul сокращается
+    }
+  }
+}
+
+/* Добавка CPR к разыгранной длительности supply-джобы: судьба заказа — по договорному сроку fin.lead_weeks
+   (как денежный слой SimEnv и Стадия 2), запас до максимума срока — по долям сроков материалов. */
+double SimEnv::cp_supply_delay_min(int j, double durMin) const {
+  const Job& jb = jobs_[j];
+  if (jb.orderIdx < 0 || jb.orderIdx >= (int)inst_.orders.size()) return 0.0;
+  auto it = cpMats_.find(inst_.orders[jb.orderIdx].productId);
+  if (it == cpMats_.end() || it->second.first.empty()) return 0.0;
+  const int tauO = (int)std::floor(jb.releaseMin / kWeekMin);
+  return cpr::supply_job_extra(sc_.cpEvents, sc_.cpParams, it->second.first, it->second.second,
+                               std::max(0, inst_.fin.leadWeeks), tauO, durMin);
 }
 
 /* ── Эпизод ──────────────────────────────────────────────────────────────── */
@@ -489,6 +585,7 @@ void SimEnv::reset(uint64_t seed, const Scenario& sc) {
   now_ = 0; done_ = false; level_ = 0; curMachine_ = -1; nDecisions_ = nWait_ = nPlaced_ = 0; week_ = 0; movesThisWeek_ = 0; inL2_ = false;
   pendingReward_ = 0; lastSetup_ = 0;
   struct_reset();                          // A3: базовая модель/календари, статусы ходов (до развёртки)
+  resolve_cp();                            // CPR: материалы заказов и смесь поставщиков (до розыгрыша длительностей)
   rebuild_jobs();
   update_bounds();
   if (sc_.has_shock() || sc_.regimeShockWeek >= 0) {
@@ -1027,7 +1124,9 @@ void SimEnv::book_order_finish(int k, double t) {
     weekly_[w].otherFixed += std::min(cap, inst_.lateFixed + perW * lateW) * val;
   }
 }
-cash::ScenarioResult SimEnv::run_cash(int weeks) const {
+cash::ScenarioResult SimEnv::run_cash(int weeks) const { return cash::run(inst_.fin, cash_input(weeks)); }
+
+cash::ScenarioInput SimEnv::cash_input(int weeks) const {
   cash::ScenarioInput in; in.periods.resize(weeks);
   for (int t = 0; t < weeks; ++t) {
     if (t < (int)weekly_.size()) in.periods[t] = weekly_[t];
@@ -1037,8 +1136,9 @@ cash::ScenarioResult SimEnv::run_cash(int weeks) const {
     if (t < (int)drawPlan_.size()) { q.drawdown = drawPlan_[t]; q.repayment = repayPlan_[t]; }
     if (t < (int)drawFloor_.size()) q.drawFloor = drawFloor_[t];   // A3: транши под CAPEX / буфер
   }
-  in.defaultWeek = sc_.defaultWeek; in.lgd = sc_.lgd;
-  return cash::run(inst_.fin, in);
+  if (sc_.hasCp) cp_cash_flows(sc_.cpEvents, sc_.cpParams, cpTheta_, inst_.fin, in);   // CPR вместо legacy-дефолта
+  else { in.defaultWeek = sc_.defaultWeek; in.lgd = sc_.lgd; }
+  return in;
 }
 
 void SimEnv::finish_episode() {
@@ -1197,6 +1297,9 @@ json SimEnv::summary() const {
     {"shock", shock_metrics()},
     {"a3", { {"overtime_weeks", otWeeks_}, {"fee_overtime", feeOvertime_}, {"fee_outsource", feeOutsource_},
              {"capex", capexTotal_}, {"invest_week", investWeek_} }},
+    {"counterparty", sc_.hasCp && cashValid_
+        ? json{ {"bad_debt", cashRes_.badDebt}, {"discount", cashRes_.cpDiscount}, {"supplier_loss", cashRes_.supLoss},
+                {"recoveries", cashRes_.recoveries} } : json(nullptr)},
   };
 }
 json SimEnv::gantt() const {

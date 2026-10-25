@@ -55,6 +55,8 @@ struct OptimizeParams {
   int    cashSamples    = 0;          // 0 → fin_params.cash_samples (префикс CRN-выборки)
   std::string scheduleRefId;          // plans.id опорного расписания → профиль отгрузок φ_{s,t}
   bool   polCurve       = true;       // кривая цены ликвидности PoL(L) с бутстреп-ДИ
+  json   polGrid;                     // CR-E1 §8: явная сетка L кривой (те же абсолютные L для плеч); пусто → авто
+  bool   fixedSchedule  = true;       // CR-E1 §8: false → без задачи «график траншей заранее» (cash_lp.fixed_schedule)
   // Волна M (METHODOLOGY-V2 §2.4, §2.6б): обученный макро-генератор вместо i.i.d. фактора M и ползунков.
   // Сценарий i получает ОДИН макро-путь (ставка, курс, инфляция) для всех сравниваемых портфелей (CRN);
   // общий фактор цен F_i — первая SVD-компонента макро-инноваций; ставка кредита — по сценарию.
@@ -65,6 +67,10 @@ struct OptimizeParams {
   // E1 (§11.6 волна M): оценить ЗАДАННЫЙ план {product_id: qty} через водопад на тех же сценариях —
   // без решения LP; ответ cash_lp.fixed_portfolio с пер-сценарными Π, C_min, разрыв (парный бутстреп снаружи).
   json evalPortfolio;
+  // CPR (METHODOLOGY-V2 §2.6в): переопределение fin_params.counterparty (fin.cp.*) и fin_params на один запрос —
+  // без записи в БД, с проверкой диапазонов (пусто → как в БД).
+  json counterparty;
+  json finOverride;
 };
 
 /**
