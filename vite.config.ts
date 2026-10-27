@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 // Версия продукта — одна, из package.json: статус-бар и окно входа читают __APP_VERSION__ (без литералов в src).
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
-// MAOS dev/build config. Local-first: no external services at runtime.
+// MAOS dev/build config. Local-first: the only external requests at runtime are the 2D world map's CARTO tiles and OSRM routes.
 export default defineConfig({
   plugins: [react()],
   define: {
