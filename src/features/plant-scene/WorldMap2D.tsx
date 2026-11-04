@@ -24,7 +24,8 @@ import type { NodeOps } from './sceneOps'
 import { nodeLngLat } from './worldmap2d/cities'
 import { MapCard, type MapCardStats } from './worldmap2d/MapCard'
 import {
-  BASEMAP_STYLE, applyRouteColors, ensureRouteLayers, fetchRoadRoute, setRouteData, straightLine, styleLabels,
+  MAP_BOUNDS, MAP_MIN_ZOOM, applyRouteColors, basemapStyle, ensureRouteLayers, fetchRoadRoute, registerOfflineTiles, setRouteData,
+  straightLine, styleLabels,
 } from './worldmap2d/basemap'
 import './worldmap2d/worldmap2d.css'
 
@@ -105,11 +106,14 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
   useEffect(() => {
     if (!boxRef.current) return
     styleThemeRef.current = colorsRef.current.theme
+    registerOfflineTiles(maplibregl)
     const map = new maplibregl.Map({
       container: boxRef.current,
-      style: BASEMAP_STYLE[colorsRef.current.theme],
+      style: basemapStyle(colorsRef.current.theme),
       center: [59.5, 55],
       zoom: 5,
+      minZoom: MAP_MIN_ZOOM,
+      maxBounds: MAP_BOUNDS,
       attributionControl: { compact: true },
     })
     mapRef.current = map
@@ -139,7 +143,7 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
     if (!map || !readyRef.current) return
     if (styleThemeRef.current !== colors.theme) {
       styleThemeRef.current = colors.theme
-      map.setStyle(BASEMAP_STYLE[colors.theme])
+      map.setStyle(basemapStyle(colors.theme))
       return
     }
     styleLabels(map, colors)
@@ -212,7 +216,7 @@ export function WorldMap2D({ nodes, edges, selectedId, onSelect, onEnter, onBack
     }
   }, [selectedId, placed])
 
-  // ── Дороги: прямые линии сразу + реальные трассы OSRM асинхронно ──
+  // ── Дороги: прямые линии сразу + дорожные трассы из предустановленных маршрутов ──
   useEffect(() => {
     const map = mapRef.current
     if (!map) return

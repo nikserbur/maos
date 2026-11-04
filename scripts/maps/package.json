@@ -1,0 +1,8 @@
+{
+  "name": "maos-offline-maps",
+  "private": true,
+  "type": "module",
+  "description": "Сборка предустановленных карт уровня «Мир» в public/maps (разово, при обновлении карт)",
+  "scripts": { "build": "node build-offline-maps.mjs" },
+  "dependencies": { "pmtiles": "4.3.0", "@protomaps/basemaps": "5.7.0" }
+}
